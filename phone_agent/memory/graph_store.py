@@ -83,97 +83,100 @@ class GraphStore:
                 })
         return actions
 
+    def _tokenize_chinese(self, text: str) -> set[str]:
+        """
+        Split text into tokens suitable for matching against the space-separated
+        descriptions stored in Neo4j (where Chinese text is char-space-char-space...).
+        Returns individual chars and common 2-char/3-char n-grams.
+        """
+        tokens: set[str] = set()
+        # Individual characters (but skip pure ASCII/punctuation)
+        for ch in text:
+            if '\u4e00' <= ch <= '\u9fff':  # CJK unified ideographs
+                tokens.add(ch)
+        # 2-char n-grams for Chinese
+        for i in range(len(text) - 1):
+            if '\u4e00' <= text[i] <= '\u9fff' and '\u4e00' <= text[i+1] <= '\u9fff':
+                tokens.add(text[i:i+2])
+        # 3-char n-grams for Chinese
+        for i in range(len(text) - 2):
+            if ('\u4e00' <= text[i] <= '\u9fff' and
+                '\u4e00' <= text[i+1] <= '\u9fff' and
+                '\u4e00' <= text[i+2] <= '\u9fff'):
+                tokens.add(text[i:i+3])
+        return tokens
+
     def find_similar_tasks(self, task_description: str, app: str = None, top_k: int = 3) -> List[Dict[str, Any]]:
         """
-        Find semantically similar completed tasks from the graph.
-        Falls back to app-name prefix matching when no semantic similarity is available.
+        Find semantically similar completed tasks using token-based OR matching.
 
-        Returns list of task objects with id, description, app, and first few actions.
+        Neo4j stores Chinese descriptions as space-separated chars ('去 京 东 帮 我 点 个 外 卖').
+        This method extracts character n-grams from the query and uses OR clauses so
+        ANY matching n-gram returns the task, then re-ranks by total matched token count.
         """
         if not self.driver:
             return []
 
-        # Primary: semantic text match on task description (case-insensitive substring)
-        match_clause = ""
-        params: Dict[str, Any] = {"desc": task_description, "top_k": top_k}
+        # Extract Chinese n-gram tokens from user query
+        user_tokens = self._tokenize_chinese(task_description)
+        # Build two sets:
+        # - multi-char (2-3 grams): must match as-is against space-separated string
+        # - single-char: also matched; they work because '外' in '外 卖' is a substring
+        multi_char = sorted({t for t in user_tokens if len(t) >= 2}, key=len, reverse=True)
+        single_char = sorted({t for t in user_tokens if len(t) == 1})
+        # Use all tokens for the OR clause (cap at 50 to stay within Neo4j limits)
+        query_tokens = (multi_char + single_char)[:50]
+
+        if not query_tokens:
+            return []
+
+        # Build OR clauses; ANY match returns the row
+        params: Dict[str, Any] = {"top_k": top_k * 10}
+        clauses: List[str] = []
+        for i, tok in enumerate(query_tokens):
+            key = f"q{i}"
+            clauses.append(f"toLower(t.description) CONTAINS ${key}")
+            params[key] = tok
         if app:
-            match_clause = "WHERE t.app = $app AND toLower(t.description) CONTAINS toLower($desc)"
+            clauses.insert(0, "t.app = $app")
             params["app"] = app
-        else:
-            match_clause = "WHERE toLower(t.description) CONTAINS toLower($desc)"
 
-        # Also find tasks with overlapping keywords
-        keywords = [w for w in task_description if len(w) >= 2]
-        keyword_matches: List[Dict[str, Any]] = []
-
-        if keywords:
-            keyword_params: Dict[str, Any] = {"top_k": top_k}
-            if app:
-                keyword_clause = "WHERE t.app = $app AND " + " OR ".join(
-                    f"toLower(t.description) CONTAINS toLower($kw{i})" for i in range(len(keywords))
-                )
-                keyword_params["app"] = app
-            else:
-                keyword_clause = "WHERE " + " OR ".join(
-                    f"toLower(t.description) CONTAINS toLower($kw{i})" for i in range(len(keywords))
-                )
-            for i, kw in enumerate(keywords):
-                keyword_params[f"kw{i}"] = kw
-
-            keyword_query = f"""
-            MATCH (t:TaskTarget)
-            {keyword_clause}
-            MATCH (t)-[:STARTS_AT]->(first:UIState)
-            OPTIONAL MATCH (first)-[r:NEXT_ACTION]->(a:Action)
-            RETURN t.target_id AS task_id, t.description AS description, t.app AS app,
-                   first.state_id AS start_state, a.type AS action_type,
-                   a.semantic_target AS action_target, r.confidence AS confidence,
-                   r.frequency AS frequency
-            ORDER BY r.frequency DESC
-            LIMIT $top_k
-            """
-            with self.driver.session(database=self.database) as session:
-                for record in session.run(keyword_query, keyword_params):
-                    keyword_matches.append(dict(record))
-
-        # Substring match query
+        where_clause = " OR ".join(clauses)
+        if app:
+            where_clause = f"t.app = $app AND ({where_clause})"
         query = f"""
         MATCH (t:TaskTarget)
-        {match_clause}
+        WHERE {where_clause}
         MATCH (t)-[:STARTS_AT]->(first:UIState)
         OPTIONAL MATCH (first)-[r:NEXT_ACTION]->(a:Action)
         RETURN t.target_id AS task_id, t.description AS description, t.app AS app,
                first.state_id AS start_state, a.type AS action_type,
-               a.semantic_target AS action_target, r.confidence AS confidence,
-               r.frequency AS frequency
+               a.semantic_target AS action_target,
+               r.confidence AS confidence, r.frequency AS frequency
         ORDER BY r.frequency DESC
         LIMIT $top_k
         """
-        results: List[Dict[str, Any]] = []
-        seen_tasks: set = set()
-
+        all_results: List[Dict[str, Any]] = []
         with self.driver.session(database=self.database) as session:
             for record in session.run(query, **params):
-                d = dict(record)
-                tid = d.get("task_id", "")
-                if tid and tid not in seen_tasks:
-                    seen_tasks.add(tid)
-                    results.append(d)
+                all_results.append(dict(record))
 
-        # Merge keyword matches that aren't already in results
-        for km in keyword_matches:
-            if km.get("task_id") not in seen_tasks:
-                seen_tasks.add(km["task_id"])
-                results.append(km)
+        # Re-rank by token overlap score
+        scored = []
+        for r in all_results:
+            desc_tokens = self._tokenize_chinese(r.get("description", ""))
+            matched_multi = {t for t in multi_char if t in desc_tokens}
+            matched_single = {t for t in single_char if t in desc_tokens}
+            # Score = sum of token lengths for multi-char + count for single-char
+            score = sum(len(t) for t in matched_multi) + len(matched_single)
+            # Bonus for key semantic phrases
+            for kw in ["外卖", "KFC", "闪购", "瑞幸", "吮指", "原味", "生椰"]:
+                if kw in r.get("description", "") and kw in task_description:
+                    score += 15
+            scored.append((score, r))
 
-        # De-duplicate by task_id and return top_k
-        unique: Dict[str, Dict[str, Any]] = {}
-        for r in results:
-            tid = r.get("task_id", "")
-            if tid:
-                if tid not in unique or (r.get("frequency", 0) > unique[tid].get("frequency", 0)):
-                    unique[tid] = r
-        return list(unique.values())[:top_k]
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [r for _, r in scored[:top_k]]
 
     def get_task_trajectory(self, task_id: str) -> Dict[str, Any]:
         """

@@ -760,12 +760,10 @@ class MemoryManager:
         # Core 2: Graph 任务语义匹配 — 找相似历史任务轨迹
         # =============================================
         if task and len(task) > 3:
-            # 从 semantic_layout 中提取目标 APP（如 "com.jd..." → "京东"）
-            target_app = semantic_layout if semantic_layout and len(semantic_layout) < 50 else None
-
+            # 不按 APP 过滤——用 n-gram 关键词跨 APP 匹配
             similar_tasks = self.graph_store.find_similar_tasks(
                 task_description=task,
-                app=target_app,
+                app=None,   # 关键词匹配已足够，跨 APP 找相似任务
                 top_k=3
             )
 
@@ -774,37 +772,30 @@ class MemoryManager:
                 task_id = best_task.get("task_id", "")
                 task_desc = best_task.get("description", "")
                 task_app = best_task.get("app", "")
-                matched_keywords = [w for w in task if len(w) >= 2 and w.lower() in task_desc.lower()]
                 print(
-                    f"🔍 Task Semantic Match: 找到相似任务 「{task_desc}」(app={task_app})，"
-                    f"关键词重叠: {matched_keywords}"
+                    f"🔍 Task Semantic Match: 找到相似任务 「{task_desc}」(app={task_app})"
                 )
 
                 # 获取该相似任务的完整轨迹
                 trajectory = self.graph_store.get_task_trajectory(task_id)
+                first_action = best_task.get("action_type", "")
+                first_target = best_task.get("action_target", "")
 
-                # 提取前几步动作（用于指导当前执行）
-                if best_task.get("action_type"):
-                    first_action = {
-                        "type": best_task["action_type"],
-                        "target_desc": best_task.get("action_target", ""),
-                        "confidence": best_task.get("confidence", 0.8),
-                        "frequency": best_task.get("frequency", 1),
-                        "task_id": task_id,
-                        "task_description": task_desc,
-                    }
-                    context_data["next_actions"] = [first_action]
-                    context_data["mode"] = "navigate"
-                    context_data["task_trajectory"] = trajectory
-
-                    # 注入任务上下文，帮助 VLM 理解这是什么类型的历史任务
-                    context_data["semantic_context"] = (
-                        f"[相似历史任务: {task_desc}] "
-                        f"该任务在 {task_app} 中完成过，可参考其动作模式。 "
-                        f"{context_data.get('semantic_context', '')}"
-                    )
-                    print(f"🚀 Task Navigation: 可复用相似任务的起始动作 「{first_action['type']}」")
-                    return context_data
+                # 注入任务上下文，让 VLM 在 Explore 模式下知道相似任务的轨迹
+                context_data["task_trajectory"] = trajectory
+                context_data["semantic_context"] = (
+                    f"[相似历史任务: {task_desc}]\n"
+                    f"该任务曾在 {task_app} 中成功完成，轨迹为: {trajectory}\n"
+                    f"第一步动作: {first_action} → {first_target}\n"
+                    f"请参考此轨迹辅助当前任务。\n"
+                    f"{context_data.get('semantic_context', '')}"
+                )
+                print(
+                    f"🔍 Task Semantic Match: 找到相似任务 「{task_desc}」"
+                    f"(app={task_app})，第一步: {first_action} → {first_target}"
+                )
+                # 保持 explore 模式，让 VLM 结合截图和上下文做决策
+                return context_data
 
         # =============================================
         # Core 3: FAISS 向量 fallback — 仅补充上下文
