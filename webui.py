@@ -553,6 +553,31 @@ class StreamingAgent:
                     action_log += f"📋 暂无相关记忆\n"
             except Exception as e:
                 action_log += f"⚠️ 记忆检索失败: {e}\n"
+
+            # 🗺️ 知识图谱：三层匹配诊断（仅打印，不阻塞）
+            try:
+                from phone_agent.memory.graph_store import GraphStore
+                gs = GraphStore()
+                if gs.driver:
+                    # Task semantic search
+                    similar = gs.find_similar_tasks(task, top_k=1)
+                    if similar:
+                        best = similar[0]
+                        traj = gs.get_task_trajectory(best.get("task_id", ""))
+                        steps = traj.get("steps", [])
+                        action_log += (
+                            f"\n🗺️ **知识图谱匹配** [{best.get('app','?')}] "
+                            f"「{best.get('description','')[:40]}」\n"
+                        )
+                        if steps:
+                            action_log += "📋 **参考轨迹**（将注入 VLM 上下文）:\n"
+                            for s in steps[:5]:
+                                action_log += f"  {s['step']}. {s['action_type']} → {s['action_target'][:40]}\n"
+                            if len(steps) > 5:
+                                action_log += f"  ... (共 {len(steps)} 步)\n"
+                    gs.close()
+            except Exception as e:
+                pass  # 图谱检索不影响主流程
         
         # 定义 takeover 回调函数（用于人工介入场景）
         def takeover_callback(message: str) -> None:
@@ -1357,7 +1382,52 @@ def new_conversation():
     return "", "", "", None
 
 
-# ==================== 记忆管理功能 ====================
+# ==================== 记忆 & 图谱管理功能 ====================
+def _get_neo4j_info() -> dict:
+    """获取 Neo4j 连接状态和统计信息"""
+    try:
+        from phone_agent.memory.graph_store import GraphStore
+        gs = GraphStore()
+        info = {"connected": gs.driver is not None, "driver": gs}
+        if gs.driver:
+            try:
+                with gs.driver.session(database=gs.database) as sess:
+                    # 统计各类节点
+                    result = sess.run("""
+                        MATCH (t:TaskTarget) RETURN count(t) AS cnt
+                    """).single()
+                    info["task_count"] = result["cnt"] if result else 0
+
+                    result2 = sess.run("""
+                        MATCH (s:UIState) RETURN count(s) AS cnt
+                    """).single()
+                    info["state_count"] = result2["cnt"] if result2 else 0
+
+                    result3 = sess.run("""
+                        MATCH (a:Action) RETURN count(a) AS cnt
+                    """).single()
+                    info["action_count"] = result3["cnt"] if result3 else 0
+            except Exception as e:
+                info["error"] = str(e)
+        return info
+    except Exception as e:
+        return {"connected": False, "error": str(e)}
+
+
+def _get_pending_trajectories(user_id: str) -> list:
+    """读取待审核轨迹"""
+    try:
+        import json
+        from pathlib import Path
+        pending_file = Path("memory_db") / user_id.strip() / "pending_trajectories.json"
+        if not pending_file.exists():
+            return []
+        with open(pending_file, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
 def get_memory_stats(user_id: str) -> str:
     """获取记忆统计信息"""
     if not HAS_MEMORY:
@@ -1380,7 +1450,7 @@ def get_memory_stats(user_id: str) -> str:
 
 ## 记忆类型分布
 """
-    
+
     type_counts = stats.get('by_type', {})
     if type_counts:
         for mem_type, count in type_counts.items():
@@ -1396,7 +1466,25 @@ def get_memory_stats(user_id: str) -> str:
             result += f"- {type_name}: {count}\n"
     else:
         result += "- 暂无记忆\n"
-    
+
+    # Neo4j 知识图谱统计
+    result += "\n## 🗺️ 知识图谱 (Neo4j)\n"
+    neo4j_info = _get_neo4j_info()
+    if neo4j_info.get("connected"):
+        pending = _get_pending_trajectories(user_id)
+        result += f"""- **连接状态**: ✅ 已连接
+- **TaskTarget 节点**: {neo4j_info.get('task_count', '?')}
+- **UIState 节点**: {neo4j_info.get('state_count', '?')}
+- **Action 节点**: {neo4j_info.get('action_count', '?')}
+- **待审核轨迹**: {len(pending)} 条（需在「🗺️ 知识图谱」Tab 审核后提交）
+"""
+    else:
+        err = neo4j_info.get("error", "")
+        result += f"- **连接状态**: ⚠️ 未连接"
+        if err:
+            result += f"（{err[:60]}）"
+        result += "\n- 请检查 Neo4j 服务是否启动，以及 .env 中的 NEO4J_* 配置\n"
+
     result += "\n## 用户画像\n"
     
     if summary.get('contacts'):
@@ -1530,6 +1618,136 @@ def import_memories_json(user_id: str, json_str: str) -> str:
         return f"❌ JSON 解析错误: {e}"
     except Exception as e:
         return f"❌ 导入失败: {e}"
+
+
+# ==================== 知识图谱管理功能 ====================
+def get_neo4j_status() -> str:
+    """获取 Neo4j 连接状态"""
+    info = _get_neo4j_info()
+    if info.get("connected"):
+        return (f"✅ Neo4j 已连接 | TaskTarget: {info.get('task_count', 0)} | "
+                f"UIState: {info.get('state_count', 0)} | Action: {info.get('action_count', 0)}")
+    err = info.get("error", "未知错误")
+    return f"⚠️ Neo4j 未连接: {err[:80]}"
+
+
+def list_graph_trajectories(user_id: str) -> str:
+    """列出 Neo4j 中已提交的所有轨迹"""
+    info = _get_neo4j_info()
+    if not info.get("connected"):
+        return "❌ Neo4j 未连接，请在「系统检查」Tab 确认服务状态"
+
+    try:
+        gs = info["driver"]
+        with gs.driver.session(database=gs.database) as sess:
+            results = sess.run("""
+                MATCH (t:TaskTarget)
+                OPTIONAL MATCH (t)-[:STARTS_AT]->(s:UIState)
+                OPTIONAL MATCH (t)-[:ENDS_AT]->(e:UIState)
+                RETURN t.target_id AS id, t.description AS description,
+                       t.app AS app, t.success AS success,
+                       s.state_id AS start_state, e.state_id AS end_state
+                ORDER BY t.committed_at DESC
+                LIMIT 30
+            """)
+            rows = list(results)
+
+        if not rows:
+            return "📭 Neo4j 中暂无已提交的任务轨迹"
+
+        lines = [f"## 📋 已提交轨迹（共 {len(rows)} 条）\n"]
+        for i, r in enumerate(rows):
+            succ = "✅" if r.get("success") else "❌"
+            desc = (r.get("description") or "N/A")[:55]
+            lines.append(f"{succ} **{r.get('app','?')}** | {desc}")
+            lines.append(f"   `ID: {r.get('id','?')[:40]}`")
+            lines.append("")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"❌ 查询失败: {e}"
+
+
+def search_graph_trajectories(query: str) -> str:
+    """在 Neo4j 中搜索相似轨迹"""
+    info = _get_neo4j_info()
+    if not info.get("connected"):
+        return "❌ Neo4j 未连接"
+    if not query.strip():
+        return "⚠️ 请输入搜索关键词"
+
+    try:
+        gs = info["driver"]
+        results = gs.find_similar_tasks(query.strip(), top_k=5)
+        if not results:
+            return f"🔍 未找到与「{query}」相似的轨迹"
+
+        lines = [f"## 🔍 相似轨迹搜索: {query}\n"]
+        for r in results:
+            lines.append(f"**[{r.get('app','?')}]** {r.get('description','')[:60]}")
+            lines.append(f"   confidence={r.get('confidence',0)} | frequency={r.get('frequency',0)}")
+            # Show trajectory steps
+            traj = gs.get_task_trajectory(r.get("task_id", ""))
+            steps = traj.get("steps", [])
+            if steps:
+                lines.append(f"   📋 轨迹步骤 ({len(steps)} 步):")
+                for s in steps[:8]:
+                    lines.append(f"     {s['step']}. {s['action_type']} → {s['action_target'][:40]}")
+                if len(steps) > 8:
+                    lines.append(f"     ... (共 {len(steps)} 步)")
+            lines.append("")
+        return "\n".join(lines)
+    except Exception as e:
+        return f"❌ 搜索失败: {e}"
+
+
+def list_pending_trajectories(user_id: str) -> str:
+    """列出待审核轨迹"""
+    pending = _get_pending_trajectories(user_id)
+    if not pending:
+        return "📭 暂无待审核轨迹"
+
+    lines = [f"## ⏳ 待审核轨迹（共 {len(pending)} 条）\n"]
+    lines.append("| # | 状态 | 任务 | 步骤数 | 保存时间 |")
+    lines.append("|---|------|------|--------|----------|")
+    for i, entry in enumerate(pending):
+        succ = "✅" if entry.get("success") else "❌"
+        task = entry.get("task", "N/A")[:30]
+        steps = entry.get("steps", 0)
+        saved = entry.get("saved_at", "")[:19]
+        lines.append(f"| {i} | {succ} | {task} | {steps} | {saved} |")
+    lines.append("")
+    lines.append("> 💡 在「对话控制」Tab 执行任务后，轨迹自动保存到此处；审核后提交到 Neo4j")
+    return "\n".join(lines)
+
+
+def commit_graph_trajectory(user_id: str, index: int) -> str:
+    """提交待审核轨迹到 Neo4j"""
+    if not HAS_MEMORY:
+        return "❌ 记忆模块未安装"
+
+    mm = get_memory_manager(user_id.strip() or "default")
+    if not mm:
+        return "❌ 无法初始化记忆管理器"
+
+    ok = mm.commit_pending(index)
+    if ok:
+        return f"✅ 轨迹 #{index} 已提交到 Neo4j"
+    return f"❌ 提交失败（检查 index 是否正确，或轨迹 success=False）"
+
+
+def refresh_neo4j_stats(user_id: str) -> str:
+    """刷新 Neo4j 统计信息"""
+    info = _get_neo4j_info()
+    pending = _get_pending_trajectories(user_id)
+
+    if info.get("connected"):
+        return (f"✅ Neo4j 已连接 | "
+                f"TaskTarget: {info.get('task_count', 0)} | "
+                f"UIState: {info.get('state_count', 0)} | "
+                f"Action: {info.get('action_count', 0)} | "
+                f"待审核: {len(pending)} 条")
+    err = info.get("error", "未知错误")
+    return f"⚠️ Neo4j 未连接: {err[:80]}"
 
 
 # ==================== 构建 Gradio 界面 ====================
@@ -1848,15 +2066,19 @@ def create_ui():
             # ==================== 记忆管理 Tab ====================
             with gr.Tab("🧠 记忆管理"):
                 gr.Markdown("""
-                ### 个性化记忆系统
-                
-                记忆系统帮助 Agent 了解您的偏好和习惯，提供更智能的服务。
-                
+                ### 🧠 双核记忆系统
+
+                | 存储 | 技术 | 内容 |
+                |------|------|------|
+                | **FAISS 向量库** | Sentence Embedding | 个性化偏好、联系人、应用习惯 |
+                | **Neo4j 图谱** | 知识图谱 | UI 状态图、动作轨迹、任务模式 |
+
                 **功能特点**：
-                - 🎯 自动学习常用联系人和应用
-                - 📝 记录任务历史和偏好
+                - 🎯 自动学习常用联系人和应用偏好
+                - 📝 记录任务历史和执行模式
                 - 🔍 语义搜索相关记忆
                 - 🔄 自动去重避免冗余
+                - 🗺️ Neo4j 图谱记录完整动作轨迹（需人工审核后提交）
                 """)
                 
                 with gr.Row():
@@ -1970,8 +2192,100 @@ def create_ui():
                     inputs=[memory_user_id],
                     outputs=[export_output]
                 )
-            
-            # ==================== 对话控制 Tab ====================
+
+            # ==================== 知识图谱 Tab ====================
+            with gr.Tab("🗺️ 知识图谱"):
+                gr.Markdown("""
+                ### 🗺️ Neo4j 知识图谱
+
+                知识图谱记录 Agent 执行的完整轨迹（状态-动作-状态链），
+                每次成功任务后保存到「待审核」，人工审核后提交到图谱。
+                未来相似任务可直接复用参考轨迹，实现自我进化。
+
+                **三层匹配策略**：
+                - 🔗 **Graph MD5 精确匹配** → 状态完全一致，触发快捷导航
+                - 🔍 **Graph 任务语义匹配** → 跨 APP 找相似轨迹，注入参考动作序列
+                - 📚 **FAISS 向量 fallback** → 补充探索上下文，永不触发 Navigate
+                """)
+
+                with gr.Row():
+                    graph_status_output = gr.Markdown("🔄 点击「刷新状态」获取 Neo4j 连接信息")
+                    refresh_graph_btn = gr.Button("🔄 刷新状态", variant="primary", scale=0)
+
+                gr.Markdown("---")
+                gr.Markdown("### 🔍 轨迹搜索")
+
+                with gr.Row():
+                    graph_search_query = gr.Textbox(
+                        label="搜索关键词",
+                        placeholder="例如：京东外卖、KFC、蓝牙耳机...",
+                        scale=3
+                    )
+                    graph_search_btn = gr.Button("🔍 搜索相似轨迹", variant="secondary", scale=1)
+
+                graph_search_output = gr.Markdown("搜索结果将显示在这里，可查看完整参考轨迹")
+                graph_search_btn.click(
+                    fn=search_graph_trajectories,
+                    inputs=[graph_search_query],
+                    outputs=[graph_search_output]
+                )
+
+                gr.Markdown("---")
+                gr.Markdown("### 📋 已提交轨迹（Neo4j）")
+
+                with gr.Row():
+                    list_trajectories_btn = gr.Button("📋 查看已提交轨迹", variant="secondary")
+                    list_pending_btn = gr.Button("⏳ 查看待审核轨迹", variant="secondary")
+
+                graph_list_output = gr.Markdown("点击上方按钮查看轨迹列表")
+                list_trajectories_btn.click(
+                    fn=list_graph_trajectories,
+                    inputs=[memory_user_id],
+                    outputs=[graph_list_output]
+                )
+                list_pending_btn.click(
+                    fn=list_pending_trajectories,
+                    inputs=[memory_user_id],
+                    outputs=[graph_list_output]
+                )
+
+                gr.Markdown("---")
+                gr.Markdown("### ✅ 提交待审核轨迹")
+
+                with gr.Row():
+                    commit_index = gr.Number(
+                        label="轨迹编号",
+                        value=0,
+                        precision=0,
+                        info="在上方「待审核轨迹」列表中查看编号"
+                    )
+                    commit_btn = gr.Button("✅ 提交到 Neo4j", variant="primary")
+
+                commit_output = gr.Markdown("")
+                commit_btn.click(
+                    fn=commit_graph_trajectory,
+                    inputs=[memory_user_id, commit_index],
+                    outputs=[commit_output]
+                )
+
+                gr.Markdown("---")
+                gr.Markdown("""
+                ### 📖 使用流程
+
+                1. **执行任务** → 在「对话控制」Tab 执行任务，轨迹自动保存
+                2. **查看待审核** → 点击「⏳ 查看待审核轨迹」，确认步骤是否正确
+                3. **提交到图谱** → 输入编号，点击「✅ 提交到 Neo4j」
+                4. **复用轨迹** → 未来相似任务自动匹配，参考轨迹注入 VLM 上下文
+                """)
+
+                # 页面加载时自动刷新状态
+                refresh_graph_btn.click(
+                    fn=refresh_neo4j_stats,
+                    inputs=[memory_user_id],
+                    outputs=[graph_status_output]
+                )
+
+                # ==================== 对话控制 Tab ====================
             with gr.Tab("💬 对话控制"):
                 with gr.Row():
                     # 左侧：输入和日志
@@ -2209,7 +2523,63 @@ def create_ui():
                 - **用户纠正**：您对 Agent 的纠正反馈
                 
                 > 💡 **提示**：记忆系统会随着使用自动变得更智能，无需手动配置
-                
+
+                ## 🗺️ 知识图谱自我进化
+
+                ClawGUI-Agent 内置了 **Neo4j 知识图谱**，实现 Agent 的自我进化：
+
+                ### 架构：双核记忆
+
+                | 存储 | 技术 | 作用 |
+                |------|------|------|
+                | **FAISS 向量库** | Sentence Embedding | 个性化偏好、联系人、使用习惯 |
+                | **Neo4j 图谱** | 知识图谱 + MD5 哈希 | UI 状态图、动作轨迹、任务模式 |
+
+                ### Neo4j 图谱结构
+
+                ```
+                TaskTarget（任务节点）
+                  └── STARTS_AT → UIState（起始状态）
+                  └── ENDS_AT   → UIState（结束状态）
+
+                UIState（UI 状态节点）
+                  └── NEXT_ACTION → Action（动作） → PRODUCES → UIState
+                ```
+
+                ### 三层匹配策略
+
+                1. **🔗 Graph MD5 精确匹配**：截图 MD5 完全一致 → 触发快捷导航（直接执行历史动作序列）
+                2. **🔍 Graph 任务语义匹配**：n-gram 关键词跨 APP 匹配相似任务 → 注入完整参考轨迹到 VLM
+                3. **📚 FAISS 向量 fallback**：补充个性化偏好上下文
+
+                ### 自我进化流程
+
+                ```
+                任务执行成功
+                    ↓
+                end_task() → pending_trajectories.json（不自动提交！）
+                    ↓
+                人工审核轨迹步骤是否正确
+                    ↓
+                review_trajectories.py 或 WebUI「🗺️ 知识图谱」Tab → 提交到 Neo4j
+                    ↓
+                未来相似任务 → find_similar_tasks() → get_task_trajectory()
+                    ↓
+                参考轨迹注入 VLM 上下文，引导 Agent 执行
+                ```
+
+                ### 关键设计：人工审核门
+
+                **不自动提交到 Neo4j** —— 因为 Agent 不是每次都走最优路径。
+                只有人工审核确认后的轨迹才进入图谱，避免污染知识库。
+
+                ### 使用方法
+
+                1. 在「🗺️ 知识图谱」Tab 可查看连接状态、搜索相似轨迹
+                2. 执行任务后，在同一 Tab 查看「待审核轨迹」
+                3. 确认步骤正确后，输入编号提交到 Neo4j
+                4. 未来相似任务执行时，日志区会显示「🗺️ 知识图谱匹配」和参考轨迹
+
                 ## 🔗 更多资源
                 
                 - [项目 GitHub](https://github.com/THUDM/Open-AutoGLM)
