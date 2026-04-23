@@ -501,6 +501,7 @@ class PhoneAgent:
 
         # Parse action and execute based on model type
         thinking = response.thinking  # Default thinking
+        action_str = response.action  # Store the original action string for context
         if self._specialized_handler is not None:
             # Use specialized handler (UI-TARS / QwenVL / etc.)
             try:
@@ -558,7 +559,7 @@ class PhoneAgent:
         else:
             # AutoGLM: 使用通用响应解析
             thinking = response.thinking
-            action_str = response.action
+            action_str = response.action if hasattr(response, 'action') else ""
 
             try:
                 action = parse_action(action_str)
@@ -632,7 +633,9 @@ class PhoneAgent:
             })
         else:
             # AutoGLM / GLM-4V: 使用 <think><answer> 格式，保留原始 action 字符串
-            assistant_content = f"<think>{thinking}</think><answer>{action_str}</answer>"
+            # Fallback to empty string if action_str is not defined
+            action_str_to_save = action_str if 'action_str' in locals() and action_str else json.dumps(action, ensure_ascii=False) if isinstance(action, dict) else str(action)
+            assistant_content = f"<think>{thinking}</think><answer>{action_str_to_save}</answer>"
             self._context.append(
                 MessageBuilder.create_assistant_message(assistant_content)
             )

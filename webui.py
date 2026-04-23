@@ -28,6 +28,11 @@ import base64
 import io
 import json
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+load_dotenv()
+
 import shutil
 import subprocess
 import threading
@@ -1750,6 +1755,68 @@ def refresh_neo4j_stats(user_id: str) -> str:
     return f"⚠️ Neo4j 未连接: {err[:80]}"
 
 
+# ==================== 配置管理功能 ====================
+def save_config_to_env(
+    base_url: str,
+    model_name: str,
+    api_key: str,
+    max_steps: int,
+    device_type: str,
+    lang: str,
+    user_id: str,
+    wda_url: str,
+    device_id: str,
+    model_type: str,
+) -> str:
+    """保存当前配置到 .env 文件"""
+    try:
+        env_path = Path(".env")
+
+        existing_lines: list[str] = []
+        if env_path.exists():
+            with open(env_path, "r", encoding="utf-8") as f:
+                existing_lines = f.readlines()
+
+        config_updates: dict[str, str] = {
+            "PHONE_AGENT_BASE_URL": base_url,
+            "PHONE_AGENT_MODEL": model_name,
+            "PHONE_AGENT_API_KEY": api_key,
+            "PHONE_AGENT_MAX_STEPS": str(int(max_steps)),
+            "PHONE_AGENT_DEVICE_TYPE": device_type,
+            "PHONE_AGENT_LANG": lang,
+            "PHONE_AGENT_USER_ID": user_id,
+            "PHONE_AGENT_WDA_URL": wda_url,
+            "PHONE_AGENT_DEVICE_ID": device_id,
+            "PHONE_AGENT_MODEL_TYPE": model_type,
+        }
+
+        new_lines: list[str] = []
+        updated_keys: set[str] = set()
+
+        for line in existing_lines:
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                new_lines.append(line)
+                continue
+            key = stripped.split("=", 1)[0].strip()
+            if key in config_updates:
+                new_lines.append(f"{key}={config_updates[key]}\n")
+                updated_keys.add(key)
+            else:
+                new_lines.append(line)
+
+        for key, val in config_updates.items():
+            if key not in updated_keys and val:
+                new_lines.append(f"{key}={val}\n")
+
+        with open(env_path, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+
+        return "✅ 配置已保存到 .env，下次启动将自动加载。"
+    except Exception as e:
+        return f"❌ 保存失败: {e}"
+
+
 # ==================== 构建 Gradio 界面 ====================
 def create_ui():
     """创建 Gradio 界面"""
@@ -1795,12 +1862,34 @@ def create_ui():
         padding: 1em;
         border-radius: 4px;
     }
-    
+
     .action-box {
         background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%);
         border-left: 4px solid #ffc107;
         padding: 1em;
         border-radius: 4px;
+    }
+
+    /* Dark mode overrides for readability */
+    .dark .thinking-box {
+        background: linear-gradient(135deg, #1e1e2e 0%, #252540 100%) !important;
+        color: #e0e0f0 !important;
+    }
+    .dark .thinking-box * {
+        color: #e0e0f0 !important;
+    }
+    .dark .action-box {
+        background: linear-gradient(135deg, #2a2520 0%, #302a1a 100%) !important;
+        color: #e8e0d0 !important;
+    }
+    .dark .action-box * {
+        color: #e8e0d0 !important;
+    }
+    .dark .header-subtitle {
+        color: #aaa !important;
+    }
+    .dark .status-box {
+        background: #1e1e2e !important;
     }
     
     .screenshot-container {
@@ -1952,6 +2041,11 @@ def create_ui():
                         placeholder="default",
                         info="不同用户 ID 对应独立的记忆库，用于多用户场景"
                     )
+
+                gr.Markdown("---")
+                with gr.Row():
+                    save_config_btn = gr.Button("💾 保存配置到 .env", variant="primary", scale=1)
+                    config_save_status = gr.Markdown("", scale=3)
             
             # ==================== 设备管理 Tab ====================
             with gr.Tab("📱 设备管理"):
@@ -2596,6 +2690,17 @@ def create_ui():
         </div>
         """)
     
+        # 配置保存事件
+        save_config_btn.click(
+            fn=save_config_to_env,
+            inputs=[
+                base_url, model_name, api_key, max_steps,
+                device_type, prompt_lang, memory_user_id_config,
+                wda_url, device_id, model_type,
+            ],
+            outputs=[config_save_status],
+        )
+
     return demo
 
 
