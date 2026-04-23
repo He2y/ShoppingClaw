@@ -28,10 +28,6 @@ import base64
 import io
 import json
 import os
-from pathlib import Path
-
-from dotenv import load_dotenv
-load_dotenv()  # must be before any os.getenv() calls used by Gradio component defaults
 import shutil
 import subprocess
 import threading
@@ -1754,943 +1750,849 @@ def refresh_neo4j_stats(user_id: str) -> str:
     return f"⚠️ Neo4j 未连接: {err[:80]}"
 
 
-# ==================== 配置管理功能 ====================
-def save_config_to_env(
-    base_url: str,
-    model_name: str,
-    api_key: str,
-    max_steps: int,
-    device_type: str,
-    lang: str,
-    user_id: str,
-    wda_url: str,
-    device_id: str,
-) -> str:
-    """保存配置到 .env 文件"""
-    try:
-        env_path = Path(".env")
-
-        # 读取现有配置
-        existing_lines = []
-        if env_path.exists():
-            with open(env_path, "r", encoding="utf-8") as f:
-                existing_lines = f.readlines()
-
-        # 配置映射
-        config_updates = {
-            "PHONE_AGENT_BASE_URL": base_url,
-            "PHONE_AGENT_MODEL": model_name,
-            "PHONE_AGENT_API_KEY": api_key,
-            "PHONE_AGENT_MAX_STEPS": str(max_steps),
-            "PHONE_AGENT_DEVICE_TYPE": device_type,
-            "PHONE_AGENT_LANG": lang,
-            "PHONE_AGENT_USER_ID": user_id,
-            "PHONE_AGENT_WDA_URL": wda_url,
-            "PHONE_AGENT_DEVICE_ID": device_id,
-        }
-
-        # 解析现有文件，保留注释和未匹配的行
-        updated_keys = set()
-        new_lines = []
-
-        for line in existing_lines:
-            stripped = line.strip()
-            # 检查是否是配置行
-            is_config_line = False
-            for key in config_updates:
-                if stripped.startswith(f"{key}="):
-                    new_lines.append(f"{key}={config_updates[key]}\n")
-                    updated_keys.add(key)
-                    is_config_line = True
-                    break
-            if not is_config_line:
-                new_lines.append(line)
-
-        # 添加新的配置项（未在文件中存在的）
-        for key, value in config_updates.items():
-            if key not in updated_keys:
-                new_lines.append(f"{key}={value}\n")
-
-        # 写入文件
-        with open(env_path, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
-
-        return f"✅ 配置已保存到 .env 文件\n\n📋 保存内容:\n- BASE_URL: {base_url}\n- MODEL: {model_name}\n- MAX_STEPS: {max_steps}\n- DEVICE: {device_type}\n\n💡 重新启动应用使配置生效"
-
-    except Exception as e:
-        return f"❌ 保存失败: {str(e)}"
-
-
-def reload_config_from_env() -> dict:
-    """从 .env 重新加载配置"""
-    load_dotenv(override=True)
-    return {
-        "base_url": os.getenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1"),
-        "model_name": os.getenv("PHONE_AGENT_MODEL", "autoglm-phone-9b"),
-        "api_key": os.getenv("PHONE_AGENT_API_KEY", ""),
-        "max_steps": int(os.getenv("PHONE_AGENT_MAX_STEPS", "100")),
-        "device_type": os.getenv("PHONE_AGENT_DEVICE_TYPE", "adb"),
-        "lang": os.getenv("PHONE_AGENT_LANG", "cn"),
-        "user_id": os.getenv("PHONE_AGENT_USER_ID", "default"),
-        "wda_url": os.getenv("PHONE_AGENT_WDA_URL", "http://localhost:8100"),
-        "device_id": os.getenv("PHONE_AGENT_DEVICE_ID", ""),
-    }
-
-
 # ==================== 构建 Gradio 界面 ====================
 def create_ui():
     """创建 Gradio 界面"""
-
-    # ============================================================
-    #  GLASSMORPHISM DESIGN SYSTEM
-    #  Frosted glass with dark base, high-contrast text
-    # ============================================================
+    
+    # 自定义 CSS
     custom_css = """
-    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=JetBrains+Mono:wght@300;400;500&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
-
-    :root {
-        --bg-void:     #050810;
-        --bg-panel:    #0b1120;
-        --bg-card:     #0f1629;
-        --bg-card2:    #141d35;
-        --border-dim:  #1e2d4a;
-        --border-glow: #00f5ff44;
-        --cyan:        #00f5ff;
-        --cyan-dim:    #00f5ff88;
-        --cyan-dark:   #0099aa;
-        --pink:        #ff006e;
-        --pink-dim:    #ff006e88;
-        --amber:       #ffb700;
-        --green:       #00e676;
-        --red:         #ff3d5a;
-        --text-primary: #e8edf5;
-        --text-dim:    #7a8ba8;
-        --text-code:   #a8d8ff;
+    .gradio-container {
+        font-family: 'Noto Sans SC', 'Microsoft YaHei', sans-serif !important;
     }
-
-    /* ---- Base ---- */
-    .gradio-container { font-family: 'Noto Sans SC', sans-serif !important; }
-
-    body, .gradio-container, .gradio-container * {
-        color: var(--text-primary) !important;
-    }
-
-    /* ---- Background grid circuit pattern ---- */
-    #root, main, .gradio-blocks {
-        background-color: var(--bg-void) !important;
-        background-image:
-            linear-gradient(var(--border-dim) 1px, transparent 1px),
-            linear-gradient(90deg, var(--border-dim) 1px, transparent 1px),
-            radial-gradient(ellipse at 50% 0%, #0d1f3c88 0%, transparent 70%);
-        background-size: 40px 40px, 40px 40px, 100% 100%;
-    }
-
-    /* ---- Custom scrollbar ---- */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: var(--bg-panel); }
-    ::-webkit-scrollbar-thumb { background: var(--cyan-dark); border-radius: 3px; }
-
-    /* ---- Header ---- */
-    .claw-header {
+    
+    .header-title {
         text-align: center;
-        padding: 28px 20px 20px;
-        position: relative;
-    }
-    .claw-header::before {
-        content: '';
-        position: absolute;
-        bottom: 0; left: 50%; transform: translateX(-50%);
-        width: 60%;
-        height: 1px;
-        background: linear-gradient(90deg, transparent, var(--cyan), transparent);
-    }
-    .claw-logo {
-        font-family: 'Orbitron', sans-serif;
-        font-size: 2.8em;
-        font-weight: 900;
-        letter-spacing: 4px;
-        background: linear-gradient(90deg, var(--cyan) 0%, #a78bfa 50%, var(--pink) 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
-        background-clip: text;
-        text-shadow: 0 0 40px #00f5ff55;
-        margin-bottom: 8px;
+        font-size: 2.5em;
+        font-weight: bold;
+        margin-bottom: 0.5em;
     }
-    .claw-subtitle {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.82em;
-        color: var(--text-dim);
-        letter-spacing: 3px;
-        text-transform: uppercase;
+    
+    .header-title .logo-emoji {
+        background: none;
+        -webkit-text-fill-color: initial;
+        color: #6b5bd5;
+        margin-right: 0.2em;
     }
-    .claw-badge {
-        display: inline-block;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.68em;
-        padding: 2px 10px;
-        border: 1px solid var(--cyan-dim);
-        border-radius: 20px;
-        color: var(--cyan);
-        margin-top: 8px;
-        letter-spacing: 1px;
+    
+    .header-subtitle {
+        text-align: center;
+        color: #666;
+        margin-bottom: 1em;
     }
-
-    /* ---- Panel / Card ---- */
-    .claw-panel {
-        background: var(--bg-panel) !important;
-        border: 1px solid var(--border-dim) !important;
-        border-radius: 12px !important;
-        padding: 16px 20px !important;
-        position: relative;
-        overflow: hidden;
+    
+    .status-box {
+        padding: 1em;
+        border-radius: 8px;
+        background: #f8f9fa;
     }
-    .claw-panel::before {
-        content: '';
-        position: absolute;
-        top: 0; left: 0; right: 0;
-        height: 2px;
-        background: linear-gradient(90deg, var(--cyan), var(--pink));
-        opacity: 0.7;
-    }
-    .claw-panel-glow {
-        box-shadow: 0 0 20px #00f5ff11, inset 0 1px 0 #ffffff08 !important;
-    }
-
-    /* ---- Section label ---- */
-    .claw-section-label {
-        font-family: 'Orbitron', sans-serif;
-        font-size: 0.72em;
-        font-weight: 600;
-        letter-spacing: 3px;
-        text-transform: uppercase;
-        color: var(--cyan) !important;
-        margin-bottom: 12px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .claw-section-label::after {
-        content: '';
-        flex: 1;
-        height: 1px;
-        background: linear-gradient(90deg, var(--border-dim), transparent);
-    }
-
-    /* ---- Tab styling ---- */
-    .tab-nav button, .gr-tabs button {
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.82em !important;
-        letter-spacing: 1px !important;
-        color: var(--text-dim) !important;
-        border-bottom: 2px solid transparent !important;
-        transition: all 0.2s !important;
-    }
-    .tab-nav button:hover, .gr-tabs button:hover {
-        color: var(--text-primary) !important;
-        background: #ffffff08 !important;
-    }
-    .tab-nav button.selected, .gr-tabs button.selected {
-        color: var(--cyan) !important;
-        border-bottom-color: var(--cyan) !important;
-        text-shadow: 0 0 10px var(--cyan-dim) !important;
-    }
-
-    /* ---- Input / Textbox ---- */
-    .gr-textbox, .gr-number, .gr-dropdown {
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border-dim) !important;
-        border-radius: 8px !important;
-        color: var(--text-primary) !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.85em !important;
-        transition: border-color 0.2s, box-shadow 0.2s !important;
-    }
-    .gr-textbox:focus, .gr-number:focus, .gr-dropdown:focus {
-        border-color: var(--cyan-dark) !important;
-        box-shadow: 0 0 0 2px #00f5ff22, 0 0 15px #00f5ff15 !important;
-    }
-    .gr-textbox input, .gr-number input, .gr-dropdown select {
-        color: var(--text-primary) !important;
-        font-family: 'JetBrains Mono', monospace !important;
-    }
-    .gr-textbox label, .gr-number label, .gr-dropdown label,
-    .gr-slider label, .gr-radio label, .gr-checkbox label {
-        color: var(--text-dim) !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.78em !important;
-        letter-spacing: 0.5px !important;
-    }
-
-    /* ---- Radio ---- */
-    .gr-radio {
-        background: transparent !important;
-    }
-    .gr-radio container {
-        gap: 4px !important;
-    }
-    .gr-radio .gr-radio-item {
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border-dim) !important;
-        border-radius: 6px !important;
-        padding: 6px 14px !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.8em !important;
-        transition: all 0.2s !important;
-    }
-    .gr-radio .gr-radio-item:hover {
-        border-color: var(--cyan-dark) !important;
-        background: #00f5ff08 !important;
-    }
-    .gr-radio .gr-radio-item:has(input:checked) {
-        border-color: var(--cyan) !important;
-        background: #00f5ff15 !important;
-        color: var(--cyan) !important;
-        box-shadow: 0 0 10px #00f5ff22 !important;
-    }
-
-    /* ---- Slider ---- */
-    .gr-slider input[type=range] {
-        accent-color: var(--cyan) !important;
-    }
-
-    /* ---- Buttons ---- */
-    .gr-button, button {
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.82em !important;
-        letter-spacing: 1px !important;
-        border-radius: 8px !important;
-        transition: all 0.2s !important;
-    }
-    button.primary {
-        background: linear-gradient(135deg, #0099aa 0%, #006677 100%) !important;
-        border: 1px solid var(--cyan-dark) !important;
-        color: var(--cyan) !important;
-        text-shadow: 0 0 8px var(--cyan-dim) !important;
-        box-shadow: 0 0 15px #00f5ff22 !important;
-    }
-    button.primary:hover {
-        background: linear-gradient(135deg, #00b8cc 0%, #0099aa 100%) !important;
-        box-shadow: 0 0 25px #00f5ff44 !important;
-        transform: translateY(-1px);
-    }
-    button.secondary {
-        background: var(--bg-card2) !important;
-        border: 1px solid var(--border-dim) !important;
-        color: var(--text-dim) !important;
-    }
-    button.secondary:hover {
-        border-color: var(--cyan-dark) !important;
-        color: var(--text-primary) !important;
-        background: #00f5ff0a !important;
-    }
-    button.stop, button.cancel {
-        background: #ff006e18 !important;
-        border: 1px solid var(--pink-dim) !important;
-        color: var(--pink) !important;
-    }
-    button.stop:hover, button.cancel:hover {
-        background: #ff006e33 !important;
-        box-shadow: 0 0 15px #ff006e33 !important;
-    }
-
-    /* ---- Markdown / Output ---- */
-    .gr-markdown {
-        color: var(--text-primary) !important;
-    }
-    .gr-markdown h1, .gr-markdown h2, .gr-markdown h3 {
-        font-family: 'Orbitron', sans-serif !important;
-        color: var(--cyan) !important;
-        letter-spacing: 1px !important;
-    }
-    .gr-markdown h1 { font-size: 1.3em !important; }
-    .gr-markdown h2 { font-size: 1.1em !important; color: var(--text-primary) !important; }
-    .gr-markdown h3 { font-size: 0.95em !important; color: var(--text-dim) !important; }
-    .gr-markdown table {
-        border-collapse: collapse;
-        width: 100%;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.82em;
-    }
-    .gr-markdown th {
-        background: #00f5ff15 !important;
-        color: var(--cyan) !important;
-        padding: 6px 12px;
-        border: 1px solid var(--border-dim);
-        text-align: left;
-    }
-    .gr-markdown td {
-        padding: 5px 12px;
-        border: 1px solid var(--border-dim);
-        color: var(--text-primary) !important;
-    }
-    .gr-markdown tr:nth-child(even) td {
-        background: #ffffff04;
-    }
-    .gr-markdown code {
-        font-family: 'JetBrains Mono', monospace !important;
-        background: #00f5ff10 !important;
-        color: var(--text-code) !important;
-        padding: 1px 6px;
-        border-radius: 4px;
-        font-size: 0.85em !important;
-    }
-    .gr-markdown pre {
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border-dim) !important;
-        border-radius: 8px !important;
-        padding: 12px !important;
-    }
-    .gr-markdown pre code {
-        background: transparent !important;
-        color: var(--text-code) !important;
-    }
-    .gr-markdown blockquote {
-        border-left: 3px solid var(--cyan-dark) !important;
-        background: #00f5ff08 !important;
-        border-radius: 0 6px 6px 0 !important;
-        padding: 8px 14px !important;
-        color: var(--text-dim) !important;
-        font-size: 0.88em !important;
-    }
-    .gr-markdown strong { color: var(--amber) !important; }
-
-    /* ---- Thinking / Action boxes ---- */
+    
     .thinking-box {
-        background: var(--bg-card) !important;
-        border-left: 3px solid var(--cyan) !important;
-        border-radius: 0 10px 10px 0 !important;
-        box-shadow: 0 0 20px #00f5ff0d inset !important;
-        padding: 14px !important;
-        color: #e8edf5 !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.88em !important;
-        line-height: 1.6 !important;
-        min-height: 120px !important;
+        background: linear-gradient(135deg, #f5f7fa 0%, #e4e8eb 100%);
+        border-left: 4px solid #667eea;
+        padding: 1em;
+        border-radius: 4px;
     }
-    .thinking-box * {
-        color: #e8edf5 !important;
-    }
-    .thinking-box p {
-        color: #e8edf5 !important;
-        margin: 0.3em 0 !important;
-    }
-    .thinking-box code {
-        background: #00f5ff15 !important;
-        color: #00f5ff !important;
-        padding: 2px 8px !important;
-        border-radius: 4px !important;
-        font-size: 0.85em !important;
-    }
-    .thinking-box strong {
-        color: #ffb700 !important;
-    }
-
+    
     .action-box {
-        background: var(--bg-card) !important;
-        border-left: 3px solid var(--pink) !important;
-        border-radius: 0 10px 10px 0 !important;
-        box-shadow: 0 0 20px #ff006e0d inset !important;
-        padding: 14px !important;
-        color: #e8edf5 !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.88em !important;
-        line-height: 1.6 !important;
-        min-height: 100px !important;
+        background: linear-gradient(135deg, #fff9e6 0%, #fff3cd 100%);
+        border-left: 4px solid #ffc107;
+        padding: 1em;
+        border-radius: 4px;
     }
-    .action-box * {
-        color: #e8edf5 !important;
-    }
-    .action-box p {
-        color: #e8edf5 !important;
-        margin: 0.3em 0 !important;
-    }
-    .action-box code {
-        background: #ff006e22 !important;
-        color: #ff66b3 !important;
-        padding: 2px 8px !important;
-        border-radius: 4px !important;
-        font-size: 0.85em !important;
-    }
-    .action-box strong {
-        color: #00e676 !important;
-    }
-
-    /* ---- Screenshot ---- */
+    
     .screenshot-container {
-        border: 2px solid var(--border-dim) !important;
-        border-radius: 10px !important;
+        border: 2px solid #dee2e6;
+        border-radius: 8px;
         overflow: hidden;
-        box-shadow: 0 0 30px #00000088, 0 0 2px #00f5ff33 !important;
+        display: inline-flex;
+        max-width: 100%;
+        margin: 0 auto;
     }
     .screenshot-container img {
         max-width: 100%;
         height: auto;
         display: block;
     }
-
-    /* ---- Status indicators ---- */
-    .status-dot {
-        display: inline-block;
-        width: 8px; height: 8px;
-        border-radius: 50%;
-        margin-right: 6px;
-        animation: pulse 2s infinite;
+    
+    .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        border: none !important;
     }
-    .status-dot.green  { background: var(--green);  box-shadow: 0 0 6px var(--green); }
-    .status-dot.cyan   { background: var(--cyan);   box-shadow: 0 0 6px var(--cyan); }
-    .status-dot.amber  { background: var(--amber);  box-shadow: 0 0 6px var(--amber); }
-    .status-dot.red    { background: var(--red);    box-shadow: 0 0 6px var(--red); }
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.4; }
+    
+    .btn-danger {
+        background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%) !important;
+        border: none !important;
     }
-
-    /* ---- Footer ---- */
-    .claw-footer {
-        text-align: center;
-        padding: 16px;
-        color: var(--text-dim) !important;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.72em;
-        letter-spacing: 2px;
-        border-top: 1px solid var(--border-dim);
-    }
-
-    /* ---- Status animation for thinking ---- */
-    @keyframes thinking-pulse {
-        0%, 100% { opacity: 1; text-shadow: 0 0 8px var(--cyan); }
-        50% { opacity: 0.5; text-shadow: 0 0 4px var(--cyan); }
-    }
-    .thinking-active {
-        animation: thinking-pulse 1.5s ease-in-out infinite;
-        color: var(--cyan) !important;
-    }
-
-    /* ---- Step counter glow ---- */
-    @keyframes step-glow {
-        0%, 100% { text-shadow: 0 0 10px var(--amber); }
-        50% { text-shadow: 0 0 20px var(--amber), 0 0 30px var(--amber); }
-    }
-    .step-update {
-        animation: step-glow 0.5s ease-out;
-    }
-
-    /* ---- Success/Error flash ---- */
-    @keyframes success-flash {
-        0% { background: #00e67622; }
-        100% { background: transparent; }
-    }
-    .action-success {
-        animation: success-flash 1s ease-out;
-    }
-
-    /* ---- Thinking box typing effect placeholder ---- */
-    .thinking-box:empty::before {
-        content: '▶ AI 正在思考...';
-        color: var(--cyan-dim) !important;
-        font-style: italic;
-    }
-    .action-box:empty::before {
-        content: '⏳ 等待执行...';
-        color: var(--pink-dim) !important;
-        font-style: italic;
-    }
-
-    /* ---- Panel hover effects ---- */
-    .claw-panel:hover {
-        border-color: var(--cyan-dark) !important;
-        transition: border-color 0.3s ease;
-    }
-
-    /* ---- Neon glow on focus ---- */
-    .gr-textbox:focus-within, .gr-number:focus-within {
-        box-shadow: 0 0 0 2px #00f5ff33, 0 0 20px #00f5ff22 !important;
-    }
-
-    /* ---- Better table styling for graph tab ---- */
-    .gr-markdown table {
-        border: 1px solid var(--border-dim) !important;
-        border-radius: 8px !important;
-        overflow: hidden;
-    }
-    .gr-markdown th:first-child {
-        border-top-left-radius: 7px !important;
-    }
-    .gr-markdown th:last-child {
-        border-top-right-radius: 7px !important;
+    
+    .tab-nav button {
+        font-weight: 500 !important;
     }
     """
     
     with gr.Blocks(
-        title="ClawGUI-Agent",
-        theme=gr.themes.Default(
-            primary_hue=gr.themes.Color(
-                c50="#001a1f", c100="#003344",
-                c200="#004d66", c300="#006688",
-                c400="#008899", c500="#00a0ab",
-                c600="#00b8cc", c700="#00f5ff",
-                c800="#33f7ff", c900="#66faff", c950="#99fcff",
-            ),
-            secondary_hue=gr.themes.Color(
-                c50="#1a0011", c100="#330022",
-                c200="#4d0033", c300="#660044",
-                c400="#880055", c500="#aa0066",
-                c600="#cc0077", c700="#ff006e",
-                c800="#ff3399", c900="#ff66b3", c950="#ff99cc",
-            ),
-            neutral_hue=gr.themes.Color(
-                c50="#0b1120", c100="#0f1629",
-                c200="#141d35", c300="#1e2d4a",
-                c400="#2a3d5a", c500="#3a4d6a",
-                c600="#4a5d7a", c700="#7a8ba8",
-                c800="#a8b8cc", c900="#e8edf5", c950="#f5f7fa",
-            ),
-            font=("Noto Sans SC", "JetBrains Mono", "system-ui"),
+        title="OpenGUI Web UI",
+        theme=gr.themes.Soft(
+            primary_hue="indigo",
+            secondary_hue="purple",
         ),
         css=custom_css,
     ) as demo:
-
-        # ============================================================
-        #  HEADER - minimal
-        # ============================================================
+        
+        # 头部
         gr.HTML("""
-        <div class="claw-header">
-            <div class="claw-logo">ClawGUI-Agent</div>
-            <div class="claw-subtitle">Phone Automation Control</div>
+        <div style="text-align: center; padding: 20px 0;">
+            <h1 class="header-title"><span class="logo-emoji">🤖</span> ClawGUI-Agent</h1>
+            <p class="header-subtitle">AI 驱动的手机自动化控制平台</p>
         </div>
         """)
         
         with gr.Tabs():
             # ==================== 配置管理 Tab ====================
-            with gr.Tab("Config"):
-                # ---- Robot Config ----
-                gr.HTML('<div class="claw-section-label">Device</div>')
+            with gr.Tab("⚙️ 配置管理"):
+                gr.Markdown("### 基础配置")
+                
                 device_type = gr.Radio(
-                    choices=[("Android", "adb"), ("HarmonyOS", "hdc"), ("iOS", "ios")],
+                    choices=[("Android (ADB)", "adb"), ("HarmonyOS (HDC)", "hdc"), ("iOS", "ios")],
                     value="adb",
-                    label="Type",
+                    label="设备类型",
+                    info="选择您的设备类型"
                 )
+                
+                gr.Markdown("### 模型 API 配置")
+                
                 with gr.Row():
                     with gr.Column(scale=2):
-                        device_id = gr.Textbox(
-                            label="Device ID",
-                            value=os.getenv("PHONE_AGENT_DEVICE_ID", ""),
-                            placeholder="auto-detect",
-                        )
-                    with gr.Column(scale=1):
-                        wda_url = gr.Textbox(
-                            label="WDA URL (iOS)",
-                            value=os.getenv("PHONE_AGENT_WDA_URL", "http://localhost:8100"),
-                            placeholder="http://localhost:8100",
-                        )
-
-                gr.HTML('<div class="claw-section-label">Model</div>')
-                with gr.Row():
-                    with gr.Column(scale=3):
                         base_url = gr.Textbox(
-                            label="API URL",
+                            label="Base URL",
                             value=os.getenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1"),
                             placeholder="http://localhost:8000/v1",
+                            info="模型服务的 API 地址"
                         )
+                    
                     with gr.Column(scale=2):
                         model_name = gr.Textbox(
-                            label="Model Name",
+                            label="模型名称",
                             value=os.getenv("PHONE_AGENT_MODEL", "autoglm-phone-9b"),
-                            placeholder="autoglm-phone-9b",
+                            placeholder="autoglm-phone-9b 或 doubao-1-5-ui-tars-250428",
+                            info="要使用的模型名称"
                         )
-                    with gr.Column(scale=1):
+                
+                with gr.Row():
+                    model_type = gr.Radio(
+                        choices=[
+                            ("自动检测", "auto"),
+                            ("AutoGLM", "autoglm"),
+                            ("UI-TARS (Doubao)", "uitars"),
+                            ("Qwen-VL (Qwen2.5/3-VL)", "qwenvl"),
+                            ("MAI-UI (通义)", "maiui"),
+                            ("GUI-Owl (mPLUG)", "guiowl"),
+                        ],
+                        value="auto",
+                        label="模型类型",
+                        info="选择模型的 action space 类型，自动检测会根据模型名称判断"
+                    )
+                
+                with gr.Row():
+                    with gr.Column(scale=2):
                         api_key = gr.Textbox(
                             label="API Key",
                             value=os.getenv("PHONE_AGENT_API_KEY", ""),
                             placeholder="sk-...",
                             type="password",
+                            info="API 密钥（如果需要）"
                         )
-
-                model_type = gr.Radio(
-                    choices=[
-                        ("Auto", "auto"), ("AutoGLM", "autoglm"),
-                        ("UI-TARS", "uitars"), ("Qwen-VL", "qwenvl"),
-                        ("MAI-UI", "maiui"), ("GUI-Owl", "guiowl"),
-                    ],
-                    value="auto",
-                    label="Adapter",
-                )
-
-                with gr.Row():
+                    
                     with gr.Column(scale=1):
                         max_steps = gr.Slider(
-                            minimum=1, maximum=300, step=1,
+                            minimum=1,
+                            maximum=200,
                             value=int(os.getenv("PHONE_AGENT_MAX_STEPS", "100")),
-                            label="Max Steps",
+                            step=1,
+                            label="最大步数",
+                            info="单个任务最大执行步数"
                         )
-                    with gr.Column(scale=1):
-                        prompt_lang = gr.Radio(
-                            choices=[("中文", "cn"), ("English", "en")],
-                            value=os.getenv("PHONE_AGENT_LANG", "cn"),
-                            label="Language",
-                        )
-                    with gr.Column(scale=1):
-                        memory_user_id_config = gr.Textbox(
-                            label="User ID",
-                            value=os.getenv("PHONE_AGENT_USER_ID", "default"),
-                            placeholder="default",
-                        )
-
-                gr.HTML('<div class="claw-section-label">Actions</div>')
+                
                 with gr.Row():
-                    save_config_btn = gr.Button("Save to .env", variant="primary", scale=1)
-                    reload_config_btn = gr.Button("Reload from .env", variant="secondary", scale=1)
-                save_config_output = gr.Markdown("")
-
-                gr.HTML("""
-                <div class="info-box">
-                    Configuration loaded from <code>.env</code>. Click <strong>Save</strong> to persist changes.
-                </div>
-                """)
+                    prompt_lang = gr.Radio(
+                        choices=[("中文", "cn"), ("English", "en")],
+                        value=os.getenv("PHONE_AGENT_LANG", "cn"),
+                        label="Prompt 语言",
+                        info="System Prompt 使用的语言，影响模型的思考和输出语言"
+                    )
+                
+                gr.Markdown("### iOS 专属配置")
+                
+                with gr.Row():
+                    wda_url = gr.Textbox(
+                        label="WebDriverAgent URL",
+                        value=os.getenv("PHONE_AGENT_WDA_URL", "http://localhost:8100"),
+                        placeholder="http://localhost:8100",
+                        info="iOS 设备的 WDA 服务地址"
+                    )
+                
+                gr.Markdown("### 设备 ID（可选）")
+                
+                with gr.Row():
+                    device_id = gr.Textbox(
+                        label="设备 ID",
+                        value=os.getenv("PHONE_AGENT_DEVICE_ID", ""),
+                        placeholder="留空自动选择第一个设备",
+                        info="指定设备 ID（多设备时使用）"
+                    )
+                
+                gr.Markdown("### 🧠 记忆系统配置")
+                
+                with gr.Row():
+                    memory_user_id_config = gr.Textbox(
+                        label="用户 ID",
+                        value=os.getenv("PHONE_AGENT_USER_ID", "default"),
+                        placeholder="default",
+                        info="不同用户 ID 对应独立的记忆库，用于多用户场景"
+                    )
             
-            # ==================== DEVICE Tab ====================
-            with gr.Tab("Device"):
-                gr.HTML('<div class="claw-section-label">Connected Devices</div>')
+            # ==================== 设备管理 Tab ====================
+            with gr.Tab("📱 设备管理"):
                 with gr.Row():
                     with gr.Column(scale=1):
-                        device_list_output = gr.Markdown("> Click **Scan** to refresh device list")
-                        refresh_devices_btn = gr.Button("Scan", variant="primary")
+                        gr.Markdown("### 已连接设备")
+                        device_list_output = gr.Markdown("点击刷新查看设备列表")
+                        refresh_devices_btn = gr.Button("🔄 刷新设备列表", variant="primary")
+                    
                     with gr.Column(scale=1):
+                        gr.Markdown("### 远程连接")
                         connect_address = gr.Textbox(
-                            label="Address",
+                            label="设备地址",
                             placeholder="192.168.1.100:5555",
+                            info="输入远程设备的 IP:端口"
                         )
+                        
                         with gr.Row():
-                            connect_btn = gr.Button("Connect", variant="primary")
-                            disconnect_btn = gr.Button("Disconnect", variant="secondary")
+                            connect_btn = gr.Button("🔌 连接", variant="primary")
+                            disconnect_btn = gr.Button("⛔ 断开", variant="stop")
+                        
                         connect_output = gr.Markdown("")
-
-                gr.HTML('<div class="claw-section-label">WiFi Debug</div>')
+                
+                gr.Markdown("### WiFi 调试")
+                
                 with gr.Row():
                     wifi_port = gr.Number(
-                        label="Port", value=5555, precision=0,
+                        label="调试端口",
+                        value=5555,
+                        precision=0,
+                        info="TCP/IP 调试端口"
                     )
-                    enable_wifi_btn = gr.Button("Enable", variant="secondary")
+                    enable_wifi_btn = gr.Button("📡 启用 WiFi 调试", variant="secondary")
+                
                 wifi_output = gr.Markdown("")
-
-                refresh_devices_btn.click(fn=get_device_list, inputs=[device_type], outputs=[device_list_output])
-                connect_btn.click(fn=connect_device, inputs=[connect_address, device_type], outputs=[connect_output])
-                disconnect_btn.click(fn=disconnect_device, inputs=[connect_address, device_type], outputs=[connect_output])
-                enable_wifi_btn.click(fn=enable_wifi_debug, inputs=[wifi_port, device_type], outputs=[wifi_output])
-
-                # Config save/reload handlers
-                save_config_btn.click(
-                    fn=save_config_to_env,
-                    inputs=[base_url, model_name, api_key, max_steps, device_type, prompt_lang, memory_user_id_config, wda_url, device_id],
-                    outputs=[save_config_output],
+                
+                # 事件绑定
+                refresh_devices_btn.click(
+                    fn=get_device_list,
+                    inputs=[device_type],
+                    outputs=[device_list_output]
                 )
-                reload_config_btn.click(
-                    fn=lambda: reload_config_from_env(),
-                    inputs=[],
-                    outputs=[base_url, model_name, api_key, max_steps, device_type, prompt_lang, memory_user_id_config, wda_url, device_id],
+                
+                connect_btn.click(
+                    fn=connect_device,
+                    inputs=[connect_address, device_type],
+                    outputs=[connect_output]
                 )
-
-            # ==================== SYSTEM CHECK Tab ====================
-            with gr.Tab("Check"):
-                gr.HTML('<div class="claw-section-label">Diagnostics</div>')
-                run_check_btn = gr.Button("Run All Checks", variant="primary")
-                check_output = gr.Markdown("> Click button to start diagnostics...")
-
-                gr.HTML('<div class="claw-section-label">Quick Checks</div>')
-                with gr.Row():
-                    check_tool_btn = gr.Button("Tools", variant="secondary")
-                    check_device_btn = gr.Button("Device", variant="secondary")
-                    check_keyboard_btn = gr.Button("Keyboard", variant="secondary")
-                    check_api_btn = gr.Button("API", variant="secondary")
-                single_check_output = gr.Markdown("")
-
-                run_check_btn.click(fn=run_full_check, inputs=[device_type, base_url, api_key, model_name, wda_url], outputs=[check_output])
-                check_tool_btn.click(fn=check_tool_installation, inputs=[device_type], outputs=[single_check_output])
-                check_device_btn.click(fn=check_device_connection, inputs=[device_type], outputs=[single_check_output])
-                check_keyboard_btn.click(fn=check_keyboard_installation, inputs=[device_type], outputs=[single_check_output])
-                check_api_btn.click(fn=check_model_api, inputs=[base_url, api_key, model_name], outputs=[single_check_output])
+                
+                disconnect_btn.click(
+                    fn=disconnect_device,
+                    inputs=[connect_address, device_type],
+                    outputs=[connect_output]
+                )
+                
+                enable_wifi_btn.click(
+                    fn=enable_wifi_debug,
+                    inputs=[wifi_port, device_type],
+                    outputs=[wifi_output]
+                )
             
-            # ==================== MEMORY Tab ====================
-            with gr.Tab("Memory"):
-                gr.HTML('<div class="claw-section-label">Dual-Core Memory</div>')
+            # ==================== 系统检查 Tab ====================
+            with gr.Tab("🔍 系统检查"):
+                gr.Markdown("### 系统环境检查")
+                gr.Markdown("检查所有必要组件是否正确安装和配置")
+                
+                run_check_btn = gr.Button("🚀 运行完整检查", variant="primary", size="lg")
+                
+                check_output = gr.Markdown("点击按钮开始检查...")
+                
+                gr.Markdown("### 单项检查")
+                
+                with gr.Row():
+                    check_tool_btn = gr.Button("🔧 检查工具安装")
+                    check_device_btn = gr.Button("📱 检查设备连接")
+                    check_keyboard_btn = gr.Button("⌨️ 检查输入法")
+                    check_api_btn = gr.Button("🌐 检查 API 连接")
+                
+                single_check_output = gr.Markdown("")
+                
+                # 事件绑定
+                run_check_btn.click(
+                    fn=run_full_check,
+                    inputs=[device_type, base_url, api_key, model_name, wda_url],
+                    outputs=[check_output]
+                )
+                
+                check_tool_btn.click(
+                    fn=check_tool_installation,
+                    inputs=[device_type],
+                    outputs=[single_check_output]
+                )
+                
+                check_device_btn.click(
+                    fn=check_device_connection,
+                    inputs=[device_type],
+                    outputs=[single_check_output]
+                )
+                
+                check_keyboard_btn.click(
+                    fn=check_keyboard_installation,
+                    inputs=[device_type],
+                    outputs=[single_check_output]
+                )
+                
+                check_api_btn.click(
+                    fn=check_model_api,
+                    inputs=[base_url, api_key, model_name],
+                    outputs=[single_check_output]
+                )
+            
+            # ==================== 记忆管理 Tab ====================
+            with gr.Tab("🧠 记忆管理"):
+                gr.Markdown("""
+                ### 🧠 双核记忆系统
+
+                | 存储 | 技术 | 内容 |
+                |------|------|------|
+                | **FAISS 向量库** | Sentence Embedding | 个性化偏好、联系人、应用习惯 |
+                | **Neo4j 图谱** | 知识图谱 | UI 状态图、动作轨迹、任务模式 |
+
+                **功能特点**：
+                - 🎯 自动学习常用联系人和应用偏好
+                - 📝 记录任务历史和执行模式
+                - 🔍 语义搜索相关记忆
+                - 🔄 自动去重避免冗余
+                - 🗺️ Neo4j 图谱记录完整动作轨迹（需人工审核后提交）
+                """)
+                
                 with gr.Row():
                     memory_user_id = gr.Textbox(
-                        label="User ID", value="default", placeholder="default",
+                        label="用户 ID",
+                        value="default",
+                        placeholder="输入用户标识",
+                        info="不同用户 ID 对应不同的记忆库"
                     )
-                    refresh_stats_btn = gr.Button("Refresh", variant="primary")
-                memory_stats_output = gr.Markdown("> Click **Refresh** to view memory stats")
-
-                gr.HTML('<div class="claw-section-label">Add Preference</div>')
+                    refresh_stats_btn = gr.Button("🔄 刷新统计", variant="primary")
+                
+                memory_stats_output = gr.Markdown("点击「刷新统计」查看记忆系统状态")
+                
+                gr.Markdown("---")
+                gr.Markdown("### 添加用户偏好")
+                
                 with gr.Row():
                     with gr.Column(scale=3):
                         preference_input = gr.Textbox(
-                            label="Content", placeholder="e.g. 常用外卖平台是美团...",
-                            lines=2,
+                            label="偏好内容",
+                            placeholder="例如：喜欢使用深色模式、常用外卖平台是美团...",
+                            lines=2
                         )
                     with gr.Column(scale=1):
                         preference_category = gr.Dropdown(
-                            label="Category",
+                            label="类别",
                             choices=["general", "app", "contact", "habit", "ui"],
-                            value="general",
+                            value="general"
                         )
                         preference_importance = gr.Slider(
-                            label="Importance", minimum=0.1, maximum=1.0,
-                            value=0.6, step=0.1,
+                            label="重要性",
+                            minimum=0.1,
+                            maximum=1.0,
+                            value=0.6,
+                            step=0.1
                         )
-                add_preference_btn = gr.Button("Add", variant="secondary")
+                
+                add_preference_btn = gr.Button("➕ 添加偏好", variant="secondary")
                 add_preference_output = gr.Markdown("")
-
-                gr.HTML('<div class="claw-section-label">Search</div>')
+                
+                gr.Markdown("---")
+                gr.Markdown("### 搜索记忆")
+                
                 with gr.Row():
                     search_query = gr.Textbox(
-                        label="Query", placeholder="Search memories...",
-                        scale=3,
+                        label="搜索内容",
+                        placeholder="输入关键词搜索相关记忆...",
+                        scale=3
                     )
                     search_top_k = gr.Slider(
-                        label="Top K", minimum=1, maximum=20, value=5, step=1, scale=1,
+                        label="结果数量",
+                        minimum=1,
+                        maximum=20,
+                        value=5,
+                        step=1,
+                        scale=1
                     )
-                search_btn = gr.Button("Search", variant="secondary")
+                
+                search_btn = gr.Button("🔍 搜索", variant="secondary")
                 search_output = gr.Markdown("")
-
-                gr.HTML('<div class="claw-section-label">Data</div>')
+                
+                gr.Markdown("---")
+                gr.Markdown("### 数据管理")
+                
                 with gr.Row():
-                    export_btn = gr.Button("Export", variant="secondary")
-                    import_btn = gr.Button("Import", variant="secondary")
-                    clear_btn = gr.Button("Clear All", variant="cancel")
+                    export_btn = gr.Button("📤 导出记忆", variant="secondary")
+                    import_btn = gr.Button("📥 导入记忆", variant="secondary")
+                    clear_btn = gr.Button("🗑️ 清除所有", variant="stop")
+                
                 export_output = gr.Markdown("")
                 export_json = gr.Textbox(
-                    label="JSON", placeholder="JSON data appears here...",
-                    lines=6,
+                    label="JSON 数据",
+                    placeholder="导出的 JSON 数据将显示在这里，也可粘贴 JSON 进行导入",
+                    lines=10,
+                    visible=True
+                )
+                
+                # 事件绑定
+                refresh_stats_btn.click(
+                    fn=get_memory_stats,
+                    inputs=[memory_user_id],
+                    outputs=[memory_stats_output]
+                )
+                
+                add_preference_btn.click(
+                    fn=add_user_preference,
+                    inputs=[memory_user_id, preference_input, preference_category, preference_importance],
+                    outputs=[add_preference_output]
+                )
+                
+                search_btn.click(
+                    fn=search_memories,
+                    inputs=[memory_user_id, search_query, search_top_k],
+                    outputs=[search_output]
+                )
+                
+                export_btn.click(
+                    fn=export_memories_json,
+                    inputs=[memory_user_id],
+                    outputs=[export_output, export_json]
+                )
+                
+                import_btn.click(
+                    fn=import_memories_json,
+                    inputs=[memory_user_id, export_json],
+                    outputs=[export_output]
+                )
+                
+                clear_btn.click(
+                    fn=clear_all_memories,
+                    inputs=[memory_user_id],
+                    outputs=[export_output]
                 )
 
-                refresh_stats_btn.click(fn=get_memory_stats, inputs=[memory_user_id], outputs=[memory_stats_output])
-                add_preference_btn.click(fn=add_user_preference, inputs=[memory_user_id, preference_input, preference_category, preference_importance], outputs=[add_preference_output])
-                search_btn.click(fn=search_memories, inputs=[memory_user_id, search_query, search_top_k], outputs=[search_output])
-                export_btn.click(fn=export_memories_json, inputs=[memory_user_id], outputs=[export_output, export_json])
-                import_btn.click(fn=import_memories_json, inputs=[memory_user_id, export_json], outputs=[export_output])
-                clear_btn.click(fn=clear_all_memories, inputs=[memory_user_id], outputs=[export_output])
+            # ==================== 知识图谱 Tab ====================
+            with gr.Tab("🗺️ 知识图谱"):
+                gr.Markdown("""
+                ### 🗺️ Neo4j 知识图谱
 
-            # ==================== GRAPH Tab ====================
-            with gr.Tab("Graph"):
-                gr.HTML("""
-                <div class="info-box" style="margin-bottom:12px;">
-                    Records UIState → Action → UIState chains. Human review prevents suboptimal paths.
-                </div>
+                知识图谱记录 Agent 执行的完整轨迹（状态-动作-状态链），
+                每次成功任务后保存到「待审核」，人工审核后提交到图谱。
+                未来相似任务可直接复用参考轨迹，实现自我进化。
+
+                **三层匹配策略**：
+                - 🔗 **Graph MD5 精确匹配** → 状态完全一致，触发快捷导航
+                - 🔍 **Graph 任务语义匹配** → 跨 APP 找相似轨迹，注入参考动作序列
+                - 📚 **FAISS 向量 fallback** → 补充探索上下文，永不触发 Navigate
                 """)
-                with gr.Row():
-                    graph_status_output = gr.Markdown("> Click **Refresh** to check Neo4j status")
-                    refresh_graph_btn = gr.Button("Refresh", variant="primary")
 
-                gr.HTML('<div class="claw-section-label">Search Trajectories</div>')
+                with gr.Row():
+                    graph_status_output = gr.Markdown("🔄 点击「刷新状态」获取 Neo4j 连接信息")
+                    refresh_graph_btn = gr.Button("🔄 刷新状态", variant="primary", scale=0)
+
+                gr.Markdown("---")
+                gr.Markdown("### 🔍 轨迹搜索")
+
                 with gr.Row():
                     graph_search_query = gr.Textbox(
-                        label="Query", placeholder="Search trajectories...",
-                        scale=3,
+                        label="搜索关键词",
+                        placeholder="例如：京东外卖、KFC、蓝牙耳机...",
+                        scale=3
                     )
-                    graph_search_btn = gr.Button("Search", variant="secondary", scale=1)
-                graph_search_output = gr.Markdown("> Search results will appear here")
-                graph_search_btn.click(fn=search_graph_trajectories, inputs=[graph_search_query], outputs=[graph_search_output])
+                    graph_search_btn = gr.Button("🔍 搜索相似轨迹", variant="secondary", scale=1)
 
-                gr.HTML('<div class="claw-section-label">Trajectories</div>')
-                with gr.Row():
-                    list_trajectories_btn = gr.Button("Committed (Neo4j)", variant="secondary")
-                    list_pending_btn = gr.Button("Pending Review", variant="secondary")
-                graph_list_output = gr.Markdown("> Select an option above")
-                list_trajectories_btn.click(fn=list_graph_trajectories, inputs=[memory_user_id], outputs=[graph_list_output])
-                list_pending_btn.click(fn=list_pending_trajectories, inputs=[memory_user_id], outputs=[graph_list_output])
+                graph_search_output = gr.Markdown("搜索结果将显示在这里，可查看完整参考轨迹")
+                graph_search_btn.click(
+                    fn=search_graph_trajectories,
+                    inputs=[graph_search_query],
+                    outputs=[graph_search_output]
+                )
 
-                gr.HTML('<div class="claw-section-label">Commit</div>')
+                gr.Markdown("---")
+                gr.Markdown("### 📋 已提交轨迹（Neo4j）")
+
                 with gr.Row():
-                    commit_index = gr.Number(label="Index #", value=0, precision=0)
-                    commit_btn = gr.Button("Commit to Neo4j", variant="primary")
+                    list_trajectories_btn = gr.Button("📋 查看已提交轨迹", variant="secondary")
+                    list_pending_btn = gr.Button("⏳ 查看待审核轨迹", variant="secondary")
+
+                graph_list_output = gr.Markdown("点击上方按钮查看轨迹列表")
+                list_trajectories_btn.click(
+                    fn=list_graph_trajectories,
+                    inputs=[memory_user_id],
+                    outputs=[graph_list_output]
+                )
+                list_pending_btn.click(
+                    fn=list_pending_trajectories,
+                    inputs=[memory_user_id],
+                    outputs=[graph_list_output]
+                )
+
+                gr.Markdown("---")
+                gr.Markdown("### ✅ 提交待审核轨迹")
+
+                with gr.Row():
+                    commit_index = gr.Number(
+                        label="轨迹编号",
+                        value=0,
+                        precision=0,
+                        info="在上方「待审核轨迹」列表中查看编号"
+                    )
+                    commit_btn = gr.Button("✅ 提交到 Neo4j", variant="primary")
+
                 commit_output = gr.Markdown("")
-                commit_btn.click(fn=commit_graph_trajectory, inputs=[memory_user_id, commit_index], outputs=[commit_output])
+                commit_btn.click(
+                    fn=commit_graph_trajectory,
+                    inputs=[memory_user_id, commit_index],
+                    outputs=[commit_output]
+                )
 
-                gr.HTML("""
-                <div class="info-box">
-                    Workflow: execute → pending → review → commit → future tasks auto-match
-                </div>
+                gr.Markdown("---")
+                gr.Markdown("""
+                ### 📖 使用流程
+
+                1. **执行任务** → 在「对话控制」Tab 执行任务，轨迹自动保存
+                2. **查看待审核** → 点击「⏳ 查看待审核轨迹」，确认步骤是否正确
+                3. **提交到图谱** → 输入编号，点击「✅ 提交到 Neo4j」
+                4. **复用轨迹** → 未来相似任务自动匹配，参考轨迹注入 VLM 上下文
                 """)
-                refresh_graph_btn.click(fn=refresh_neo4j_stats, inputs=[memory_user_id], outputs=[graph_status_output])
 
-            # ==================== TASK CONTROL Tab ====================
-            with gr.Tab("Execute"):
+                # 页面加载时自动刷新状态
+                refresh_graph_btn.click(
+                    fn=refresh_neo4j_stats,
+                    inputs=[memory_user_id],
+                    outputs=[graph_status_output]
+                )
+
+                # ==================== 对话控制 Tab ====================
+            with gr.Tab("💬 对话控制"):
                 with gr.Row():
-                    # Left: task + logs
+                    # 左侧：输入和日志
                     with gr.Column(scale=3):
-                        gr.HTML('<div class="claw-section-label">Task</div>')
+                        gr.Markdown("### 任务输入")
                         task_input = gr.Textbox(
-                            label="Enter task", placeholder="e.g. Open WeChat and send message to Zhang San",
-                            lines=2,
+                            label="任务描述",
+                            placeholder="例如：打开微信，发送消息给张三说'你好'",
+                            lines=3,
+                            info="用自然语言描述您想让 AI 执行的任务"
                         )
+                        
                         with gr.Row():
-                            start_btn = gr.Button("Execute", variant="primary", scale=2)
-                            stop_btn = gr.Button("Stop", variant="cancel", scale=1)
-                            continue_btn = gr.Button("Continue", variant="secondary", scale=1)
-                            new_btn = gr.Button("Reset", variant="secondary", scale=1)
-
-                        # Status bar
-                        gr.HTML("""
-                        <div id="step-indicator">
-                            <span class="label">Step</span>
-                            <span class="value" id="step-count">0</span>
-                            <span style="color:var(--border-focus); margin: 0 4px;">|</span>
-                            <span class="label">App</span>
-                            <span class="value" id="current-app">---</span>
-                            <span class="status ready" id="task-status">Ready</span>
-                        </div>
-                        """)
-
-                        gr.HTML('<div class="claw-section-label" style="margin-top:12px;">AI Thinking</div>')
-                        thinking_output = gr.Markdown("", elem_classes=["thinking-box"])
-
-                        gr.HTML('<div class="claw-section-label">Action Log</div>')
-                        action_output = gr.Markdown("", elem_classes=["action-box"])
-
-                    # Right: screenshot
+                            start_btn = gr.Button("▶️ 开始执行", variant="primary", scale=2)
+                            stop_btn = gr.Button("⏹️ 停止", variant="stop", scale=1)
+                            continue_btn = gr.Button("⏩ 继续执行", variant="secondary", scale=1)
+                            new_btn = gr.Button("🔄 新对话", variant="secondary", scale=1)
+                        
+                        gr.Markdown("### 💭 AI 思考过程")
+                        thinking_output = gr.Markdown(
+                            "",
+                            elem_classes=["thinking-box"]
+                        )
+                        
+                        gr.Markdown("### 🎯 动作执行日志")
+                        action_output = gr.Markdown(
+                            "",
+                            elem_classes=["action-box"]
+                        )
+                    
+                    # 右侧：截图预览
                     with gr.Column(scale=2):
-                        gr.HTML('<div class="claw-section-label">Preview</div>')
+                        gr.Markdown("### 📱 设备截图")
                         screenshot_display = gr.Image(
-                            label="Device Screen", type="pil",
+                            label="实时截图",
+                            type="pil",
                             elem_classes=["screenshot-container"],
                         )
+                        
                         with gr.Row():
-                            refresh_screenshot_btn = gr.Button("Refresh", size="sm", variant="secondary")
-                            auto_refresh = gr.Checkbox(label="Auto (2s)", value=False)
-
-                # Events
+                            refresh_screenshot_btn = gr.Button("🔄 刷新截图", size="sm")
+                            auto_refresh = gr.Checkbox(
+                                label="自动刷新 (2秒)",
+                                value=False,
+                                info="自动定时刷新截图"
+                            )
+                
+                # 事件绑定
                 start_btn.click(
                     fn=execute_task,
                     inputs=[
                         task_input, device_type, device_id,
                         base_url, api_key, model_name,
                         max_steps, wda_url, model_type,
-                        memory_user_id_config, prompt_lang,
+                        memory_user_id_config,  # 用户 ID（记忆系统）
+                        prompt_lang  # Prompt 语言 (cn/en)
                     ],
-                    outputs=[thinking_output, action_output, screenshot_display, start_btn],
+                    outputs=[thinking_output, action_output, screenshot_display, start_btn]
                 )
-                stop_btn.click(fn=stop_task, outputs=[action_output])
-                continue_btn.click(fn=continue_after_takeover, outputs=[action_output])
-                new_btn.click(fn=new_conversation, outputs=[task_input, thinking_output, action_output, screenshot_display])
-                refresh_screenshot_btn.click(fn=refresh_screenshot, inputs=[device_type, device_id, wda_url], outputs=[screenshot_display])
+                
+                stop_btn.click(
+                    fn=stop_task,
+                    outputs=[action_output]
+                )
+                
+                continue_btn.click(
+                    fn=continue_after_takeover,
+                    outputs=[action_output]
+                )
+                
+                new_btn.click(
+                    fn=new_conversation,
+                    outputs=[task_input, thinking_output, action_output, screenshot_display]
+                )
+                
+                refresh_screenshot_btn.click(
+                    fn=refresh_screenshot,
+                    inputs=[device_type, device_id, wda_url],
+                    outputs=[screenshot_display]
+                )
 
+                # 自动刷新定时器 (2秒)
                 auto_refresh_timer = gr.Timer(value=2, active=False)
-                auto_refresh.change(fn=lambda e: gr.Timer(active=e), inputs=[auto_refresh], outputs=[auto_refresh_timer])
-                auto_refresh_timer.tick(fn=refresh_screenshot, inputs=[device_type, device_id, wda_url], outputs=[screenshot_display])
-
-            # ==================== HELP Tab ====================
-            with gr.Tab("Help"):
-                gr.HTML('<div class="claw-section-label">Quick Start</div>')
+                
+                def toggle_auto_refresh(enabled):
+                    return gr.Timer(active=enabled)
+                
+                auto_refresh.change(
+                    fn=toggle_auto_refresh,
+                    inputs=[auto_refresh],
+                    outputs=[auto_refresh_timer]
+                )
+                
+                auto_refresh_timer.tick(
+                    fn=refresh_screenshot,
+                    inputs=[device_type, device_id, wda_url],
+                    outputs=[screenshot_display]
+                )
+            
+            # ==================== 帮助文档 Tab ====================
+            with gr.Tab("📖 帮助"):
                 gr.Markdown("""
-                **1.** Configure model API in **Config** tab - loads from `.env` by default
-                **2.** Connect your device in **Device** tab
-                **3.** Run diagnostics in **Check** tab
-                **4.** Execute tasks in **Execute** tab
+                # ClawGUI-Agent Web UI 使用指南
+                
+                ## 🚀 快速开始
+                
+                1. **配置模型 API**：在「配置管理」页面设置模型服务地址和密钥
+                2. **连接设备**：确保手机已通过 USB 连接，并启用开发者调试
+                3. **运行检查**：在「系统检查」页面验证所有组件状态
+                4. **开始使用**：在「对话控制」页面输入任务，点击开始执行
+                
+                ## 🤖 支持的模型
+                
+                ### AutoGLM (默认)
+                - 模型名称：`autoglm-phone-9b`
+                - Action Space：`do(action="Tap", element=[x, y])` 格式
+                - 适用于本地部署的 AutoGLM 模型
+                
+                ### UI-TARS (Doubao)
+                - 模型名称：`doubao-1-5-ui-tars-250428`
+                - Action Space：`click(point='<point>x y</point>')` 格式
+                - 适用于火山引擎的 Doubao-1.5-UI-TARS 模型
+                - API 地址：`https://ark.cn-beijing.volces.com/api/v3`
+                - 需要在火山引擎控制台获取 API Key
+                
+                ### Qwen-VL (Qwen2.5-VL / Qwen3-VL)
+                - 模型名称：`Qwen2.5-VL-72B-Instruct`、`Qwen3-VL-32B` 等
+                - Action Space：`tap(x, y)`、`swipe(x1, y1, x2, y2)` 格式
+                - 适用于阿里云/vLLM/Ollama 部署的 Qwen-VL 系列模型
+                - 支持阿里云 DashScope API 或本地 vLLM 部署
+                - 阿里云 API：`https://dashscope.aliyuncs.com/compatible-mode/v1`
+                
+                ### GLM-4V (GLM-4.6V / GLM-4.1V)
+                - 模型名称：`GLM-4.6V-flash`、`GLM-4.1V-9B-thinking` 等
+                - Action Space：`do(action="Tap", element=[x, y])` 格式（与 AutoGLM 相同）
+                - 适用于智谱 GLM-4V 系列视觉语言模型
+                - 支持 vLLM/transformers 本地部署
+                - **自动使用 AutoGLM 适配器**，无需单独选择模型类型
+                
+                ### MAI-UI (通义 MAI-Mobile)
+                - 模型名称：`MAI-UI`、`MAI-Mobile` 等
+                - Action Space：`{"action": "click", "coordinate": [x, y]}` JSON 格式
+                - 基于阿里云通义 [MAI-UI](https://github.com/Tongyi-MAI/MAI-UI) 项目
+                - 坐标系统：0-999 归一化坐标
+                - 输出格式：`<thinking>...</thinking><tool_call>...</tool_call>`
+                - 支持 click、long_press、type、swipe、open、drag、system_button、wait、terminate、answer 动作
+                - 智谱 API：`https://open.bigmodel.cn/api/paas/v4`
+                
+                ### GUI-Owl (mPLUG)
+                - 模型名称：`GUI-Owl-7B`、`GUI-Owl-32B`、`GUI-Owl-1.5-8B-Instruct` 等
+                - Action Space：`{"action": "click", "coordinate": [x, y]}` JSON 格式
+                - 基于阿里巴巴通义 [mPLUG/GUI-Owl](https://github.com/X-PLUG/MobileAgent) 项目
+                - 坐标系统：默认使用绝对像素坐标（区别于其他模型的归一化坐标）
+                - 输出格式：`### Thought ### ... ### Action ### {JSON} ### Description ### ...`
+                - 支持 click、long_press、swipe、type、system_button、open、wait、answer、terminate 动作
+                - swipe 使用起点/终点坐标对（coordinate + coordinate2）
+                - 建议使用 vLLM 部署，参考：`vllm serve GUI-Owl-1.5-8B-Instruct --max-model-len 32768`
+                
+                > **提示**：选择「自动检测」会根据模型名称自动选择正确的 action space
+                
+                ## 📱 设备连接指南
+                
+                ### Android 设备
+                1. 在手机设置中启用「开发者选项」
+                2. 打开「USB 调试」
+                3. 用 USB 线连接电脑，在手机上授权调试
+                4. 安装 ADB Keyboard 输入法（用于中文输入）
+                
+                ### iOS 设备
+                1. 使用 Xcode 运行 WebDriverAgent
+                2. 设置端口转发：`iproxy 8100 8100`
+                3. 在配置中设置 WDA URL
+                
+                ### HarmonyOS 设备
+                1. 启用开发者模式和 USB 调试
+                2. 安装 HDC 工具
+                3. 连接设备并授权
+                
+                ## 💡 使用技巧
+                
+                - **任务描述**：尽量具体清晰，例如「打开微信，搜索联系人张三，发送消息：明天见」
+                - **中断任务**：如果 AI 执行出错，可以点击「停止」按钮中断
+                - **查看进度**：思考过程和动作日志会实时显示 AI 的决策过程
+                - **截图刷新**：可以手动刷新或开启自动刷新查看设备屏幕
+                - **模型选择**：如果使用火山引擎的 UI-TARS 模型，请选择对应的模型类型
+                
+                ## ⚠️ 注意事项
+                
+                - 确保手机屏幕保持常亮，不要锁屏
+                - 敏感操作（如支付）可能会被阻止截图
+                - 建议在任务执行时不要手动操作手机
+                - UI-TARS 和 Qwen-VL 模型建议使用 temperature=0 以获得稳定输出
+                - Qwen-VL 模型支持更长的上下文，适合复杂多步骤任务
+                
+                ## 🖥️ 本地部署小模型须知
+                
+                如果你使用本地部署的小模型（如 ui-tars-1.5-7b、qwen3-vl-8b-instruct），可能会遇到定位不准确的问题。这是因为：
+                
+                1. **模型能力限制**：7B/8B 级别的小模型在 GUI grounding 任务上的能力不如大模型（72B+）
+                2. **分辨率信息**：本地部署需要正确传递屏幕分辨率信息，我们已自动处理
+                
+                ### 改善建议
+                
+                - **使用更大的模型**：如 qwen2.5-vl-32b 或 qwen2.5-vl-72b
+                - **降低推理参数**：设置 temperature=0，top_p=0.7
+                - **vLLM 部署优化**：确保使用最新版本的 vLLM，正确配置多模态处理
+                - **云端 API 备选**：如果本地模型效果不佳，可使用阿里云/火山引擎的 API
+                
+                > **提示**：系统会自动将屏幕分辨率信息传递给模型，帮助改善坐标准确性
+                
+                ## 🧠 个性化记忆系统
+                
+                ClawGUI-Agent 内置了个性化记忆系统，参考了 [TeleMem](https://github.com/TeleAI-UAGI/TeleMem) 的设计理念：
+                
+                ### 功能特点
+                
+                - **自动学习**：Agent 会自动学习您的常用联系人、应用和操作习惯
+                - **语义去重**：相似的记忆会自动合并，避免冗余存储
+                - **上下文增强**：执行任务时会自动检索相关记忆，提供个性化服务
+                - **持久化存储**：记忆保存在本地，重启后仍然有效
+                
+                ### 使用方法
+                
+                1. 在「记忆管理」页面可以查看和管理所有记忆
+                2. 手动添加用户偏好，帮助 Agent 更好地理解您
+                3. 搜索功能可以查找相关记忆
+                4. 支持导入/导出记忆数据
+                
+                ### 记忆类型
+                
+                - **用户偏好**：您的个人喜好和习惯
+                - **联系人**：常用的联系人信息
+                - **应用使用**：常用应用和使用频率
+                - **任务历史**：成功完成的任务记录
+                - **用户纠正**：您对 Agent 的纠正反馈
+                
+                > 💡 **提示**：记忆系统会随着使用自动变得更智能，无需手动配置
+
+                ## 🗺️ 知识图谱自我进化
+
+                ClawGUI-Agent 内置了 **Neo4j 知识图谱**，实现 Agent 的自我进化：
+
+                ### 架构：双核记忆
+
+                | 存储 | 技术 | 作用 |
+                |------|------|------|
+                | **FAISS 向量库** | Sentence Embedding | 个性化偏好、联系人、使用习惯 |
+                | **Neo4j 图谱** | 知识图谱 + MD5 哈希 | UI 状态图、动作轨迹、任务模式 |
+
+                ### Neo4j 图谱结构
+
+                ```
+                TaskTarget（任务节点）
+                  └── STARTS_AT → UIState（起始状态）
+                  └── ENDS_AT   → UIState（结束状态）
+
+                UIState（UI 状态节点）
+                  └── NEXT_ACTION → Action（动作） → PRODUCES → UIState
+                ```
+
+                ### 三层匹配策略
+
+                1. **🔗 Graph MD5 精确匹配**：截图 MD5 完全一致 → 触发快捷导航（直接执行历史动作序列）
+                2. **🔍 Graph 任务语义匹配**：n-gram 关键词跨 APP 匹配相似任务 → 注入完整参考轨迹到 VLM
+                3. **📚 FAISS 向量 fallback**：补充个性化偏好上下文
+
+                ### 自我进化流程
+
+                ```
+                任务执行成功
+                    ↓
+                end_task() → pending_trajectories.json（不自动提交！）
+                    ↓
+                人工审核轨迹步骤是否正确
+                    ↓
+                review_trajectories.py 或 WebUI「🗺️ 知识图谱」Tab → 提交到 Neo4j
+                    ↓
+                未来相似任务 → find_similar_tasks() → get_task_trajectory()
+                    ↓
+                参考轨迹注入 VLM 上下文，引导 Agent 执行
+                ```
+
+                ### 关键设计：人工审核门
+
+                **不自动提交到 Neo4j** —— 因为 Agent 不是每次都走最优路径。
+                只有人工审核确认后的轨迹才进入图谱，避免污染知识库。
+
+                ### 使用方法
+
+                1. 在「🗺️ 知识图谱」Tab 可查看连接状态、搜索相似轨迹
+                2. 执行任务后，在同一 Tab 查看「待审核轨迹」
+                3. 确认步骤正确后，输入编号提交到 Neo4j
+                4. 未来相似任务执行时，日志区会显示「🗺️ 知识图谱匹配」和参考轨迹
+
+                ## 🔗 更多资源
+                
+                - [项目 GitHub](https://github.com/THUDM/Open-AutoGLM)
+                - [TeleMem 记忆系统](https://github.com/TeleAI-UAGI/TeleMem)
+                - [ADB Keyboard 下载](https://github.com/senzhk/ADBKeyBoard)
+                - [WebDriverAgent 文档](https://github.com/appium/WebDriverAgent)
+                - [Doubao-1.5-UI-TARS 文档](https://www.volcengine.com/docs/82379/1536429)
                 """)
-        # Footer
+        
+        # 页脚
         gr.HTML("""
-        <div class="claw-footer">
-            ClawGUI-Agent &middot; Dual-Core Memory &middot; Neo4j + FAISS
+        <div style="text-align: center; padding: 20px; color: #666; border-top: 1px solid #eee; margin-top: 20px;">
+            <p>ClawGUI-Agent Web UI | Powered by Gradio</p>
         </div>
         """)
     
