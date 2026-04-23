@@ -147,6 +147,15 @@ class ActionHandler:
             return ActionResult(False, False, "No app name specified")
 
         device_factory = get_device_factory()
+
+        # Check if the app is already open to prevent infinite loops
+        current_app = device_factory.get_current_app(self.device_id)
+        if current_app == app_name:
+            print(f"[{app_name}] 已经在前台运行，跳过 Launch 动作。")
+            import time
+            time.sleep(2)  # Give the app some time to fully load or stabilize
+            return ActionResult(True, False, f"App {app_name} is already in foreground")
+
         success = device_factory.launch_app(app_name, self.device_id)
         if success:
             return ActionResult(True, False)
