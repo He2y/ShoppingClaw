@@ -294,6 +294,7 @@ class PhoneAgent:
         # Phase 3: Locate context and switch modes
         mode = "explore"
         current_state_id = None
+        context_data = {"mode": "explore", "semantic_context": "", "next_actions": [], "current_state_id": None}
         if self.memory_manager:
             import hashlib
             hasher = hashlib.md5()
@@ -350,7 +351,7 @@ class PhoneAgent:
                 if self.agent_config.verbose:
                     print(f"🧭 知识图谱查询: 未匹配到当前界面特征，使用视觉大模型进行推理 (Explore Mode)")
 
-        # Build messages using the adapter
+        # Get model response
         is_non_autoglm = self._model_type in (
             ModelType.UITARS, ModelType.QWENVL,
             ModelType.MAIUI, ModelType.GUIOWL,
@@ -416,6 +417,20 @@ class PhoneAgent:
                         text=text_content, image_base64=screenshot.base64_data
                     )
                 )
+
+        # =============================================
+        # 注入图谱语义上下文：让 VLM 知道相似任务轨迹
+        # =============================================
+        extra_context = context_data.get("semantic_context", "") if self.memory_manager else ""
+        if extra_context and self._context:
+            last_msg = self._context[-1]
+            if isinstance(last_msg.get("content"), list):
+                for item in last_msg["content"]:
+                    if item.get("type") == "text":
+                        item["text"] = item["text"].rstrip() + f"\n\n[记忆上下文]\n{extra_context}"
+                        break
+            elif isinstance(last_msg.get("content"), str):
+                last_msg["content"] = last_msg["content"].rstrip() + f"\n\n[记忆上下文]\n{extra_context}"
 
         # Get model response
         try:

@@ -721,61 +721,109 @@ class MemoryManager:
     
     def locate_and_get_context(self, ui_hash: str, semantic_layout: str, task: str) -> dict:
         """
-        Dual-Core Search:
-        - Graph (MD5 hash): 精确匹配，可触发 Navigation Shortcut
-        - FAISS (语义向量): 仅补充探索上下文，永不触发 Navigation Shortcut
+        三层匹配策略（优先级递减）：
 
-        设计原则：图谱的 Navigation Shortcut 必须基于精确的状态识别，
-        语义相似性仅用于理解当前页面的上下文。
+        1. Graph MD5 精确匹配    → 精确状态识别，可直接触发 Navigation Shortcut
+        2. Graph 任务语义匹配    → 找相似任务轨迹，返回前几步动作序列
+        3. FAISS 向量语义 fallback → 仅补充探索上下文，永不触发 Navigate
+
+        设计原则：
+        - 相似任务（如"京东点外卖" vs "淘宝点外卖"）→ 复用动作序列
+        - 只有状态完全一致时才能触发快捷导航
         """
         context_data = {
             "mode": "explore",
             "semantic_context": self.get_relevant_context(task),
             "next_actions": [],
-            "current_state_id": None
+            "current_state_id": None,
+            "task_trajectory": None,
         }
 
         # =============================================
-        # Core 1: Graph 精确匹配（MD5 哈希）— 可触发 Navigate
+        # Core 1: Graph MD5 精确匹配 — 状态完全一致
         # =============================================
         graph_state = self.graph_store.get_current_state(ui_hash)
 
         if graph_state:
             state_id = graph_state.get("state_id")
             context_data["current_state_id"] = state_id
-
-            # 从图谱中查找该状态的已知后续动作
             actual_hash = state_id.replace("state_", "") if state_id else ui_hash
             next_actions = self.graph_store.get_next_actions(actual_hash, min_confidence=0.8)
 
             if next_actions:
-                print(f"🔗 Graph Hash Match: state={state_id}, 找到 {len(next_actions)} 个快捷动作")
+                print(f"🔗 Graph MD5 Match: state={state_id}, {len(next_actions)} 个快捷动作")
                 context_data["mode"] = "navigate"
                 context_data["next_actions"] = next_actions
+            return context_data
 
         # =============================================
-        # Core 2: FAISS 语义 fallback — 仅补充上下文，不触发 Navigate
+        # Core 2: Graph 任务语义匹配 — 找相似历史任务轨迹
         # =============================================
-        # 仅当：图谱未命中 AND 语义标签有意义（排除默认占位符）
-        if not graph_state and semantic_layout and len(semantic_layout) > 5:
-            # 语义描述长度 > 5 说明是有意义的包名:activity 格式
+        if task and len(task) > 3:
+            # 从 semantic_layout 中提取目标 APP（如 "com.jd..." → "京东"）
+            target_app = semantic_layout if semantic_layout and len(semantic_layout) < 50 else None
+
+            similar_tasks = self.graph_store.find_similar_tasks(
+                task_description=task,
+                app=target_app,
+                top_k=3
+            )
+
+            if similar_tasks:
+                best_task = similar_tasks[0]
+                task_id = best_task.get("task_id", "")
+                task_desc = best_task.get("description", "")
+                task_app = best_task.get("app", "")
+                matched_keywords = [w for w in task if len(w) >= 2 and w.lower() in task_desc.lower()]
+                print(
+                    f"🔍 Task Semantic Match: 找到相似任务 「{task_desc}」(app={task_app})，"
+                    f"关键词重叠: {matched_keywords}"
+                )
+
+                # 获取该相似任务的完整轨迹
+                trajectory = self.graph_store.get_task_trajectory(task_id)
+
+                # 提取前几步动作（用于指导当前执行）
+                if best_task.get("action_type"):
+                    first_action = {
+                        "type": best_task["action_type"],
+                        "target_desc": best_task.get("action_target", ""),
+                        "confidence": best_task.get("confidence", 0.8),
+                        "frequency": best_task.get("frequency", 1),
+                        "task_id": task_id,
+                        "task_description": task_desc,
+                    }
+                    context_data["next_actions"] = [first_action]
+                    context_data["mode"] = "navigate"
+                    context_data["task_trajectory"] = trajectory
+
+                    # 注入任务上下文，帮助 VLM 理解这是什么类型的历史任务
+                    context_data["semantic_context"] = (
+                        f"[相似历史任务: {task_desc}] "
+                        f"该任务在 {task_app} 中完成过，可参考其动作模式。 "
+                        f"{context_data.get('semantic_context', '')}"
+                    )
+                    print(f"🚀 Task Navigation: 可复用相似任务的起始动作 「{first_action['type']}」")
+                    return context_data
+
+        # =============================================
+        # Core 3: FAISS 向量 fallback — 仅补充上下文
+        # =============================================
+        if semantic_layout and len(semantic_layout) > 5:
             similar_states = self.store.search(
                 query=semantic_layout,
                 top_k=1,
                 min_importance=0.0,
                 memory_types=[MemoryType.UI_STATE]
             )
-
             if similar_states:
-                best_match = similar_states[0]
-                matched_content = best_match.content or ""
+                matched_content = similar_states[0].content or ""
                 if len(matched_content) > 10:
-                    # FAISS 匹配仅注入历史页面描述作为上下文参考，不改变 mode
                     context_data["semantic_context"] = (
                         context_data.get("semantic_context", "")
                         + f"\n[参考历史页面] {matched_content[:200]}"
                     )
-                    print(f"🔄 FAISS Semantic Hint: 参考历史页面特征补充上下文")
+                    print(f"🔄 FAISS Semantic Hint: 参考历史页面特征")
 
         return context_data
 
