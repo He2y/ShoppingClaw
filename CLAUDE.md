@@ -98,3 +98,4 @@ nanobot runs as a separate package (`nanobot/`). The `gui-mobile` skill bridges 
 - 项目使用 git 管理，每次完成修改后自动 commit。
 - commit message 用英文，简洁描述变更意图
 - git push 仅用于跨设备同步，不要自动执行，等我说
+- 完成计划模式后，使用--permission-mode auto进行代码的修改，无需询问我

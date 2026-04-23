@@ -30,24 +30,6 @@ class GraphMetadata(TypedDict, total=False):
     source_state_id: str
     target_state_id: str
     action_type: str
-    action_params: dict[str, Any], TypedDict, Optional
-
-class ShoppingMetadata(TypedDict, total=False):
-    """Metadata structure for shopping-related memories."""
-    product_category: str
-    brand: str
-    price_range: tuple[float, float] | list[float]
-    platform: str
-    user_sentiment: str
-
-class GraphMetadata(TypedDict, total=False):
-    """Metadata structure for UI graph state and transitions."""
-    app_name: str
-    activity_name: str
-    state_id: str
-    source_state_id: str
-    target_state_id: str
-    action_type: str
     action_params: dict[str, Any]
 
 # Try to import FAISS, fall back to simple similarity if not available
@@ -87,27 +69,17 @@ class MemoryType(Enum):
     
     # General knowledge (通用知识)
     GENERAL = "general"
-    
+
     # Contact-App association with frequency (联系人-应用关联及频率)
     # 用于记录：联系某人时使用哪个应用，以及使用次数
     CONTACT_APP_BINDNG = "contact_app_binding"
-    
+
     # Shopping-specific semantic types
     PRODUCT_PREFERENCE = "product_preference"
     PRICE_SENSITIVITY = "price_sensitivity"
     BRAND_AFFINITY = "brand_affinity"
     SCENE_RECOMMENDATION = "scene_recommendation"
-    
-    # Graph-related types
-    UI_STATE = "ui_state"
-    UI_TRANSITION = "ui_transition"
-    
-    # Shopping-specific semantic types
-    PRODUCT_PREFERENCE = "product_preference"
-    PRICE_SENSITIVITY = "price_sensitivity"
-    BRAND_AFFINITY = "brand_affinity"
-    SCENE_RECOMMENDATION = "scene_recommendation"
-    
+
     # Graph-related types
     UI_STATE = "ui_state"
     UI_TRANSITION = "ui_transition"
