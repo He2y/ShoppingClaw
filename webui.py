@@ -1845,7 +1845,7 @@ def create_ui():
     #  GLASSMORPHISM DESIGN SYSTEM
     #  Frosted glass with dark base, high-contrast text
     # ============================================================
-    custom_css = """
+    custom_css = r"""
     @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@300;400;500&display=swap');
 
     :root {
@@ -1887,11 +1887,12 @@ def create_ui():
         --orb3: radial-gradient(ellipse 400px 300px at 50% 50%, rgba(59, 130, 246, 0.05), transparent);
     }
 
-    /* Base reset */
-    .gradio-container {
-        font-family: 'IBM Plex Sans', 'Noto Sans SC', system-ui, sans-serif !important;
-        background: var(--glass-base) !important;
-        min-height: 100vh;
+    /* Reset Gradio's aggressive default backgrounds */
+    .gradio-container, .gr-form, .gr-box, fieldset, .gr-panel, .gr-block, .gr-group, .bg-gray-50, .dark\:bg-gray-900 {
+        background: transparent !important;
+        background-color: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
     }
 
     body, .gradio-container, .gradio-container * {
@@ -1973,13 +1974,12 @@ def create_ui():
     }
     .claw-logo {
         font-family: 'IBM Plex Sans', sans-serif;
-        font-size: 1.625rem;
-        font-weight: 600;
+        font-size: 1.875rem;
+        font-weight: 500;
         color: var(--text-primary) !important;
-        letter-spacing: -0.025em;
+        letter-spacing: -0.03em;
         margin-bottom: 6px;
-        /* Subtle text gradient */
-        background: linear-gradient(135deg, rgba(238,240,245,0.95) 0%, rgba(165,180,252,0.85) 100%);
+        background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(165,180,252,0.85) 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
@@ -2549,11 +2549,11 @@ def create_ui():
         title="ClawGUI-Agent",
         theme=gr.themes.Default(
             primary_hue=gr.themes.Color(
-                c50="#0f0f1a", c100="#17172a",
-                c200="#1f1f3a", c300="#27274a",
-                c400="#2f2f5a", c500="#3b3b6a",
-                c600="#5252a0", c700="#6b6bd0",
-                c800="#818cf8", c900="#a5b4fc", c950="#e0e4ff",
+                c50="#080c14", c100="#0b101a",
+                c200="#0f1624", c300="#131c2e",
+                c400="#172238", c500="#1b2842",
+                c600="#38bdf8", c700="#7dd3fc",
+                c800="#bae6fd", c900="#e0f2fe", c950="#f0f9ff",
             ),
             secondary_hue=gr.themes.Color(
                 c50="#0f0f1a", c100="#17172a",
@@ -2569,7 +2569,7 @@ def create_ui():
                 c600="#3a4570", c700="#4e5c90",
                 c800="#7078a8", c900="#a0a8cc", c950="#e0e4f0",
             ),
-            font=("IBM Plex Sans", "Noto Sans SC", "system-ui"),
+            font=("Inter", "Noto Sans SC", "system-ui"),
         ),
         css=custom_css,
     ) as demo:
