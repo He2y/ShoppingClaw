@@ -2044,8 +2044,8 @@ def create_ui():
 
                 gr.Markdown("---")
                 with gr.Row():
-                    save_config_btn = gr.Button("💾 保存配置到 .env", variant="primary", scale=1)
-                    config_save_status = gr.Markdown("", scale=3)
+                    save_config_btn = gr.Button("💾 保存配置到 .env", variant="primary")
+                    config_save_status = gr.Markdown("")
             
             # ==================== 设备管理 Tab ====================
             with gr.Tab("📱 设备管理"):
