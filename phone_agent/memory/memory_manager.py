@@ -92,26 +92,34 @@ class MemoryManager:
         # Track extracted info in current session to avoid duplicates
         self._session_contacts: set[str] = set()
         self._session_apps: set[str] = set()
-    
-    def start_task(self, task: str):
+
+        # Track task execution state for online graph learning
+        self._task_start_state_id: str | None = None
+        self._task_end_state_id: str | None = None
+        self._current_state_id: str | None = None
+
+    def start_task(self, task: str, start_state_id: str | None = None):
         """Called when a new task begins."""
         self.current_task = task
         self.task_start_time = datetime.now().isoformat()
         self.session_history.clear()
-        
+
         # Reset session tracking
         self._session_contacts.clear()
         self._session_apps.clear()
-        
+        self._task_start_state_id = start_state_id
+        self._task_end_state_id = None
+        self._current_state_id = start_state_id
+
         if self.enable_auto_extract:
             self._extract_from_task(task)
     
-    def end_task(self, success: bool, result: str = ""):
+    def end_task(self, success: bool, result: str = "", end_state_id: str | None = None):
         """Called when a task completes."""
         if self.current_task:
             # Record task history with success/failure info
             importance = 0.6 if success else 0.4
-            
+
             self.store.add(
                 content=f"任务: {self.current_task} | 结果: {result} | {'成功' if success else '失败'}",
                 memory_type=MemoryType.TASK_HISTORY,
@@ -126,13 +134,115 @@ class MemoryManager:
                 },
                 importance=importance,
             )
-            
-            # If task was successful, learn patterns from the session
+
+            # If task was successful, learn patterns (写入 FAISS，无需审核)
             if success and len(self.session_history) > 0:
                 self._learn_successful_pattern()
-        
+
+        # 持久化本次轨迹到待审核文件，供人工审核后提交
+        if self.session_history:
+            self._save_pending_trajectory(
+                task=self.current_task,
+                success=success,
+                result=result,
+                steps=self.session_history,
+                apps=list(self._session_apps),
+                start_state=self._task_start_state_id,
+                end_state=end_state_id or self._current_state_id,
+            )
+
         self.current_task = ""
         self.task_start_time = ""
+
+    def _save_pending_trajectory(self, task: str, success: bool, result: str,
+                                 steps: list, apps: list, start_state: str | None,
+                                 end_state: str | None):
+        """Save completed trajectory to pending file for manual review."""
+        import json
+        from pathlib import Path
+
+        pending_file = Path(self.store.storage_dir) / "pending_trajectories.json"
+        pending_file.parent.mkdir(parents=True, exist_ok=True)
+
+        existing = []
+        if pending_file.exists():
+            try:
+                with open(pending_file, "r", encoding="utf-8") as f:
+                    existing = json.load(f)
+            except Exception:
+                existing = []
+
+        entry = {
+            "task": task,
+            "success": success,
+            "result": result,
+            "apps": apps,
+            "steps": len(steps),
+            "step_details": [
+                {
+                    "action_type": s.get("action", {}).get("action", "unknown"),
+                    "action_params": {k: v for k, v in s.get("action", {}).items()
+                                     if k not in ("action", "_metadata")},
+                    "thinking": s.get("thinking", "")[:200],
+                }
+                for s in steps
+            ],
+            "start_state_id": start_state,
+            "end_state_id": end_state,
+            "saved_at": datetime.now().isoformat(),
+        }
+        existing.insert(0, entry)  # newest first
+        existing = existing[:20]   # keep last 20
+
+        try:
+            with open(pending_file, "w", encoding="utf-8") as f:
+                json.dump(existing, f, ensure_ascii=False, indent=2)
+            if success:
+                print(f"📝 轨迹已保存至 pending_trajectories.json（共 {len(steps)} 步）")
+        except Exception as e:
+            print(f"Warning: failed to save pending trajectory: {e}")
+
+    def commit_pending(self, index: int = 0) -> bool:
+        """
+        Commit a pending trajectory from the pending file to Neo4j.
+        Call with index=0 (default) for the most recent one.
+        """
+        import json
+        from pathlib import Path
+
+        pending_file = Path(self.store.storage_dir) / "pending_trajectories.json"
+        if not pending_file.exists():
+            print("No pending trajectories found.")
+            return False
+
+        with open(pending_file, "r", encoding="utf-8") as f:
+            pending = json.load(f)
+
+        if index >= len(pending):
+            print(f"No trajectory at index {index}.")
+            return False
+
+        entry = pending[index]
+        if not entry.get("success"):
+            print("Skipping failed trajectory.")
+            return False
+
+        app = entry.get("apps", ["UnknownApp"])[0] if entry.get("apps") else "UnknownApp"
+        ok = self.graph_store.commit_task_trajectory(
+            task_description=entry["task"],
+            task_id=entry["task"][:20],
+            app=app,
+            start_state_id=entry.get("start_state_id"),
+            end_state_id=entry.get("end_state_id"),
+            success=True,
+        )
+        if ok:
+            # Remove committed entry
+            pending.pop(index)
+            with open(pending_file, "w", encoding="utf-8") as f:
+                json.dump(pending, f, ensure_ascii=False, indent=2)
+            print(f"✅ 轨迹已提交 Neo4j: {entry['task'][:50]}")
+        return ok
     
     def _learn_successful_pattern(self):
         """Learn patterns from successfully completed tasks."""

@@ -200,6 +200,7 @@ class PhoneAgent:
         self._context = []
         self._step_count = 0
         self._current_task = task
+        self._last_state_hash: str | None = None
 
         # Clear action history for QwenVL handler/adapter
         if self._specialized_handler is not None and hasattr(self._specialized_handler, 'clear_history'):
@@ -222,7 +223,8 @@ class PhoneAgent:
             if self.memory_manager:
                 self.memory_manager.end_task(
                     success=result.success,
-                    result=result.message or "Task completed"
+                    result=result.message or "Task completed",
+                    end_state_id=self._last_state_hash,
                 )
             if self.tracer:
                 self.tracer.end_task(
@@ -239,7 +241,8 @@ class PhoneAgent:
                 if self.memory_manager:
                     self.memory_manager.end_task(
                         success=result.success,
-                        result=result.message or "Task completed"
+                        result=result.message or "Task completed",
+                        end_state_id=self._last_state_hash,
                     )
                 if self.tracer:
                     self.tracer.end_task(
@@ -250,7 +253,7 @@ class PhoneAgent:
 
         # Task timeout
         if self.memory_manager:
-            self.memory_manager.end_task(success=False, result="Max steps reached")
+            self.memory_manager.end_task(success=False, result="Max steps reached", end_state_id=self._last_state_hash)
         if self.tracer:
             self.tracer.end_task(result="Max steps reached", total_steps=self._step_count)
 
@@ -300,6 +303,7 @@ class PhoneAgent:
             hasher = hashlib.md5()
             hasher.update(screenshot.base64_data.encode('utf-8'))
             ui_hash = hasher.hexdigest()
+            self._last_state_hash = f"state_{ui_hash}"
 
             # 轻量级启发式特征：使用当前 APP 名称作为语义标签（无需 VLM 调用）
             # 注意：MD5 哈希精确匹配用于图谱，图谱未命中时不触发 FAISS 导航

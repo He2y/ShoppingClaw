@@ -521,6 +521,21 @@ Examples:
     )
 
     parser.add_argument(
+        "--commit-trajectory",
+        metavar="TASK_TEXT",
+        type=str,
+        default=None,
+        help="Commit a successful task trajectory to Neo4j for future retrieval. "
+             "Usage: --commit-trajectory '在京东点KFC外卖'",
+    )
+
+    parser.add_argument(
+        "--list-trajectories",
+        action="store_true",
+        help="List all TaskTarget nodes in Neo4j",
+    )
+
+    parser.add_argument(
         "--lang",
         type=str,
         choices=["cn", "en"],
@@ -733,8 +748,50 @@ def main():
 
         set_hdc_verbose(True)
 
+    # Handle graph memory commands (no system check needed)
+    if args.list_trajectories:
+        from phone_agent.memory.graph_store import GraphStore
+        g = GraphStore()
+        if not g.driver:
+            print("❌ Neo4j not connected. Cannot list trajectories.")
+            return
+        q = """
+        MATCH (t:TaskTarget)
+        OPTIONAL MATCH (t)-[:STARTS_AT]->(s)
+        OPTIONAL MATCH (t)-[:ENDS_AT]->(e)
+        RETURN t.target_id AS id, t.description AS description, t.app AS app,
+               t.committed_at AS committed_at, t.success AS success,
+               s.state_id AS start_state, e.state_id AS end_state
+        ORDER BY t.committed_at DESC
+        LIMIT 50
+        """
+        print("📋 Neo4j 中已提交的任务轨迹：")
+        print("-" * 80)
+        with g.driver.session(database=g.database) as s:
+            for r in s.run(q):
+                d = dict(r)
+                committed = d.get("committed_at")
+                ts = ""
+                if committed:
+                    import datetime
+                    ts = datetime.datetime.fromtimestamp(committed / 1000).strftime("%Y-%m-%d %H:%M")
+                success = "✅" if d.get("success") else "❌"
+                print(f"{success} [{d.get('app','')}] {d.get('description','')[:60]}")
+                print(f"   ID: {d.get('id','')} | 提交: {ts}")
+                print()
+        return
+
+    if args.commit_trajectory:
+        print("⚠️  提交轨迹需要手机已连接且执行过对应任务。")
+        print("   当前会话的轨迹在任务执行过程中被记录于 memory_db_offline_import/。")
+        print("   请确认任务已成功执行后再使用此命令。")
+        print()
+        print(f"   待提交任务: {args.commit_trajectory}")
+        print()
+        print("   使用 python scripts/review_and_commit.py 查看和提交待审核轨迹。")
+        return
+
     # Handle --list-apps (no system check needed)
-    if args.list_apps:
         if device_type == DeviceType.HDC:
             print("Supported HarmonyOS apps:")
             apps = list_harmonyos_apps()

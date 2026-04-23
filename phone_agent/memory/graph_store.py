@@ -282,6 +282,58 @@ class GraphStore:
             "end_state": end_state,
         }
 
+    def commit_task_trajectory(
+        self,
+        task_description: str,
+        task_id: str,
+        app: str,
+        start_state_id: str,
+        end_state_id: str,
+        success: bool = True,
+    ) -> bool:
+        """
+        Commit a completed task trajectory to Neo4j so future searches can find it.
+
+        Creates a TaskTarget node with STARTS_AT and ENDS_AT links.
+        The individual state transitions are already recorded via add_state_transition.
+        """
+        if not self.driver:
+            return False
+
+        import hashlib
+        task_hash = hashlib.md5(task_description.encode()).hexdigest()[:8]
+        persistent_id = f"{task_id}_{task_hash}"
+
+        query = """
+        MATCH (s_start:UIState {state_id: $start_state})
+        MATCH (s_end:UIState {state_id: $end_state})
+        MERGE (t:TaskTarget {target_id: $tid})
+        SET t.description = $desc,
+            t.app = $app,
+            t.task_type = $task_id,
+            t.committed_at = timestamp(),
+            t.success = $success
+        MERGE (t)-[:STARTS_AT]->(s_start)
+        MERGE (t)-[:ENDS_AT {success: $success}]->(s_end)
+        RETURN t.target_id AS created_id
+        """
+        try:
+            with self.driver.session(database=self.database) as session:
+                result = session.run(
+                    query,
+                    tid=persistent_id,
+                    desc=task_description,
+                    app=app,
+                    task_id=task_id,
+                    start_state=start_state_id,
+                    end_state=end_state_id,
+                    success=success,
+                ).single()
+            return result is not None
+        except Exception as e:
+            print(f"Warning: failed to commit task trajectory: {e}")
+            return False
+
     def add_state_transition(self, source_state_hash: str, target_state_hash: str, action_data: Dict[str, Any], task_id: str = None):
         """Record a new transition during online exploration."""
         if not self.driver:
