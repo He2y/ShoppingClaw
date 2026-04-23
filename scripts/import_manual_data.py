@@ -183,9 +183,10 @@ def main():
         neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
         neo4j_user = os.getenv("NEO4J_USER", "neo4j")
         neo4j_password = os.getenv("NEO4J_PASSWORD", "password")
+        neo4j_database = os.getenv("NEO4J_DATABASE", "shopping")
         try:
             driver = GraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
-            session = driver.session()
+            session = driver.session(database=neo4j_database)
             print("Connected to Neo4j successfully.")
         except Exception as e:
             print(f"Warning: Could not connect to Neo4j. Graph construction will be skipped. Error: {e}")
