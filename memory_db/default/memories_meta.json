@@ -1,0 +1,160 @@
+{
+  "2717ec1e31738555": {
+    "id": "2717ec1e31738555",
+    "content": "用户常用应用: 淘宝",
+    "memory_type": "app_usage",
+    "created_at": "2026-04-22T23:26:11.570315",
+    "last_accessed": "2026-04-22T23:26:18.706611",
+    "access_count": 3,
+    "importance": 0.5,
+    "metadata": {
+      "app_name": "淘宝",
+      "context": "用户主动启动了应用: 淘宝",
+      "source": "auto_extract"
+    }
+  },
+  "4c3fc76006ea3d43": {
+    "id": "4c3fc76006ea3d43",
+    "content": "任务: 打开淘宝，搜索\"iPhone 17 Pro Max 银色 512G\"，找到官方旗舰店或正规店铺的商品，选择银色 512G 版本，加入购物车 | 结果: 任务完成！我已经成功将银色512G版本的iPhone 17 Pro Max加入购物车。页面右上角显示\"加购成功\"的提示，说明商品已经成功添加到购物车中。 | 成功",
+    "memory_type": "task_history",
+    "created_at": "2026-04-22T23:27:05.754407",
+    "last_accessed": "2026-04-22T23:27:05.754407",
+    "access_count": 1,
+    "importance": 0.6,
+    "metadata": {
+      "task": "打开淘宝，搜索\"iPhone 17 Pro Max 银色 512G\"，找到官方旗舰店或正规店铺的商品，选择银色 512G 版本，加入购物车",
+      "result": "任务完成！我已经成功将银色512G版本的iPhone 17 Pro Max加入购物车。页面右上角显示\"加购成功\"的提示，说明商品已经成功添加到购物车中。",
+      "success": true,
+      "duration": 54.190086,
+      "steps": 9,
+      "apps_used": [
+        "淘宝",
+        "system home"
+      ],
+      "contacts_mentioned": []
+    }
+  },
+  "cb61ecffc07dfc61": {
+    "id": "cb61ecffc07dfc61",
+    "content": "任务执行流程: 打开淘宝，搜索\"iPhone 17 Pro Max 银色 5 使用了 System Home → 淘宝",
+    "memory_type": "task_pattern",
+    "created_at": "2026-04-22T23:27:05.754407",
+    "last_accessed": "2026-04-22T23:27:05.754407",
+    "access_count": 1,
+    "importance": 0.4,
+    "metadata": {
+      "task_type": "shopping",
+      "apps_flow": [
+        "System Home",
+        "淘宝"
+      ],
+      "task_summary": "打开淘宝，搜索\"iPhone 17 Pro Max 银色 512G\"，找到官方旗舰店或正规店铺的商品，选择银色 512G 版本，加入购物车"
+    }
+  },
+  "dc1df26d4c43b937": {
+    "id": "dc1df26d4c43b937",
+    "content": "用户使用了应用: 淘宝",
+    "memory_type": "app_usage",
+    "created_at": "2026-04-22T23:28:36.665474",
+    "last_accessed": "2026-04-22T23:28:36.665474",
+    "access_count": 1,
+    "importance": 0.3,
+    "metadata": {
+      "app_name": "淘宝",
+      "timestamp": "2026-04-22T23:28:36.665474"
+    }
+  },
+  "45006729ddc7a9e9": {
+    "id": "45006729ddc7a9e9",
+    "content": "用户常用应用: 京东",
+    "memory_type": "app_usage",
+    "created_at": "2026-04-22T23:28:36.665978",
+    "last_accessed": "2026-04-22T23:28:36.665978",
+    "access_count": 1,
+    "importance": 0.5,
+    "metadata": {
+      "app_name": "京东",
+      "source": "auto_extract",
+      "context": "用户主动启动了应用: 京东"
+    }
+  },
+  "abbc2ada502500c5": {
+    "id": "abbc2ada502500c5",
+    "content": "任务: 打开京东APP，搜索\"苹果自营旗舰店\"或进入Apple自营店，找到iPhone 17 Pro Max，选择银色512G版本，加入购物车 | 结果: 任务完成！我已经成功：\n\n1. 打开京东APP\n2. 搜索\"苹果自营旗舰店\"\n3. 找到Apple自营店的iPhone 17 Pro Max\n4. 选择银色512G版本\n5. 成功加入购物车\n\n商品信息：Apple/苹果 iPhone 17 Pro Max 512GB 银色，价格¥11999，已加入购物车（购物车中显示有14件商品）。 | 成功",
+    "memory_type": "task_history",
+    "created_at": "2026-04-22T23:30:24.847804",
+    "last_accessed": "2026-04-22T23:30:24.847804",
+    "access_count": 1,
+    "importance": 0.6,
+    "metadata": {
+      "task": "打开京东APP，搜索\"苹果自营旗舰店\"或进入Apple自营店，找到iPhone 17 Pro Max，选择银色512G版本，加入购物车",
+      "result": "任务完成！我已经成功：\n\n1. 打开京东APP\n2. 搜索\"苹果自营旗舰店\"\n3. 找到Apple自营店的iPhone 17 Pro Max\n4. 选择银色512G版本\n5. 成功加入购物车\n\n商品信息：Apple/苹果 iPhone 17 Pro Max 512GB 银色，价格¥11999，已加入购物车（购物车中显示有14件商品）。",
+      "success": true,
+      "duration": 115.199948,
+      "steps": 26,
+      "apps_used": [
+        "淘宝",
+        "京东"
+      ],
+      "contacts_mentioned": []
+    }
+  },
+  "d9fe863e8a74f47b": {
+    "id": "d9fe863e8a74f47b",
+    "content": "任务执行流程: 打开京东APP，搜索\"苹果自营旗舰店\"或进入Apple自营店 使用了 淘宝 → 京东",
+    "memory_type": "task_pattern",
+    "created_at": "2026-04-22T23:30:24.848807",
+    "last_accessed": "2026-04-22T23:30:24.848807",
+    "access_count": 1,
+    "importance": 0.4,
+    "metadata": {
+      "task_type": "shopping",
+      "apps_flow": [
+        "淘宝",
+        "京东"
+      ],
+      "task_summary": "打开京东APP，搜索\"苹果自营旗舰店\"或进入Apple自营店，找到iPhone 17 Pro Max，选择银色512G版本，加入购物车"
+    }
+  },
+  "440145d63c9aefbf": {
+    "id": "440145d63c9aefbf",
+    "content": "用户使用了应用: 京东",
+    "memory_type": "app_usage",
+    "created_at": "2026-04-22T23:32:50.376593",
+    "last_accessed": "2026-04-22T23:32:50.376593",
+    "access_count": 1,
+    "importance": 0.3,
+    "metadata": {
+      "app_name": "京东",
+      "timestamp": "2026-04-22T23:32:50.376593"
+    }
+  },
+  "39a4aee3a4db367d": {
+    "id": "39a4aee3a4db367d",
+    "content": "用户常用应用: 淘宝",
+    "memory_type": "app_usage",
+    "created_at": "2026-04-22T23:32:50.377097",
+    "last_accessed": "2026-04-22T23:33:53.088540",
+    "access_count": 2,
+    "importance": 0.55,
+    "metadata": {
+      "app_name": "系统设置",
+      "source": "auto_extract",
+      "context": "用户主动启动了应用: 系统设置"
+    }
+  },
+  "f32d3415d95c59bb": {
+    "id": "f32d3415d95c59bb",
+    "content": "从执行过程推断: 通常截图应用在",
+    "memory_type": "user_preference",
+    "created_at": "2026-04-22T23:33:53.089544",
+    "last_accessed": "2026-04-22T23:33:53.089544",
+    "access_count": 1,
+    "importance": 0.4,
+    "metadata": {
+      "category": "time",
+      "source": "auto_thinking",
+      "context": "看起来点击后没有打开相机应用，屏幕还是显示主屏幕。让我尝试使用系统的截图功能。我可以使用系统的\"截图\"应用，或者我可以使用系统的\"系统设置\"中的截图功能。\n\n让我尝试使用系统的\"截图\"应用。我需要找到"
+    }
+  }
+}

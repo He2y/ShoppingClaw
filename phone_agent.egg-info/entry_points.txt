@@ -1,0 +1,2 @@
+[console_scripts]
+phone-agent = main:main
