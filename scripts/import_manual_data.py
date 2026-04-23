@@ -5,18 +5,19 @@ import glob
 from pathlib import Path
 from typing import List, Dict, Any
 import base64
+import sys
+
+# Ensure phone_agent is in the python path before importing its modules
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from phone_agent.model.client import ModelClient, ModelConfig, MessageBuilder
+from phone_agent.memory.memory_store import MemoryStore, MemoryType, GraphMetadata
 
 try:
     from neo4j import GraphDatabase
     HAS_NEO4J = True
 except ImportError:
     HAS_NEO4J = False
-
-# Import MemoryStore and MemoryType
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from phone_agent.memory.memory_store import MemoryStore, MemoryType, GraphMetadata
 
 def get_image_hash(image_path: str) -> str:
     """Hash an image file as a surrogate for view hierarchy hash."""

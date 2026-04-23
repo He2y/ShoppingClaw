@@ -195,8 +195,27 @@ def check_system_requirements(
     if device_type == DeviceType.ADB:
         print("3. Checking ADB Keyboard...", end=" ")
         try:
+            # Try to get the specific device if provided or use the first one
+            adb_cmd = ["adb"]
+            # To handle case where there are multiple devices but args.device_id isn't provided explicitly,
+            # we should get the active device
+            device_id = args.device_id
+            if not device_id:
+                try:
+                    devices_result = subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=5)
+                    lines = devices_result.stdout.strip().split('
+')[1:]
+                    online_devices = [line.split()[0] for line in lines if "device" in line and "offline" not in line]
+                    if online_devices:
+                        device_id = online_devices[0]
+                except Exception:
+                    pass
+            
+            if device_id:
+                adb_cmd.extend(["-s", device_id])
+            
             result = subprocess.run(
-                ["adb", "shell", "ime", "list", "-s"],
+                adb_cmd + ["shell", "ime", "list", "-s"],
                 capture_output=True,
                 text=True,
                 timeout=10,
