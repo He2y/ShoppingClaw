@@ -119,21 +119,49 @@ def cleanup_neo4j():
             print(f"  Already correct, skipping")
             continue
 
-        # 3. Delete the corrupted node (and its relationships)
-        print(f"  Deleting corrupted node: {tid}")
-        session.run("""
-            MATCH (t:TaskTarget {target_id: $tid})
-            DETACH DELETE t
-        """, tid=tid)
-
-        # 4. Create one new node per description variant
-        for i, desc in enumerate(clean_descs):
-            new_tid = f"{app_from_tid}_{task_type_from_tid}_{num_from_tid}_{i+1}"
-            print(f"  Creating: {new_tid} -> {desc[:40]}")
+        if len(clean_descs) == 1:
+            # Safe path: just update the description, keep existing relationships
+            print(f"  Updating description (keeping START/END relationships)")
             session.run("""
-                MERGE (t:TaskTarget {target_id: $tid})
-                SET t.app = $app, t.task_type = $ttype, t.description = $desc
-            """, tid=new_tid, app=app_from_tid, ttype=task_type_from_tid, desc=desc)
+                MATCH (t:TaskTarget {target_id: $tid})
+                SET t.description = $desc
+            """, tid=tid, desc=clean_descs[0])
+        else:
+            # Multi-variant: capture old START/END relationships before deleting
+            old_rels = session.run("""
+                MATCH (t:TaskTarget {target_id: $tid})
+                OPTIONAL MATCH (t)-[r:STARTS_AT]->(s)
+                OPTIONAL MATCH (t)-[e:ENDS_AT]->(en)
+                RETURN s.state_id AS start_state, en.state_id AS end_state
+            """, tid=tid).single()
+            start_state = old_rels["start_state"] if old_rels else None
+            end_state = old_rels["end_state"] if old_rels else None
+
+            print(f"  Deleting corrupted node: {tid}")
+            session.run("""
+                MATCH (t:TaskTarget {target_id: $tid})
+                DETACH DELETE t
+            """, tid=tid)
+
+            for i, desc in enumerate(clean_descs):
+                new_tid = f"{app_from_tid}_{task_type_from_tid}_{num_from_tid}_{i+1}"
+                print(f"  Creating: {new_tid} -> {desc[:40]}")
+                session.run("""
+                    MERGE (t:TaskTarget {target_id: $tid})
+                    SET t.app = $app, t.task_type = $ttype, t.description = $desc
+                """, tid=new_tid, app=app_from_tid, ttype=task_type_from_tid, desc=desc)
+
+                # Restore START/END relationships for first variant only
+                if i == 0 and start_state:
+                    session.run("""
+                        MATCH (t:TaskTarget {target_id: $tid}), (s:UIState {state_id: $sid})
+                        MERGE (t)-[:STARTS_AT]->(s)
+                    """, tid=new_tid, sid=start_state)
+                if i == 0 and end_state:
+                    session.run("""
+                        MATCH (t:TaskTarget {target_id: $tid}), (s:UIState {state_id: $sid})
+                        MERGE (t)-[:ENDS_AT]->(s)
+                    """, tid=new_tid, sid=end_state)
 
         fix_count += 1
 
