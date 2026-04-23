@@ -1840,386 +1840,360 @@ def reload_config_from_env() -> dict:
 # ==================== 构建 Gradio 界面 ====================
 def create_ui():
     """创建 Gradio 界面"""
-    
+
     # ============================================================
-    #  CYBERPUNK COMMAND CENTER — custom CSS
+    #  PROFESSIONAL CONTROL CENTER — minimal dark theme
     # ============================================================
     custom_css = """
-    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;600;700;900&family=JetBrains+Mono:wght@300;400;500&family=Noto+Sans+SC:wght@300;400;500;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500&display=swap');
 
     :root {
-        --bg-void:     #050810;
-        --bg-panel:    #0b1120;
-        --bg-card:     #0f1629;
-        --bg-card2:    #141d35;
-        --border-dim:  #1e2d4a;
-        --border-glow: #00f5ff44;
-        --cyan:        #00f5ff;
-        --cyan-dim:    #00f5ff88;
-        --cyan-dark:   #0099aa;
-        --pink:        #ff006e;
-        --pink-dim:    #ff006e88;
-        --amber:       #ffb700;
-        --green:       #00e676;
-        --red:         #ff3d5a;
-        --text-primary: #e8edf5;
-        --text-dim:    #7a8ba8;
-        --text-code:   #a8d8ff;
+        --bg-base: #0a0a0b;
+        --bg-surface: #111113;
+        --bg-elevated: #18181b;
+        --bg-hover: #1f1f23;
+        --border: #27272a;
+        --border-focus: #3f3f46;
+        --text-primary: #e5e5e5;
+        --text-secondary: #a1a1aa;
+        --text-tertiary: #71717a;
+        --accent: #3b82f6;
+        --accent-hover: #60a5fa;
+        --success: #22c55e;
+        --warning: #f59e0b;
+        --error: #ef4444;
+        --thinking-bg: #0f0f12;
+        --action-bg: #0f0f12;
     }
 
-    /* ---- Base ---- */
-    .gradio-container { font-family: 'Noto Sans SC', sans-serif !important; }
+    /* Reset & Base */
+    .gradio-container {
+        font-family: 'IBM Plex Sans', 'Noto Sans SC', system-ui, sans-serif !important;
+        background: var(--bg-base) !important;
+    }
 
     body, .gradio-container, .gradio-container * {
         color: var(--text-primary) !important;
     }
 
-    /* ---- Background grid circuit pattern ---- */
+    /* Background */
     #root, main, .gradio-blocks {
-        background-color: var(--bg-void) !important;
-        background-image:
-            linear-gradient(var(--border-dim) 1px, transparent 1px),
-            linear-gradient(90deg, var(--border-dim) 1px, transparent 1px),
-            radial-gradient(ellipse at 50% 0%, #0d1f3c88 0%, transparent 70%);
-        background-size: 40px 40px, 40px 40px, 100% 100%;
+        background-color: var(--bg-base) !important;
     }
 
-    /* ---- Custom scrollbar ---- */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: var(--bg-panel); }
-    ::-webkit-scrollbar-thumb { background: var(--cyan-dark); border-radius: 3px; }
+    /* Custom scrollbar - minimal */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--border-focus); }
 
-    /* ---- Header ---- */
+    /* Header - minimal */
     .claw-header {
         text-align: center;
-        padding: 28px 20px 20px;
-        position: relative;
-    }
-    .claw-header::before {
-        content: '';
-        position: absolute;
-        bottom: 0; left: 50%; transform: translateX(-50%);
-        width: 60%;
-        height: 1px;
-        background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+        padding: 20px 16px 16px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 0;
     }
     .claw-logo {
-        font-family: 'Orbitron', sans-serif;
-        font-size: 2.8em;
-        font-weight: 900;
-        letter-spacing: 4px;
-        background: linear-gradient(90deg, var(--cyan) 0%, #a78bfa 50%, var(--pink) 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        text-shadow: 0 0 40px #00f5ff55;
-        margin-bottom: 8px;
+        font-family: 'IBM Plex Sans', sans-serif;
+        font-size: 1.5rem;
+        font-weight: 600;
+        color: var(--text-primary) !important;
+        letter-spacing: -0.02em;
+        margin-bottom: 4px;
     }
     .claw-subtitle {
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.82em;
-        color: var(--text-dim);
-        letter-spacing: 3px;
+        font-size: 0.8rem;
+        color: var(--text-tertiary);
+        letter-spacing: 0.05em;
         text-transform: uppercase;
     }
     .claw-badge {
-        display: inline-block;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.68em;
-        padding: 2px 10px;
-        border: 1px solid var(--cyan-dim);
-        border-radius: 20px;
-        color: var(--cyan);
-        margin-top: 8px;
-        letter-spacing: 1px;
+        display: none;  /* Hide badge - unnecessary decoration */
     }
 
-    /* ---- Panel / Card ---- */
-    .claw-panel {
-        background: var(--bg-panel) !important;
-        border: 1px solid var(--border-dim) !important;
-        border-radius: 12px !important;
-        padding: 16px 20px !important;
-        position: relative;
-        overflow: hidden;
-    }
-    .claw-panel::before {
-        content: '';
-        position: absolute;
-        top: 0; left: 0; right: 0;
-        height: 2px;
-        background: linear-gradient(90deg, var(--cyan), var(--pink));
-        opacity: 0.7;
-    }
-    .claw-panel-glow {
-        box-shadow: 0 0 20px #00f5ff11, inset 0 1px 0 #ffffff08 !important;
-    }
-
-    /* ---- Section label ---- */
-    .claw-section-label {
-        font-family: 'Orbitron', sans-serif;
-        font-size: 0.72em;
-        font-weight: 600;
-        letter-spacing: 3px;
-        text-transform: uppercase;
-        color: var(--cyan) !important;
-        margin-bottom: 12px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .claw-section-label::after {
-        content: '';
-        flex: 1;
-        height: 1px;
-        background: linear-gradient(90deg, var(--border-dim), transparent);
-    }
-
-    /* ---- Tab styling ---- */
+    /* Tab styling - clean horizontal tabs */
     .tab-nav button, .gr-tabs button {
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.82em !important;
-        letter-spacing: 1px !important;
-        color: var(--text-dim) !important;
+        font-family: 'IBM Plex Sans', sans-serif !important;
+        font-size: 0.875rem !important;
+        font-weight: 500 !important;
+        color: var(--text-secondary) !important;
         border-bottom: 2px solid transparent !important;
-        transition: all 0.2s !important;
+        padding: 10px 16px !important;
+        background: transparent !important;
+        transition: color 0.15s, border-color 0.15s !important;
     }
     .tab-nav button:hover, .gr-tabs button:hover {
         color: var(--text-primary) !important;
-        background: #ffffff08 !important;
+        background: transparent !important;
     }
     .tab-nav button.selected, .gr-tabs button.selected {
-        color: var(--cyan) !important;
-        border-bottom-color: var(--cyan) !important;
-        text-shadow: 0 0 10px var(--cyan-dim) !important;
+        color: var(--accent) !important;
+        border-bottom-color: var(--accent) !important;
     }
 
-    /* ---- Input / Textbox ---- */
+    /* Input / Textbox - functional */
     .gr-textbox, .gr-number, .gr-dropdown {
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border-dim) !important;
-        border-radius: 8px !important;
+        background: var(--bg-surface) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 6px !important;
         color: var(--text-primary) !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.85em !important;
-        transition: border-color 0.2s, box-shadow 0.2s !important;
+        font-size: 0.875rem !important;
+        transition: border-color 0.15s !important;
+    }
+    .gr-textbox:hover, .gr-number:hover, .gr-dropdown:hover {
+        border-color: var(--border-focus) !important;
     }
     .gr-textbox:focus, .gr-number:focus, .gr-dropdown:focus {
-        border-color: var(--cyan-dark) !important;
-        box-shadow: 0 0 0 2px #00f5ff22, 0 0 15px #00f5ff15 !important;
+        border-color: var(--accent) !important;
+        box-shadow: none !important;
     }
     .gr-textbox input, .gr-number input, .gr-dropdown select {
         color: var(--text-primary) !important;
-        font-family: 'JetBrains Mono', monospace !important;
+        font-size: 0.875rem !important;
     }
     .gr-textbox label, .gr-number label, .gr-dropdown label,
     .gr-slider label, .gr-radio label, .gr-checkbox label {
-        color: var(--text-dim) !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.78em !important;
-        letter-spacing: 0.5px !important;
+        color: var(--text-secondary) !important;
+        font-size: 0.75rem !important;
+        font-weight: 500 !important;
+        margin-bottom: 4px !important;
     }
 
-    /* ---- Radio ---- */
+    /* Radio buttons - minimal */
     .gr-radio {
         background: transparent !important;
     }
-    .gr-radio container {
-        gap: 4px !important;
-    }
     .gr-radio .gr-radio-item {
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border-dim) !important;
-        border-radius: 6px !important;
-        padding: 6px 14px !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.8em !important;
-        transition: all 0.2s !important;
+        background: var(--bg-surface) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 4px !important;
+        padding: 6px 12px !important;
+        font-size: 0.8rem !important;
+        color: var(--text-secondary) !important;
+        transition: all 0.15s !important;
     }
     .gr-radio .gr-radio-item:hover {
-        border-color: var(--cyan-dark) !important;
-        background: #00f5ff08 !important;
+        border-color: var(--border-focus) !important;
+        color: var(--text-primary) !important;
     }
     .gr-radio .gr-radio-item:has(input:checked) {
-        border-color: var(--cyan) !important;
-        background: #00f5ff15 !important;
-        color: var(--cyan) !important;
-        box-shadow: 0 0 10px #00f5ff22 !important;
+        border-color: var(--accent) !important;
+        background: rgba(59, 130, 246, 0.1) !important;
+        color: var(--accent) !important;
     }
 
-    /* ---- Slider ---- */
+    /* Slider */
     .gr-slider input[type=range] {
-        accent-color: var(--cyan) !important;
+        accent-color: var(--accent) !important;
     }
 
-    /* ---- Buttons ---- */
+    /* Buttons - functional, not decorative */
     .gr-button, button {
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.82em !important;
-        letter-spacing: 1px !important;
-        border-radius: 8px !important;
-        transition: all 0.2s !important;
+        font-family: 'IBM Plex Sans', sans-serif !important;
+        font-size: 0.875rem !important;
+        font-weight: 500 !important;
+        border-radius: 6px !important;
+        border: 1px solid transparent !important;
+        transition: all 0.15s !important;
+        padding: 8px 16px !important;
     }
     button.primary {
-        background: linear-gradient(135deg, #0099aa 0%, #006677 100%) !important;
-        border: 1px solid var(--cyan-dark) !important;
-        color: var(--cyan) !important;
-        text-shadow: 0 0 8px var(--cyan-dim) !important;
-        box-shadow: 0 0 15px #00f5ff22 !important;
+        background: var(--accent) !important;
+        border-color: var(--accent) !important;
+        color: #ffffff !important;
     }
     button.primary:hover {
-        background: linear-gradient(135deg, #00b8cc 0%, #0099aa 100%) !important;
-        box-shadow: 0 0 25px #00f5ff44 !important;
-        transform: translateY(-1px);
+        background: var(--accent-hover) !important;
+        border-color: var(--accent-hover) !important;
     }
     button.secondary {
-        background: var(--bg-card2) !important;
-        border: 1px solid var(--border-dim) !important;
-        color: var(--text-dim) !important;
+        background: var(--bg-elevated) !important;
+        border-color: var(--border) !important;
+        color: var(--text-primary) !important;
     }
     button.secondary:hover {
-        border-color: var(--cyan-dark) !important;
-        color: var(--text-primary) !important;
-        background: #00f5ff0a !important;
+        background: var(--bg-hover) !important;
+        border-color: var(--border-focus) !important;
     }
     button.stop, button.cancel {
-        background: #ff006e18 !important;
-        border: 1px solid var(--pink-dim) !important;
-        color: var(--pink) !important;
+        background: transparent !important;
+        border-color: var(--error) !important;
+        color: var(--error) !important;
     }
     button.stop:hover, button.cancel:hover {
-        background: #ff006e33 !important;
-        box-shadow: 0 0 15px #ff006e33 !important;
+        background: rgba(239, 68, 68, 0.1) !important;
     }
 
-    /* ---- Markdown / Output ---- */
+    /* Markdown / Output - clean */
     .gr-markdown {
         color: var(--text-primary) !important;
+        font-size: 0.875rem !important;
+        line-height: 1.6 !important;
     }
-    .gr-markdown h1, .gr-markdown h2, .gr-markdown h3 {
-        font-family: 'Orbitron', sans-serif !important;
-        color: var(--cyan) !important;
-        letter-spacing: 1px !important;
+    .gr-markdown h1 {
+        font-size: 1.125rem !important;
+        font-weight: 600 !important;
+        color: var(--text-primary) !important;
+        margin-top: 0 !important;
+        border-bottom: 1px solid var(--border);
+        padding-bottom: 8px;
     }
-    .gr-markdown h1 { font-size: 1.3em !important; }
-    .gr-markdown h2 { font-size: 1.1em !important; color: var(--text-primary) !important; }
-    .gr-markdown h3 { font-size: 0.95em !important; color: var(--text-dim) !important; }
+    .gr-markdown h2 {
+        font-size: 1rem !important;
+        font-weight: 600 !important;
+        color: var(--text-primary) !important;
+    }
+    .gr-markdown h3 {
+        font-size: 0.875rem !important;
+        font-weight: 600 !important;
+        color: var(--text-secondary) !important;
+    }
     .gr-markdown table {
         border-collapse: collapse;
         width: 100%;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.82em;
+        font-size: 0.8125rem;
     }
     .gr-markdown th {
-        background: #00f5ff15 !important;
-        color: var(--cyan) !important;
-        padding: 6px 12px;
-        border: 1px solid var(--border-dim);
+        background: var(--bg-elevated) !important;
+        color: var(--text-secondary) !important;
+        padding: 8px 12px;
+        border: 1px solid var(--border);
         text-align: left;
+        font-weight: 500;
     }
     .gr-markdown td {
-        padding: 5px 12px;
-        border: 1px solid var(--border-dim);
+        padding: 8px 12px;
+        border: 1px solid var(--border);
         color: var(--text-primary) !important;
     }
     .gr-markdown tr:nth-child(even) td {
-        background: #ffffff04;
+        background: var(--bg-surface);
     }
     .gr-markdown code {
-        font-family: 'JetBrains Mono', monospace !important;
-        background: #00f5ff10 !important;
-        color: var(--text-code) !important;
-        padding: 1px 6px;
-        border-radius: 4px;
-        font-size: 0.85em !important;
+        font-family: 'IBM Plex Mono', monospace !important;
+        background: var(--bg-elevated) !important;
+        color: var(--accent) !important;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-size: 0.8125rem !important;
     }
     .gr-markdown pre {
-        background: var(--bg-card) !important;
-        border: 1px solid var(--border-dim) !important;
-        border-radius: 8px !important;
+        background: var(--bg-elevated) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 6px !important;
         padding: 12px !important;
     }
     .gr-markdown pre code {
         background: transparent !important;
-        color: var(--text-code) !important;
+        color: var(--text-primary) !important;
     }
     .gr-markdown blockquote {
-        border-left: 3px solid var(--cyan-dark) !important;
-        background: #00f5ff08 !important;
-        border-radius: 0 6px 6px 0 !important;
-        padding: 8px 14px !important;
-        color: var(--text-dim) !important;
-        font-size: 0.88em !important;
+        border-left: 3px solid var(--border-focus) !important;
+        background: var(--bg-surface) !important;
+        padding: 8px 16px !important;
+        color: var(--text-secondary) !important;
     }
-    .gr-markdown strong { color: var(--amber) !important; }
+    .gr-markdown strong {
+        color: var(--text-primary) !important;
+        font-weight: 600;
+    }
 
-    /* ---- Thinking / Action boxes ---- */
+    /* ========== CRITICAL: THINKING & ACTION BOXES ========== */
+    /* These are the core UX - must be instantly readable */
+
+    /* Thinking log - AI reasoning process */
     .thinking-box {
-        background: var(--bg-card) !important;
-        border-left: 3px solid var(--cyan) !important;
-        border-radius: 0 10px 10px 0 !important;
-        box-shadow: 0 0 20px #00f5ff0d inset !important;
-        padding: 14px !important;
-        color: #e8edf5 !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.88em !important;
-        line-height: 1.6 !important;
+        background: var(--thinking-bg) !important;
+        border: 1px solid var(--border) !important;
+        border-left: 3px solid var(--accent) !important;
+        border-radius: 6px !important;
+        padding: 16px !important;
         min-height: 120px !important;
+        max-height: 300px !important;
+        overflow-y: auto !important;
     }
-    .thinking-box * {
-        color: #e8edf5 !important;
+    .thinking-box,
+    .thinking-box span,
+    .thinking-box p,
+    .thinking-box div {
+        color: var(--text-primary) !important;
+        font-family: 'IBM Plex Mono', monospace !important;
+        font-size: 0.8125rem !important;
+        line-height: 1.65 !important;
     }
     .thinking-box p {
-        color: #e8edf5 !important;
-        margin: 0.3em 0 !important;
+        margin: 0 0 8px 0 !important;
     }
     .thinking-box code {
-        background: #00f5ff15 !important;
-        color: #00f5ff !important;
-        padding: 2px 8px !important;
-        border-radius: 4px !important;
-        font-size: 0.85em !important;
+        background: var(--bg-elevated) !important;
+        color: var(--accent) !important;
+        padding: 1px 5px !important;
+        border-radius: 3px !important;
+        font-size: 0.8125rem !important;
     }
-    .thinking-box strong {
-        color: #ffb700 !important;
+    .thinking-box strong, .thinking-box b {
+        color: var(--text-primary) !important;
+        font-weight: 600 !important;
+    }
+    .thinking-box em, .thinking-box i {
+        color: var(--text-secondary) !important;
+        font-style: normal !important;
     }
 
+    /* Action log - execution steps */
     .action-box {
-        background: var(--bg-card) !important;
-        border-left: 3px solid var(--pink) !important;
-        border-radius: 0 10px 10px 0 !important;
-        box-shadow: 0 0 20px #ff006e0d inset !important;
-        padding: 14px !important;
-        color: #e8edf5 !important;
-        font-family: 'JetBrains Mono', monospace !important;
-        font-size: 0.88em !important;
-        line-height: 1.6 !important;
+        background: var(--action-bg) !important;
+        border: 1px solid var(--border) !important;
+        border-left: 3px solid var(--success) !important;
+        border-radius: 6px !important;
+        padding: 16px !important;
         min-height: 100px !important;
+        max-height: 250px !important;
+        overflow-y: auto !important;
     }
-    .action-box * {
-        color: #e8edf5 !important;
+    .action-box,
+    .action-box span,
+    .action-box p,
+    .action-box div {
+        color: var(--text-primary) !important;
+        font-family: 'IBM Plex Mono', monospace !important;
+        font-size: 0.8125rem !important;
+        line-height: 1.65 !important;
     }
     .action-box p {
-        color: #e8edf5 !important;
-        margin: 0.3em 0 !important;
+        margin: 0 0 6px 0 !important;
     }
     .action-box code {
-        background: #ff006e22 !important;
-        color: #ff66b3 !important;
-        padding: 2px 8px !important;
-        border-radius: 4px !important;
-        font-size: 0.85em !important;
+        background: var(--bg-elevated) !important;
+        color: var(--success) !important;
+        padding: 1px 5px !important;
+        border-radius: 3px !important;
+        font-size: 0.8125rem !important;
     }
-    .action-box strong {
-        color: #00e676 !important;
+    .action-box strong, .action-box b {
+        color: var(--text-primary) !important;
+        font-weight: 600 !important;
+    }
+    .action-box em, .action-box i {
+        color: var(--text-secondary) !important;
+        font-style: normal !important;
     }
 
-    /* ---- Screenshot ---- */
+    /* Empty state - show readable placeholder */
+    .thinking-box:empty::before,
+    .action-box:empty::before {
+        content: attr(data-placeholder);
+        color: var(--text-tertiary) !important;
+        font-style: normal !important;
+    }
+
+    /* Screenshot - clean frame */
     .screenshot-container {
-        border: 2px solid var(--border-dim) !important;
-        border-radius: 10px !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 6px !important;
         overflow: hidden;
-        box-shadow: 0 0 30px #00000088, 0 0 2px #00f5ff33 !important;
+        background: var(--bg-surface) !important;
     }
     .screenshot-container img {
         max-width: 100%;
@@ -2227,153 +2201,122 @@ def create_ui():
         display: block;
     }
 
-    /* ---- Status indicators ---- */
-    .status-dot {
-        display: inline-block;
-        width: 8px; height: 8px;
-        border-radius: 50%;
-        margin-right: 6px;
-        animation: pulse 2s infinite;
-    }
-    .status-dot.green  { background: var(--green);  box-shadow: 0 0 6px var(--green); }
-    .status-dot.cyan   { background: var(--cyan);   box-shadow: 0 0 6px var(--cyan); }
-    .status-dot.amber  { background: var(--amber);  box-shadow: 0 0 6px var(--amber); }
-    .status-dot.red    { background: var(--red);    box-shadow: 0 0 6px var(--red); }
-    @keyframes pulse {
-        0%, 100% { opacity: 1; }
-        50% { opacity: 0.4; }
+    /* Section labels - minimal */
+    .claw-section-label {
+        font-size: 0.6875rem !important;
+        font-weight: 600 !important;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--text-tertiary) !important;
+        margin-bottom: 8px !important;
+        display: block;
     }
 
-    /* ---- Footer ---- */
+    /* Panel styling */
+    .claw-panel {
+        background: var(--bg-surface) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 8px !important;
+        padding: 16px !important;
+    }
+
+    /* Footer - minimal */
     .claw-footer {
         text-align: center;
-        padding: 16px;
-        color: var(--text-dim) !important;
-        font-family: 'JetBrains Mono', monospace;
-        font-size: 0.72em;
-        letter-spacing: 2px;
-        border-top: 1px solid var(--border-dim);
+        padding: 12px;
+        color: var(--text-tertiary) !important;
+        font-size: 0.75rem;
+        border-top: 1px solid var(--border);
     }
 
-    /* ---- Status animation for thinking ---- */
-    @keyframes thinking-pulse {
-        0%, 100% { opacity: 1; text-shadow: 0 0 8px var(--cyan); }
-        50% { opacity: 0.5; text-shadow: 0 0 4px var(--cyan); }
+    /* Step indicator - functional */
+    #step-indicator {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 14px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-family: 'IBM Plex Mono', monospace;
+        font-size: 0.8125rem;
     }
-    .thinking-active {
-        animation: thinking-pulse 1.5s ease-in-out infinite;
-        color: var(--cyan) !important;
+    #step-indicator .label {
+        color: var(--text-tertiary);
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
     }
-
-    /* ---- Step counter glow ---- */
-    @keyframes step-glow {
-        0%, 100% { text-shadow: 0 0 10px var(--amber); }
-        50% { text-shadow: 0 0 20px var(--amber), 0 0 30px var(--amber); }
+    #step-indicator .value {
+        color: var(--accent);
+        font-weight: 500;
     }
-    .step-update {
-        animation: step-glow 0.5s ease-out;
+    #step-indicator .status {
+        margin-left: auto;
+        padding: 2px 8px;
+        border-radius: 3px;
+        font-size: 0.6875rem;
+        font-weight: 500;
+        text-transform: uppercase;
     }
-
-    /* ---- Success/Error flash ---- */
-    @keyframes success-flash {
-        0% { background: #00e67622; }
-        100% { background: transparent; }
-    }
-    .action-success {
-        animation: success-flash 1s ease-out;
-    }
-
-    /* ---- Thinking box typing effect placeholder ---- */
-    .thinking-box:empty::before {
-        content: '▶ AI 正在思考...';
-        color: var(--cyan-dim) !important;
-        font-style: italic;
-    }
-    .action-box:empty::before {
-        content: '⏳ 等待执行...';
-        color: var(--pink-dim) !important;
-        font-style: italic;
-    }
-
-    /* ---- Panel hover effects ---- */
-    .claw-panel:hover {
-        border-color: var(--cyan-dark) !important;
-        transition: border-color 0.3s ease;
-    }
-
-    /* ---- Neon glow on focus ---- */
-    .gr-textbox:focus-within, .gr-number:focus-within {
-        box-shadow: 0 0 0 2px #00f5ff33, 0 0 20px #00f5ff22 !important;
-    }
-
-    /* ---- Better table styling for graph tab ---- */
-    .gr-markdown table {
-        border: 1px solid var(--border-dim) !important;
-        border-radius: 8px !important;
-        overflow: hidden;
-    }
-    .gr-markdown th:first-child {
-        border-top-left-radius: 7px !important;
-    }
-    .gr-markdown th:last-child {
-        border-top-right-radius: 7px !important;
-    }
+    #step-indicator .status.ready { background: var(--bg-elevated); color: var(--text-tertiary); }
+    #step-indicator .status.running { background: rgba(59, 130, 246, 0.15); color: var(--accent); }
+    #step-indicator .status.success { background: rgba(34, 197, 94, 0.15); color: var(--success); }
+    #step-indicator .status.error { background: rgba(239, 68, 68, 0.15); color: var(--error); }
     """
     
     with gr.Blocks(
         title="ClawGUI-Agent",
         theme=gr.themes.Default(
             primary_hue=gr.themes.Color(
-                c50="#001a1f", c100="#003344",
-                c200="#004d66", c300="#006688",
-                c400="#008899", c500="#00a0ab",
-                c600="#00b8cc", c700="#00f5ff",
-                c800="#33f7ff", c900="#66faff", c950="#99fcff",
+                c50="#0f0f12", c100="#17171c",
+                c200="#1f1f24", c300="#27272c",
+                c400="#2f2f34", c500="#3b3b40",
+                c600="#525258", c700="#6b6b73",
+                c800="#8c8c96", c900="#b0b0ba", c950="#e5e5e5",
             ),
             secondary_hue=gr.themes.Color(
-                c50="#1a0011", c100="#330022",
-                c200="#4d0033", c300="#660044",
-                c400="#880055", c500="#aa0066",
-                c600="#cc0077", c700="#ff006e",
-                c800="#ff3399", c900="#ff66b3", c950="#ff99cc",
+                c50="#0f0f12", c100="#17171c",
+                c200="#1f1f24", c300="#27272c",
+                c400="#2f2f34", c500="#3b3b40",
+                c600="#525258", c700="#6b6b73",
+                c800="#8c8c96", c900="#b0b0ba", c950="#e5e5e5",
             ),
             neutral_hue=gr.themes.Color(
-                c50="#0b1120", c100="#0f1629",
-                c200="#141d35", c300="#1e2d4a",
-                c400="#2a3d5a", c500="#3a4d6a",
-                c600="#4a5d7a", c700="#7a8ba8",
-                c800="#a8b8cc", c900="#e8edf5", c950="#f5f7fa",
+                c50="#0a0a0b", c100="#111113",
+                c200="#18181b", c300="#1f1f23",
+                c400="#27272a", c500="#3f3f46",
+                c600="#525258", c700="#71717a",
+                c800="#a1a1aa", c900="#e5e5e5", c950="#fafafa",
             ),
-            font=("Noto Sans SC", "JetBrains Mono", "system-ui"),
+            font=("IBM Plex Sans", "Noto Sans SC", "system-ui"),
         ),
         css=custom_css,
     ) as demo:
 
         # ============================================================
-        #  HEADER
+        #  HEADER - minimal
         # ============================================================
         gr.HTML("""
         <div class="claw-header">
-            <div class="claw-logo">CLAWGUI-AGENT</div>
-            <div class="claw-subtitle">AI-POWERED MOBILE AUTOMATION SYSTEM</div>
-            <div class="claw-badge">DUAL-CORE MEMORY &nbsp;|&nbsp; NEO4j GRAPH ENGINE</div>
+            <div class="claw-logo">ClawGUI-Agent</div>
+            <div class="claw-subtitle">Phone Automation Control</div>
         </div>
         """)
         
         with gr.Tabs():
             # ==================== 配置管理 Tab ====================
-            with gr.Tab("⚙️ 配置"):
+            with gr.Tab("Config"):
                 # ---- Robot Config ----
-                gr.HTML('<div class="claw-section-label">🤖 ROBOT CONFIG</div>')
+                gr.HTML('<div class="claw-section-label">Device</div>')
                 device_type = gr.Radio(
                     choices=[("Android", "adb"), ("HarmonyOS", "hdc"), ("iOS", "ios")],
                     value="adb",
-                    label="DEVICE TYPE",
+                    label="Type",
                 )
                 with gr.Row():
                     with gr.Column(scale=2):
                         device_id = gr.Textbox(
-                            label="DEVICE ID",
+                            label="Device ID",
                             value=os.getenv("PHONE_AGENT_DEVICE_ID", ""),
                             placeholder="auto-detect",
                         )
@@ -2384,23 +2327,23 @@ def create_ui():
                             placeholder="http://localhost:8100",
                         )
 
-                gr.HTML('<div class="claw-section-label">🧠 MODEL CONFIG</div>')
+                gr.HTML('<div class="claw-section-label">Model</div>')
                 with gr.Row():
                     with gr.Column(scale=3):
                         base_url = gr.Textbox(
-                            label="BASE URL",
+                            label="API URL",
                             value=os.getenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1"),
                             placeholder="http://localhost:8000/v1",
                         )
                     with gr.Column(scale=2):
                         model_name = gr.Textbox(
-                            label="MODEL NAME",
+                            label="Model Name",
                             value=os.getenv("PHONE_AGENT_MODEL", "autoglm-phone-9b"),
                             placeholder="autoglm-phone-9b",
                         )
                     with gr.Column(scale=1):
                         api_key = gr.Textbox(
-                            label="API KEY",
+                            label="API Key",
                             value=os.getenv("PHONE_AGENT_API_KEY", ""),
                             placeholder="sk-...",
                             type="password",
@@ -2408,12 +2351,12 @@ def create_ui():
 
                 model_type = gr.Radio(
                     choices=[
-                        ("AUTO", "auto"), ("AutoGLM", "autoglm"),
+                        ("Auto", "auto"), ("AutoGLM", "autoglm"),
                         ("UI-TARS", "uitars"), ("Qwen-VL", "qwenvl"),
                         ("MAI-UI", "maiui"), ("GUI-Owl", "guiowl"),
                     ],
                     value="auto",
-                    label="MODEL ADAPTER",
+                    label="Adapter",
                 )
 
                 with gr.Row():
@@ -2421,61 +2364,58 @@ def create_ui():
                         max_steps = gr.Slider(
                             minimum=1, maximum=300, step=1,
                             value=int(os.getenv("PHONE_AGENT_MAX_STEPS", "100")),
-                            label="MAX STEPS",
+                            label="Max Steps",
                         )
                     with gr.Column(scale=1):
                         prompt_lang = gr.Radio(
-                            choices=[("中文 CN", "cn"), ("English", "en")],
+                            choices=[("中文", "cn"), ("English", "en")],
                             value=os.getenv("PHONE_AGENT_LANG", "cn"),
-                            label="PROMPT LANG",
+                            label="Language",
                         )
                     with gr.Column(scale=1):
                         memory_user_id_config = gr.Textbox(
-                            label="USER ID (MEMORY)",
+                            label="User ID",
                             value=os.getenv("PHONE_AGENT_USER_ID", "default"),
                             placeholder="default",
                         )
 
-                gr.HTML('<div class="claw-section-label">💾 CONFIG ACTIONS</div>')
+                gr.HTML('<div class="claw-section-label">Actions</div>')
                 with gr.Row():
-                    save_config_btn = gr.Button("💾 SAVE TO .ENV", variant="primary", scale=1)
-                    reload_config_btn = gr.Button("↻ RELOAD FROM .ENV", variant="secondary", scale=1)
+                    save_config_btn = gr.Button("Save to .env", variant="primary", scale=1)
+                    reload_config_btn = gr.Button("Reload from .env", variant="secondary", scale=1)
                 save_config_output = gr.Markdown("")
 
                 gr.HTML("""
-                <div style="margin-top:8px; padding:10px 14px; background:#00f5ff08;
-                            border:1px solid #1e2d4a; border-radius:8px; font-size:0.78em;
-                            font-family:'JetBrains Mono',monospace; color:#7a8ba8;">
-                    <span style="color:#00f5ff">●</span> 配置从 <code style="color:#a8d8ff">.env</code> 文件自动读取，
-                    点击 <strong style="color:#00e676">SAVE TO .ENV</strong> 保存修改 &nbsp;|&nbsp;
-                    <span style="color:#ffb700">●</span> 图谱: Neo4j &nbsp;
-                    <span style="color:#ffb700">●</span> 向量: FAISS
+                <div style="margin-top:12px; padding:10px 14px; background:var(--bg-surface);
+                            border:1px solid var(--border); border-radius:6px; font-size:0.8125rem;
+                            color:var(--text-secondary);">
+                    Configuration loaded from <code>.env</code>. Click <strong>Save</strong> to persist changes.
                 </div>
                 """)
             
             # ==================== DEVICE Tab ====================
-            with gr.Tab("📱 设备"):
-                gr.HTML('<div class="claw-section-label">📡 CONNECTED DEVICES</div>')
+            with gr.Tab("Device"):
+                gr.HTML('<div class="claw-section-label">Connected Devices</div>')
                 with gr.Row():
                     with gr.Column(scale=1):
-                        device_list_output = gr.Markdown("> 点击 **SCAN** 刷新设备列表")
-                        refresh_devices_btn = gr.Button("SCAN DEVICES", variant="primary")
+                        device_list_output = gr.Markdown("> Click **Scan** to refresh device list")
+                        refresh_devices_btn = gr.Button("Scan", variant="primary")
                     with gr.Column(scale=1):
                         connect_address = gr.Textbox(
-                            label="REMOTE ADDR",
+                            label="Address",
                             placeholder="192.168.1.100:5555",
                         )
                         with gr.Row():
-                            connect_btn = gr.Button("CONNECT", variant="primary")
-                            disconnect_btn = gr.Button("DISCONNECT", variant="stop")
+                            connect_btn = gr.Button("Connect", variant="primary")
+                            disconnect_btn = gr.Button("Disconnect", variant="secondary")
                         connect_output = gr.Markdown("")
 
-                gr.HTML('<div class="claw-section-label">📶 WIFI DEBUG</div>')
+                gr.HTML('<div class="claw-section-label">WiFi Debug</div>')
                 with gr.Row():
                     wifi_port = gr.Number(
-                        label="PORT", value=5555, precision=0,
+                        label="Port", value=5555, precision=0,
                     )
-                    enable_wifi_btn = gr.Button("ENABLE WIFI DEBUG", variant="secondary")
+                    enable_wifi_btn = gr.Button("Enable", variant="secondary")
                 wifi_output = gr.Markdown("")
 
                 refresh_devices_btn.click(fn=get_device_list, inputs=[device_type], outputs=[device_list_output])
@@ -2496,16 +2436,16 @@ def create_ui():
                 )
 
             # ==================== SYSTEM CHECK Tab ====================
-            with gr.Tab("🔍 检查"):
-                gr.HTML('<div class="claw-section-label">🔬 FULL SYSTEM CHECK</div>')
-                run_check_btn = gr.Button("RUN DIAGNOSTICS", variant="primary")
-                check_output = gr.Markdown("> 点击按钮开始诊断...")
+            with gr.Tab("Check"):
+                gr.HTML('<div class="claw-section-label">Diagnostics</div>')
+                run_check_btn = gr.Button("Run All Checks", variant="primary")
+                check_output = gr.Markdown("> Click button to start diagnostics...")
 
-                gr.HTML('<div class="claw-section-label">⚡ QUICK CHECKS</div>')
+                gr.HTML('<div class="claw-section-label">Quick Checks</div>')
                 with gr.Row():
-                    check_tool_btn = gr.Button("TOOLS", variant="secondary")
-                    check_device_btn = gr.Button("DEVICE", variant="secondary")
-                    check_keyboard_btn = gr.Button("KEYBOARD", variant="secondary")
+                    check_tool_btn = gr.Button("Tools", variant="secondary")
+                    check_device_btn = gr.Button("Device", variant="secondary")
+                    check_keyboard_btn = gr.Button("Keyboard", variant="secondary")
                     check_api_btn = gr.Button("API", variant="secondary")
                 single_check_output = gr.Markdown("")
 
@@ -2516,56 +2456,56 @@ def create_ui():
                 check_api_btn.click(fn=check_model_api, inputs=[base_url, api_key, model_name], outputs=[single_check_output])
             
             # ==================== MEMORY Tab ====================
-            with gr.Tab("🧠 记忆"):
-                gr.HTML('<div class="claw-section-label">💾 DUAL-CORE MEMORY</div>')
+            with gr.Tab("Memory"):
+                gr.HTML('<div class="claw-section-label">Dual-Core Memory</div>')
                 with gr.Row():
                     memory_user_id = gr.Textbox(
-                        label="USER ID", value="default", placeholder="default",
+                        label="User ID", value="default", placeholder="default",
                     )
-                    refresh_stats_btn = gr.Button("REFRESH", variant="primary")
-                memory_stats_output = gr.Markdown("> 点击 **REFRESH** 获取记忆系统状态")
+                    refresh_stats_btn = gr.Button("Refresh", variant="primary")
+                memory_stats_output = gr.Markdown("> Click **Refresh** to view memory stats")
 
-                gr.HTML('<div class="claw-section-label">➕ ADD PREFERENCE</div>')
+                gr.HTML('<div class="claw-section-label">Add Preference</div>')
                 with gr.Row():
                     with gr.Column(scale=3):
                         preference_input = gr.Textbox(
-                            label="CONTENT", placeholder="e.g. 常用外卖平台是美团...",
+                            label="Content", placeholder="e.g. 常用外卖平台是美团...",
                             lines=2,
                         )
                     with gr.Column(scale=1):
                         preference_category = gr.Dropdown(
-                            label="CATEGORY",
+                            label="Category",
                             choices=["general", "app", "contact", "habit", "ui"],
                             value="general",
                         )
                         preference_importance = gr.Slider(
-                            label="IMPORTANCE", minimum=0.1, maximum=1.0,
+                            label="Importance", minimum=0.1, maximum=1.0,
                             value=0.6, step=0.1,
                         )
-                add_preference_btn = gr.Button("ADD", variant="secondary")
+                add_preference_btn = gr.Button("Add", variant="secondary")
                 add_preference_output = gr.Markdown("")
 
-                gr.HTML('<div class="claw-section-label">🔍 SEARCH MEMORIES</div>')
+                gr.HTML('<div class="claw-section-label">Search</div>')
                 with gr.Row():
                     search_query = gr.Textbox(
-                        label="QUERY", placeholder="keyword search...",
+                        label="Query", placeholder="Search memories...",
                         scale=3,
                     )
                     search_top_k = gr.Slider(
-                        label="TOP_K", minimum=1, maximum=20, value=5, step=1, scale=1,
+                        label="Top K", minimum=1, maximum=20, value=5, step=1, scale=1,
                     )
-                search_btn = gr.Button("SEARCH", variant="secondary")
+                search_btn = gr.Button("Search", variant="secondary")
                 search_output = gr.Markdown("")
 
-                gr.HTML('<div class="claw-section-label">💾 DATA MANAGEMENT</div>')
+                gr.HTML('<div class="claw-section-label">Data</div>')
                 with gr.Row():
-                    export_btn = gr.Button("EXPORT", variant="secondary")
-                    import_btn = gr.Button("IMPORT", variant="secondary")
-                    clear_btn = gr.Button("CLEAR ALL", variant="stop")
+                    export_btn = gr.Button("Export", variant="secondary")
+                    import_btn = gr.Button("Import", variant="secondary")
+                    clear_btn = gr.Button("Clear All", variant="cancel")
                 export_output = gr.Markdown("")
                 export_json = gr.Textbox(
-                    label="JSON DATA", placeholder="JSON appears here...",
-                    lines=8,
+                    label="JSON", placeholder="JSON data appears here...",
+                    lines=6,
                 )
 
                 refresh_stats_btn.click(fn=get_memory_stats, inputs=[memory_user_id], outputs=[memory_stats_output])
@@ -2576,97 +2516,95 @@ def create_ui():
                 clear_btn.click(fn=clear_all_memories, inputs=[memory_user_id], outputs=[export_output])
 
             # ==================== GRAPH Tab ====================
-            with gr.Tab("🗺️ 图谱"):
+            with gr.Tab("Graph"):
                 gr.HTML("""
-                <div style="padding:10px 14px; background:#00f5ff08; border:1px solid #1e2d4a;
-                            border-radius:8px; font-size:0.78em; font-family:'JetBrains Mono',monospace; color:#7a8ba8; margin-bottom:12px;">
-                    GRAPH ENGINE — records full <span style="color:#a8d8ff">UIState→Action→UIState</span> chains.
-                    Human review before commit prevents suboptimal paths polluting the knowledge base.
+                <div style="padding:10px 14px; background:var(--bg-surface); border:1px solid var(--border);
+                            border-radius:6px; font-size:0.8125rem; color:var(--text-secondary); margin-bottom:12px;">
+                    Records UIState → Action → UIState chains. Human review prevents suboptimal paths.
                 </div>
                 """)
                 with gr.Row():
-                    graph_status_output = gr.Markdown("> Click **REFRESH** to check Neo4j status")
-                    refresh_graph_btn = gr.Button("REFRESH STATUS", variant="primary")
+                    graph_status_output = gr.Markdown("> Click **Refresh** to check Neo4j status")
+                    refresh_graph_btn = gr.Button("Refresh", variant="primary")
 
-                gr.HTML('<div class="claw-section-label">🔍 SEARCH TRAJECTORIES</div>')
+                gr.HTML('<div class="claw-section-label">Search Trajectories</div>')
                 with gr.Row():
                     graph_search_query = gr.Textbox(
-                        label="QUERY", placeholder="e.g. 京东外卖 KFC 蓝牙耳机...",
+                        label="Query", placeholder="Search trajectories...",
                         scale=3,
                     )
-                    graph_search_btn = gr.Button("SEARCH", variant="secondary", scale=1)
-                graph_search_output = gr.Markdown("> Search results show full reference trajectories")
+                    graph_search_btn = gr.Button("Search", variant="secondary", scale=1)
+                graph_search_output = gr.Markdown("> Search results will appear here")
                 graph_search_btn.click(fn=search_graph_trajectories, inputs=[graph_search_query], outputs=[graph_search_output])
 
-                gr.HTML('<div class="claw-section-label">📋 COMMITTED / PENDING</div>')
+                gr.HTML('<div class="claw-section-label">Trajectories</div>')
                 with gr.Row():
-                    list_trajectories_btn = gr.Button("COMMITTED (Neo4j)", variant="secondary")
-                    list_pending_btn = gr.Button("PENDING REVIEW", variant="secondary")
-                graph_list_output = gr.Markdown("> Results appear here")
+                    list_trajectories_btn = gr.Button("Committed (Neo4j)", variant="secondary")
+                    list_pending_btn = gr.Button("Pending Review", variant="secondary")
+                graph_list_output = gr.Markdown("> Select an option above")
                 list_trajectories_btn.click(fn=list_graph_trajectories, inputs=[memory_user_id], outputs=[graph_list_output])
                 list_pending_btn.click(fn=list_pending_trajectories, inputs=[memory_user_id], outputs=[graph_list_output])
 
-                gr.HTML('<div class="claw-section-label">✅ COMMIT TO GRAPH</div>')
+                gr.HTML('<div class="claw-section-label">Commit</div>')
                 with gr.Row():
-                    commit_index = gr.Number(label="INDEX #", value=0, precision=0)
-                    commit_btn = gr.Button("COMMIT TO NEO4j", variant="primary")
+                    commit_index = gr.Number(label="Index #", value=0, precision=0)
+                    commit_btn = gr.Button("Commit to Neo4j", variant="primary")
                 commit_output = gr.Markdown("")
                 commit_btn.click(fn=commit_graph_trajectory, inputs=[memory_user_id, commit_index], outputs=[commit_output])
 
                 gr.HTML("""
-                <div style="margin-top:12px; padding:10px 14px; background:#0b1120; border:1px solid #1e2d4a;
-                            border-radius:8px; font-family:'JetBrains Mono',monospace; font-size:0.75em; color:#7a8ba8;">
-                    WORKFLOW: execute → <span style="color:#ff006e">PENDING</span> → review → <span style="color:#00e676">COMMIT</span> → future tasks auto-match
+                <div style="margin-top:12px; padding:10px 14px; background:var(--bg-surface);
+                            border:1px solid var(--border); border-radius:6px;
+                            font-size:0.8125rem; color:var(--text-secondary);">
+                    Workflow: execute → pending → review → commit → future tasks auto-match
                 </div>
                 """)
                 refresh_graph_btn.click(fn=refresh_neo4j_stats, inputs=[memory_user_id], outputs=[graph_status_output])
 
             # ==================== TASK CONTROL Tab ====================
-            with gr.Tab("💬 执行"):
+            with gr.Tab("Execute"):
                 with gr.Row():
                     # Left: task + logs
                     with gr.Column(scale=3):
-                        gr.HTML('<div class="claw-section-label">⚡ TASK INPUT</div>')
+                        gr.HTML('<div class="claw-section-label">Task</div>')
                         task_input = gr.Textbox(
-                            label="TASK", placeholder="e.g. 打开微信，发送消息给张三说'你好'",
-                            lines=3,
+                            label="Enter task", placeholder="e.g. Open WeChat and send message to Zhang San",
+                            lines=2,
                         )
                         with gr.Row():
-                            start_btn = gr.Button("▶ EXECUTE", variant="primary", scale=2)
-                            stop_btn = gr.Button("■ STOP", variant="stop", scale=1)
-                            continue_btn = gr.Button("▶ CONTINUE", variant="secondary", scale=1)
-                            new_btn = gr.Button("↺ RESET", variant="secondary", scale=1)
+                            start_btn = gr.Button("Execute", variant="primary", scale=2)
+                            stop_btn = gr.Button("Stop", variant="cancel", scale=1)
+                            continue_btn = gr.Button("Continue", variant="secondary", scale=1)
+                            new_btn = gr.Button("Reset", variant="secondary", scale=1)
 
-                        # Step indicator
+                        # Status bar
                         gr.HTML("""
-                        <div id="step-indicator" style="display:flex; align-items:center; gap:12px;
-                            margin-bottom:8px; padding:8px 14px; background:#0f1629; border:1px solid #1e2d4a;
-                            border-radius:8px; font-family:'JetBrains Mono',monospace;">
-                            <span style="color:#00f5ff; font-size:0.75em; letter-spacing:2px;">STEP</span>
-                            <span id="step-count" style="color:#ffb700; font-size:1.4em; font-weight:700; min-width:40px;">0</span>
-                            <span style="color:#1e2d4a;">|</span>
-                            <span id="current-app" style="color:#7a8ba8; font-size:0.78em;">---</span>
-                            <span style="flex:1;"></span>
-                            <span id="task-status" style="color:#00e676; font-size:0.72em; letter-spacing:1px;">READY</span>
+                        <div id="step-indicator">
+                            <span class="label">Step</span>
+                            <span class="value" id="step-count">0</span>
+                            <span style="color:var(--border-focus); margin: 0 4px;">|</span>
+                            <span class="label">App</span>
+                            <span class="value" id="current-app">---</span>
+                            <span class="status ready" id="task-status">Ready</span>
                         </div>
                         """)
 
-                        gr.HTML('<div class="claw-section-label" style="margin-top:4px;">💭 AI THINKING</div>')
+                        gr.HTML('<div class="claw-section-label" style="margin-top:12px;">AI Thinking</div>')
                         thinking_output = gr.Markdown("", elem_classes=["thinking-box"])
 
-                        gr.HTML('<div class="claw-section-label">🎯 ACTION EXECUTION</div>')
+                        gr.HTML('<div class="claw-section-label">Action Log</div>')
                         action_output = gr.Markdown("", elem_classes=["action-box"])
 
                     # Right: screenshot
                     with gr.Column(scale=2):
-                        gr.HTML('<div class="claw-section-label">📱 SCREENSHOT</div>')
+                        gr.HTML('<div class="claw-section-label">Preview</div>')
                         screenshot_display = gr.Image(
-                            label="DEVICE PREVIEW", type="pil",
+                            label="Device Screen", type="pil",
                             elem_classes=["screenshot-container"],
                         )
                         with gr.Row():
-                            refresh_screenshot_btn = gr.Button("↺ REFRESH", size="sm")
-                            auto_refresh = gr.Checkbox(label="AUTO (2s)", value=False)
+                            refresh_screenshot_btn = gr.Button("Refresh", size="sm", variant="secondary")
+                            auto_refresh = gr.Checkbox(label="Auto (2s)", value=False)
 
                 # Events
                 start_btn.click(
@@ -2689,18 +2627,18 @@ def create_ui():
                 auto_refresh_timer.tick(fn=refresh_screenshot, inputs=[device_type, device_id, wda_url], outputs=[screenshot_display])
 
             # ==================== HELP Tab ====================
-            with gr.Tab("📖 DOC"):
-                gr.HTML('<div class="claw-section-label">📖 QUICK START</div>')
+            with gr.Tab("Help"):
+                gr.HTML('<div class="claw-section-label">Quick Start</div>')
                 gr.Markdown("""
-                **1.** Configure model API in **⚙️ CONFIG** — reads from `.env` by default
-                **2.** Connect device in **📱 DEVICE**
-                **3.** Run diagnostics in **🔍 CHECK**
-                **4.** Execute task in **💬 EXECUTE**
+                **1.** Configure model API in **Config** tab - loads from `.env` by default
+                **2.** Connect your device in **Device** tab
+                **3.** Run diagnostics in **Check** tab
+                **4.** Execute tasks in **Execute** tab
                 """)
         # Footer
         gr.HTML("""
         <div class="claw-footer">
-            CLAWGUI-AGENT &nbsp;|&nbsp; DUAL-CORE MEMORY &nbsp;|&nbsp; NEO4j + FAISS &nbsp;|&nbsp; POWERED BY GRADIO
+            ClawGUI-Agent &middot; Dual-Core Memory &middot; Neo4j + FAISS
         </div>
         """)
     
