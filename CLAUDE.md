@@ -92,3 +92,9 @@ nanobot runs as a separate package (`nanobot/`). The `gui-mobile` skill bridges 
 - `maiui` → MAI-UI adapter (Alibaba)
 - `guiowl` → GUI-Owl adapter (mPLUG)
 - `auto` → auto-detect from model name
+
+## Git 与部署
+- 代码仓库：https://github.com/He2y/ShoppingClaw
+- 项目使用 git 管理，每次完成修改后自动 commit。
+- commit message 用英文，简洁描述变更意图
+- git push 仅用于跨设备同步，不要自动执行，等我说
