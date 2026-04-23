@@ -1842,205 +1842,351 @@ def create_ui():
     """创建 Gradio 界面"""
 
     # ============================================================
-    #  PROFESSIONAL CONTROL CENTER — minimal dark theme
+    #  GLASSMORPHISM DESIGN SYSTEM
+    #  Frosted glass with dark base, high-contrast text
     # ============================================================
     custom_css = """
-    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Noto+Sans+SC:wght@300;400;500&display=swap');
 
     :root {
-        --bg-base: #0a0a0b;
-        --bg-surface: #111113;
-        --bg-elevated: #18181b;
-        --bg-hover: #1f1f23;
-        --border: #27272a;
-        --border-focus: #3f3f46;
-        --text-primary: #e5e5e5;
-        --text-secondary: #a1a1aa;
-        --text-tertiary: #71717a;
-        --accent: #3b82f6;
-        --accent-hover: #60a5fa;
-        --success: #22c55e;
-        --warning: #f59e0b;
-        --error: #ef4444;
-        --thinking-bg: #0f0f12;
-        --action-bg: #0f0f12;
+        /* Dark base - glass sits on this */
+        --glass-base: #080c14;
+        --glass-bg: #0d1424;
+        --glass-surface: rgba(255, 255, 255, 0.04);
+        --glass-surface-hover: rgba(255, 255, 255, 0.07);
+        --glass-elevated: rgba(255, 255, 255, 0.06);
+        --glass-border: rgba(255, 255, 255, 0.10);
+        --glass-border-focus: rgba(129, 140, 248, 0.60);
+        --glass-border-accent: rgba(129, 140, 248, 0.35);
+        --glass-blur: 20px;
+        --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.45), 0 2px 8px rgba(0, 0, 0, 0.25);
+
+        /* Text - high contrast for readability */
+        --text-primary: rgba(238, 240, 245, 0.95);
+        --text-secondary: rgba(200, 205, 220, 0.78);
+        --text-tertiary: rgba(140, 150, 175, 0.55);
+        --text-muted: rgba(120, 130, 155, 0.40);
+
+        /* Accent - indigo/purple spectrum */
+        --accent: #818cf8;
+        --accent-hover: #a5b4fc;
+        --accent-dim: rgba(129, 140, 248, 0.18);
+        --accent-glow: rgba(129, 140, 248, 0.25);
+
+        /* Semantic */
+        --success: #34d399;
+        --success-dim: rgba(52, 211, 153, 0.15);
+        --warning: #fbbf24;
+        --warning-dim: rgba(251, 191, 36, 0.15);
+        --error: #f87171;
+        --error-dim: rgba(248, 113, 113, 0.15);
+
+        /* Glow orbs (ambient) */
+        --orb1: radial-gradient(ellipse 600px 400px at 15% 10%, rgba(99, 102, 241, 0.12), transparent);
+        --orb2: radial-gradient(ellipse 500px 350px at 85% 80%, rgba(167, 139, 250, 0.08), transparent);
+        --orb3: radial-gradient(ellipse 400px 300px at 50% 50%, rgba(59, 130, 246, 0.05), transparent);
     }
 
-    /* Reset & Base */
+    /* Base reset */
     .gradio-container {
         font-family: 'IBM Plex Sans', 'Noto Sans SC', system-ui, sans-serif !important;
-        background: var(--bg-base) !important;
+        background: var(--glass-base) !important;
+        min-height: 100vh;
     }
 
     body, .gradio-container, .gradio-container * {
         color: var(--text-primary) !important;
     }
 
-    /* Background */
+    /* Dark background with ambient orbs */
     #root, main, .gradio-blocks {
-        background-color: var(--bg-base) !important;
+        background-color: var(--glass-base) !important;
+        position: relative;
+        overflow: hidden;
     }
 
-    /* Custom scrollbar - minimal */
-    ::-webkit-scrollbar { width: 8px; height: 8px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-    ::-webkit-scrollbar-thumb:hover { background: var(--border-focus); }
+    /* Ambient glow orbs - behind everything */
+    #root::before,
+    #root::after,
+    main::before {
+        content: '';
+        position: fixed;
+        pointer-events: none;
+        z-index: 0;
+    }
+    #root::before {
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: var(--orb1), var(--orb2), var(--orb3);
+    }
+    #root::after {
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: repeating-linear-gradient(
+            180deg,
+            transparent,
+            transparent 80px,
+            rgba(255,255,255,0.006) 80px,
+            rgba(255,255,255,0.006) 81px
+        );
+    }
 
-    /* Header - minimal */
+    /* ======= GLASS COMPONENT SYSTEM ======= */
+
+    /* Glass card / panel */
+    .glass-panel {
+        background: var(--glass-surface) !important;
+        backdrop-filter: blur(var(--glass-blur)) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%) !important;
+        border: 1px solid var(--glass-border) !important;
+        border-radius: 12px !important;
+        box-shadow: var(--glass-shadow) !important;
+    }
+
+    /* Elevated glass - slightly more opaque */
+    .glass-elevated {
+        background: var(--glass-elevated) !important;
+        backdrop-filter: blur(var(--glass-blur)) saturate(200%) !important;
+        -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(200%) !important;
+        border: 1px solid var(--glass-border) !important;
+        border-radius: 10px !important;
+        box-shadow: var(--glass-shadow) !important;
+    }
+
+    /* Subtle divider */
+    .glass-divider {
+        height: 1px;
+        background: linear-gradient(90deg, transparent, var(--glass-border), transparent) !important;
+        border: none !important;
+        margin: 8px 0 !important;
+    }
+
+    /* ======= HEADER ======= */
     .claw-header {
         text-align: center;
-        padding: 20px 16px 16px;
-        border-bottom: 1px solid var(--border);
+        padding: 28px 24px 20px;
+        background: var(--glass-surface) !important;
+        backdrop-filter: blur(var(--glass-blur)) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%) !important;
+        border-bottom: 1px solid var(--glass-border) !important;
         margin-bottom: 0;
+        position: relative;
+        z-index: 10;
     }
     .claw-logo {
         font-family: 'IBM Plex Sans', sans-serif;
-        font-size: 1.5rem;
+        font-size: 1.625rem;
         font-weight: 600;
         color: var(--text-primary) !important;
-        letter-spacing: -0.02em;
-        margin-bottom: 4px;
+        letter-spacing: -0.025em;
+        margin-bottom: 6px;
+        /* Subtle text gradient */
+        background: linear-gradient(135deg, rgba(238,240,245,0.95) 0%, rgba(165,180,252,0.85) 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
     }
     .claw-subtitle {
-        font-size: 0.8rem;
+        font-size: 0.75rem;
         color: var(--text-tertiary);
-        letter-spacing: 0.05em;
+        letter-spacing: 0.12em;
         text-transform: uppercase;
-    }
-    .claw-badge {
-        display: none;  /* Hide badge - unnecessary decoration */
+        font-weight: 400;
     }
 
-    /* Tab styling - clean horizontal tabs */
+    /* ======= TABS ======= */
+    .tab-nav, .gr-tabs {
+        background: transparent !important;
+        border-bottom: 1px solid var(--glass-border) !important;
+        padding: 0 8px !important;
+    }
     .tab-nav button, .gr-tabs button {
         font-family: 'IBM Plex Sans', sans-serif !important;
-        font-size: 0.875rem !important;
+        font-size: 0.8125rem !important;
         font-weight: 500 !important;
         color: var(--text-secondary) !important;
         border-bottom: 2px solid transparent !important;
-        padding: 10px 16px !important;
+        padding: 12px 18px !important;
         background: transparent !important;
-        transition: color 0.15s, border-color 0.15s !important;
+        transition: color 0.2s, border-color 0.2s, background 0.2s !important;
+        border-radius: 8px 8px 0 0 !important;
+        margin-bottom: -1px !important;
     }
     .tab-nav button:hover, .gr-tabs button:hover {
         color: var(--text-primary) !important;
-        background: transparent !important;
+        background: var(--glass-surface) !important;
     }
     .tab-nav button.selected, .gr-tabs button.selected {
         color: var(--accent) !important;
         border-bottom-color: var(--accent) !important;
+        background: var(--glass-surface) !important;
+        backdrop-filter: blur(var(--glass-blur)) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%) !important;
     }
 
-    /* Input / Textbox - functional */
+    /* Tab content container */
+    .gr-tabs-content {
+        background: transparent !important;
+        padding: 20px 16px !important;
+    }
+
+    /* ======= INPUTS ======= */
     .gr-textbox, .gr-number, .gr-dropdown {
-        background: var(--bg-surface) !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 6px !important;
+        background: var(--glass-surface) !important;
+        backdrop-filter: blur(12px) saturate(150%) !important;
+        -webkit-backdrop-filter: blur(12px) saturate(150%) !important;
+        border: 1px solid var(--glass-border) !important;
+        border-radius: 10px !important;
         color: var(--text-primary) !important;
         font-size: 0.875rem !important;
-        transition: border-color 0.15s !important;
+        transition: border-color 0.2s, box-shadow 0.2s, background 0.2s !important;
     }
     .gr-textbox:hover, .gr-number:hover, .gr-dropdown:hover {
-        border-color: var(--border-focus) !important;
+        border-color: rgba(255,255,255,0.18) !important;
+        background: var(--glass-surface-hover) !important;
     }
     .gr-textbox:focus, .gr-number:focus, .gr-dropdown:focus {
-        border-color: var(--accent) !important;
-        box-shadow: none !important;
+        border-color: var(--glass-border-focus) !important;
+        box-shadow: 0 0 0 3px var(--accent-dim), 0 0 20px var(--accent-glow) !important;
+        outline: none !important;
     }
     .gr-textbox input, .gr-number input, .gr-dropdown select {
         color: var(--text-primary) !important;
         font-size: 0.875rem !important;
+    }
+    .gr-textbox textarea {
+        color: var(--text-primary) !important;
+    }
+    /* Placeholder */
+    .gr-textbox input::placeholder,
+    .gr-textbox textarea::placeholder {
+        color: var(--text-muted) !important;
     }
     .gr-textbox label, .gr-number label, .gr-dropdown label,
     .gr-slider label, .gr-radio label, .gr-checkbox label {
         color: var(--text-secondary) !important;
         font-size: 0.75rem !important;
         font-weight: 500 !important;
-        margin-bottom: 4px !important;
-    }
-
-    /* Radio buttons - minimal */
-    .gr-radio {
-        background: transparent !important;
-    }
-    .gr-radio .gr-radio-item {
-        background: var(--bg-surface) !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 4px !important;
-        padding: 6px 12px !important;
-        font-size: 0.8rem !important;
-        color: var(--text-secondary) !important;
-        transition: all 0.15s !important;
-    }
-    .gr-radio .gr-radio-item:hover {
-        border-color: var(--border-focus) !important;
-        color: var(--text-primary) !important;
-    }
-    .gr-radio .gr-radio-item:has(input:checked) {
-        border-color: var(--accent) !important;
-        background: rgba(59, 130, 246, 0.1) !important;
-        color: var(--accent) !important;
+        margin-bottom: 6px !important;
+        letter-spacing: 0.02em;
     }
 
     /* Slider */
     .gr-slider input[type=range] {
         accent-color: var(--accent) !important;
     }
+    .gr-slider {
+        background: transparent !important;
+    }
 
-    /* Buttons - functional, not decorative */
+    /* ======= RADIO ======= */
+    .gr-radio {
+        background: transparent !important;
+    }
+    .gr-radio .gr-radio-item {
+        background: var(--glass-surface) !important;
+        backdrop-filter: blur(8px) !important;
+        -webkit-backdrop-filter: blur(8px) !important;
+        border: 1px solid var(--glass-border) !important;
+        border-radius: 8px !important;
+        padding: 6px 14px !important;
+        font-size: 0.8rem !important;
+        color: var(--text-secondary) !important;
+        transition: all 0.2s !important;
+    }
+    .gr-radio .gr-radio-item:hover {
+        border-color: rgba(255,255,255,0.18) !important;
+        color: var(--text-primary) !important;
+        background: var(--glass-surface-hover) !important;
+    }
+    .gr-radio .gr-radio-item:has(input:checked) {
+        border-color: var(--glass-border-focus) !important;
+        background: var(--accent-dim) !important;
+        color: var(--accent-hover) !important;
+        box-shadow: 0 0 0 2px rgba(129,140,248,0.12) !important;
+    }
+
+    /* ======= BUTTONS ======= */
     .gr-button, button {
         font-family: 'IBM Plex Sans', sans-serif !important;
-        font-size: 0.875rem !important;
+        font-size: 0.8125rem !important;
         font-weight: 500 !important;
-        border-radius: 6px !important;
-        border: 1px solid transparent !important;
-        transition: all 0.15s !important;
-        padding: 8px 16px !important;
+        border-radius: 10px !important;
+        border: 1px solid var(--glass-border) !important;
+        transition: all 0.2s !important;
+        padding: 8px 18px !important;
+        cursor: pointer;
+        background: var(--glass-surface) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        color: var(--text-secondary) !important;
+        letter-spacing: 0.01em;
     }
-    button.primary {
-        background: var(--accent) !important;
-        border-color: var(--accent) !important;
-        color: #ffffff !important;
-    }
-    button.primary:hover {
-        background: var(--accent-hover) !important;
-        border-color: var(--accent-hover) !important;
-    }
-    button.secondary {
-        background: var(--bg-elevated) !important;
-        border-color: var(--border) !important;
+    .gr-button:hover, button:hover {
+        background: var(--glass-surface-hover) !important;
+        border-color: rgba(255,255,255,0.16) !important;
         color: var(--text-primary) !important;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 16px rgba(0,0,0,0.3) !important;
     }
-    button.secondary:hover {
-        background: var(--bg-hover) !important;
-        border-color: var(--border-focus) !important;
-    }
-    button.stop, button.cancel {
-        background: transparent !important;
-        border-color: var(--error) !important;
-        color: var(--error) !important;
-    }
-    button.stop:hover, button.cancel:hover {
-        background: rgba(239, 68, 68, 0.1) !important;
+    .gr-button:active, button:active {
+        transform: translateY(0px) !important;
+        box-shadow: none !important;
     }
 
-    /* Markdown / Output - clean */
+    button.primary, button.gr-button.primary {
+        background: linear-gradient(135deg, rgba(99,102,241,0.85), rgba(129,140,248,0.75)) !important;
+        backdrop-filter: blur(12px) saturate(160%) !important;
+        -webkit-backdrop-filter: blur(12px) saturate(160%) !important;
+        border-color: rgba(129,140,248,0.40) !important;
+        color: rgba(238,240,245,0.98) !important;
+        box-shadow: 0 4px 20px rgba(99,102,241,0.25), 0 0 0 1px rgba(99,102,241,0.1) !important;
+    }
+    button.primary:hover, button.gr-button.primary:hover {
+        background: linear-gradient(135deg, rgba(129,140,248,0.90), rgba(165,180,252,0.80)) !important;
+        border-color: rgba(165,180,252,0.55) !important;
+        box-shadow: 0 6px 28px rgba(99,102,241,0.40), 0 0 0 1px rgba(165,180,252,0.15) !important;
+        color: #ffffff !important;
+    }
+    button.secondary, button.gr-button.secondary {
+        background: var(--glass-elevated) !important;
+        border-color: var(--glass-border) !important;
+        color: var(--text-secondary) !important;
+    }
+    button.secondary:hover, button.gr-button.secondary:hover {
+        background: var(--glass-surface-hover) !important;
+        border-color: rgba(255,255,255,0.16) !important;
+        color: var(--text-primary) !important;
+    }
+    button.stop, button.cancel, button.gr-button.cancel {
+        background: var(--error-dim) !important;
+        border-color: rgba(248,113,113,0.30) !important;
+        color: var(--error) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+    }
+    button.stop:hover, button.cancel:hover, button.gr-button.cancel:hover {
+        background: rgba(248,113,113,0.20) !important;
+        border-color: rgba(248,113,113,0.50) !important;
+        box-shadow: 0 4px 16px rgba(248,113,113,0.20) !important;
+    }
+
+    /* ======= MARKDOWN / OUTPUT ======= */
     .gr-markdown {
         color: var(--text-primary) !important;
         font-size: 0.875rem !important;
-        line-height: 1.6 !important;
+        line-height: 1.65 !important;
+        background: transparent !important;
     }
     .gr-markdown h1 {
-        font-size: 1.125rem !important;
+        font-size: 1.0625rem !important;
         font-weight: 600 !important;
         color: var(--text-primary) !important;
         margin-top: 0 !important;
-        border-bottom: 1px solid var(--border);
-        padding-bottom: 8px;
+        border-bottom: 1px solid var(--glass-border);
+        padding-bottom: 10px;
+        background: transparent !important;
     }
     .gr-markdown h2 {
-        font-size: 1rem !important;
+        font-size: 0.9375rem !important;
         font-weight: 600 !important;
         color: var(--text-primary) !important;
     }
@@ -2049,69 +2195,93 @@ def create_ui():
         font-weight: 600 !important;
         color: var(--text-secondary) !important;
     }
+    .gr-markdown h4, .gr-markdown h5, .gr-markdown h6 {
+        font-size: 0.8125rem !important;
+        color: var(--text-secondary) !important;
+    }
     .gr-markdown table {
         border-collapse: collapse;
         width: 100%;
         font-size: 0.8125rem;
+        background: transparent !important;
     }
     .gr-markdown th {
-        background: var(--bg-elevated) !important;
+        background: var(--glass-elevated) !important;
         color: var(--text-secondary) !important;
-        padding: 8px 12px;
-        border: 1px solid var(--border);
+        padding: 10px 14px;
+        border: 1px solid var(--glass-border) !important;
         text-align: left;
         font-weight: 500;
+        backdrop-filter: blur(8px) !important;
+        -webkit-backdrop-filter: blur(8px) !important;
     }
     .gr-markdown td {
-        padding: 8px 12px;
-        border: 1px solid var(--border);
+        padding: 10px 14px;
+        border: 1px solid var(--glass-border) !important;
         color: var(--text-primary) !important;
     }
     .gr-markdown tr:nth-child(even) td {
-        background: var(--bg-surface);
+        background: rgba(255,255,255,0.02);
     }
     .gr-markdown code {
         font-family: 'IBM Plex Mono', monospace !important;
-        background: var(--bg-elevated) !important;
-        color: var(--accent) !important;
-        padding: 2px 6px;
-        border-radius: 3px;
+        background: var(--glass-elevated) !important;
+        color: var(--accent-hover) !important;
+        padding: 2px 7px;
+        border-radius: 6px;
         font-size: 0.8125rem !important;
+        border: 1px solid var(--glass-border) !important;
     }
     .gr-markdown pre {
-        background: var(--bg-elevated) !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 6px !important;
-        padding: 12px !important;
+        background: var(--glass-elevated) !important;
+        border: 1px solid var(--glass-border) !important;
+        border-radius: 10px !important;
+        padding: 14px !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        box-shadow: var(--glass-shadow) !important;
     }
     .gr-markdown pre code {
         background: transparent !important;
         color: var(--text-primary) !important;
+        border: none !important;
+        padding: 0 !important;
     }
     .gr-markdown blockquote {
-        border-left: 3px solid var(--border-focus) !important;
-        background: var(--bg-surface) !important;
-        padding: 8px 16px !important;
+        border-left: 3px solid var(--glass-border-accent) !important;
+        background: var(--glass-surface) !important;
+        padding: 10px 18px !important;
         color: var(--text-secondary) !important;
+        border-radius: 0 8px 8px 0 !important;
+        backdrop-filter: blur(8px) !important;
+        -webkit-backdrop-filter: blur(8px) !important;
+    }
+    .gr-markdown blockquote p {
+        color: var(--text-secondary) !important;
+        margin: 0 !important;
     }
     .gr-markdown strong {
         color: var(--text-primary) !important;
         font-weight: 600;
     }
+    .gr-markdown a {
+        color: var(--accent-hover) !important;
+    }
 
-    /* ========== CRITICAL: THINKING & ACTION BOXES ========== */
-    /* These are the core UX - must be instantly readable */
-
-    /* Thinking log - AI reasoning process */
+    /* ======= THINKING & ACTION BOXES ======= */
+    /* Thinking - indigo left border */
     .thinking-box {
-        background: var(--thinking-bg) !important;
-        border: 1px solid var(--border) !important;
+        background: var(--glass-surface) !important;
+        backdrop-filter: blur(var(--glass-blur)) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%) !important;
+        border: 1px solid var(--glass-border) !important;
         border-left: 3px solid var(--accent) !important;
-        border-radius: 6px !important;
-        padding: 16px !important;
-        min-height: 120px !important;
-        max-height: 300px !important;
+        border-radius: 12px !important;
+        padding: 18px !important;
+        min-height: 140px !important;
+        max-height: 320px !important;
         overflow-y: auto !important;
+        box-shadow: var(--glass-shadow) !important;
     }
     .thinking-box,
     .thinking-box span,
@@ -2120,17 +2290,16 @@ def create_ui():
         color: var(--text-primary) !important;
         font-family: 'IBM Plex Mono', monospace !important;
         font-size: 0.8125rem !important;
-        line-height: 1.65 !important;
+        line-height: 1.70 !important;
     }
-    .thinking-box p {
-        margin: 0 0 8px 0 !important;
-    }
+    .thinking-box p { margin: 0 0 10px 0 !important; }
     .thinking-box code {
-        background: var(--bg-elevated) !important;
-        color: var(--accent) !important;
-        padding: 1px 5px !important;
-        border-radius: 3px !important;
+        background: var(--glass-elevated) !important;
+        color: var(--accent-hover) !important;
+        padding: 1px 6px !important;
+        border-radius: 5px !important;
         font-size: 0.8125rem !important;
+        border: 1px solid var(--glass-border) !important;
     }
     .thinking-box strong, .thinking-box b {
         color: var(--text-primary) !important;
@@ -2141,16 +2310,19 @@ def create_ui():
         font-style: normal !important;
     }
 
-    /* Action log - execution steps */
+    /* Action - green left border */
     .action-box {
-        background: var(--action-bg) !important;
-        border: 1px solid var(--border) !important;
+        background: var(--glass-surface) !important;
+        backdrop-filter: blur(var(--glass-blur)) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%) !important;
+        border: 1px solid var(--glass-border) !important;
         border-left: 3px solid var(--success) !important;
-        border-radius: 6px !important;
-        padding: 16px !important;
-        min-height: 100px !important;
-        max-height: 250px !important;
+        border-radius: 12px !important;
+        padding: 18px !important;
+        min-height: 120px !important;
+        max-height: 280px !important;
         overflow-y: auto !important;
+        box-shadow: var(--glass-shadow) !important;
     }
     .action-box,
     .action-box span,
@@ -2159,17 +2331,16 @@ def create_ui():
         color: var(--text-primary) !important;
         font-family: 'IBM Plex Mono', monospace !important;
         font-size: 0.8125rem !important;
-        line-height: 1.65 !important;
+        line-height: 1.70 !important;
     }
-    .action-box p {
-        margin: 0 0 6px 0 !important;
-    }
+    .action-box p { margin: 0 0 8px 0 !important; }
     .action-box code {
-        background: var(--bg-elevated) !important;
+        background: var(--success-dim) !important;
         color: var(--success) !important;
-        padding: 1px 5px !important;
-        border-radius: 3px !important;
+        padding: 1px 6px !important;
+        border-radius: 5px !important;
         font-size: 0.8125rem !important;
+        border: 1px solid rgba(52,211,153,0.2) !important;
     }
     .action-box strong, .action-box b {
         color: var(--text-primary) !important;
@@ -2180,113 +2351,223 @@ def create_ui():
         font-style: normal !important;
     }
 
-    /* Empty state - show readable placeholder */
+    /* Empty state placeholder */
     .thinking-box:empty::before,
     .action-box:empty::before {
         content: attr(data-placeholder);
-        color: var(--text-tertiary) !important;
+        color: var(--text-muted) !important;
         font-style: normal !important;
     }
 
-    /* Screenshot - clean frame */
+    /* ======= SCREENSHOT ======= */
     .screenshot-container {
-        border: 1px solid var(--border) !important;
-        border-radius: 6px !important;
+        background: var(--glass-surface) !important;
+        backdrop-filter: blur(var(--glass-blur)) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%) !important;
+        border: 1px solid var(--glass-border) !important;
+        border-radius: 12px !important;
         overflow: hidden;
-        background: var(--bg-surface) !important;
+        box-shadow: var(--glass-shadow) !important;
+        padding: 4px !important;
     }
     .screenshot-container img {
         max-width: 100%;
         height: auto;
         display: block;
+        border-radius: 8px !important;
+    }
+    .screenshot-container .label {
+        color: var(--text-secondary) !important;
     }
 
-    /* Section labels - minimal */
+    /* ======= SECTION LABEL ======= */
     .claw-section-label {
         font-size: 0.6875rem !important;
         font-weight: 600 !important;
         text-transform: uppercase;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.10em;
         color: var(--text-tertiary) !important;
-        margin-bottom: 8px !important;
+        margin-bottom: 10px !important;
         display: block;
+        padding-left: 4px;
     }
 
-    /* Panel styling */
+    /* ======= PANEL ======= */
     .claw-panel {
-        background: var(--bg-surface) !important;
-        border: 1px solid var(--border) !important;
-        border-radius: 8px !important;
+        background: var(--glass-surface) !important;
+        backdrop-filter: blur(var(--glass-blur)) saturate(180%) !important;
+        -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(180%) !important;
+        border: 1px solid var(--glass-border) !important;
+        border-radius: 12px !important;
         padding: 16px !important;
+        box-shadow: var(--glass-shadow) !important;
     }
 
-    /* Footer - minimal */
+    /* ======= FOOTER ======= */
     .claw-footer {
         text-align: center;
-        padding: 12px;
+        padding: 16px;
         color: var(--text-tertiary) !important;
         font-size: 0.75rem;
-        border-top: 1px solid var(--border);
+        border-top: 1px solid var(--glass-border) !important;
+        background: var(--glass-surface) !important;
+        backdrop-filter: blur(var(--glass-blur)) !important;
+        -webkit-backdrop-filter: blur(var(--glass-blur) !important;
     }
 
-    /* Step indicator - functional */
+    /* ======= STEP INDICATOR ======= */
     #step-indicator {
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 10px 14px;
-        background: var(--bg-surface);
-        border: 1px solid var(--border);
-        border-radius: 6px;
+        padding: 12px 16px;
+        background: var(--glass-elevated) !important;
+        border: 1px solid var(--glass-border) !important;
+        border-radius: 10px;
         font-family: 'IBM Plex Mono', monospace;
         font-size: 0.8125rem;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        box-shadow: var(--glass-shadow) !important;
     }
     #step-indicator .label {
         color: var(--text-tertiary);
         text-transform: uppercase;
-        letter-spacing: 0.05em;
+        letter-spacing: 0.06em;
+        font-size: 0.6875rem;
     }
     #step-indicator .value {
-        color: var(--accent);
+        color: var(--accent-hover);
         font-weight: 500;
     }
     #step-indicator .status {
         margin-left: auto;
-        padding: 2px 8px;
-        border-radius: 3px;
+        padding: 3px 10px;
+        border-radius: 6px;
         font-size: 0.6875rem;
-        font-weight: 500;
+        font-weight: 600;
         text-transform: uppercase;
+        letter-spacing: 0.06em;
     }
-    #step-indicator .status.ready { background: var(--bg-elevated); color: var(--text-tertiary); }
-    #step-indicator .status.running { background: rgba(59, 130, 246, 0.15); color: var(--accent); }
-    #step-indicator .status.success { background: rgba(34, 197, 94, 0.15); color: var(--success); }
-    #step-indicator .status.error { background: rgba(239, 68, 68, 0.15); color: var(--error); }
+    #step-indicator .status.ready {
+        background: var(--glass-elevated);
+        color: var(--text-tertiary);
+        border: 1px solid var(--glass-border);
+    }
+    #step-indicator .status.running {
+        background: var(--accent-dim);
+        color: var(--accent-hover);
+        border: 1px solid var(--glass-border-accent);
+    }
+    #step-indicator .status.success {
+        background: var(--success-dim);
+        color: var(--success);
+        border: 1px solid rgba(52,211,153,0.25);
+    }
+    #step-indicator .status.error {
+        background: var(--error-dim);
+        color: var(--error);
+        border: 1px solid rgba(248,113,113,0.25);
+    }
+
+    /* ======= INFO / NOTICE BOX ======= */
+    .info-box {
+        background: var(--glass-surface) !important;
+        border: 1px solid var(--glass-border) !important;
+        border-radius: 10px !important;
+        padding: 12px 16px !important;
+        font-size: 0.8125rem !important;
+        color: var(--text-secondary) !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        margin-top: 12px;
+    }
+    .info-box code {
+        background: var(--glass-elevated) !important;
+        color: var(--accent-hover) !important;
+        padding: 1px 5px;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        border: 1px solid var(--glass-border) !important;
+    }
+    .info-box strong {
+        color: var(--text-primary) !important;
+    }
+
+    /* ======= CUSTOM SCROLLBAR ======= */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+        background: var(--glass-border);
+        border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: rgba(255,255,255,0.18);
+    }
+
+    /* ======= CHECKBOX ======= */
+    .gr-checkbox {
+        background: transparent !important;
+    }
+    .gr-checkbox input[type=checkbox] {
+        accent-color: var(--accent) !important;
+        width: 15px;
+        height: 15px;
+    }
+    .gr-checkbox label {
+        color: var(--text-secondary) !important;
+        font-size: 0.8125rem !important;
+    }
+
+    /* ======= TIMER / PROGRESS ======= */
+    .gr-progress, .gr-progress-bar {
+        background: var(--glass-elevated) !important;
+        border-radius: 4px;
+    }
+    .gr-progress::-webkit-progress-bar {
+        background: var(--glass-elevated) !important;
+        border-radius: 4px;
+    }
+    .gr-progress::-webkit-progress-value {
+        background: linear-gradient(90deg, var(--accent), var(--accent-hover)) !important;
+        border-radius: 4px;
+    }
+
+    /* ======= HIGHLIGHT BADGE (memory/graph tabs) ======= */
+    .gr-html .info-box,
+    div > .info-box {
+        background: var(--glass-surface) !important;
+        border: 1px solid var(--glass-border) !important;
+        border-radius: 10px !important;
+        backdrop-filter: blur(12px) !important;
+        -webkit-backdrop-filter: blur(12px) !important;
+        color: var(--text-secondary) !important;
+    }
     """
     
     with gr.Blocks(
         title="ClawGUI-Agent",
         theme=gr.themes.Default(
             primary_hue=gr.themes.Color(
-                c50="#0f0f12", c100="#17171c",
-                c200="#1f1f24", c300="#27272c",
-                c400="#2f2f34", c500="#3b3b40",
-                c600="#525258", c700="#6b6b73",
-                c800="#8c8c96", c900="#b0b0ba", c950="#e5e5e5",
+                c50="#0f0f1a", c100="#17172a",
+                c200="#1f1f3a", c300="#27274a",
+                c400="#2f2f5a", c500="#3b3b6a",
+                c600="#5252a0", c700="#6b6bd0",
+                c800="#818cf8", c900="#a5b4fc", c950="#e0e4ff",
             ),
             secondary_hue=gr.themes.Color(
-                c50="#0f0f12", c100="#17171c",
-                c200="#1f1f24", c300="#27272c",
-                c400="#2f2f34", c500="#3b3b40",
-                c600="#525258", c700="#6b6b73",
-                c800="#8c8c96", c900="#b0b0ba", c950="#e5e5e5",
+                c50="#0f0f1a", c100="#17172a",
+                c200="#1f1f3a", c300="#27274a",
+                c400="#2f2f5a", c500="#3b3b6a",
+                c600="#5252a0", c700="#6b6bd0",
+                c800="#818cf8", c900="#a5b4fc", c950="#e0e4ff",
             ),
             neutral_hue=gr.themes.Color(
-                c50="#0a0a0b", c100="#111113",
-                c200="#18181b", c300="#1f1f23",
-                c400="#27272a", c500="#3f3f46",
-                c600="#525258", c700="#71717a",
-                c800="#a1a1aa", c900="#e5e5e5", c950="#fafafa",
+                c50="#080c14", c100="#0d1424",
+                c200="#131b2e", c300="#192236",
+                c400="#1f2940", c500="#2c3556",
+                c600="#3a4570", c700="#4e5c90",
+                c800="#7078a8", c900="#a0a8cc", c950="#e0e4f0",
             ),
             font=("IBM Plex Sans", "Noto Sans SC", "system-ui"),
         ),
@@ -2386,9 +2667,7 @@ def create_ui():
                 save_config_output = gr.Markdown("")
 
                 gr.HTML("""
-                <div style="margin-top:12px; padding:10px 14px; background:var(--bg-surface);
-                            border:1px solid var(--border); border-radius:6px; font-size:0.8125rem;
-                            color:var(--text-secondary);">
+                <div class="info-box">
                     Configuration loaded from <code>.env</code>. Click <strong>Save</strong> to persist changes.
                 </div>
                 """)
@@ -2518,8 +2797,7 @@ def create_ui():
             # ==================== GRAPH Tab ====================
             with gr.Tab("Graph"):
                 gr.HTML("""
-                <div style="padding:10px 14px; background:var(--bg-surface); border:1px solid var(--border);
-                            border-radius:6px; font-size:0.8125rem; color:var(--text-secondary); margin-bottom:12px;">
+                <div class="info-box" style="margin-bottom:12px;">
                     Records UIState → Action → UIState chains. Human review prevents suboptimal paths.
                 </div>
                 """)
@@ -2553,9 +2831,7 @@ def create_ui():
                 commit_btn.click(fn=commit_graph_trajectory, inputs=[memory_user_id, commit_index], outputs=[commit_output])
 
                 gr.HTML("""
-                <div style="margin-top:12px; padding:10px 14px; background:var(--bg-surface);
-                            border:1px solid var(--border); border-radius:6px;
-                            font-size:0.8125rem; color:var(--text-secondary);">
+                <div class="info-box">
                     Workflow: execute → pending → review → commit → future tasks auto-match
                 </div>
                 """)
