@@ -778,21 +778,32 @@ class MemoryManager:
 
                 # 获取该相似任务的完整轨迹
                 trajectory = self.graph_store.get_task_trajectory(task_id)
-                first_action = best_task.get("action_type", "")
-                first_target = best_task.get("action_target", "")
+                steps = trajectory.get("steps", [])
 
-                # 注入任务上下文，让 VLM 在 Explore 模式下知道相似任务的轨迹
+                # 格式化完整轨迹供 VLM 参考
+                if steps:
+                    trajectory_text = "\n".join(
+                        f"  步骤{i+1}: {s['action_type']} → {s['action_target']}"
+                        + (f"（{s['reasoning']}）" if s.get("reasoning") else "")
+                        for i, s in enumerate(steps)
+                    )
+                else:
+                    first_action = best_task.get("action_type", "")
+                    first_target = best_task.get("action_target", "")
+                    trajectory_text = f"  步骤1: {first_action} → {first_target}"
+
+                # 注入任务上下文，让 VLM 在 Explore 模式下知道相似任务的完整轨迹
                 context_data["task_trajectory"] = trajectory
                 context_data["semantic_context"] = (
                     f"[相似历史任务: {task_desc}]\n"
-                    f"该任务曾在 {task_app} 中成功完成，轨迹为: {trajectory}\n"
-                    f"第一步动作: {first_action} → {first_target}\n"
-                    f"请参考此轨迹辅助当前任务。\n"
+                    f"该任务曾在 {task_app} 中成功完成，以下是完整动作轨迹供参考：\n"
+                    f"{trajectory_text}\n"
+                    f"（注意：当前界面可能与历史轨迹不同，请根据实际截图调整动作）\n"
                     f"{context_data.get('semantic_context', '')}"
                 )
                 print(
                     f"🔍 Task Semantic Match: 找到相似任务 「{task_desc}」"
-                    f"(app={task_app})，第一步: {first_action} → {first_target}"
+                    f"(app={task_app})，共 {len(steps)} 个动作步骤"
                 )
                 # 保持 explore 模式，让 VLM 结合截图和上下文做决策
                 return context_data

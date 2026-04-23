@@ -181,29 +181,106 @@ class GraphStore:
     def get_task_trajectory(self, task_id: str) -> Dict[str, Any]:
         """
         Get the full action sequence for a completed task.
-        Returns {states: [...], actions: [...], description: str}
+        Returns {description, app, steps: [{state_id, action_type, action_target}...], state_ids: [...]}
         """
         if not self.driver:
             return {}
 
-        query = """
+        # Follow the path: UIState -NEXT_ACTION-> Action -PRODUCES-> UIState -...
+        # Fetch up to 20 steps to cover all practical trajectories
+        steps_query = """
         MATCH (t:TaskTarget {target_id: $task_id})
-        OPTIONAL MATCH (t)-[:STARTS_AT]->(start:UIState)
-        OPTIONAL MATCH (t)-[:ENDS_AT]->(end:UIState)
-        MATCH path = (start)-[:NEXT_ACTION*0..]->(:UIState)
-        WITH t, start, end, path
-        UNWIND nodes(path) AS ns
-        WITH t, start, end, collect(DISTINCT ns) AS all_states
+        OPTIONAL MATCH (t)-[:STARTS_AT]->(s0:UIState)
+        OPTIONAL MATCH (t)-[:ENDS_AT]->(en:UIState)
+        OPTIONAL MATCH (s0)-[:NEXT_ACTION]->(a1:Action)-[:PRODUCES]->(s1:UIState)
+        OPTIONAL MATCH (s1)-[:NEXT_ACTION]->(a2:Action)-[:PRODUCES]->(s2:UIState)
+        OPTIONAL MATCH (s2)-[:NEXT_ACTION]->(a3:Action)-[:PRODUCES]->(s3:UIState)
+        OPTIONAL MATCH (s3)-[:NEXT_ACTION]->(a4:Action)-[:PRODUCES]->(s4:UIState)
+        OPTIONAL MATCH (s4)-[:NEXT_ACTION]->(a5:Action)-[:PRODUCES]->(s5:UIState)
+        OPTIONAL MATCH (s5)-[:NEXT_ACTION]->(a6:Action)-[:PRODUCES]->(s6:UIState)
+        OPTIONAL MATCH (s6)-[:NEXT_ACTION]->(a7:Action)-[:PRODUCES]->(s7:UIState)
+        OPTIONAL MATCH (s7)-[:NEXT_ACTION]->(a8:Action)-[:PRODUCES]->(s8:UIState)
+        OPTIONAL MATCH (s8)-[:NEXT_ACTION]->(a9:Action)-[:PRODUCES]->(s9:UIState)
+        OPTIONAL MATCH (s9)-[:NEXT_ACTION]->(a10:Action)-[:PRODUCES]->(s10:UIState)
+        OPTIONAL MATCH (s10)-[:NEXT_ACTION]->(a11:Action)-[:PRODUCES]->(s11:UIState)
+        OPTIONAL MATCH (s11)-[:NEXT_ACTION]->(a12:Action)-[:PRODUCES]->(s12:UIState)
+        OPTIONAL MATCH (s12)-[:NEXT_ACTION]->(a13:Action)-[:PRODUCES]->(s13:UIState)
+        OPTIONAL MATCH (s13)-[:NEXT_ACTION]->(a14:Action)-[:PRODUCES]->(s14:UIState)
+        OPTIONAL MATCH (s14)-[:NEXT_ACTION]->(a15:Action)-[:PRODUCES]->(s15:UIState)
         RETURN t.description AS description, t.app AS app,
-               start.state_id AS start_state_id, end.state_id AS end_state_id,
-               [s IN all_states | s.state_id] AS state_ids
+               s0.state_id AS state0,
+               a1.type AS a1_type, a1.semantic_target AS a1_target, a1.reasoning AS a1_reasoning,
+               s1.state_id AS state1,
+               a2.type AS a2_type, a2.semantic_target AS a2_target, a2.reasoning AS a2_reasoning,
+               s2.state_id AS state2,
+               a3.type AS a3_type, a3.semantic_target AS a3_target, a3.reasoning AS a3_reasoning,
+               s3.state_id AS state3,
+               a4.type AS a4_type, a4.semantic_target AS a4_target, a4.reasoning AS a4_reasoning,
+               s4.state_id AS state4,
+               a5.type AS a5_type, a5.semantic_target AS a5_target, a5.reasoning AS a5_reasoning,
+               s5.state_id AS state5,
+               a6.type AS a6_type, a6.semantic_target AS a6_target, a6.reasoning AS a6_reasoning,
+               s6.state_id AS state6,
+               a7.type AS a7_type, a7.semantic_target AS a7_target, a7.reasoning AS a7_reasoning,
+               s7.state_id AS state7,
+               a8.type AS a8_type, a8.semantic_target AS a8_target, a8.reasoning AS a8_reasoning,
+               s8.state_id AS state8,
+               a9.type AS a9_type, a9.semantic_target AS a9_target, a9.reasoning AS a9_reasoning,
+               s9.state_id AS state9,
+               a10.type AS a10_type, a10.semantic_target AS a10_target, a10.reasoning AS a10_reasoning,
+               s10.state_id AS state10,
+               a11.type AS a11_type, a11.semantic_target AS a11_target, a11.reasoning AS a11_reasoning,
+               s11.state_id AS state11,
+               a12.type AS a12_type, a12.semantic_target AS a12_target, a12.reasoning AS a12_reasoning,
+               s12.state_id AS state12,
+               a13.type AS a13_type, a13.semantic_target AS a13_target, a13.reasoning AS a13_reasoning,
+               s13.state_id AS state13,
+               a14.type AS a14_type, a14.semantic_target AS a14_target, a14.reasoning AS a14_reasoning,
+               s14.state_id AS state14,
+               a15.type AS a15_type, a15.semantic_target AS a15_target, a15.reasoning AS a15_reasoning,
+               s15.state_id AS state15,
+               en.state_id AS end_state
         LIMIT 1
         """
         with self.driver.session(database=self.database) as session:
-            result = session.run(query, task_id=task_id).single()
+            result = session.run(steps_query, task_id=task_id).single()
             if not result:
                 return {}
-            return dict(result)
+
+        d = dict(result)
+        description = d.get("description", "")
+        app = d.get("app", "")
+        end_state = d.get("end_state")
+
+        # Build steps list
+        steps = []
+        state_ids = []
+        prev_state = d.get("state0")
+        if prev_state:
+            state_ids.append(prev_state)
+
+        for i in range(1, 16):
+            action_type = d.get(f"a{i}_type")
+            action_target = d.get(f"a{i}_target", "")
+            action_reasoning = d.get(f"a{i}_reasoning", "")
+            next_state = d.get(f"state{i}")
+            if action_type:
+                steps.append({
+                    "step": i,
+                    "action_type": action_type or "unknown",
+                    "action_target": action_target or "",
+                    "reasoning": action_reasoning or "",
+                })
+            if next_state:
+                state_ids.append(next_state)
+
+        return {
+            "description": description,
+            "app": app,
+            "steps": steps,
+            "state_ids": state_ids,
+            "end_state": end_state,
+        }
 
     def add_state_transition(self, source_state_hash: str, target_state_hash: str, action_data: Dict[str, Any], task_id: str = None):
         """Record a new transition during online exploration."""
