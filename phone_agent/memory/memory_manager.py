@@ -721,7 +721,12 @@ class MemoryManager:
     
     def locate_and_get_context(self, ui_hash: str, semantic_layout: str, task: str) -> dict:
         """
-        Dual-Core Search: Locate current state in Graph, and get semantic preferences from FAISS.
+        Dual-Core Search:
+        - Graph (MD5 hash): 精确匹配，可触发 Navigation Shortcut
+        - FAISS (语义向量): 仅补充探索上下文，永不触发 Navigation Shortcut
+
+        设计原则：图谱的 Navigation Shortcut 必须基于精确的状态识别，
+        语义相似性仅用于理解当前页面的上下文。
         """
         context_data = {
             "mode": "explore",
@@ -730,21 +735,47 @@ class MemoryManager:
             "current_state_id": None
         }
 
-        # 1. Spatial Memory (Graph) Localization
+        # =============================================
+        # Core 1: Graph 精确匹配（MD5 哈希）— 可触发 Navigate
+        # =============================================
         graph_state = self.graph_store.get_current_state(ui_hash)
 
         if graph_state:
-            context_data["current_state_id"] = graph_state.get("state_id")
+            state_id = graph_state.get("state_id")
+            context_data["current_state_id"] = state_id
 
-            # 2. Check for shortcuts or popups
-            next_actions = self.graph_store.get_next_actions(ui_hash, min_confidence=0.8)
+            # 从图谱中查找该状态的已知后续动作
+            actual_hash = state_id.replace("state_", "") if state_id else ui_hash
+            next_actions = self.graph_store.get_next_actions(actual_hash, min_confidence=0.8)
 
             if next_actions:
+                print(f"🔗 Graph Hash Match: state={state_id}, 找到 {len(next_actions)} 个快捷动作")
                 context_data["mode"] = "navigate"
                 context_data["next_actions"] = next_actions
-            elif graph_state.get("is_popup", False):
-                # We could look up specific popup solver actions here
-                pass
+
+        # =============================================
+        # Core 2: FAISS 语义 fallback — 仅补充上下文，不触发 Navigate
+        # =============================================
+        # 仅当：图谱未命中 AND 语义标签有意义（排除默认占位符）
+        if not graph_state and semantic_layout and len(semantic_layout) > 5:
+            # 语义描述长度 > 5 说明是有意义的包名:activity 格式
+            similar_states = self.store.search(
+                query=semantic_layout,
+                top_k=1,
+                min_importance=0.0,
+                memory_types=[MemoryType.UI_STATE]
+            )
+
+            if similar_states:
+                best_match = similar_states[0]
+                matched_content = best_match.content or ""
+                if len(matched_content) > 10:
+                    # FAISS 匹配仅注入历史页面描述作为上下文参考，不改变 mode
+                    context_data["semantic_context"] = (
+                        context_data.get("semantic_context", "")
+                        + f"\n[参考历史页面] {matched_content[:200]}"
+                    )
+                    print(f"🔄 FAISS Semantic Hint: 参考历史页面特征补充上下文")
 
         return context_data
 

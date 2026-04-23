@@ -144,14 +144,27 @@ class PhoneAgent:
         if self.agent_config.enable_memory:
             try:
                 from phone_agent.memory import MemoryManager
+
+                # Check if we have offline imported knowledge and use that path
+                # Note: memory_manager appends /user_id to the storage_dir, so we need to handle that
+                # To read from memory_db_offline_import directly (which has no user_id subfolder),
+                # we just pass its parent and the folder name as user_id
+                import os
+                if os.path.exists("memory_db_offline_import/embeddings.npy"):
+                    storage_dir = "."
+                    user_id = "memory_db_offline_import"
+                else:
+                    storage_dir = self.agent_config.memory_dir
+                    user_id = self.agent_config.user_id
+
                 self.memory_manager = MemoryManager(
-                    storage_dir=self.agent_config.memory_dir,
-                    user_id=self.agent_config.user_id,
+                    storage_dir=storage_dir,
+                    user_id=user_id,
                     enable_auto_extract=True,
                 )
                 if self.agent_config.verbose:
                     model_type_name = self._model_type.value
-                    print(f"🧠 个性化记忆系统已启用 | 模型适配器: {model_type_name}")
+                    print(f"🧠 个性化记忆系统已启用 | 模型适配器: {model_type_name} | 库: {user_id}")
             except Exception as e:
                 if self.agent_config.verbose:
                     print(f"⚠️ 记忆系统初始化失败: {e}")
@@ -286,9 +299,11 @@ class PhoneAgent:
             hasher = hashlib.md5()
             hasher.update(screenshot.base64_data.encode('utf-8'))
             ui_hash = hasher.hexdigest()
-            # Placeholder for layout extraction in reality
-            semantic_layout = "current_screen_layout" 
-            
+
+            # 轻量级启发式特征：使用当前 APP 名称作为语义标签（无需 VLM 调用）
+            # 注意：MD5 哈希精确匹配用于图谱，图谱未命中时不触发 FAISS 导航
+            semantic_layout = current_app if current_app else "home_screen"
+
             context_data = self.memory_manager.locate_and_get_context(ui_hash, semantic_layout, user_prompt or self._current_task)
             mode = context_data.get("mode", "explore")
             current_state_id = context_data.get("current_state_id")
@@ -331,6 +346,9 @@ class PhoneAgent:
                     thinking="[Graph Shortcut Navigated]",
                     message=result.message or action.get("message"),
                 )
+            else:
+                if self.agent_config.verbose:
+                    print(f"🧭 知识图谱查询: 未匹配到当前界面特征，使用视觉大模型进行推理 (Explore Mode)")
 
         # Build messages using the adapter
         is_non_autoglm = self._model_type in (
