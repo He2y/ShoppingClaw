@@ -20,7 +20,11 @@ import subprocess
 import sys
 from urllib.parse import urlparse
 
+from dotenv import load_dotenv
 from openai import OpenAI
+
+# Load environment variables from .env file
+load_dotenv()
 
 from phone_agent import PhoneAgent
 from phone_agent.agent import AgentConfig
@@ -35,7 +39,7 @@ from phone_agent.xctest import list_devices as list_ios_devices
 
 
 def check_system_requirements(
-    device_type: DeviceType = DeviceType.ADB, wda_url: str = "http://localhost:8100"
+    device_type: DeviceType = DeviceType.ADB, wda_url: str = "http://localhost:8100", device_id: str = None
 ) -> bool:
     """
     Check system requirements before running the agent.
@@ -199,20 +203,19 @@ def check_system_requirements(
             adb_cmd = ["adb"]
             # To handle case where there are multiple devices but args.device_id isn't provided explicitly,
             # we should get the active device
-            device_id = args.device_id
-            if not device_id:
+            resolved_device_id = device_id
+            if not resolved_device_id:
                 try:
                     devices_result = subprocess.run(["adb", "devices"], capture_output=True, text=True, timeout=5)
-                    lines = devices_result.stdout.strip().split('
-')[1:]
+                    lines = devices_result.stdout.strip().split("")[1:]
                     online_devices = [line.split()[0] for line in lines if "device" in line and "offline" not in line]
                     if online_devices:
-                        device_id = online_devices[0]
+                        resolved_device_id = online_devices[0]
                 except Exception:
                     pass
             
-            if device_id:
-                adb_cmd.extend(["-s", device_id])
+            if resolved_device_id:
+                adb_cmd.extend(["-s", resolved_device_id])
             
             result = subprocess.run(
                 adb_cmd + ["shell", "ime", "list", "-s"],
@@ -424,21 +427,21 @@ Examples:
     parser.add_argument(
         "--base-url",
         type=str,
-        default=os.getenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1"),
+        default=os.getenv("PHONE_AGENT_BASE_URL"),
         help="Model API base URL",
     )
 
     parser.add_argument(
         "--model",
         type=str,
-        default=os.getenv("PHONE_AGENT_MODEL", "autoglm-phone-9b"),
+        default=os.getenv("PHONE_AGENT_MODEL"),
         help="Model name",
     )
 
     parser.add_argument(
         "--apikey",
         type=str,
-        default=os.getenv("PHONE_AGENT_API_KEY", "EMPTY"),
+        default=os.getenv("PHONE_AGENT_API_KEY"),
         help="API key for model authentication",
     )
 
@@ -764,6 +767,7 @@ def main():
         wda_url=args.wda_url
         if device_type == DeviceType.IOS
         else "http://localhost:8100",
+        device_id=args.device_id,
     ):
         sys.exit(1)
 
