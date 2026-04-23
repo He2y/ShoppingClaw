@@ -95,17 +95,32 @@ def process_task_directory(task_dir: Path, neo4j_session=None, memory_store=None
 
     app_name = actions_data.get("app_name", "UnknownApp")
     task_type = actions_data.get("task_type", "UnknownTask")
-    task_desc = " ".join(actions_data.get("task_description", []))
-    task_id = f"{app_name}_{task_type}_{task_dir.name}"
+    raw_task_desc = actions_data.get("task_description", [])
+
+    # Handle both string and list formats for task_description
+    if isinstance(raw_task_desc, list):
+        task_descs = [d.strip() for d in raw_task_desc if d.strip()]
+    elif isinstance(raw_task_desc, str):
+        task_descs = [raw_task_desc.strip()] if raw_task_desc.strip() else []
+    else:
+        task_descs = []
+
+    # For single description, use simple ID; for multiple, suffix with variant index
+    task_ids = [
+        f"{app_name}_{task_type}_{task_dir.name}" if len(task_descs) <= 1
+        else f"{app_name}_{task_type}_{task_dir.name}_{i+1}"
+        for i in range(len(task_descs))
+    ]
 
     # Process nodes and relationships if Neo4j is available
     if neo4j_session and HAS_NEO4J:
-        # Create TaskTarget
-        neo4j_session.run(
-            "MERGE (t:TaskTarget {target_id: $task_id}) "
-            "SET t.app = $app, t.task_type = $type, t.description = $desc",
-            task_id=task_id, app=app_name, type=task_type, desc=task_desc
-        )
+        for task_id, task_desc in zip(task_ids, task_descs):
+            # Create TaskTarget node — one per description variant
+            neo4j_session.run(
+                "MERGE (t:TaskTarget {target_id: $task_id}) "
+                "SET t.app = $app, t.task_type = $type, t.description = $desc",
+                task_id=task_id, app=app_name, type=task_type, desc=task_desc
+            )
 
         # Process states and actions
         prev_state_id = None
@@ -133,12 +148,16 @@ def process_task_directory(task_dir: Path, neo4j_session=None, memory_store=None
                     metadata=meta
                 )
 
+            # Only link START/END edges for the first variant ID
+            # (all variants share the same states/actions — only description differs)
+            first_task_id = task_ids[0] if task_ids else None
+
             # 2. Edges and Actions
-            if i == 0:
+            if i == 0 and first_task_id:
                 neo4j_session.run(
                     "MATCH (t:TaskTarget {target_id: $task_id}), (s:UIState {state_id: $state_id}) "
                     "MERGE (t)-[:STARTS_AT]->(s)",
-                    task_id=task_id, state_id=state_id
+                    task_id=first_task_id, state_id=state_id
                 )
 
             if prev_state_id and i - 1 < len(actions_data.get('actions', [])):
@@ -172,12 +191,12 @@ def process_task_directory(task_dir: Path, neo4j_session=None, memory_store=None
                     s1_id=prev_state_id, a_id=action_id, s2_id=state_id
                 )
 
-            if i == len(state_images) - 1:
+            if i == len(state_images) - 1 and first_task_id:
                 # End state
                 neo4j_session.run(
                     "MATCH (t:TaskTarget {target_id: $task_id}), (s:UIState {state_id: $state_id}) "
                     "MERGE (t)-[:ENDS_AT {success: true}]->(s)",
-                    task_id=task_id, state_id=state_id
+                    task_id=first_task_id, state_id=state_id
                 )
 
             prev_state_id = state_id
@@ -185,7 +204,8 @@ def process_task_directory(task_dir: Path, neo4j_session=None, memory_store=None
     return {
         "app_name": app_name,
         "task_type": task_type,
-        "descriptions": task_desc,
+        "descriptions": task_descs,
+        "task_ids": task_ids,
         "actions": actions_data.get("actions", []),
         "reacts": react_data,
         "state_images": state_images
