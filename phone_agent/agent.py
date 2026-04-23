@@ -546,7 +546,8 @@ class PhoneAgent:
                             action["message"] = parsed_action.params.get("content") or parsed_action.params.get("message", "Task completed")
                 else:
                     # Fallback to AutoGLM handler
-                    action = parse_action(response.action)
+                    action_str = response.action if hasattr(response, 'action') else ""
+                    action = parse_action(action_str)
                     result = self.action_handler.execute(
                         action, screenshot.width, screenshot.height
                     )
@@ -635,6 +636,15 @@ class PhoneAgent:
             # AutoGLM / GLM-4V: 使用 <think><answer> 格式，保留原始 action 字符串
             # Fallback to empty string if action_str is not defined
             action_str_to_save = action_str if 'action_str' in locals() and action_str else json.dumps(action, ensure_ascii=False) if isinstance(action, dict) else str(action)
+            # Make sure action is an explicit action format when saving to history
+            if not action_str_to_save.startswith(("do(", "finish(")):
+                if action.get("_metadata") == "finish":
+                    action_str_to_save = f'finish(message={repr(action.get("message", "") or "")})'
+                elif action.get("_metadata") == "do":
+                    # Use repr() for all values to ensure proper escaping of quotes, newlines, etc.
+                    params_str = ", ".join(f"{k}={repr(v)}" for k, v in action.items() if k not in ("_metadata", "action"))
+                    action_str_to_save = f'do(action={repr(action.get("action", ""))}' + (f', {params_str}' if params_str else "") + ')'
+
             assistant_content = f"<think>{thinking}</think><answer>{action_str_to_save}</answer>"
             self._context.append(
                 MessageBuilder.create_assistant_message(assistant_content)

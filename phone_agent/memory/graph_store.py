@@ -298,25 +298,28 @@ class GraphStore:
         The individual state transitions are already recorded via add_state_transition.
         """
         if not self.driver:
+            print(f"Warning: Neo4j driver not available, cannot commit trajectory.")
             return False
 
         import hashlib
         task_hash = hashlib.md5(task_description.encode()).hexdigest()[:8]
         persistent_id = f"{task_id}_{task_hash}"
 
-        query = """
-        MATCH (s_start:UIState {state_id: $start_state})
-        MATCH (s_end:UIState {state_id: $end_state})
-        MERGE (t:TaskTarget {target_id: $tid})
-        SET t.description = $desc,
-            t.app = $app,
-            t.task_type = $task_id,
-            t.committed_at = timestamp(),
-            t.success = $success
-        MERGE (t)-[:STARTS_AT]->(s_start)
-        MERGE (t)-[:ENDS_AT {success: $success}]->(s_end)
-        RETURN t.target_id AS created_id
-        """
+        # Build query dynamically based on whether state IDs are available
+        # If state IDs are None (graph was not populated during execution), skip those matches
+        query_parts = []
+        if start_state_id:
+            query_parts.append("MATCH (s_start:UIState {state_id: $start_state})")
+        if end_state_id:
+            query_parts.append("MATCH (s_end:UIState {state_id: $end_state})")
+        query_parts.append("MERGE (t:TaskTarget {target_id: $tid})")
+        query_parts.append("SET t.description = $desc, t.app = $app, t.task_type = $task_id, t.committed_at = timestamp(), t.success = $success")
+        if start_state_id:
+            query_parts.append("MERGE (t)-[:STARTS_AT]->(s_start)")
+        if end_state_id:
+            query_parts.append("MERGE (t)-[:ENDS_AT {success: $success}]->(s_end)")
+        query_parts.append("RETURN t.target_id AS created_id")
+        query = "\n".join(query_parts)
         try:
             with self.driver.session(database=self.database) as session:
                 result = session.run(

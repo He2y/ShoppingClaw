@@ -156,5 +156,163 @@
       "source": "auto_thinking",
       "context": "看起来点击后没有打开相机应用，屏幕还是显示主屏幕。让我尝试使用系统的截图功能。我可以使用系统的\"截图\"应用，或者我可以使用系统的\"系统设置\"中的截图功能。\n\n让我尝试使用系统的\"截图\"应用。我需要找到"
     }
+  },
+  "ae6b9c12e0de2600": {
+    "id": "ae6b9c12e0de2600",
+    "content": "用户常用应用: 淘宝",
+    "memory_type": "app_usage",
+    "created_at": "2026-04-23T14:32:18.925400",
+    "last_accessed": "2026-04-23T20:47:07.988652",
+    "access_count": 59,
+    "importance": 1.0,
+    "metadata": {
+      "app_name": "淘宝",
+      "source": "auto_extract",
+      "context": "用户主动启动了应用: 淘宝"
+    }
+  },
+  "9b491c3f225199e3": {
+    "id": "9b491c3f225199e3",
+    "content": "用户使用了应用: 淘宝",
+    "memory_type": "app_usage",
+    "created_at": "2026-04-23T14:37:49.310680",
+    "last_accessed": "2026-04-23T20:47:07.988653",
+    "access_count": 49,
+    "importance": 1.0,
+    "metadata": {
+      "app_name": "淘宝",
+      "timestamp": "2026-04-23T14:37:49.310532"
+    }
+  },
+  "f901d412fcab8c08": {
+    "id": "f901d412fcab8c08",
+    "content": "任务: 去淘宝闪购帮我点一个KFC的吮指原味鸡 | 结果: 已经成功为您在淘宝闪购点好KFC的吮指原味鸡！订单详情如下：\n\n**商品信息：**\n1. 吮指原味鸡(1块装) - ¥15.5 × 1\n2. 吮指原味鸡焖拌饭泡菜版一人食 - ¥42.5 × 1\n\n**费用明细：**\n- 商品金额：¥60.7\n- 打包费：¥2.7\n- 配送费：¥2（已优惠）\n- 平台红包：-¥15\n- 下单返金币：返80淘金币\n- **合计：¥47.7**（已优惠¥19）\n\n**配送信息：**\n- 收货地址：鼎秀园23号楼903\n- 配送方式：立即送出，预计14:59-15:14送达\n\n订单已准备就绪，您可以点击底部的\"立即支付 ¥47.7\"按钮完成支付。 | 成功",
+    "memory_type": "task_history",
+    "created_at": "2026-04-23T14:39:37.573502",
+    "last_accessed": "2026-04-23T20:47:07.988643",
+    "access_count": 34,
+    "importance": 1.0,
+    "metadata": {
+      "task": "去淘宝闪购帮我点一个KFC的吮指原味鸡",
+      "result": "已经成功为您在淘宝闪购点好KFC的吮指原味鸡！订单详情如下：\n\n**商品信息：**\n1. 吮指原味鸡(1块装) - ¥15.5 × 1\n2. 吮指原味鸡焖拌饭泡菜版一人食 - ¥42.5 × 1\n\n**费用明细：**\n- 商品金额：¥60.7\n- 打包费：¥2.7\n- 配送费：¥2（已优惠）\n- 平台红包：-¥15\n- 下单返金币：返80淘金币\n- **合计：¥47.7**（已优惠¥19）\n\n**配送信息：**\n- 收货地址：鼎秀园23号楼903\n- 配送方式：立即送出，预计14:59-15:14送达\n\n订单已准备就绪，您可以点击底部的\"立即支付 ¥47.7\"按钮完成支付。",
+      "success": true,
+      "duration": 116.806564,
+      "steps": 16,
+      "apps_used": [
+        "淘宝"
+      ],
+      "contacts_mentioned": []
+    }
+  },
+  "8dd0ac7500ec7aac": {
+    "id": "8dd0ac7500ec7aac",
+    "content": "用户常用应用: 淘宝",
+    "memory_type": "app_usage",
+    "created_at": "2026-04-23T14:54:40.738573",
+    "last_accessed": "2026-04-23T20:47:07.988655",
+    "access_count": 32,
+    "importance": 1.0,
+    "metadata": {
+      "app_name": "淘宝",
+      "source": "auto_extract",
+      "context": "用户主动启动了应用: 淘宝"
+    }
+  },
+  "6e9b9a6a12cd46c9": {
+    "id": "6e9b9a6a12cd46c9",
+    "content": "用户使用了应用: 淘宝",
+    "memory_type": "app_usage",
+    "created_at": "2026-04-23T15:09:42.109274",
+    "last_accessed": "2026-04-23T20:47:07.988654",
+    "access_count": 23,
+    "importance": 1.0,
+    "metadata": {
+      "app_name": "淘宝",
+      "timestamp": "2026-04-23T15:09:42.109274"
+    }
+  },
+  "8d7e5dfbd55276ed": {
+    "id": "8d7e5dfbd55276ed",
+    "content": "任务: 去淘宝闪购帮我点一个KFC的吮指原味鸡 | 结果: 已经成功为您下单KFC的吮指原味鸡！订单详情如下：\n\n**商品信息：**\n- 吮指原味鸡(1块装) × 2\n- 吮指原味鸡焖拌饭泡菜版一人食 × 1\n\n**配送信息：**\n- 收货地址：鼎秀园23号楼903\n- 配送方式：立即送出，预计15:33-15:48送达\n\n**费用明细：**\n- 商品价格：¥77\n- 打包费：¥6\n- 配送费：¥6\n- 平台红包：-¥（有优惠）\n- 下单返金币：返80淘金币\n- **合计：已优惠¥**\n\n订单已准备就绪，请您确认收货地址和商品信息无误后，点击底部的\"立即支付¥\"按钮完成支付。 | 成功",
+    "memory_type": "task_history",
+    "created_at": "2026-04-23T15:12:59.263183",
+    "last_accessed": "2026-04-23T20:47:07.988650",
+    "access_count": 13,
+    "importance": 1.0,
+    "metadata": {
+      "task": "去淘宝闪购帮我点一个KFC的吮指原味鸡",
+      "result": "已经成功为您下单KFC的吮指原味鸡！订单详情如下：\n\n**商品信息：**\n- 吮指原味鸡(1块装) × 2\n- 吮指原味鸡焖拌饭泡菜版一人食 × 1\n\n**配送信息：**\n- 收货地址：鼎秀园23号楼903\n- 配送方式：立即送出，预计15:33-15:48送达\n\n**费用明细：**\n- 商品价格：¥77\n- 打包费：¥6\n- 配送费：¥6\n- 平台红包：-¥（有优惠）\n- 下单返金币：返80淘金币\n- **合计：已优惠¥**\n\n订单已准备就绪，请您确认收货地址和商品信息无误后，点击底部的\"立即支付¥\"按钮完成支付。",
+      "success": true,
+      "duration": 219.726801,
+      "steps": 11,
+      "apps_used": [
+        "淘宝"
+      ],
+      "contacts_mentioned": []
+    }
+  },
+  "01a41e57e282bbc0": {
+    "id": "01a41e57e282bbc0",
+    "content": "用户常用应用: 淘宝",
+    "memory_type": "app_usage",
+    "created_at": "2026-04-23T20:47:03.365213",
+    "last_accessed": "2026-04-23T20:47:07.988656",
+    "access_count": 4,
+    "importance": 0.55,
+    "metadata": {
+      "app_name": "淘宝",
+      "context": "打开淘宝，帮我买一个iPhone 17 pro max，银色512G"
+    }
+  },
+  "66b4e664c2f1a413": {
+    "id": "66b4e664c2f1a413",
+    "content": "用户使用了应用: 淘宝",
+    "memory_type": "app_usage",
+    "created_at": "2026-04-23T20:47:22.428662",
+    "last_accessed": "2026-04-23T20:47:22.428663",
+    "access_count": 1,
+    "importance": 0.3,
+    "metadata": {
+      "app_name": "淘宝",
+      "timestamp": "2026-04-23T20:47:22.428496"
+    }
+  },
+  "4ba8af9d87babe01": {
+    "id": "4ba8af9d87babe01",
+    "content": "任务: 打开淘宝，帮我买一个iPhone 17 pro max，银色512G | 结果: 已经为您完成iPhone 17 Pro Max的购买准备工作：\n\n**商品信息：**\n- 机身颜色：银色\n- 存储容量：512GB\n- 套餐类型：官方标配 需现场激活\n- 价格：¥11998.85（优惠前¥11999，共减¥0.15）\n- 收货地址：何先生 铜川路2655弄鼎秀园23号903\n\n**支付页面已准备就绪，请您点击\"立即支付 ¥11998.85\"按钮完成最后的支付操作。** | 成功",
+    "memory_type": "task_history",
+    "created_at": "2026-04-23T20:48:13.926806",
+    "last_accessed": "2026-04-23T20:48:13.926808",
+    "access_count": 1,
+    "importance": 0.6,
+    "metadata": {
+      "task": "打开淘宝，帮我买一个iPhone 17 pro max，银色512G",
+      "result": "已经为您完成iPhone 17 Pro Max的购买准备工作：\n\n**商品信息：**\n- 机身颜色：银色\n- 存储容量：512GB\n- 套餐类型：官方标配 需现场激活\n- 价格：¥11998.85（优惠前¥11999，共减¥0.15）\n- 收货地址：何先生 铜川路2655弄鼎秀园23号903\n\n**支付页面已准备就绪，请您点击\"立即支付 ¥11998.85\"按钮完成最后的支付操作。**",
+      "success": true,
+      "duration": 70.570949,
+      "steps": 8,
+      "apps_used": [
+        "淘宝",
+        "system home"
+      ],
+      "contacts_mentioned": []
+    }
+  },
+  "f5d581c80a458866": {
+    "id": "f5d581c80a458866",
+    "content": "任务执行流程: 打开淘宝，帮我买一个iPhone 17 pro max，银色 使用了 System Home → 淘宝",
+    "memory_type": "task_pattern",
+    "created_at": "2026-04-23T20:48:13.929221",
+    "last_accessed": "2026-04-23T20:48:13.929223",
+    "access_count": 1,
+    "importance": 0.4,
+    "metadata": {
+      "task_type": "shopping",
+      "apps_flow": [
+        "System Home",
+        "淘宝"
+      ],
+      "task_summary": "打开淘宝，帮我买一个iPhone 17 pro max，银色512G"
+    }
   }
 }
