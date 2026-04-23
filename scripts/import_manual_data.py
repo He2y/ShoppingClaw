@@ -4,6 +4,8 @@ import hashlib
 import glob
 from pathlib import Path
 from typing import List, Dict, Any
+import base64
+from phone_agent.model.client import ModelClient, ModelConfig, MessageBuilder
 
 try:
     from neo4j import GraphDatabase
@@ -28,31 +30,47 @@ def get_image_hash(image_path: str) -> str:
         print(f"Error hashing image {image_path}: {e}")
         return ""
 
-def generate_semantic_layout(image_path: str) -> str:
+def generate_semantic_layout(image_path: str, model_client: ModelClient = None) -> str:
     """
-    Generate semantic layout from image.
-    Currently a mock that returns a basic description, but in reality
-    would call a VLM or use a cached layout.
+    Generate actual semantic layout from image using VLM.
     """
-    # Simple caching logic: check if .txt exists with same name
     txt_path = Path(image_path).with_suffix('.txt')
+    
+    # Return cached if valid and not a mock
     if txt_path.exists():
         with open(txt_path, 'r', encoding='utf-8') as f:
-            return f.read().strip()
+            content = f.read().strip()
+            if content and not content.startswith("Semantic layout for UI state"):
+                return content
 
-    # Mock VLM generation
-    layout_desc = f"Semantic layout for UI state represented by {Path(image_path).name}"
+    if not model_client:
+        return f"Semantic layout for UI state represented by {Path(image_path).name}"
 
-    # Cache it
+    print(f"      [VLM] Generating true semantic layout for {Path(image_path).name}...")
     try:
+        with open(image_path, "rb") as f:
+            img_b64 = base64.b64encode(f.read()).decode('utf-8')
+            
+        system_prompt = "你是一个UI分析专家。请用一句简短的中文描述这张手机屏幕截图属于什么APP的什么页面，以及页面的核心功能区有哪些（例如：'京东APP首页，包含顶部搜索栏、秒杀区和下方商品信息流'）。不要输出任何多余的解释。"
+        messages = [
+            MessageBuilder.create_system_message(system_prompt),
+            MessageBuilder.create_user_message(text="请描述当前UI页面", image_base64=img_b64)
+        ]
+        
+        response = model_client.request(messages)
+        layout_desc = response.raw_content.strip()
+        
+        # Cache it
         with open(txt_path, 'w', encoding='utf-8') as f:
             f.write(layout_desc)
-    except Exception:
-        pass
+            
+        return layout_desc
+    except Exception as e:
+        print(f"      [VLM] Error generating layout: {e}")
+        return f"Semantic layout for UI state represented by {Path(image_path).name}"
 
-    return layout_desc
 
-def process_task_directory(task_dir: Path, neo4j_session=None, memory_store=None):
+def process_task_directory(task_dir: Path, neo4j_session=None, memory_store=None, model_client=None):
     """Process a single task directory like MobiAgent/collect/manual/data/淘宝/基础加购商品/1"""
     actions_file = task_dir / "actions.json"
     react_file = task_dir / "react.json"
@@ -94,7 +112,7 @@ def process_task_directory(task_dir: Path, neo4j_session=None, memory_store=None
             # 1. State Node
             img_hash = get_image_hash(str(img_path))
             state_id = f"state_{img_hash}"
-            semantic_layout = generate_semantic_layout(str(img_path))
+            semantic_layout = generate_semantic_layout(str(img_path), model_client)
 
             neo4j_session.run(
                 "MERGE (s:UIState {state_id: $state_id}) "
@@ -124,15 +142,25 @@ def process_task_directory(task_dir: Path, neo4j_session=None, memory_store=None
 
             if prev_state_id and i - 1 < len(actions_data.get('actions', [])):
                 # Connect previous state to action, and action to this state
-                action = actions_data['actions'][i-1]
+                action_raw = actions_data['actions'][i-1]
+                react_raw = react_data[i-1] if i-1 < len(react_data) else {}
+                
                 action_id = f"act_{prev_state_id}_{i}"
-                action_type = action.get('action_type', 'unknown')
-
-                # Action Node
+                
+                # Try to get logical intent from react.json first
+                action_type = react_raw.get('function', {}).get('name') or action_raw.get('action_type', action_raw.get('type', 'unknown'))
+                semantic_target = react_raw.get('function', {}).get('parameters', {}).get('target_element', '')
+                reasoning = react_raw.get('reasoning', '')
+                
+                # Action Node: Merge semantic intent with coordinate fallback
                 neo4j_session.run(
                     "MERGE (a:Action {action_id: $action_id}) "
-                    "SET a.type = $type, a.target_desc = $target",
-                    action_id=action_id, type=action_type, target=str(action)
+                    "SET a.type = $type, a.semantic_target = $semantic_target, a.reasoning = $reasoning, a.raw_coords = $raw_coords",
+                    action_id=action_id, 
+                    type=action_type, 
+                    semantic_target=semantic_target,
+                    reasoning=reasoning,
+                    raw_coords=json.dumps(action_raw, ensure_ascii=False)
                 )
 
                 # Edges
@@ -197,6 +225,23 @@ def main():
     memory_store = MemoryStore(storage_dir="memory_db_offline_import")
     print("Initialized MemoryStore for offline import.")
 
+    # Initialize ModelClient for VLM layout generation (Using separate OFFLINE_VLM env vars)
+    model_client = None
+    offline_api_key = os.getenv("OFFLINE_VLM_API_KEY")
+    if offline_api_key and offline_api_key.strip() != "" and offline_api_key != "your_offline_vlm_api_key":
+        try:
+            model_config = ModelConfig(
+                base_url=os.getenv("OFFLINE_VLM_BASE_URL", "https://api.openai.com/v1"),
+                model_name=os.getenv("OFFLINE_VLM_MODEL", "gpt-4o-mini"),
+                api_key=offline_api_key
+            )
+            model_client = ModelClient(model_config)
+            print(f"Initialized ModelClient for offline VLM generation ({model_config.model_name}).")
+        except Exception as e:
+            print(f"Could not initialize ModelClient, will skip true semantic layout generation: {e}")
+    else:
+        print("OFFLINE_VLM_API_KEY is missing or default. Skipping VLM generation (will use fallback strings).")
+
     total_tasks = 0
     for app_dir in apps:
         print(f"\nProcessing app: {app_dir.name}")
@@ -208,7 +253,7 @@ def main():
 
             for task_dir in tasks:
                 print(f"    Processing task {task_dir.name}...")
-                task_data = process_task_directory(task_dir, session, memory_store)
+                task_data = process_task_directory(task_dir, session, memory_store, model_client)
                 if task_data:
                     total_tasks += 1
 
