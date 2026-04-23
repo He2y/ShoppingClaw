@@ -63,7 +63,7 @@ class MemoryManager:
     ):
         """
         Initialize memory manager.
-        
+
         Args:
             storage_dir: Base directory for memory storage
             user_id: User identifier for personalization
@@ -73,18 +73,22 @@ class MemoryManager:
         self.user_id = user_id
         self.enable_auto_extract = enable_auto_extract
         self.enable_thinking_analysis = enable_thinking_analysis
-        
+
         # Create user-specific storage
         user_storage = f"{storage_dir}/{user_id}"
         self.store = MemoryStore(storage_dir=user_storage)
-        
+
+        # Initialize GraphStore (Spatial Memory)
+        from .graph_store import GraphStore
+        self.graph_store = GraphStore()
+
         # Session history for context
         self.session_history: list[dict] = []
-        
+
         # Current task context
         self.current_task: str = ""
         self.task_start_time: str = ""
-        
+
         # Track extracted info in current session to avoid duplicates
         self._session_contacts: set[str] = set()
         self._session_apps: set[str] = set()
@@ -715,6 +719,35 @@ class MemoryManager:
         
         return "\n".join(context_parts)
     
+    def locate_and_get_context(self, ui_hash: str, semantic_layout: str, task: str) -> dict:
+        """
+        Dual-Core Search: Locate current state in Graph, and get semantic preferences from FAISS.
+        """
+        context_data = {
+            "mode": "explore",
+            "semantic_context": self.get_relevant_context(task),
+            "next_actions": [],
+            "current_state_id": None
+        }
+
+        # 1. Spatial Memory (Graph) Localization
+        graph_state = self.graph_store.get_current_state(ui_hash)
+
+        if graph_state:
+            context_data["current_state_id"] = graph_state.get("state_id")
+
+            # 2. Check for shortcuts or popups
+            next_actions = self.graph_store.get_next_actions(ui_hash, min_confidence=0.8)
+
+            if next_actions:
+                context_data["mode"] = "navigate"
+                context_data["next_actions"] = next_actions
+            elif graph_state.get("is_popup", False):
+                # We could look up specific popup solver actions here
+                pass
+
+        return context_data
+
     def get_user_summary(self) -> dict:
         """
         Get a summary of user information.

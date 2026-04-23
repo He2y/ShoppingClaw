@@ -7,13 +7,17 @@ enabling it to learn user preferences, habits, and past interactions.
 Inspired by TeleMem (https://github.com/TeleAI-UAGI/TeleMem)
 """
 
-from .memory_store import MemoryStore, Memory, MemoryType
+from .memory_store import MemoryStore, Memory, MemoryType, ShoppingMetadata, GraphMetadata
+from .graph_store import GraphStore
 from .memory_manager import MemoryManager
 
 __all__ = [
     "MemoryStore",
     "Memory",
     "MemoryType",
+    "ShoppingMetadata",
+    "GraphMetadata",
+    "GraphStore",
     "MemoryManager",
 ]
 
