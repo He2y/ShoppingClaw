@@ -277,6 +277,60 @@ class PhoneAgent:
         device_factory = get_device_factory()
         screenshot = device_factory.get_screenshot(self.agent_config.device_id)
         current_app = device_factory.get_current_app(self.agent_config.device_id)
+        
+        # Phase 3: Locate context and switch modes
+        mode = "explore"
+        current_state_id = None
+        if self.memory_manager:
+            import hashlib
+            hasher = hashlib.md5()
+            hasher.update(screenshot.base64_data.encode('utf-8'))
+            ui_hash = hasher.hexdigest()
+            # Placeholder for layout extraction in reality
+            semantic_layout = "current_screen_layout" 
+            
+            context_data = self.memory_manager.locate_and_get_context(ui_hash, semantic_layout, user_prompt or self._current_task)
+            mode = context_data.get("mode", "explore")
+            current_state_id = context_data.get("current_state_id")
+            
+            if mode == "navigate" and context_data.get("next_actions"):
+                # Fast track: return the highest confidence action directly without VLM inference
+                best_action = context_data["next_actions"][0]
+                action = {
+                    "_metadata": "do",
+                    "action_type": best_action["type"],
+                }
+                # Quick parse params
+                try:
+                    import ast
+                    params = ast.literal_eval(best_action.get("target_desc", "{}"))
+                    action.update(params)
+                except:
+                    pass
+                
+                print(f"🚀 Navigation Mode Triggered: Found Graph Shortcut: {best_action['type']}")
+                
+                # Execute it directly
+                try:
+                    if self._specialized_handler:
+                        # Convert back to parsed action format if needed, simplistic execution here
+                        pass
+                    result = self.action_handler.execute(
+                        action, screenshot.width, screenshot.height
+                    )
+                except Exception as e:
+                    result = self.action_handler.execute(
+                        finish(message=str(e)), screenshot.width, screenshot.height
+                    )
+                
+                finished = action.get("_metadata") == "finish" or result.should_finish
+                return StepResult(
+                    success=result.success,
+                    finished=finished,
+                    action=action,
+                    thinking="[Graph Shortcut Navigated]",
+                    message=result.message or action.get("message"),
+                )
 
         # Build messages using the adapter
         is_non_autoglm = self._model_type in (
@@ -553,6 +607,15 @@ class PhoneAgent:
                 action=action,
                 screenshot_app=current_app,
             )
+            # Phase 4: Online Dynamic Graph construction
+            if hasattr(self, '_prev_state_id') and current_state_id:
+                self.memory_manager.graph_store.add_state_transition(
+                    self._prev_state_id,
+                    current_state_id,
+                    action,
+                    self._current_task
+                )
+            self._prev_state_id = current_state_id
 
         # Check if finished
         finished = action.get("_metadata") == "finish" or result.should_finish
