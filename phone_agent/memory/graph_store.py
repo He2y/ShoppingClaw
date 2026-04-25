@@ -108,11 +108,49 @@ class GraphStore:
 
     def find_similar_tasks(self, task_description: str, app: str = None, top_k: int = 3) -> List[Dict[str, Any]]:
         """
-        Find semantically similar completed tasks using token-based OR matching.
+        Find semantically similar completed tasks.
 
-        Neo4j stores Chinese descriptions as space-separated chars ('去 京 东 帮 我 点 个 外 卖').
-        This method extracts character n-grams from the query and uses OR clauses so
-        ANY matching n-gram returns the task, then re-ranks by total matched token count.
+        Uses the GraphRAG TaskIndex (embedding-3) for vector semantic search if available.
+        Falls back to Neo4j N-gram matching if vector search fails or is empty.
+        """
+        if not self.driver:
+            return []
+
+        # 优先向量语义搜索
+        if hasattr(self, 'task_index') and self.task_index:
+            index_results = self.task_index.search(task_description, top_k=top_k)
+            if index_results:
+                results = []
+                with self.driver.session(database=self.database) as session:
+                    for task_id, similarity in index_results:
+                        query = """
+                        MATCH (t:TaskTarget {target_id: $task_id})
+                        OPTIONAL MATCH (t)-[:STARTS_AT]->(first:UIState)
+                        OPTIONAL MATCH (first)-[r:NEXT_ACTION]->(a:Action)
+                        RETURN t.target_id AS task_id, t.description AS description, t.app AS app,
+                               first.state_id AS start_state, a.type AS action_type,
+                               a.semantic_target AS action_target,
+                               r.confidence AS confidence, r.frequency AS frequency
+                        ORDER BY r.frequency DESC
+                        LIMIT 1
+                        """
+                        result = session.run(query, task_id=task_id).single()
+                        if result:
+                            task_data = dict(result)
+                            task_data["similarity"] = similarity
+                            results.append(task_data)
+
+                if results:
+                    # Sort by similarity descending
+                    results.sort(key=lambda x: x.get("similarity", 0), reverse=True)
+                    return results
+
+        # Fallback: N-gram关键词匹配（现有逻辑）
+        return self._find_by_ngram(task_description, app, top_k)
+
+    def _find_by_ngram(self, task_description: str, app: str = None, top_k: int = 3) -> List[Dict[str, Any]]:
+        """
+        Original Neo4j token-based OR matching fallback.
         """
         if not self.driver:
             return []
@@ -302,6 +340,7 @@ class GraphStore:
             return False
 
         import hashlib
+        from pathlib import Path
         task_hash = hashlib.md5(task_description.encode()).hexdigest()[:8]
         persistent_id = f"{task_id}_{task_hash}"
 
@@ -332,6 +371,11 @@ class GraphStore:
                     end_state=end_state_id,
                     success=success,
                 ).single()
+
+            # Update FAISS Index via Embedding API
+            if result and hasattr(self, 'task_index') and self.task_index:
+                self.task_index.add_task(persistent_id, task_description)
+
             return result is not None
         except Exception as e:
             print(f"Warning: failed to commit task trajectory: {e}")

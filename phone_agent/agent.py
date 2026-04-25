@@ -305,14 +305,14 @@ class PhoneAgent:
             ui_hash = hasher.hexdigest()
             self._last_state_hash = f"state_{ui_hash}"
 
-            # 轻量级启发式特征：使用当前 APP 名称作为语义标签（无需 VLM 调用）
-            # 注意：MD5 哈希精确匹配用于图谱，图谱未命中时不触发 FAISS 导航
+            # 轻量级启发式特征：使用当前 APP 名称作为语义标签
             semantic_layout = current_app if current_app else "home_screen"
 
+            # 基于 GraphRAG 进行匹配 (MD5 逻辑已移除)
             context_data = self.memory_manager.locate_and_get_context(ui_hash, semantic_layout, user_prompt or self._current_task)
             mode = context_data.get("mode", "explore")
             current_state_id = context_data.get("current_state_id")
-            
+
             if mode == "navigate" and context_data.get("next_actions"):
                 # Fast track: return the highest confidence action directly without VLM inference
                 best_action = context_data["next_actions"][0]
@@ -320,6 +320,9 @@ class PhoneAgent:
                     "_metadata": "do",
                     "action_type": best_action["type"],
                 }
+                if best_action.get("target"):
+                    action["element"] = best_action["target"]
+
                 # Quick parse params
                 try:
                     import ast
@@ -327,9 +330,9 @@ class PhoneAgent:
                     action.update(params)
                 except:
                     pass
-                
+
                 print(f"🚀 Navigation Mode Triggered: Found Graph Shortcut: {best_action['type']}")
-                
+
                 # Execute it directly
                 try:
                     if self._specialized_handler:
@@ -342,7 +345,7 @@ class PhoneAgent:
                     result = self.action_handler.execute(
                         finish(message=str(e)), screenshot.width, screenshot.height
                     )
-                
+
                 finished = action.get("_metadata") == "finish" or result.should_finish
                 return StepResult(
                     success=result.success,
@@ -353,7 +356,7 @@ class PhoneAgent:
                 )
             else:
                 if self.agent_config.verbose:
-                    print(f"🧭 知识图谱查询: 未匹配到当前界面特征，使用视觉大模型进行推理 (Explore Mode)")
+                    print(f"🧭 知识图谱查询: 未匹配到可信历史动作，使用视觉大模型进行推理 (Explore Mode)")
 
         # Get model response
         is_non_autoglm = self._model_type in (

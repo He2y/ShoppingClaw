@@ -831,15 +831,12 @@ class MemoryManager:
     
     def locate_and_get_context(self, ui_hash: str, semantic_layout: str, task: str) -> dict:
         """
-        三层匹配策略（优先级递减）：
+        基于 GraphRAG 的双层匹配策略：
 
-        1. Graph MD5 精确匹配    → 精确状态识别，可直接触发 Navigation Shortcut
-        2. Graph 任务语义匹配    → 找相似任务轨迹，返回前几步动作序列
-        3. FAISS 向量语义 fallback → 仅补充探索上下文，永不触发 Navigate
-
-        设计原则：
-        - 相似任务（如"京东点外卖" vs "淘宝点外卖"）→ 复用动作序列
-        - 只有状态完全一致时才能触发快捷导航
+        1. GraphRAG 任务语义匹配 (FAISS + Neo4j) → 语义向量召回历史轨迹
+           - 高置信度 (>= 0.85): 直接提取第一个动作，进入 Navigate 模式执行
+           - 中置信度 (0.60-0.85): 提取路径，凝练后注入上下文，进入 Explore 模式推理
+        2. FAISS 向量语义 fallback → 仅补充 UI state 的探索上下文
         """
         context_data = {
             "mode": "explore",
@@ -849,78 +846,40 @@ class MemoryManager:
             "task_trajectory": None,
         }
 
-        # =============================================
-        # Core 1: Graph MD5 精确匹配 — 状态完全一致
-        # =============================================
-        graph_state = self.graph_store.get_current_state(ui_hash)
-
-        if graph_state:
-            state_id = graph_state.get("state_id")
-            context_data["current_state_id"] = state_id
-            actual_hash = state_id.replace("state_", "") if state_id else ui_hash
-            next_actions = self.graph_store.get_next_actions(actual_hash, min_confidence=0.8)
-
-            if next_actions:
-                print(f"🔗 Graph MD5 Match: state={state_id}, {len(next_actions)} 个快捷动作")
-                context_data["mode"] = "navigate"
-                context_data["next_actions"] = next_actions
-            return context_data
-
-        # =============================================
-        # Core 2: Graph 任务语义匹配 — 找相似历史任务轨迹
-        # =============================================
+        # Layer 1: 基于 embedding-3 的任务语义匹配 (GraphRAG 入口)
         if task and len(task) > 3:
-            # 不按 APP 过滤——用 n-gram 关键词跨 APP 匹配
-            similar_tasks = self.graph_store.find_similar_tasks(
-                task_description=task,
-                app=None,   # 关键词匹配已足够，跨 APP 找相似任务
-                top_k=3
-            )
+            similar_tasks = self.graph_store.find_similar_tasks(task, top_k=3)
 
             if similar_tasks:
-                best_task = similar_tasks[0]
-                task_id = best_task.get("task_id", "")
-                task_desc = best_task.get("description", "")
-                task_app = best_task.get("app", "")
-                print(
-                    f"🔍 Task Semantic Match: 找到相似任务 「{task_desc}」(app={task_app})"
-                )
+                best = similar_tasks[0]
+                similarity = best.get("similarity", 0.0)
+                task_id = best.get("task_id", "")
+                task_desc = best.get("description", "")
 
                 # 获取该相似任务的完整轨迹
                 trajectory = self.graph_store.get_task_trajectory(task_id)
-                steps = trajectory.get("steps", [])
 
-                # 格式化完整轨迹供 VLM 参考
-                if steps:
-                    trajectory_text = "\n".join(
-                        f"  步骤{i+1}: {s['action_type']} → {s['action_target']}"
-                        + (f"（{s['reasoning']}）" if s.get("reasoning") else "")
-                        for i, s in enumerate(steps)
+                # 高置信度匹配：尝试直接执行快捷动作
+                if similarity >= 0.85:
+                    first_action = self._get_first_action(trajectory)
+                    if first_action:
+                        context_data["mode"] = "navigate"
+                        context_data["next_actions"] = [first_action]
+                        print(f"🚀 语义命中: 「{task_desc}」(相似度={similarity:.2f})")
+                        return context_data
+
+                # 中/低置信度匹配：提取压缩轨迹注入上下文，交由大模型推理
+                if similarity >= 0.60:
+                    condensed_text = self._condense_trajectory_context(similar_tasks)
+                    context_data["semantic_context"] = (
+                        f"{condensed_text}\n"
+                        f"（注意：当前界面可能与历史轨迹不同，请根据实际截图调整动作）\n"
+                        f"{context_data.get('semantic_context', '')}"
                     )
-                else:
-                    first_action = best_task.get("action_type", "")
-                    first_target = best_task.get("action_target", "")
-                    trajectory_text = f"  步骤1: {first_action} → {first_target}"
+                    context_data["task_trajectory"] = trajectory
+                    print(f"🔍 语义参考: 「{task_desc}」(相似度={similarity:.2f})")
 
-                # 注入任务上下文，让 VLM 在 Explore 模式下知道相似任务的完整轨迹
-                context_data["task_trajectory"] = trajectory
-                context_data["semantic_context"] = (
-                    f"[相似历史任务: {task_desc}]\n"
-                    f"该任务曾在 {task_app} 中成功完成，以下是完整动作轨迹供参考：\n"
-                    f"{trajectory_text}\n"
-                    f"（注意：当前界面可能与历史轨迹不同，请根据实际截图调整动作）\n"
-                    f"{context_data.get('semantic_context', '')}"
-                )
-                print(
-                    f"🔍 Task Semantic Match: 找到相似任务 「{task_desc}」"
-                    f"(app={task_app})，共 {len(steps)} 个动作步骤"
-                )
-                # 保持 explore 模式，让 VLM 结合截图和上下文做决策
-                return context_data
-
-        # =============================================
-        # Core 3: FAISS 向量 fallback — 仅补充上下文
-        # =============================================
+        # Layer 2: FAISS UI状态向量 fallback — 仅补充上下文
         if semantic_layout and len(semantic_layout) > 5:
             similar_states = self.store.search(
                 query=semantic_layout,
@@ -938,6 +897,66 @@ class MemoryManager:
                     print(f"🔄 FAISS Semantic Hint: 参考历史页面特征")
 
         return context_data
+
+    def _condense_trajectory_context(self, similar_tasks: list[dict]) -> str:
+        """
+        将相似任务凝练成≤200字的行动参考。
+        格式：app→动作1→动作2→动作3→动作4→动作5
+        """
+        lines = ["【行动参考】"]
+        total_len = len("【行动参考】")
+
+        for task in similar_tasks[:2]:
+            desc = task.get("description", "")[:30]
+            app = task.get("app", "")
+            freq = task.get("frequency", 0)
+            similarity = task.get("similarity", 0)
+
+            trajectory = self.graph_store.get_task_trajectory(task["task_id"])
+            steps = trajectory.get("steps", [])
+            condensed = self._condense_steps(steps, max_steps=5)
+
+            entry = f'"{desc}"({app}·{freq}次)：{condensed}'
+            if total_len + len(entry) > 200:
+                break
+            lines.append(entry)
+            total_len += len(entry) + 1
+
+        return "\n".join(lines)
+
+    def _condense_steps(self, steps: list[dict], max_steps: int = 5) -> str:
+        """
+        将步骤列表凝练为箭头分隔的行动指南。
+        过滤辅助动作（wait），保留关键动作。
+        """
+        KEY_ACTIONS = {"click", "tap", "type", "input", "launch", "open", "swipe", "scroll", "long_press"}
+        key_steps = [
+            s for s in steps
+            if s.get("action_type", "").lower() in KEY_ACTIONS
+        ]
+        key_steps = key_steps[:max_steps]
+
+        parts = []
+        for s in key_steps:
+            action = s.get("action_type", "")
+            target = s.get("action_target", "")[:8]
+            if target:
+                parts.append(f"{target}")
+            else:
+                parts.append(action)
+        return "→".join(parts) if parts else "执行中"
+
+    def _get_first_action(self, trajectory: dict) -> dict | None:
+        """从轨迹提取第一个动作，用于Navigate模式直接执行"""
+        steps = trajectory.get("steps", [])
+        if not steps:
+            return None
+        first = steps[0]
+        return {
+            "type": first.get("action_type", "click"),
+            "target": first.get("action_target", ""),
+            "confidence": 0.9,
+        }
 
     def get_user_summary(self) -> dict:
         """
