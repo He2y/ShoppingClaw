@@ -1,122 +1,127 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 900" width="1100" height="900">
-  <style>text{font-family:'SF Mono','Fira Code','Cascadia Code','Courier New',monospace;}</style>
+  <style>text{font-family:'Helvetica Neue',Helvetica,Arial,'PingFang SC','Microsoft YaHei',sans-serif;}</style>
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f0f1a"/><stop offset="100%" stop-color="#1a1a2e"/>
-    </linearGradient>
-    <marker id="ap" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#a855f7"/></marker>
-    <marker id="ab" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#60a5fa"/></marker>
-    <marker id="ao" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#f97316"/></marker>
-    <marker id="ag" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#34d399"/></marker>
-    <filter id="gp"><feGaussianBlur stdDeviation="2" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <marker id="ap" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#7c3aed"/></marker>
+    <marker id="ab" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/></marker>
+    <marker id="ao" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/></marker>
+    <marker id="agg" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#059669"/></marker>
+    <marker id="agy" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#6b7280"/></marker>
+    <filter id="shadow"><feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#d1d5db" flood-opacity="0.4"/></filter>
   </defs>
-  <rect width="1100" height="900" fill="url(#bg)"/>
+  <rect width="1100" height="900" fill="#ffffff"/>
 
-  <text x="550" y="28" text-anchor="middle" fill="#e2e8f0" font-size="16" font-weight="bold">ClawGUI-Agent System Architecture v4.0</text>
-  <line x1="300" y1="36" x2="800" y2="36" stroke="#7c3aed" stroke-width="1" opacity="0.5"/>
+  <text x="550" y="28" text-anchor="middle" fill="#111827" font-size="17" font-weight="bold">ClawGUI-Agent System Architecture v4.0</text>
+  <line x1="300" y1="36" x2="800" y2="36" stroke="#7c3aed" stroke-width="1.5" opacity="0.4"/>
 
   <!-- ENTRY LAYER -->
-  <rect x="15" y="50" width="1070" height="75" rx="6" fill="#0f172a" fill-opacity="0.3" stroke="#334155" stroke-width="1" stroke-dasharray="6,4"/>
-  <text x="27" y="64" fill="#475569" font-size="9" font-weight="bold">ENTRY LAYER</text>
-  <rect x="220" y="62" width="180" height="44" rx="6" fill="#1e293b" stroke="#475569" stroke-width="1"/>
-  <text x="310" y="80" text-anchor="middle" fill="#e2e8f0" font-size="11">CLI</text><text x="310" y="96" text-anchor="middle" fill="#64748b" font-size="9">main.py</text>
-  <rect x="700" y="62" width="180" height="44" rx="6" fill="#1e293b" stroke="#475569" stroke-width="1"/>
-  <text x="790" y="80" text-anchor="middle" fill="#e2e8f0" font-size="11">WebUI (Gradio)</text><text x="790" y="96" text-anchor="middle" fill="#64748b" font-size="9">webui.py</text>
-  <path d="M 310 106 L 310 134" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#ab)"/>
-  <path d="M 790 106 L 790 134" stroke="#94a3b8" stroke-width="1.5" fill="none" marker-end="url(#ab)"/>
+  <rect x="15" y="48" width="1070" height="75" rx="6" fill="#faf5ff" fill-opacity="0.5" stroke="#d1d5db" stroke-width="1" stroke-dasharray="6,4"/>
+  <text x="27" y="62" fill="#6b7280" font-size="9" font-weight="bold">ENTRY LAYER / 入口层</text>
+  <rect x="220" y="62" width="180" height="44" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="310" y="80" text-anchor="middle" fill="#111827" font-size="12" font-weight="600">CLI</text>
+  <text x="310" y="96" text-anchor="middle" fill="#6b7280" font-size="9">main.py</text>
+  <rect x="700" y="62" width="180" height="44" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="790" y="80" text-anchor="middle" fill="#111827" font-size="12" font-weight="600">WebUI (Gradio)</text>
+  <text x="790" y="96" text-anchor="middle" fill="#6b7280" font-size="9">webui.py / StreamingAgent</text>
+  <path d="M 310 106 L 310 134" stroke="#6b7280" stroke-width="1.5" fill="none" marker-end="url(#agy)"/>
+  <path d="M 790 106 L 790 134" stroke="#6b7280" stroke-width="1.5" fill="none" marker-end="url(#agy)"/>
 
   <!-- AGENT CORE -->
-  <rect x="15" y="140" width="1070" height="105" rx="6" fill="#1e1b4b" fill-opacity="0.2" stroke="#7c3aed" stroke-width="1" stroke-dasharray="6,4"/>
-  <text x="27" y="154" fill="#a855f7" font-size="9" font-weight="bold">AGENT CORE</text>
-  <polygon points="550,160 610,185 610,220 550,245 490,220 490,185" fill="#2e1065" stroke="#7c3aed" stroke-width="2" filter="url(#gp)"/>
-  <text x="550" y="200" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="bold">PhoneAgent</text>
-  <text x="550" y="215" text-anchor="middle" fill="#a855f7" font-size="9">10-Phase Loop</text>
-  <text x="650" y="178" fill="#64748b" font-size="8">1.Screenshot 2.MemoryLookup 3.HITL-Clarify</text>
-  <text x="650" y="191" fill="#64748b" font-size="8">4.NavCheck 5.BuildMsg 6.InjectContext</text>
-  <text x="650" y="204" fill="#64748b" font-size="8">7.VLM 8.Parse+SpecGuard 9.Execute</text>
-  <text x="650" y="217" fill="#64748b" font-size="8">10.MemoryUpdate+Trace</text>
+  <rect x="15" y="140" width="1070" height="105" rx="6" fill="#faf5ff" fill-opacity="0.6" stroke="#e9d5ff" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="27" y="154" fill="#7c3aed" font-size="9" font-weight="bold">AGENT CORE / 代理核心</text>
+  <rect x="450" y="158" width="200" height="72" rx="10" fill="#ffffff" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
+  <text x="550" y="182" text-anchor="middle" fill="#111827" font-size="14" font-weight="bold">PhoneAgent</text>
+  <text x="550" y="198" text-anchor="middle" fill="#7c3aed" font-size="10" font-weight="600">10-Phase Execution Loop</text>
+  <text x="550" y="214" text-anchor="middle" fill="#6b7280" font-size="9">run(task) -> while -> _execute_step()</text>
 
-  <path d="M 490 200 L 220 315" stroke="#60a5fa" stroke-width="1.5" fill="none" marker-end="url(#ab)"/>
-  <text x="300" y="255" fill="#60a5fa" font-size="8">build_messages()</text>
-  <path d="M 550 245 L 550 305" stroke="#f97316" stroke-width="1.5" fill="none" marker-end="url(#ao)"/>
-  <text x="562" y="280" fill="#f97316" font-size="8">execute()</text>
-  <path d="M 610 200 L 870 355" stroke="#34d399" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
-  <text x="760" y="272" fill="#34d399" font-size="8">locate/update</text>
+  <text x="690" y="178" fill="#6b7280" font-size="8">1.Screenshot 2.MemoryLookup</text>
+  <text x="690" y="191" fill="#6b7280" font-size="8">3.HITL-Clarify 4.NavCheck</text>
+  <text x="690" y="204" fill="#6b7280" font-size="8">5.BuildMsg 6.InjectContext</text>
+  <text x="690" y="217" fill="#6b7280" font-size="8">7.VLM 8.Parse+SpecGuard</text>
+  <text x="690" y="230" fill="#6b7280" font-size="8">9.Execute 10.MemoryUpdate</text>
+
+  <path d="M 470 210 L 220 315" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#ab)"/>
+  <text x="300" y="260" fill="#2563eb" font-size="9">build_messages()</text>
+  <path d="M 550 230 L 550 305" stroke="#ea580c" stroke-width="1.5" fill="none" marker-end="url(#ao)"/>
+  <text x="562" y="275" fill="#ea580c" font-size="9">execute()</text>
+  <path d="M 630 200 L 870 355" stroke="#059669" stroke-width="1.5" fill="none" marker-end="url(#agg)"/>
+  <text x="770" y="272" fill="#059669" font-size="9">locate/update</text>
 
   <!-- MODEL LAYER -->
-  <rect x="15" y="290" width="330" height="155" rx="6" fill="#1e3a5f" fill-opacity="0.2" stroke="#3b82f6" stroke-width="1" stroke-dasharray="6,4"/>
-  <text x="27" y="304" fill="#60a5fa" font-size="9" font-weight="bold">MODEL LAYER (5 Adapters)</text>
-  <rect x="45" y="314" width="270" height="30" rx="5" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.5"/>
-  <text x="180" y="333" text-anchor="middle" fill="#e2e8f0" font-size="10">ModelClient (OpenAI Stream)</text>
-  <rect x="35" y="354" width="90" height="28" rx="4" fill="#172554" stroke="#3b82f6" stroke-width="0.8"/><text x="80" y="372" text-anchor="middle" fill="#93c5fd" font-size="9">AutoGLM</text>
-  <rect x="133" y="354" width="80" height="28" rx="4" fill="#172554" stroke="#3b82f6" stroke-width="0.8"/><text x="173" y="372" text-anchor="middle" fill="#93c5fd" font-size="9">UI-TARS</text>
-  <rect x="221" y="354" width="80" height="28" rx="4" fill="#172554" stroke="#3b82f6" stroke-width="0.8"/><text x="261" y="372" text-anchor="middle" fill="#93c5fd" font-size="9">QwenVL</text>
-  <rect x="65" y="392" width="80" height="28" rx="4" fill="#172554" stroke="#3b82f6" stroke-width="0.8"/><text x="105" y="410" text-anchor="middle" fill="#93c5fd" font-size="9">MAI-UI</text>
-  <rect x="190" y="392" width="80" height="28" rx="4" fill="#172554" stroke="#3b82f6" stroke-width="0.8"/><text x="230" y="410" text-anchor="middle" fill="#93c5fd" font-size="9">GUI-Owl</text>
+  <rect x="15" y="290" width="330" height="155" rx="6" fill="#eff6ff" fill-opacity="0.5" stroke="#bfdbfe" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="27" y="304" fill="#2563eb" font-size="9" font-weight="bold">MODEL LAYER / 模型适配层 (5 Adapters)</text>
+  <rect x="45" y="314" width="270" height="30" rx="6" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="180" y="333" text-anchor="middle" fill="#1e40af" font-size="11" font-weight="600">ModelClient (OpenAI Stream)</text>
+  <rect x="35" y="354" width="90" height="28" rx="5" fill="#ffffff" stroke="#bfdbfe" stroke-width="1"/><text x="80" y="372" text-anchor="middle" fill="#2563eb" font-size="9">AutoGLM</text>
+  <rect x="133" y="354" width="80" height="28" rx="5" fill="#ffffff" stroke="#bfdbfe" stroke-width="1"/><text x="173" y="372" text-anchor="middle" fill="#2563eb" font-size="9">UI-TARS</text>
+  <rect x="221" y="354" width="80" height="28" rx="5" fill="#ffffff" stroke="#bfdbfe" stroke-width="1"/><text x="261" y="372" text-anchor="middle" fill="#2563eb" font-size="9">QwenVL</text>
+  <rect x="65" y="392" width="80" height="28" rx="5" fill="#ffffff" stroke="#bfdbfe" stroke-width="1"/><text x="105" y="410" text-anchor="middle" fill="#2563eb" font-size="9">MAI-UI</text>
+  <rect x="190" y="392" width="80" height="28" rx="5" fill="#ffffff" stroke="#bfdbfe" stroke-width="1"/><text x="230" y="410" text-anchor="middle" fill="#2563eb" font-size="9">GUI-Owl</text>
 
   <!-- ACTION LAYER -->
-  <rect x="380" y="290" width="705" height="155" rx="6" fill="#1c1917" fill-opacity="0.15" stroke="#ea580c" stroke-width="1" stroke-dasharray="6,4"/>
-  <text x="392" y="304" fill="#f97316" font-size="9" font-weight="bold">ACTION LAYER (6 Handlers + DeviceFactory)</text>
-  <rect x="395" y="316" width="95" height="34" rx="4" fill="#431407" stroke="#ea580c" stroke-width="0.8"/><text x="442" y="338" text-anchor="middle" fill="#fdba74" font-size="8">AutoGLM</text>
-  <rect x="498" y="316" width="76" height="34" rx="4" fill="#431407" stroke="#ea580c" stroke-width="0.8"/><text x="536" y="338" text-anchor="middle" fill="#fdba74" font-size="8">UI-TARS</text>
-  <rect x="582" y="316" width="76" height="34" rx="4" fill="#431407" stroke="#ea580c" stroke-width="0.8"/><text x="620" y="338" text-anchor="middle" fill="#fdba74" font-size="8">QwenVL</text>
-  <rect x="666" y="316" width="76" height="34" rx="4" fill="#431407" stroke="#ea580c" stroke-width="0.8"/><text x="704" y="338" text-anchor="middle" fill="#fdba74" font-size="8">MAI-UI</text>
-  <rect x="750" y="316" width="76" height="34" rx="4" fill="#431407" stroke="#ea580c" stroke-width="0.8"/><text x="788" y="338" text-anchor="middle" fill="#fdba74" font-size="8">GUI-Owl</text>
-  <rect x="834" y="316" width="76" height="34" rx="4" fill="#431407" stroke="#ea580c" stroke-width="0.8"/><text x="872" y="338" text-anchor="middle" fill="#fdba74" font-size="8">iOS WDA</text>
+  <rect x="380" y="290" width="705" height="155" rx="6" fill="#fff7ed" fill-opacity="0.5" stroke="#fed7aa" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="392" y="304" fill="#ea580c" font-size="9" font-weight="bold">ACTION LAYER / 动作执行层 (6 Handlers + DeviceFactory)</text>
+  <rect x="395" y="316" width="95" height="34" rx="5" fill="#ffffff" stroke="#fed7aa" stroke-width="1"/><text x="442" y="338" text-anchor="middle" fill="#c2410c" font-size="9" font-weight="600">AutoGLM</text>
+  <rect x="498" y="316" width="76" height="34" rx="5" fill="#ffffff" stroke="#fed7aa" stroke-width="1"/><text x="536" y="338" text-anchor="middle" fill="#c2410c" font-size="9" font-weight="600">UI-TARS</text>
+  <rect x="582" y="316" width="76" height="34" rx="5" fill="#ffffff" stroke="#fed7aa" stroke-width="1"/><text x="620" y="338" text-anchor="middle" fill="#c2410c" font-size="9" font-weight="600">QwenVL</text>
+  <rect x="666" y="316" width="76" height="34" rx="5" fill="#ffffff" stroke="#fed7aa" stroke-width="1"/><text x="704" y="338" text-anchor="middle" fill="#c2410c" font-size="9" font-weight="600">MAI-UI</text>
+  <rect x="750" y="316" width="76" height="34" rx="5" fill="#ffffff" stroke="#fed7aa" stroke-width="1"/><text x="788" y="338" text-anchor="middle" fill="#c2410c" font-size="9" font-weight="600">GUI-Owl</text>
+  <rect x="834" y="316" width="76" height="34" rx="5" fill="#ffffff" stroke="#fed7aa" stroke-width="1"/><text x="872" y="338" text-anchor="middle" fill="#c2410c" font-size="9" font-weight="600">iOS WDA</text>
 
-  <rect x="395" y="362" width="150" height="34" rx="5" fill="#7c2d12" stroke="#ea580c" stroke-width="1.3"/>
-  <text x="470" y="376" text-anchor="middle" fill="#fdba74" font-size="10" font-weight="bold">DeviceFactory</text>
-  <text x="470" y="390" text-anchor="middle" fill="#9a3412" font-size="7">get_screenshot | get_current_app | execute</text>
+  <rect x="395" y="362" width="150" height="34" rx="6" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+  <text x="470" y="376" text-anchor="middle" fill="#9a3412" font-size="10" font-weight="bold">DeviceFactory</text>
+  <text x="470" y="390" text-anchor="middle" fill="#c2410c" font-size="7">get_screenshot | get_current_app | execute</text>
 
-  <rect x="565" y="362" width="90" height="34" rx="4" fill="#431407" stroke="#f97316" stroke-width="0.8"/><text x="610" y="383" text-anchor="middle" fill="#fdba74" font-size="9">ADB</text>
-  <rect x="665" y="362" width="90" height="34" rx="4" fill="#431407" stroke="#f97316" stroke-width="0.8"/><text x="710" y="383" text-anchor="middle" fill="#fdba74" font-size="9">HDC</text>
-  <rect x="765" y="362" width="90" height="34" rx="4" fill="#431407" stroke="#f97316" stroke-width="0.8"/><text x="810" y="383" text-anchor="middle" fill="#fdba74" font-size="9">XCTEST</text>
-  <text x="610" y="414" text-anchor="middle" fill="#64748b" font-size="7">Android</text><text x="710" y="414" text-anchor="middle" fill="#64748b" font-size="7">HarmonyOS</text><text x="810" y="414" text-anchor="middle" fill="#64748b" font-size="7">iOS</text>
+  <rect x="565" y="362" width="90" height="34" rx="5" fill="#ffffff" stroke="#fdba74" stroke-width="1"/><text x="610" y="383" text-anchor="middle" fill="#c2410c" font-size="9" font-weight="600">ADB</text>
+  <rect x="665" y="362" width="90" height="34" rx="5" fill="#ffffff" stroke="#fdba74" stroke-width="1"/><text x="710" y="383" text-anchor="middle" fill="#c2410c" font-size="9" font-weight="600">HDC</text>
+  <rect x="765" y="362" width="90" height="34" rx="5" fill="#ffffff" stroke="#fdba74" stroke-width="1"/><text x="810" y="383" text-anchor="middle" fill="#c2410c" font-size="9" font-weight="600">XCTEST</text>
+  <text x="610" y="414" text-anchor="middle" fill="#9ca3af" font-size="8">Android</text>
+  <text x="710" y="414" text-anchor="middle" fill="#9ca3af" font-size="8">HarmonyOS</text>
+  <text x="810" y="414" text-anchor="middle" fill="#9ca3af" font-size="8">iOS</text>
 
   <!-- MEMORY LAYER -->
-  <rect x="15" y="470" width="1070" height="245" rx="6" fill="#052e16" fill-opacity="0.12" stroke="#059669" stroke-width="1" stroke-dasharray="6,4"/>
-  <text x="27" y="484" fill="#34d399" font-size="9" font-weight="bold">MEMORY LAYER (Dual-Core Memory Engine)</text>
+  <rect x="15" y="470" width="1070" height="250" rx="6" fill="#f0fdf4" fill-opacity="0.5" stroke="#bbf7d0" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="27" y="484" fill="#059669" font-size="9" font-weight="bold">MEMORY LAYER / 双核记忆引擎</text>
 
-  <rect x="410" y="498" width="280" height="78" rx="8" fill="#064e3b" stroke="#10b981" stroke-width="2"/>
-  <text x="550" y="520" text-anchor="middle" fill="#e2e8f0" font-size="13" font-weight="bold">MemoryManager</text>
-  <text x="550" y="536" text-anchor="middle" fill="#6ee7b7" font-size="9">Unified Orchestrator (统一调度枢纽)</text>
-  <text x="550" y="552" text-anchor="middle" fill="#34d399" font-size="8">start_task | locate_and_get_context | add_step</text>
-  <text x="550" y="566" text-anchor="middle" fill="#a855f7" font-size="8">update_state_and_transition | build_personalized_prompt</text>
+  <rect x="410" y="498" width="280" height="78" rx="10" fill="#ecfdf5" stroke="#10b981" stroke-width="2" filter="url(#shadow)"/>
+  <text x="550" y="520" text-anchor="middle" fill="#065f46" font-size="13" font-weight="bold">MemoryManager</text>
+  <text x="550" y="536" text-anchor="middle" fill="#059669" font-size="9">Unified Orchestrator / 统一调度枢纽</text>
+  <text x="550" y="552" text-anchor="middle" fill="#047857" font-size="8">start_task | locate_and_get_context | add_step</text>
+  <text x="550" y="566" text-anchor="middle" fill="#7c3aed" font-size="8">update_state_and_transition | build_personalized_prompt</text>
 
-  <rect x="30" y="498" width="220" height="90" rx="6" fill="#052e16" stroke="#10b981" stroke-width="1.3"/>
-  <text x="140" y="518" text-anchor="middle" fill="#34d399" font-size="11" font-weight="bold">MemoryStore</text>
-  <text x="140" y="534" text-anchor="middle" fill="#6ee7b7" font-size="8">FAISS IndexFlatIP 2048d</text>
-  <text x="140" y="548" text-anchor="middle" fill="#64748b" font-size="8">EmbeddingClient (embedding-3 API)</text>
-  <text x="140" y="562" text-anchor="middle" fill="#64748b" font-size="8">SimpleEmbedder (128d fallback)</text>
-  <text x="140" y="576" text-anchor="middle" fill="#64748b" font-size="7">memories_meta.json + embeddings.npy</text>
+  <rect x="30" y="498" width="220" height="90" rx="8" fill="#ffffff" stroke="#10b981" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="140" y="518" text-anchor="middle" fill="#065f46" font-size="12" font-weight="bold">MemoryStore</text>
+  <text x="140" y="534" text-anchor="middle" fill="#059669" font-size="9">FAISS IndexFlatIP 2048d</text>
+  <text x="140" y="548" text-anchor="middle" fill="#6b7280" font-size="8">EmbeddingClient (embedding-3 API)</text>
+  <text x="140" y="562" text-anchor="middle" fill="#6b7280" font-size="8">SimpleEmbedder (128d fallback)</text>
+  <text x="140" y="576" text-anchor="middle" fill="#9ca3af" font-size="7">memories_meta.json + embeddings.npy</text>
 
-  <rect x="720" y="498" width="220" height="90" rx="6" fill="#052e16" stroke="#10b981" stroke-width="1.3"/>
-  <text x="830" y="518" text-anchor="middle" fill="#34d399" font-size="11" font-weight="bold">GraphStore</text>
-  <text x="830" y="534" text-anchor="middle" fill="#6ee7b7" font-size="8">Neo4j Knowledge Graph</text>
-  <text x="830" y="548" text-anchor="middle" fill="#64748b" font-size="8">UIState > Action > UIState</text>
-  <text x="830" y="562" text-anchor="middle" fill="#64748b" font-size="8">TaskIndex (FAISS 2048d)</text>
-  <text x="830" y="576" text-anchor="middle" fill="#64748b" font-size="7">pending_trajectories.json</text>
+  <rect x="720" y="498" width="220" height="90" rx="8" fill="#ffffff" stroke="#10b981" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="830" y="518" text-anchor="middle" fill="#065f46" font-size="12" font-weight="bold">GraphStore</text>
+  <text x="830" y="534" text-anchor="middle" fill="#059669" font-size="9">Neo4j Knowledge Graph</text>
+  <text x="830" y="548" text-anchor="middle" fill="#6b7280" font-size="8">UIState -> Action -> UIState</text>
+  <text x="830" y="562" text-anchor="middle" fill="#6b7280" font-size="8">TaskIndex (FAISS 2048d)</text>
+  <text x="830" y="576" text-anchor="middle" fill="#9ca3af" font-size="7">pending_trajectories.json</text>
 
-  <rect x="30" y="610" width="220" height="48" rx="6" fill="#052e16" stroke="#10b981" stroke-width="1" stroke-dasharray="5,3"/>
-  <text x="140" y="630" text-anchor="middle" fill="#34d399" font-size="10" font-weight="bold">StateManager (NEW v4.0)</text>
-  <text x="140" y="646" text-anchor="middle" fill="#6ee7b7" font-size="8">compute_state_id | update_state</text>
+  <rect x="30" y="610" width="220" height="48" rx="8" fill="#ffffff" stroke="#10b981" stroke-width="1.5" stroke-dasharray="5,3" filter="url(#shadow)"/>
+  <text x="140" y="630" text-anchor="middle" fill="#065f46" font-size="11" font-weight="bold">StateManager (NEW v4.0)</text>
+  <text x="140" y="646" text-anchor="middle" fill="#6b7280" font-size="8">compute_state_id | update_state</text>
 
-  <rect x="720" y="610" width="220" height="48" rx="6" fill="#1e1b4b" stroke="#a855f7" stroke-width="1.3"/>
-  <text x="830" y="630" text-anchor="middle" fill="#c084fc" font-size="10" font-weight="bold">ClarificationAgent</text>
-  <text x="830" y="646" text-anchor="middle" fill="#a78bfa" font-size="8">HITL Shopping Task Ambiguity Detection</text>
+  <rect x="720" y="610" width="220" height="48" rx="8" fill="#faf5ff" stroke="#a855f7" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="830" y="630" text-anchor="middle" fill="#7c3aed" font-size="11" font-weight="bold">ClarificationAgent</text>
+  <text x="830" y="646" text-anchor="middle" fill="#6b7280" font-size="8">HITL Shopping Task Ambiguity Detection</text>
 
-  <path d="M 430 527 L 252 527" stroke="#34d399" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
-  <path d="M 690 527 L 718 527" stroke="#34d399" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
-  <path d="M 470 576 L 250 610" stroke="#a855f7" stroke-width="1.5" fill="none" marker-end="url(#ap)"/>
-  <path d="M 630 576 L 720 610" stroke="#a855f7" stroke-width="1.5" fill="none" marker-end="url(#ap)"/>
+  <path d="M 430 527 L 252 527" stroke="#059669" stroke-width="1.5" fill="none" marker-end="url(#agg)"/>
+  <path d="M 690 527 L 718 527" stroke="#059669" stroke-width="1.5" fill="none" marker-end="url(#agg)"/>
+  <path d="M 470 576 L 250 610" stroke="#7c3aed" stroke-width="1.5" fill="none" marker-end="url(#ap)"/>
+  <path d="M 630 576 L 720 610" stroke="#7c3aed" stroke-width="1.5" fill="none" marker-end="url(#ap)"/>
 
-  <!-- LEGEND + METRICS -->
-  <rect x="220" y="680" width="660" height="32" rx="5" fill="#0f172a" stroke="#334155" stroke-width="1"/>
-  <line x1="235" y1="696" x2="260" y2="696" stroke="#a855f7" stroke-width="1.5" marker-end="url(#ap)"/><text x="267" y="700" fill="#94a3b8" font-size="9">Agent/Clarify</text>
-  <line x1="360" y1="696" x2="385" y2="696" stroke="#60a5fa" stroke-width="1.5" marker-end="url(#ab)"/><text x="392" y="700" fill="#94a3b8" font-size="9">Model/VLM</text>
-  <line x1="475" y1="696" x2="500" y2="696" stroke="#f97316" stroke-width="1.5" marker-end="url(#ao)"/><text x="507" y="700" fill="#94a3b8" font-size="9">Action/Device</text>
-  <line x1="600" y1="696" x2="625" y2="696" stroke="#34d399" stroke-width="1.5" marker-end="url(#ag)"/><text x="632" y="700" fill="#94a3b8" font-size="9">Memory/State</text>
+  <!-- LEGEND -->
+  <rect x="220" y="685" width="660" height="32" rx="6" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
+  <line x1="235" y1="701" x2="265" y2="701" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#ap)"/><text x="272" y="705" fill="#6b7280" font-size="9">Agent / Clarify</text>
+  <line x1="370" y1="701" x2="400" y2="701" stroke="#2563eb" stroke-width="1.5" marker-end="url(#ab)"/><text x="407" y="705" fill="#6b7280" font-size="9">Model / VLM</text>
+  <line x1="495" y1="701" x2="525" y2="701" stroke="#ea580c" stroke-width="1.5" marker-end="url(#ao)"/><text x="532" y="705" fill="#6b7280" font-size="9">Action / Device</text>
+  <line x1="635" y1="701" x2="665" y2="701" stroke="#059669" stroke-width="1.5" marker-end="url(#agg)"/><text x="672" y="705" fill="#6b7280" font-size="9">Memory / State</text>
 
-  <text x="550" y="740" text-anchor="middle" fill="#64748b" font-size="8">46 Python files | 5 Model Adapters | 6 Action Handlers | 3 Device Backends | FAISS 2048d + Neo4j | 13 Memory Types</text>
+  <text x="550" y="742" text-anchor="middle" fill="#9ca3af" font-size="8">46 Python files | 5 Model Adapters | 6 Action Handlers | 3 Device Backends | FAISS 2048d + Neo4j | 13 Memory Types</text>
 </svg>

@@ -1,123 +1,130 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 1100" width="900" height="1100">
-  <style>text{font-family:'SF Mono','Fira Code','Cascadia Code','Courier New',monospace;}</style>
+  <style>text{font-family:'Helvetica Neue',Helvetica,Arial,'PingFang SC','Microsoft YaHei',sans-serif;}</style>
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f0f1a"/><stop offset="100%" stop-color="#1a1a2e"/>
-    </linearGradient>
-    <marker id="ad" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#94a3b8"/></marker>
-    <marker id="ag" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#34d399"/></marker>
-    <marker id="ao" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#f97316"/></marker>
+    <marker id="ad" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#6b7280"/></marker>
+    <marker id="ag" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#059669"/></marker>
+    <marker id="ao" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/></marker>
+    <filter id="shadow"><feDropShadow dx="1" dy="2" stdDeviation="2" flood-color="#d1d5db" flood-opacity="0.3"/></filter>
   </defs>
-  <rect width="900" height="1100" fill="url(#bg)"/>
+  <rect width="900" height="1100" fill="#ffffff"/>
 
-  <text x="450" y="26" text-anchor="middle" fill="#e2e8f0" font-size="16" font-weight="bold">PhoneAgent Execution Flow (单步执行流程)</text>
-  <line x1="220" y1="34" x2="680" y2="34" stroke="#7c3aed" stroke-width="1" opacity="0.5"/>
+  <text x="450" y="26" text-anchor="middle" fill="#111827" font-size="17" font-weight="bold">PhoneAgent Execution Flow / 单步执行流程</text>
+  <line x1="220" y1="34" x2="680" y2="34" stroke="#7c3aed" stroke-width="1.5" opacity="0.4"/>
 
   <!-- START -->
-  <rect x="325" y="50" width="250" height="30" rx="15" fill="#1e293b" stroke="#475569" stroke-width="1.3"/>
-  <text x="450" y="69" text-anchor="middle" fill="#e2e8f0" font-size="11">_execute_step() START</text>
-  <line x1="450" y1="80" x2="450" y2="94" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#ad)"/>
+  <rect x="325" y="50" width="250" height="30" rx="15" fill="#f3f4f6" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="450" y="69" text-anchor="middle" fill="#374151" font-size="11" font-weight="600">_execute_step() START</text>
+  <line x1="450" y1="80" x2="450" y2="94" stroke="#6b7280" stroke-width="1.5" marker-end="url(#ad)"/>
 
   <!-- Phase 1 -->
-  <rect x="180" y="96" width="540" height="46" rx="7" fill="#1e293b" stroke="#475569" stroke-width="1.3"/>
-  <text x="450" y="114" text-anchor="middle" fill="#e2e8f0" font-size="12" font-weight="bold">1. Screenshot Capture (截图采集)</text>
-  <text x="450" y="132" text-anchor="middle" fill="#64748b" font-size="9">DeviceFactory.get_screenshot() + get_current_app()</text>
-  <line x1="450" y1="142" x2="450" y2="156" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#ad)"/>
+  <rect x="180" y="96" width="540" height="46" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="195" y="103" width="22" height="20" rx="4" fill="#6b7280"/><text x="206" y="117" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">1</text>
+  <text x="225" y="118" fill="#111827" font-size="12" font-weight="bold">Screenshot Capture / 截图采集</text>
+  <text x="225" y="134" fill="#6b7280" font-size="9">DeviceFactory.get_screenshot() + get_current_app()</text>
+  <line x1="450" y1="142" x2="450" y2="156" stroke="#6b7280" stroke-width="1.5" marker-end="url(#ad)"/>
 
   <!-- Phase 2 -->
-  <rect x="180" y="158" width="540" height="54" rx="7" fill="#064e3b" stroke="#10b981" stroke-width="1.3"/>
-  <text x="450" y="176" text-anchor="middle" fill="#34d399" font-size="12" font-weight="bold">2. Memory Lookup (记忆查找) ~ GraphRAG</text>
-  <text x="450" y="192" text-anchor="middle" fill="#6ee7b7" font-size="9">locate_and_get_context(hash, layout, task)</text>
-  <text x="450" y="206" text-anchor="middle" fill="#6ee7b7" font-size="8">3-Layer: L1 FAISS TaskIndex > L2 Neo4j N-gram > L3 MemoryStore UI</text>
-  <line x1="450" y1="212" x2="450" y2="228" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#ad)"/>
+  <rect x="180" y="158" width="540" height="54" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="195" y="165" width="22" height="20" rx="4" fill="#059669"/><text x="206" y="179" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">2</text>
+  <text x="225" y="180" fill="#065f46" font-size="12" font-weight="bold">Memory Lookup / 记忆查找 (GraphRAG)</text>
+  <text x="225" y="196" fill="#047857" font-size="9">locate_and_get_context(hash, layout, task) -> {mode, context, actions}</text>
+  <text x="225" y="210" fill="#047857" font-size="8">L1: FAISS TaskIndex -> L2: Neo4j N-gram -> L3: MemoryStore UI</text>
+  <line x1="450" y1="212" x2="450" y2="228" stroke="#6b7280" stroke-width="1.5" marker-end="url(#ad)"/>
 
   <!-- Phase 3 -->
-  <rect x="180" y="230" width="540" height="46" rx="7" fill="#1e1b4b" stroke="#a855f7" stroke-width="1.3"/>
-  <text x="450" y="248" text-anchor="middle" fill="#c084fc" font-size="12" font-weight="bold">3. Task Clarification HITL (任务澄清)</text>
-  <text x="450" y="266" text-anchor="middle" fill="#a78bfa" font-size="9">ClarificationAgent.check_and_clarify() - only when is_first=True</text>
-  <line x1="450" y1="276" x2="450" y2="290" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#ad)"/>
+  <rect x="180" y="230" width="540" height="46" rx="8" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="195" y="237" width="22" height="20" rx="4" fill="#7c3aed"/><text x="206" y="251" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">3</text>
+  <text x="225" y="252" fill="#6b21a8" font-size="12" font-weight="bold">Task Clarification HITL / 任务澄清</text>
+  <text x="225" y="268" fill="#7c3aed" font-size="9">ClarificationAgent.check_and_clarify() - only when is_first=True</text>
+  <line x1="450" y1="276" x2="450" y2="290" stroke="#6b7280" stroke-width="1.5" marker-end="url(#ad)"/>
 
   <!-- Phase 4 Decision -->
-  <polygon points="450,292 570,332 450,372 330,332" fill="#431407" stroke="#f97316" stroke-width="1.3"/>
-  <text x="450" y="328" text-anchor="middle" fill="#fdba74" font-size="10" font-weight="bold">Navigate?</text>
-  <text x="450" y="344" text-anchor="middle" fill="#fdba74" font-size="7">confidence >= 0.8?</text>
+  <polygon points="450,292 570,332 450,372 330,332" fill="#fff7ed" stroke="#f97316" stroke-width="1.5"/>
+  <text x="450" y="328" text-anchor="middle" fill="#9a3412" font-size="10" font-weight="bold">Navigate?</text>
+  <text x="450" y="344" text-anchor="middle" fill="#c2410c" font-size="8">conf >= 0.8?</text>
 
   <!-- YES bypass -->
-  <path d="M 570 332 L 720 332" stroke="#10b981" stroke-width="1.8" fill="none" marker-end="url(#ag)"/>
-  <text x="645" y="324" fill="#34d399" font-size="9" font-weight="bold">YES</text>
-  <rect x="730" y="306" width="120" height="52" rx="7" fill="#064e3b" stroke="#10b981" stroke-width="2"/>
-  <text x="790" y="328" text-anchor="middle" fill="#34d399" font-size="10" font-weight="bold">Direct Execute</text>
-  <text x="790" y="346" text-anchor="middle" fill="#6ee7b7" font-size="8">Skip VLM entirely</text>
-  <path d="M 790 358 L 790 658" stroke="#34d399" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#ag)"/>
-  <text x="804" y="510" fill="#34d399" font-size="8" transform="rotate(90, 804, 510)">bypass to Phase 9</text>
+  <path d="M 570 332 L 720 332" stroke="#059669" stroke-width="2" fill="none" marker-end="url(#ag)"/>
+  <text x="645" y="324" fill="#059669" font-size="9" font-weight="bold">YES</text>
+  <rect x="730" y="306" width="120" height="52" rx="8" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="2"/>
+  <text x="790" y="328" text-anchor="middle" fill="#065f46" font-size="10" font-weight="bold">Direct Execute</text>
+  <text x="790" y="346" text-anchor="middle" fill="#059669" font-size="8">Skip VLM entirely</text>
+  <path d="M 790 358 L 790 658" stroke="#059669" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#ag)"/>
+  <text x="804" y="510" fill="#059669" font-size="8" transform="rotate(90, 804, 510)">bypass to Phase 9</text>
 
   <!-- NO continue -->
-  <line x1="450" y1="372" x2="450" y2="396" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#ad)"/>
-  <text x="462" y="388" fill="#64748b" font-size="8">NO / mode=explore</text>
+  <line x1="450" y1="372" x2="450" y2="396" stroke="#6b7280" stroke-width="1.5" marker-end="url(#ad)"/>
+  <text x="462" y="388" fill="#6b7280" font-size="8">NO / mode=explore</text>
 
   <!-- Phase 5 -->
-  <rect x="180" y="398" width="540" height="46" rx="7" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.3"/>
-  <text x="450" y="416" text-anchor="middle" fill="#93c5fd" font-size="12" font-weight="bold">5. Message Building (消息构建)</text>
-  <text x="450" y="434" text-anchor="middle" fill="#60a5fa" font-size="9">Adapter.build_messages() / AutoGLM MessageBuilder</text>
-  <line x1="450" y1="444" x2="450" y2="458" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#ad)"/>
+  <rect x="180" y="398" width="540" height="46" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="195" y="405" width="22" height="20" rx="4" fill="#2563eb"/><text x="206" y="419" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">5</text>
+  <text x="225" y="420" fill="#1e40af" font-size="12" font-weight="bold">Message Building / 消息构建</text>
+  <text x="225" y="436" fill="#2563eb" font-size="9">Adapter.build_messages() / AutoGLM MessageBuilder</text>
+  <line x1="450" y1="444" x2="450" y2="458" stroke="#6b7280" stroke-width="1.5" marker-end="url(#ad)"/>
 
   <!-- Phase 6 -->
-  <rect x="180" y="460" width="540" height="46" rx="7" fill="#1e3a5f" stroke="#3b82f6" stroke-width="1.3"/>
-  <text x="450" y="478" text-anchor="middle" fill="#93c5fd" font-size="12" font-weight="bold">6. Context Injection (上下文注入)</text>
-  <text x="450" y="496" text-anchor="middle" fill="#60a5fa" font-size="9">Inject memory context + critical hints at message BEGINNING</text>
-  <line x1="450" y1="506" x2="450" y2="520" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#ad)"/>
+  <rect x="180" y="460" width="540" height="46" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="195" y="467" width="22" height="20" rx="4" fill="#2563eb"/><text x="206" y="481" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">6</text>
+  <text x="225" y="482" fill="#1e40af" font-size="12" font-weight="bold">Context Injection / 上下文注入</text>
+  <text x="225" y="498" fill="#2563eb" font-size="9">Inject memory context + critical hints at message BEGINNING</text>
+  <line x1="450" y1="506" x2="450" y2="520" stroke="#6b7280" stroke-width="1.5" marker-end="url(#ad)"/>
 
   <!-- Phase 7 -->
-  <rect x="180" y="522" width="540" height="46" rx="7" fill="#2e1065" stroke="#7c3aed" stroke-width="1.3"/>
-  <text x="450" y="540" text-anchor="middle" fill="#c084fc" font-size="12" font-weight="bold">7. VLM Inference (VLM推理)</text>
-  <text x="450" y="558" text-anchor="middle" fill="#a78bfa" font-size="9">ModelClient.request(messages) -> streaming thinking + action</text>
-  <line x1="450" y1="568" x2="450" y2="582" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#ad)"/>
+  <rect x="180" y="522" width="540" height="46" rx="8" fill="#faf5ff" stroke="#d8b4fe" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="195" y="529" width="22" height="20" rx="4" fill="#7c3aed"/><text x="206" y="543" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">7</text>
+  <text x="225" y="544" fill="#6b21a8" font-size="12" font-weight="bold">VLM Inference / VLM推理</text>
+  <text x="225" y="560" fill="#7c3aed" font-size="9">ModelClient.request(messages) -> streaming thinking + action</text>
+  <line x1="450" y1="568" x2="450" y2="582" stroke="#6b7280" stroke-width="1.5" marker-end="url(#ad)"/>
 
   <!-- Phase 8 -->
-  <rect x="180" y="584" width="540" height="54" rx="7" fill="#431407" stroke="#f97316" stroke-width="1.3"/>
-  <text x="450" y="602" text-anchor="middle" fill="#fdba74" font-size="12" font-weight="bold">8. Action Parsing + SpecGuard (动作解析+安全防护)</text>
-  <text x="450" y="618" text-anchor="middle" fill="#f97316" font-size="9">parse_action() -> AST / JSON / XML multi-level parsing</text>
-  <text x="450" y="632" text-anchor="middle" fill="#f97316" font-size="9">_spec_guard_check() -> deterministic shopping safety net</text>
-  <line x1="450" y1="638" x2="450" y2="654" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#ad)"/>
+  <rect x="180" y="584" width="540" height="54" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="195" y="591" width="22" height="20" rx="4" fill="#ea580c"/><text x="206" y="605" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">8</text>
+  <text x="225" y="606" fill="#9a3412" font-size="12" font-weight="bold">Action Parsing + SpecGuard / 动作解析+安全防护</text>
+  <text x="225" y="622" fill="#c2410c" font-size="9">parse_action() -> AST / JSON / XML multi-level parsing</text>
+  <text x="225" y="636" fill="#c2410c" font-size="9">_spec_guard_check() -> deterministic shopping safety net</text>
+  <line x1="450" y1="638" x2="450" y2="654" stroke="#6b7280" stroke-width="1.5" marker-end="url(#ad)"/>
 
   <!-- Phase 9 -->
-  <rect x="180" y="656" width="540" height="46" rx="7" fill="#431407" stroke="#f97316" stroke-width="1.3"/>
-  <text x="450" y="674" text-anchor="middle" fill="#fdba74" font-size="12" font-weight="bold">9. Action Execution (动作执行)</text>
-  <text x="450" y="692" text-anchor="middle" fill="#f97316" font-size="9">ActionHandler / SpecializedHandler.execute(action, w, h) -> ActionResult</text>
-  <line x1="450" y1="702" x2="450" y2="720" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#ad)"/>
+  <rect x="180" y="656" width="540" height="46" rx="8" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="195" y="663" width="22" height="20" rx="4" fill="#ea580c"/><text x="206" y="677" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">9</text>
+  <text x="225" y="678" fill="#9a3412" font-size="12" font-weight="bold">Action Execution / 动作执行</text>
+  <text x="225" y="694" fill="#c2410c" font-size="9">ActionHandler / SpecializedHandler.execute(action, w, h) -> ActionResult</text>
+  <line x1="450" y1="702" x2="450" y2="720" stroke="#6b7280" stroke-width="1.5" marker-end="url(#ad)"/>
 
   <!-- Phase 10 -->
-  <rect x="180" y="722" width="540" height="54" rx="7" fill="#064e3b" stroke="#10b981" stroke-width="1.3"/>
-  <text x="450" y="740" text-anchor="middle" fill="#34d399" font-size="12" font-weight="bold">10. Memory Update + Trace (记忆更新+轨迹记录)</text>
-  <text x="450" y="756" text-anchor="middle" fill="#6ee7b7" font-size="9">memory_manager.add_step() -> auto-learning pipeline</text>
-  <text x="450" y="770" text-anchor="middle" fill="#a855f7" font-size="9">memory_manager.update_state_and_transition() -> GraphStore + StateManager</text>
-  <line x1="450" y1="776" x2="450" y2="792" stroke="#94a3b8" stroke-width="1.3" marker-end="url(#ad)"/>
+  <rect x="180" y="722" width="540" height="54" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="195" y="729" width="22" height="20" rx="4" fill="#059669"/><text x="206" y="743" text-anchor="middle" fill="#fff" font-size="10" font-weight="bold">10</text>
+  <text x="225" y="744" fill="#065f46" font-size="12" font-weight="bold">Memory Update + Trace / 记忆更新+轨迹记录</text>
+  <text x="225" y="760" fill="#047857" font-size="9">memory_manager.add_step() -> auto-learning pipeline</text>
+  <text x="225" y="774" fill="#7c3aed" font-size="9">memory_manager.update_state_and_transition() -> GraphStore + StateManager</text>
+  <line x1="450" y1="776" x2="450" y2="792" stroke="#6b7280" stroke-width="1.5" marker-end="url(#ad)"/>
 
   <!-- Finished Decision -->
-  <polygon points="450,794 560,828 450,862 340,828" fill="#1e293b" stroke="#f97316" stroke-width="1.3"/>
-  <text x="450" y="830" text-anchor="middle" fill="#fdba74" font-size="10" font-weight="bold">Finished?</text>
+  <polygon points="450,794 560,828 450,862 340,828" fill="#fff" stroke="#f97316" stroke-width="1.5"/>
+  <text x="450" y="830" text-anchor="middle" fill="#9a3412" font-size="10" font-weight="bold">Finished?</text>
 
   <!-- Loop back NO -->
-  <path d="M 340 828 L 90 828 L 90 119 L 178 119" stroke="#f97316" stroke-width="1.8" fill="none" marker-end="url(#ao)"/>
-  <text x="80" y="470" fill="#f97316" font-size="10" transform="rotate(-90, 80, 470)">LOOP BACK (next step)</text>
+  <path d="M 340 828 L 90 828 L 90 119 L 178 119" stroke="#ea580c" stroke-width="2" fill="none" marker-end="url(#ao)"/>
+  <text x="80" y="470" fill="#ea580c" font-size="10" transform="rotate(-90, 80, 470)">LOOP BACK (next step)</text>
 
   <!-- YES end -->
-  <path d="M 560 828 L 710 828" stroke="#34d399" stroke-width="1.8" fill="none" marker-end="url(#ag)"/>
-  <text x="635" y="820" fill="#34d399" font-size="9" font-weight="bold">YES</text>
-  <rect x="720" y="806" width="130" height="44" rx="20" fill="#1e293b" stroke="#475569" stroke-width="1.3"/>
-  <text x="785" y="826" text-anchor="middle" fill="#e2e8f0" font-size="11">END</text>
-  <text x="785" y="841" text-anchor="middle" fill="#64748b" font-size="8">return StepResult</text>
+  <path d="M 560 828 L 710 828" stroke="#059669" stroke-width="2" fill="none" marker-end="url(#ag)"/>
+  <text x="635" y="820" fill="#059669" font-size="9" font-weight="bold">YES</text>
+  <rect x="720" y="806" width="130" height="44" rx="22" fill="#ecfdf5" stroke="#6ee7b7" stroke-width="1.5"/>
+  <text x="785" y="826" text-anchor="middle" fill="#065f46" font-size="11" font-weight="bold">END</text>
+  <text x="785" y="841" text-anchor="middle" fill="#6b7280" font-size="8">return StepResult</text>
 
   <!-- Side annotations -->
-  <rect x="720" y="158" width="165" height="70" rx="5" fill="#0f172a" stroke="#334155" stroke-width="0.6"/>
-  <text x="802" y="176" text-anchor="middle" fill="#475569" font-size="8" font-weight="bold">3-Layer Matching</text>
-  <text x="802" y="192" text-anchor="middle" fill="#475569" font-size="7">L1: TaskIndex FAISS 2048d</text>
-  <text x="802" y="206" text-anchor="middle" fill="#475569" font-size="7">L2: Neo4j N-gram</text>
-  <text x="802" y="220" text-anchor="middle" fill="#475569" font-size="7">L3: MemoryStore UI State</text>
+  <rect x="720" y="158" width="165" height="70" rx="8" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="802" y="176" text-anchor="middle" fill="#6b7280" font-size="9" font-weight="bold">3-Layer Matching</text>
+  <text x="802" y="192" text-anchor="middle" fill="#9ca3af" font-size="8">L1: TaskIndex FAISS 2048d</text>
+  <text x="802" y="206" text-anchor="middle" fill="#9ca3af" font-size="8">L2: Neo4j N-gram</text>
+  <text x="802" y="220" text-anchor="middle" fill="#9ca3af" font-size="8">L3: MemoryStore UI State</text>
 
   <!-- Footer notes -->
-  <rect x="130" y="910" width="640" height="46" rx="6" fill="#0f172a" stroke="#334155" stroke-width="1"/>
-  <text x="450" y="927" text-anchor="middle" fill="#64748b" font-size="8">Phase 3 (HITL Clarify) is only executed on the first step (is_first=True)</text>
-  <text x="450" y="943" text-anchor="middle" fill="#64748b" font-size="8">Phase 4 Navigate bypass: confidence >= 0.8 -> skip VLM -> direct Phase 9 execution</text>
+  <rect x="130" y="910" width="640" height="46" rx="8" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1.5"/>
+  <text x="450" y="927" text-anchor="middle" fill="#6b7280" font-size="8">Phase 3 (HITL Clarify) is only executed on the first step (is_first=True)</text>
+  <text x="450" y="943" text-anchor="middle" fill="#6b7280" font-size="8">Phase 4 Navigate bypass: confidence >= 0.8 -> skip VLM -> direct Phase 9 execution</text>
 </svg>
