@@ -11,6 +11,7 @@ from .memory_store import MemoryStore, Memory, MemoryType, ShoppingMetadata, Gra
 from .graph_store import GraphStore
 from .memory_manager import MemoryManager
 from .state_manager import StateManager
+from .offline_explorer import OfflineExplorer, ShoppingPageType, Trajectory, PageInfo
 
 __all__ = [
     "MemoryStore",
@@ -21,6 +22,10 @@ __all__ = [
     "GraphStore",
     "MemoryManager",
     "StateManager",
+    "OfflineExplorer",
+    "ShoppingPageType",
+    "Trajectory",
+    "PageInfo",
 ]
 
 
