@@ -347,6 +347,28 @@ class PhoneAgent:
 
         return task
 
+    def _detect_critical_scenario(self, current_app: str, screenshot_base64: str) -> list[str]:
+        """
+        Detect if current page belongs to critical decision nodes
+        (e.g. product spec selection, multiple ambiguous options).
+        Returns list of critical hints to be prepended to context.
+        """
+        critical_hints = []
+
+        # Product specification selection pages (shopping/food delivery apps)
+        shopping_apps = ["淘宝", "京东", "天猫", "拼多多", "美团", "饿了么", "瑞幸", "星巴克",
+                         "Taobao", "JD", "Tmall", "Meituan", "Eleme", "Luckin", "Starbucks"]
+
+        if any(app in (current_app or "") for app in shopping_apps):
+            critical_hints.append(
+                "【最高优先级规则】如果当前页面包含商品规格选择（颜色、尺码、口味、温度、糖度等），"
+                "且用户未在原始指令中明确指定这些参数，你必须立即执行 "
+                "do(action=\"Interact\", message=\"请问您需要什么规格/颜色/配置？\") "
+                "询问用户。严禁接受系统默认选项或自行决定！"
+            )
+
+        return critical_hints
+
     def _execute_step(
         self, user_prompt: str | None = None, is_first: bool = False
     ) -> StepResult:
@@ -520,15 +542,30 @@ class PhoneAgent:
         # 注入图谱语义上下文：让 VLM 知道相似任务轨迹
         # =============================================
         extra_context = context_data.get("semantic_context", "") if self.memory_manager else ""
+
+        # =============================================
+        # 关键场景检测：动态强化提示
+        # =============================================
+        if self.memory_manager:
+            critical_hints = self._detect_critical_scenario(current_app, screenshot.base64_data)
+            if critical_hints:
+                critical_hint_text = "\n\n".join(critical_hints)
+                # Prepend critical hints to ensure VLM sees them first
+                extra_context = f"{critical_hint_text}\n\n{extra_context}" if extra_context else critical_hint_text
+                if self.agent_config.verbose:
+                    print(f"🎯 检测到关键场景，注入强提示")
+
         if extra_context and self._context:
             last_msg = self._context[-1]
             if isinstance(last_msg.get("content"), list):
                 for item in last_msg["content"]:
                     if item.get("type") == "text":
-                        item["text"] = item["text"].rstrip() + f"\n\n[记忆上下文]\n{extra_context}"
+                        # Inject at text beginning, not end
+                        item["text"] = f"{extra_context}\n\n{item['text']}"
                         break
             elif isinstance(last_msg.get("content"), str):
-                last_msg["content"] = last_msg["content"].rstrip() + f"\n\n[记忆上下文]\n{extra_context}"
+                # Inject at text beginning, not end
+                last_msg["content"] = f"{extra_context}\n\n{last_msg['content']}"
 
         # Get model response
         try:
