@@ -751,15 +751,14 @@ class PhoneAgent:
                 action=action,
                 screenshot_app=current_app,
             )
-            # Phase 4: Online Dynamic Graph construction
-            if hasattr(self, '_prev_state_id') and current_state_id:
-                self.memory_manager.graph_store.add_state_transition(
-                    self._prev_state_id,
-                    current_state_id,
-                    action,
-                    self._current_task
+            # Phase 4: Online Dynamic Graph construction - 使用统��接口
+            if current_state_id:
+                self.memory_manager.update_state_and_transition(
+                    screenshot_hash=ui_hash,
+                    semantic_layout=semantic_layout,
+                    action=action,
+                    task=self._current_task
                 )
-            self._prev_state_id = current_state_id
 
 
         # Capture interact reply

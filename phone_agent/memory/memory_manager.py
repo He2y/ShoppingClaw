@@ -159,6 +159,47 @@ class MemoryManager:
         self.current_task = ""
         self.task_start_time = ""
 
+    def update_state_and_transition(
+        self,
+        screenshot_hash: str,
+        semantic_layout: str,
+        action: dict,
+        task: str
+    ) -> str:
+        """���一的��态更新 + 图转���记录接口
+
+        这是 agent.py 应该调用��唯一���态管��方法���封装了：
+        1. 计算新状��ID
+        2. ���新 StateManager
+        3. 记���图转��到 GraphStore
+
+        Args:
+            screenshot_hash: 截图哈希��
+            semantic_layout: 语义布��描述
+            action: 执行的动��
+            task: 当前��务描���
+
+        Returns:
+            新��状态ID
+        """
+        # 计算新状��ID
+        new_state_id = self.state_manager.compute_state_id(screenshot_hash, semantic_layout)
+
+        # 更新状态��理器
+        prev_state, current_state = self.state_manager.update_state(new_state_id)
+
+        # 记录图��换（只有��有前���状态时才记��）
+        if prev_state and self.graph_store.driver:
+            self.graph_store.add_state_transition(
+                prev_state, current_state, action, task
+            )
+
+        return current_state
+
+    def get_current_state_id(self) -> str | None:
+        """获取当��状态ID"""
+        return self.state_manager.get_current_state()
+
     def _save_pending_trajectory(self, task: str, success: bool, result: str,
                                  steps: list, apps: list, start_state: str | None,
                                  end_state: str | None):
