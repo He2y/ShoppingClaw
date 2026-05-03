@@ -191,38 +191,45 @@ class MemoryStore:
     def __init__(
         self,
         storage_dir: str = "memory_db",
-        embedding_dim: int = 128,
+        embedding_dim: int = 2048,  # 统一使�� 2048d (embedding-3)
         similarity_threshold: float = 0.85,
         max_memories: int = 10000,
     ):
         """
         Initialize memory store.
-        
+
         Args:
             storage_dir: Directory for persistent storage
-            embedding_dim: Dimension of embedding vectors
+            embedding_dim: Dimension of embedding vectors (2048 for embedding-3)
             similarity_threshold: Threshold for deduplication (0-1)
             max_memories: Maximum number of memories to store
         """
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
-        
+
         self.embedding_dim = embedding_dim
         self.similarity_threshold = similarity_threshold
         self.max_memories = max_memories
-        
-        # Initialize embedder
-        self.embedder = SimpleEmbedder(dim=embedding_dim)
-        
+
+        # Initialize embedding client (primary) and fallback embedder
+        from .embedding_client import EmbeddingClient
+        self.embedding_client = EmbeddingClient()
+        self.simple_embedder = SimpleEmbedder(dim=128)  # Fallback only
+
         # Memory storage
         self.memories: dict[str, Memory] = {}
-        
-        # FAISS index for similarity search
+
+        # FAISS index for fast similarity search
         self.index = None
         self.id_to_index: dict[str, int] = {}
         self.index_to_id: dict[int, str] = {}
-        
-        self._init_index()
+        self.memory_ids: list[str] = []  # Ordered list for FAISS indexing
+
+        if HAS_FAISS and HAS_NUMPY:
+            # Use Inner Product for cosine similarity (with L2 normalization)
+            self.index = faiss.IndexFlatIP(embedding_dim)
+
+        # Load existing memories
         self._load_memories()
     
     def _init_index(self):
@@ -238,9 +245,24 @@ class MemoryStore:
         return hashlib.sha256(hash_input.encode()).hexdigest()[:16]
     
     def _get_embedding(self, text: str) -> list[float]:
-        """Get embedding for text."""
-        embeddings = self.embedder.encode([text])
-        return embeddings[0]
+        """Generate embedding for text with fallback strategy.
+
+        Primary: embedding-3 API (2048d)
+        Fallback: SimpleEmbedder (128d) padded to 2048d
+        """
+        try:
+            # Try embedding-3 API first
+            embeddings = self.embedding_client.encode([text])
+            if embeddings and embeddings[0] and sum(abs(x) for x in embeddings[0]) > 0:
+                return embeddings[0]
+        except Exception as e:
+            print(f"⚠️  Embedding API failed, using fallback: {e}")
+
+        # Fallback to SimpleEmbedder (pad to embedding_dim)
+        simple_emb = self.simple_embedder.encode([text])[0]
+        # Pad with zeros to match embedding_dim
+        padded = simple_emb + [0.0] * (self.embedding_dim - len(simple_emb))
+        return padded
     
     def _compute_similarity(self, emb1: list[float], emb2: list[float]) -> float:
         """Compute cosine similarity between two embeddings."""
@@ -334,10 +356,15 @@ class MemoryStore:
     def _add_to_index(self, memory_id: str, embedding: list[float]):
         """Add embedding to FAISS index."""
         if self.index is not None and HAS_NUMPY:
-            idx = len(self.id_to_index)
+            if len(embedding) != self.embedding_dim:
+                print(f"⚠️  Skipping memory {memory_id}: embedding dim mismatch ({len(embedding)} != {self.embedding_dim})")
+                return
+
+            self.memory_ids.append(memory_id)
+            idx = len(self.memory_ids) - 1
             self.id_to_index[memory_id] = idx
             self.index_to_id[idx] = memory_id
-            
+
             # Add to FAISS
             emb_array = np.array([embedding], dtype=np.float32)
             faiss.normalize_L2(emb_array)  # Normalize for cosine similarity
@@ -350,50 +377,121 @@ class MemoryStore:
         top_k: int = 5,
         min_importance: float = 0.0,
     ) -> list[Memory]:
-        """
-        Search for relevant memories.
-        
+        """Search for relevant memories using FAISS index.
+
         Args:
             query: Search query text
             memory_types: Filter by memory types
             top_k: Maximum number of results
             min_importance: Minimum importance threshold
-        
+
         Returns:
             List of relevant memories sorted by relevance
         """
         query_embedding = self._get_embedding(query)
-        
+
+        # Use FAISS index if available
+        if self.index is not None and HAS_NUMPY and len(self.memory_ids) > 0:
+            return self._search_with_faiss(
+                query_embedding, memory_types, top_k, min_importance
+            )
+
+        # Fallback to brute-force search
+        return self._search_bruteforce(
+            query_embedding, memory_types, top_k, min_importance
+        )
+
+    def _search_with_faiss(
+        self,
+        query_embedding: list[float],
+        memory_types: list[MemoryType] | None,
+        top_k: int,
+        min_importance: float,
+    ) -> list[Memory]:
+        """Search using FAISS index (fast)."""
+        # Normalize query embedding for cosine similarity
+        query_emb = np.array([query_embedding], dtype=np.float32)
+        faiss.normalize_L2(query_emb)
+
+        # Search more candidates than needed for filtering
+        k_search = min(top_k * 3, len(self.memory_ids))
+        similarities, indices = self.index.search(query_emb, k_search)
+
         results = []
-        
+        for sim, idx in zip(similarities[0], indices[0]):
+            if idx < 0 or idx >= len(self.memory_ids):
+                continue
+
+            memory_id = self.memory_ids[idx]
+            memory = self.memories.get(memory_id)
+
+            if not memory:
+                continue
+
+            # Filter by type
+            if memory_types and memory.memory_type not in memory_types:
+                continue
+
+            # Filter by importance
+            if memory.importance < min_importance:
+                continue
+
+            # Combine similarity with importance for final score
+            score = sim * 0.7 + memory.importance * 0.3
+            results.append((memory, score))
+
+        # Sort by score and take top_k
+        results.sort(key=lambda x: x[1], reverse=True)
+
+        # Update access for retrieved memories
+        top_memories = []
+        for memory, score in results[:top_k]:
+            memory.update_access()
+            top_memories.append(memory)
+
+        if top_memories:
+            self._save_memories()
+
+        return top_memories
+
+    def _search_bruteforce(
+        self,
+        query_embedding: list[float],
+        memory_types: list[MemoryType] | None,
+        top_k: int,
+        min_importance: float,
+    ) -> list[Memory]:
+        """Fallback brute-force search (slow)."""
+        results = []
+
         for memory in self.memories.values():
             # Filter by type
             if memory_types and memory.memory_type not in memory_types:
                 continue
-            
+
             # Filter by importance
             if memory.importance < min_importance:
                 continue
-            
+
             # Compute similarity
             if memory.embedding:
                 similarity = self._compute_similarity(query_embedding, memory.embedding)
                 # Combine similarity with importance for final score
                 score = similarity * 0.7 + memory.importance * 0.3
                 results.append((memory, score))
-        
+
         # Sort by score
         results.sort(key=lambda x: x[1], reverse=True)
-        
+
         # Update access for retrieved memories
         top_memories = []
         for memory, score in results[:top_k]:
             memory.update_access()
             top_memories.append(memory)
-        
+
         if top_memories:
             self._save_memories()
-        
+
         return top_memories
     
     def get_by_type(
@@ -441,14 +539,32 @@ class MemoryStore:
         self._save_memories()
     
     def _rebuild_index(self):
-        """Rebuild FAISS index from scratch."""
-        self._init_index()
+        """Rebuild FAISS index from all memories."""
+        if not HAS_FAISS or not HAS_NUMPY:
+            return
+
+        # Recreate index
+        self.index = faiss.IndexFlatIP(self.embedding_dim)
         self.id_to_index.clear()
         self.index_to_id.clear()
-        
+        self.memory_ids.clear()
+
+        # Add all memories to index
+        embeddings_list = []
         for memory_id, memory in self.memories.items():
-            if memory.embedding:
-                self._add_to_index(memory_id, memory.embedding)
+            if memory.embedding and len(memory.embedding) == self.embedding_dim:
+                self.memory_ids.append(memory_id)
+                idx = len(self.memory_ids) - 1
+                self.id_to_index[memory_id] = idx
+                self.index_to_id[idx] = memory_id
+                embeddings_list.append(memory.embedding)
+
+        if embeddings_list:
+            # Add to FAISS in batch
+            emb_array = np.array(embeddings_list, dtype=np.float32)
+            faiss.normalize_L2(emb_array)  # Normalize for cosine similarity
+            self.index.add(emb_array)
+            print(f"✅ Rebuilt FAISS index with {len(embeddings_list)} memories")
     
     def _enforce_memory_limit(self):
         """Remove least important memories if limit exceeded."""
