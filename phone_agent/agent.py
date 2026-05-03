@@ -8,6 +8,7 @@ from typing import Any, Callable
 from phone_agent.actions import ActionHandler
 from phone_agent.actions.handler import do, finish, parse_action
 from phone_agent.config import get_messages, get_system_prompt
+from phone_agent.clarify import ClarificationAgent
 from phone_agent.device_factory import get_device_factory
 from phone_agent.model import ModelClient, ModelConfig
 from phone_agent.model.adapters import ModelType, detect_model_type, get_adapter
@@ -171,6 +172,14 @@ class PhoneAgent:
                 if self.agent_config.verbose:
                     print(f"⚠️ 记忆系统初始化失败: {e}")
 
+        # Initialize clarification sub-agent for shopping task ambiguity detection
+        self.clarification_agent: ClarificationAgent | None = None
+        try:
+            self.clarification_agent = ClarificationAgent()
+        except Exception as e:
+            if self.agent_config.verbose:
+                print(f"⚠️ 澄清子代理初始化失败: {e}")
+
     def _resolve_model_type(self) -> ModelType:
         """Resolve model type from config or auto-detect from model name."""
         model_type_str = self.agent_config.model_type.lower()
@@ -287,79 +296,6 @@ class PhoneAgent:
         self._step_count = 0
 
 
-    def _clarify_task_if_needed(self, task: str, image_base64: str, current_app: str, memory_context: str = "") -> str:
-        if self.agent_config.verbose:
-            print(f"🤔 HITL: 检查任务是否需要主动澄清...")
-
-        prompt = (
-            f"用户下达了一个手机操作任务：「{task}」。\n"
-            f"当前所在APP：{current_app}\n"
-        )
-
-        if memory_context:
-            # Truncate memory context to avoid overwhelming the clarification prompt
-            truncated_memory = memory_context[:400]
-            prompt += (
-                f"\n系统检索到以下相似历史记录：\n"
-                f"{truncated_memory}\n"
-                f"\n⚠️ 以上仅为历史参考，不代表当前用户的确切意图。\n"
-            )
-
-        prompt += (
-            "\n请判断这个任务是否足够清晰、明确，能够直接执行？\n"
-            "如果任务模糊（例如：想买东西但没说具体买什么、想发消息但没说发给谁/发什么、\n"
-            "想点外卖但没指定平台/店铺/菜品、只说'帮我点个外卖''帮我买东西'等笼统表述），\n"
-            "请回复需要向用户澄清的问题，格式必须为：'CLARIFY: 你的问题'\n"
-            "如果任务已经足够清晰（包含具体目标或意图明确），请直接回复：'CLEAR'\n"
-            "请严格遵循上述格式，不要输出其他多余内容。"
-        )
-        messages = [
-            {"role": "system", "content": "你是一个严谨的手机助手任务分析员。"},
-            {"role": "user", "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
-            ]}
-        ]
-        try:
-            # Use the raw client to avoid stream formatting issues
-            completion = self.model_client.client.chat.completions.create(
-                messages=messages,
-                model=self.model_client.config.model_name,
-                temperature=0.1,  # Low temp for logic task
-            )
-            res_content = completion.choices[0].message.content.strip()
-            if res_content.startswith("CLARIFY:"):
-                question = res_content[8:].strip()
-                print(f"\n🙋 [主动提问] {question}")
-
-                user_answer = ""
-                import sys
-                if self.clarification_callback:
-                    user_answer = self.clarification_callback(question)
-                elif sys.stdout.isatty():
-                    user_answer = input(">>> (请输入补充信息，或直接回车跳过): ")
-
-                if user_answer and user_answer.strip():
-                    # Reconstruct task
-                    reconstruct_prompt = (
-                        f"原任务：「{task}」\n"
-                        f"助手提问：「{question}」\n"
-                        f"用户补充：「{user_answer}」\n"
-                        "请根据上述信息，重写出一个完整、清晰的任务指令。直接输出重写后的指令，不要有任何前缀。"
-                    )
-                    recon_response = self.model_client.request([
-                        {"role": "system", "content": "你是一个指令重写专家。"},
-                        {"role": "user", "content": reconstruct_prompt}
-                    ])
-                    new_task = recon_response.raw_content.strip() if hasattr(recon_response, 'raw_content') else str(recon_response).strip()
-                    print(f"✨ 任务已重组: {new_task}\n")
-                    return new_task
-        except Exception as e:
-            if self.agent_config.verbose:
-                print(f"⚠️ 任务澄清环节出错: {e}")
-
-        return task
-
     def _detect_critical_scenario(self, current_app: str, screenshot_base64: str) -> list[str]:
         """
         Detect if current page belongs to critical decision nodes
@@ -412,17 +348,19 @@ class PhoneAgent:
             mode = context_data.get("mode", "explore")
             current_state_id = context_data.get("current_state_id")
 
-            # [HITL Active Clarification] - Always run on first step
-            if is_first:
-                clarified_task = self._clarify_task_if_needed(
-                    user_prompt or self._current_task,
-                    screenshot.base64_data,
-                    current_app,
-                    context_data.get("semantic_context", "")
+            # [HITL Active Clarification] - Use ClarificationAgent on first step
+            if is_first and self.clarification_agent:
+                result = self.clarification_agent.check_and_clarify(
+                    task=user_prompt or self._current_task,
+                    image_base64=screenshot.base64_data,
+                    current_app=current_app,
+                    memory_context=context_data.get("semantic_context", ""),
+                    clarification_callback=self.clarification_callback,
+                    verbose=self.agent_config.verbose,
                 )
-                if clarified_task != (user_prompt or self._current_task):  # lower threshold for better HITL trigger rate  # 提高阈��，更���易触发主��提问
-                    user_prompt = clarified_task
-                    self._current_task = clarified_task
+                if result.needs_clarification and result.clarified_task:
+                    user_prompt = result.clarified_task
+                    self._current_task = result.clarified_task  # lower threshold for better HITL trigger rate  # 提高阈��，更���易触发主��提问
                     # Re-evaluate memory with clarified task
                     context_data = self.memory_manager.locate_and_get_context(ui_hash, semantic_layout, user_prompt)
                     mode = context_data.get("mode", "explore")
