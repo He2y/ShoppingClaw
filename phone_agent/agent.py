@@ -287,15 +287,28 @@ class PhoneAgent:
         self._step_count = 0
 
 
-    def _clarify_task_if_needed(self, task: str, image_base64: str, current_app: str) -> str:
+    def _clarify_task_if_needed(self, task: str, image_base64: str, current_app: str, memory_context: str = "") -> str:
         if self.agent_config.verbose:
-            print(f"🤔 任务置信度较低，评估是否需要主动澄清 (HITL)...")
+            print(f"🤔 HITL: 检查任务是否需要主动澄清...")
 
         prompt = (
             f"用户下达了一个手机操作任务：「{task}」。\n"
             f"当前所在APP：{current_app}\n"
-            "请判断这个任务是否足够清晰、明确，能够直接执行？\n"
-            "如果任务模糊（例如：想买东西但没说具体买什么、想发消息但没说发给谁/发什么、目标不明确等），"
+        )
+
+        if memory_context:
+            # Truncate memory context to avoid overwhelming the clarification prompt
+            truncated_memory = memory_context[:400]
+            prompt += (
+                f"\n系统检索到以下相似历史记录：\n"
+                f"{truncated_memory}\n"
+                f"\n⚠️ 以上仅为历史参考，不代表当前用户的确切意图。\n"
+            )
+
+        prompt += (
+            "\n请判断这个任务是否足够清晰、明确，能够直接执行？\n"
+            "如果任务模糊（例如：想买东西但没说具体买什么、想发消息但没说发给谁/发什么、\n"
+            "想点外卖但没指定平台/店铺/菜品、只说'帮我点个外卖''帮我买东西'等笼统表述），\n"
             "请回复需要向用户澄清的问题，格式必须为：'CLARIFY: 你的问题'\n"
             "如果任务已经足够清晰（包含具体目标或意图明确），请直接回复：'CLEAR'\n"
             "请严格遵循上述格式，不要输出其他多余内容。"
@@ -399,18 +412,21 @@ class PhoneAgent:
             mode = context_data.get("mode", "explore")
             current_state_id = context_data.get("current_state_id")
 
-            # [HITL Active Clarification]
+            # [HITL Active Clarification] - Always run on first step
             if is_first:
-                max_sim = context_data.get("max_similarity", 0.0)
-                if max_sim < 0.65:  # lower threshold for better HITL trigger rate  # 提高阈��，更���易触发主��提问
-                    clarified_task = self._clarify_task_if_needed(user_prompt or self._current_task, screenshot.base64_data, current_app)
-                    if clarified_task != (user_prompt or self._current_task):
-                        user_prompt = clarified_task
-                        self._current_task = clarified_task
-                        # Re-evaluate memory with clarified task
-                        context_data = self.memory_manager.locate_and_get_context(ui_hash, semantic_layout, user_prompt)
-                        mode = context_data.get("mode", "explore")
-                        current_state_id = context_data.get("current_state_id")
+                clarified_task = self._clarify_task_if_needed(
+                    user_prompt or self._current_task,
+                    screenshot.base64_data,
+                    current_app,
+                    context_data.get("semantic_context", "")
+                )
+                if clarified_task != (user_prompt or self._current_task):  # lower threshold for better HITL trigger rate  # 提高阈��，更���易触发主��提问
+                    user_prompt = clarified_task
+                    self._current_task = clarified_task
+                    # Re-evaluate memory with clarified task
+                    context_data = self.memory_manager.locate_and_get_context(ui_hash, semantic_layout, user_prompt)
+                    mode = context_data.get("mode", "explore")
+                    current_state_id = context_data.get("current_state_id")
 
             if mode == "navigate" and context_data.get("next_actions"):
                 # Fast track: return the highest confidence action directly without VLM inference

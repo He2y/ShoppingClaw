@@ -948,6 +948,11 @@ class MemoryManager:
                 if similar_tasks and similar_tasks[0].get("similarity", 0.0) >= 0.60:
                     condensed_text = self._condense_trajectory_context(similar_tasks, current_task=task)
                     context_data["semantic_context"] = (
+                        f"【⚠️ 历史参考 - 仅供参考，严禁直接复用】\n"
+                        f"当前用户指令：「{task}」\n"
+                        f"以下为相似历史任务的执行轨迹。当前用户的实际需求可能与以下内容不同。\n"
+                        f"如果当前指令缺少具体细节（平台、店铺、商品、联系人等），必须使用 Interact 主动询问！\n"
+                        f"---\n"
                         f"{condensed_text}\n"
                         f"（注意：当前界面可能与历史轨迹不同，请根据实际截图调整动作）\n"
                         f"{context_data.get('semantic_context', '')}"
