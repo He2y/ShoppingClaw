@@ -1,8 +1,8 @@
-# ClawGUI-Agent 系统架构文档 v3.0
+# ClawGUI-Agent 系统架构文档 v4.0
 
 > 日期：2026-05-03
-> 状态：已实现（含已知设计缺陷分析）
-> 基于对 `phone_agent/` 全部源码的逐文件审计
+> 状态：生产就绪（v3.0 中 9/13 设计缺陷已修复）
+> 基于对 `phone_agent/` 全部 46 个源文件的逐文件审计 + 最近 15+ commits 的变更追踪
 
 ---
 
@@ -11,9 +11,9 @@
 ```
 phone_agent/
 ├── __init__.py
-├── agent.py                    # PhoneAgent 主循环 (879行)
+├── agent.py                    # PhoneAgent 主循环 (946行)
 ├── agent_ios.py                # iOS 专用智能体 (无记忆系统)
-├── clarify.py                  # ⚠️ 孤立文件：旧版 _clarify_task_if_needed
+├── clarify.py                  # ClarificationAgent 子代理 (281行) ✅ 已重写
 ├── device_factory.py           # 跨平台设备抽象工厂 (ADB/HDC/XCTEST)
 ├── tracer.py                   # GUI 执行轨迹记录器
 │
@@ -22,7 +22,7 @@ phone_agent/
 │   └── client.py               # OpenAI-compatible 流式推理客户端
 │
 ├── actions/
-│   ├── handler.py              # AutoGLM 动作解析器+执行器
+│   ├── handler.py              # AutoGLM 动作解析器+执行器 (含 _extract_function_call)
 │   ├── handler_uitars.py       # UI-TARS 专用处理器
 │   ├── handler_qwenvl.py       # QwenVL 专用处理器
 │   ├── handler_maiui.py        # MAI-UI 专用处理器
@@ -41,41 +41,46 @@ phone_agent/
 ├── hdc/                        # HarmonyOS HDC 后端
 ├── xctest/                     # iOS XCTEST/WebDriverAgent 后端
 │
-└── memory/
-    ├── __init__.py
-    ├── memory_manager.py       # 记忆系统调度枢纽 (1093行)
-    ├── memory_store.py         # FAISS + SimpleEmbedder 向量存储 (549行)
-    ├── graph_store.py          # Neo4j 图存储 + TaskIndex (433行)
-    ├── task_index.py           # FAISS + EmbeddingClient 语义任务索引 (109行)
-    └── embedding_client.py     # 远程 embedding-3 API 客户端 (48行)
+└── memory/                     # 记忆系统（双核引擎 + 状态管理）
+    ├── __init__.py              # 导出全部记忆组件 (29行)
+    ├── memory_manager.py        # 调度枢纽 (1146行) ✅ 不再被架空
+    ├── memory_store.py          # FAISS 向量存储 2048d (666行) ✅ FAISS 搜索启用
+    ├── graph_store.py           # Neo4j 图存储 (433行)
+    ├── state_manager.py         # 统一状态追踪器 (101行) ✅ 新增
+    ├── task_index.py            # FAISS 任务语义索引 2048d (108行)
+    └── embedding_client.py      # embedding-3 API 客户端 (48行)
 ```
+
+**总计：46 个 Python 源文件**
 
 ---
 
 ## 二、整体架构
 
+![System Architecture](docs/diagrams/01-system-architecture.svg)
+
+### 架构分层
+
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                         CLI / WebUI                              │
+│                      Entry Layer (入口层)                         │
+│                   CLI (main.py)  │  WebUI (webui.py)              │
 └─────────────────────────────┬────────────────────────────────────┘
                               │ task
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                          PhoneAgent                              │
+│                      Agent Core (代理核心)                        │
+│                         PhoneAgent                               │
 │                                                                  │
 │  run(task):                                                      │
 │    _context=[], start_task(), _execute_step(is_first=True)       │
 │    while step_count < max_steps:                                 │
 │      _execute_step(is_first=False)                               │
 │                                                                  │
-│  _execute_step():  7个阶段的单步执行                              │
-│    Phase 1: 截图采集 (DeviceFactory)                              │
-│    Phase 2: 状态定位 (MemoryManager.locate_and_get_context)      │
-│    Phase 3: 模式决策 (navigate vs explore)                       │
-│    Phase 4: 消息构建 (Adapter.build_messages)                    │
-│    Phase 5: 上下文注入 + VLM推理 (ModelClient)                   │
-│    Phase 6: Action解析与执行 (Handler)                           │
-│    Phase 7: 记忆更新 + 图构建 (MemoryManager + GraphStore)       │
+│  _execute_step(): 10个阶段的单步执行                              │
+│    ① 截图采集  ② 记忆查找  ③ HITL澄清  ④ 导航检查               │
+│    ⑤ 消息构建  ⑥ 上下文注入  ⑦ VLM推理  ⑧ 动作解析+SpecGuard     │
+│    ⑨ 动作执行  ⑩ 记忆更新+轨迹记录                               │
 └──┬──────────────┬──────────────┬──────────────┬──────────────────┘
    │              │              │              │
    ▼              ▼              ▼              ▼
@@ -85,21 +90,39 @@ phone_agent/
 │ (5个)    │ │ (6个)    │ │          │ │                  │
 └──────────┘ └──────────┘ └─────┬────┘ │ ┌──────────────┐ │
                                 │       │ │ Semantic Core│ │
-                    ┌───────────┼───┐   │ │ (FAISS 128d) │ │
-                    ▼           ▼   ▼   │ │ SimpleEmbedder│ │
+                    ┌───────────┼───┐   │ │ (FAISS 2048d)│ │
+                    ▼           ▼   ▼   │ │ embedding-3  │ │
                   ADB         HDC  XCTEST│ └──────────────┘ │
                   (Android) (Harmony) (iOS)│ ┌──────────────┐ │
                                           │ │ Spatial Core │ │
                                           │ │ (Neo4j Graph)│ │
                                           │ │ + TaskIndex  │ │
                                           │ │ (FAISS 2048d)│ │
+                                          │ │              │ │
+                                          │ │ StateManager │ │
+                                          │ │ (统一状态)    │ │
                                           │ └──────────────┘ │
                                           └──────────────────┘
 ```
 
+### 关键变更 (v3.0 → v4.0)
+
+| 变更项 | v3.0 状态 | v4.0 状态 |
+|--------|----------|----------|
+| 嵌入空间 | 128d vs 2048d 分裂 | 统一 2048d |
+| FAISS 搜索 | 死代码（O(n) 暴力） | FAISS IndexFlatIP 启用 |
+| 状态管理 | agent.py/MemoryManager 各自维护 | StateManager 统一管理 |
+| 图构建 | agent.py 直接访问 graph_store | 通过 MemoryManager.update_state_and_transition() |
+| 任务澄清 | 内联方法 + 孤立文件 | ClarificationAgent 独立子代理 |
+| Navigate 模式 | 无置信度检查 | confidence >= 0.8 阈值 |
+| 安全防护 | 无 | SpecGuard 三层防护 |
+| clarify.py | 55行孤立重复代码 | 281行完整子代理 |
+
 ---
 
 ## 三、Agent 执行流程详解
+
+![Execution Flow](docs/diagrams/02-execution-flow.svg)
 
 ### 3.1 run(task) — 任务入口
 
@@ -107,11 +130,9 @@ phone_agent/
 run(task)
   ├─ _context = []
   ├─ _step_count = 0
-  ├─ _last_state_hash = None
-  ├─ _last_user_reply = None
   ├─ clear_history()  ← 清空 QwenVL/GUI-Owl adapter 历史
-  ├─ tracer.start_task()
-  ├─ memory_manager.start_task(task)  ← 从任务文本中提取联系人/App
+  ├─ tracer.start_task() if enabled
+  ├─ memory_manager.start_task(task)  ← 提取联系人/App，初始化 StateManager
   │
   ├─ _execute_step(task, is_first=True)   ← 第一步（带任务描述）
   │   └─ if finished → end_task() → return
@@ -125,156 +146,242 @@ end_task():  ← 三处调用点（第一步完成、循环中完成、超时）
   tracer.end_task(result, total_steps)
 ```
 
-### 3.2 _execute_step() — 单步执行的7个阶段
+### 3.2 _execute_step() — 单步执行的10个阶段
 
-#### Phase 1: 屏幕采集 (agent.py:357-359)
+#### Phase ①: 截图采集 (agent.py:401-404)
 
 ```python
 screenshot = device_factory.get_screenshot(device_id)  # → base64, width, height
 current_app = device_factory.get_current_app(device_id) # → "微信" / "home_screen"
 ```
 
-#### Phase 2: 状态定位 (agent.py:361-378)
+#### Phase ②: 记忆查找 — GraphRAG 三层匹配 (agent.py:406-441)
 
 ```python
-ui_hash = MD5(screenshot.base64_data)  # ⚠️ 问题：同一界面不同截图永远不同哈希
-self._last_state_hash = f"state_{ui_hash}"
-semantic_layout = current_app  # 仅用APP名称，粒度过粗
+ui_hash = MD5(screenshot.base64_data)
+semantic_layout = current_app
 
 context_data = memory_manager.locate_and_get_context(ui_hash, semantic_layout, task)
 # → {mode, max_similarity, semantic_context, next_actions, current_state_id}
 ```
 
-locate_and_get_context 的三层匹配策略：
+**三层匹配策略（当前实现）：**
 
 ```
 Layer 1: TaskIndex FAISS (embedding-3, 2048d) 语义向量搜索
   ├─ similarity >= 0.85 → mode="navigate" (直接执行快捷动作)
   ├─ similarity >= 0.60 → mode="explore" + 注入压缩轨迹上下文
-  └─ similarity < 0.60  → 触发主动澄清 (仅第一步)
+  └─ similarity < 0.60  → 不注入图谱上下文
 
 Layer 2: Neo4j N-gram 关键词回退 (FAISS结果为空时)
   └─ 中文N-gram分词 + 令牌重叠计分 + 关键词奖励
 
-Layer 3: MemoryStore FAISS fallback (SimpleEmbedder, 128d)
+Layer 3: MemoryStore FAISS UI状态回退 (2048d)
   └─ 搜索 MemoryType.UI_STATE，补充页面特征参考
 ```
 
-#### Phase 3: 模式决策 (agent.py:380-436)
+#### Phase ③: HITL 任务澄清 — 仅第一步 (agent.py:443-460)
 
-**Navigate 模式** — 跳过VLM直接执行：
+```python
+if is_first:
+    clarify_result = self.clarification_agent.check_and_clarify(
+        task, screenshot.base64_data, current_app, memory_context,
+        clarification_callback=self.clarification_callback
+    )
+    if clarify_result.needs_clarification:
+        task = clarify_result.clarified_task  # 用澄清后的任务替换
+        # 重新评估记忆上下文
+        context_data = memory_manager.locate_and_get_context(...)
+```
+
+**ClarificationAgent 工作流：**
+```
+原始任务 + 截图 + 当前App + 记忆上下文
+    │
+    ▼
+_detect_ambiguity() → VLM 判断模糊性
+    ├─ "CLEAR" → needs_clarification=False
+    └─ "CLARIFY: [问题]" → _ask_user() → _reconstruct_task() → clarified_task
+```
+
+#### Phase ④: 导航模式检查 (agent.py:462-494)
 
 ```python
 if mode == "navigate" and context_data.get("next_actions"):
     best_action = context_data["next_actions"][0]
-    action = {"_metadata": "do", "action_type": best_action["type"], ...}
-    # ⚠️ 问题：无置信度阈值检查，任意匹配都触发
-    # ⚠️ 问题：无VLM验证，图数据可能过时
-    result = action_handler.execute(action, width, height)
+    if best_action.get("confidence", 0) >= 0.8:  # ✅ 置信度阈值
+        # 直接执行图谱快捷动作，完全绕过 VLM
+        result = action_handler.execute(action, width, height)
+        return StepResult(success=True, finished=False, ...)
+    # 低于阈值 → 回退到 explore 模式，继续 VLM 推理
 ```
 
-**Explore 模式** — 正常VLM推理路径。
-
-#### Phase 4: 消息构建 (agent.py:438-509)
+#### Phase ⑤: 消息构建 (agent.py:496-567)
 
 按模型类型分支：
 
-| 模型类型 | 构建策略 | 上下文图片 |
-|---------|---------|-----------|
-| AutoGLM | 追加式：`system + user(task+image)` → 后续 `user(image)` | 无限制 |
-| UI-TARS | 追加式 + limit_context(5) | 最多5张 |
-| QwenVL | 重构建式：每轮 `system + user(task+history+image)` | 始终1张 |
-| MAI-UI | 多消息式：`system → user(text) → user(image)` | 最多3张 |
-| GUI-Owl | 重构建式：同 QwenVL | 始终1张 |
+| 模型类型 | 构建策略 | 上下文图片 | 说明 |
+|---------|---------|-----------|------|
+| AutoGLM | 追加式：`system + user(task+image)` → 后续 `user(image)` | 无限制 | 推理后移除图片 |
+| UI-TARS | 追加式 + limit_context(5) | 最多5张 | 助手消息完整保留 |
+| QwenVL | 重构建式：每轮 `system + user(task+history+image)` | 始终1张 | 需 add_history() |
+| MAI-UI | 多消息式：`system → user(text) → user(image)` | 最多3张 | 助手消息完整保留 |
+| GUI-Owl | 重构建式：同 QwenVL | 始终1张 | 需 add_history() |
 
 AutoGLM 模式下的个性化 Prompt 构建：
 
 ```python
-# 通过 build_personalized_prompt() 在 "必须遵循的规则" 前插入记忆上下文
+# build_personalized_prompt() 在 "必须遵循的规则" 前插入记忆上下文
 system_prompt = build_personalized_prompt(base_prompt, memory_manager, task)
 ```
 
-#### Phase 5: 上下文注入与VLM推理 (agent.py:511-586)
+#### Phase ⑥: 上下文注入 (agent.py:569-596)
 
-上下文注入方式：**文本追加到用户消息末尾**
+**注入位置变更：消息开头（而非末尾）**
 
 ```python
-# 注入到最后一条 Vision 消息的 text 字段
-item["text"] = item["text"].rstrip() + f"\n\n[记忆上下文]\n{extra_context}"
+# ✅ v4.0: 注入到消息开头，VLM 优先关注
+item["text"] = f"[记忆上下文]\n{extra_context}\n\n{item['text']}"
 ```
 
-注入内容来自 `locate_and_get_context()` 的 `semantic_context` 字段：
-- 基于频率的联系人-应用推荐（⚡ 标记）
-- 相关任务历史（📋 标记）
-- 压缩的相似任务轨迹（最多200字）
-- 购物偏好（🛒 标记）
-- 用户纠正（⚠️ 标记）
+注入内容包含：
+- **semantic_context**：来自 `locate_and_get_context()` 的图谱匹配结果
+- **critical_hints**：来自 `_detect_critical_scenario()` 的安全提示（仅购物 App）
+- **用户个性化信息**：联系人-应用绑定、任务历史、购物偏好
 
-VLM推理：流式输出，thinking 实时打印，action 缓冲。
+#### Phase ⑦: VLM 推理 (agent.py:598-659)
 
-#### Phase 6: Action解析与执行 (agent.py:588-677)
+```python
+response = self.model_client.request(self._context)
+# → ModelResponse(thinking, action, raw_content)
+```
+
+流式输出：thinking 实时打印，action 缓冲。
+
+#### Phase ⑧: 动作解析 + SpecGuard 安全防护 (agent.py:661-710)
 
 ```
 专用Handler路径 (UI-TARS/QwenVL/MAI-UI/GUI-Owl):
   parsed = specialized_handler.parse_response(raw_content)
   result = specialized_handler.execute(parsed, width, height)
 
-通用Handler路径 (AutoGLM):
-  action = parse_action(response.action)  # AST/JSON/XML 多级解析
-  remove_images_from_message(context[-1]) # 节省空间
-  result = action_handler.execute(action, width, height)
+AutoGLM 通用路径:
+  action = parse_action(response.action)        # AST/JSON/XML 多级解析
+  action = _spec_guard_check(action, thinking, current_app)  # ✅ 代码级安全网
 ```
 
-#### Phase 7: 记忆更新 + 在线图构建 (agent.py:739-770)
+**SpecGuard 三层防护体系：**
+
+| 层级 | 机制 | 触发条件 | 行为 |
+|------|------|---------|------|
+| Layer 1 | System Prompt | 始终生效 | 规则声明：规格页面唯一合法操作是 Interact |
+| Layer 2 | `_detect_critical_scenario()` | 购物 App + 规格关键词 | 在 VLM 上下文注入强制性 Interact 提示 |
+| Layer 3 | `_spec_guard_check()` | VLM 输出提到购买意图但未发 Interact | **确定性地**将动作覆写为 Interact |
 
 ```python
-# 记忆更新
+# Layer 3 核心逻辑
+def _spec_guard_check(action, thinking, current_app):
+    if current_app not in _SHOPPING_APPS:
+        return action
+    if action.get("action_type") == "Interact":
+        return action  # 已经是 Interact，放行
+    if _has_spec_keywords(thinking) and _has_purchase_intent(thinking):
+        # 强制覆盖为 Interact，提示用户选择规格
+        return {"action_type": "Interact", "_metadata": "do"}
+    return action
+```
+
+#### Phase ⑨: 动作执行 (agent.py:712-755)
+
+```python
+# 专用Handler
+result = specialized_handler.execute(parsed_action, width, height)
+
+# AutoGLM
+result = action_handler.execute(action, width, height)  # → ActionResult
+```
+
+支持的 13 种动作类型：`Launch`, `Tap`, `Type`, `Type_Name`, `Swipe`, `Back`, `Home`, `Double Tap`, `Long Press`, `Wait`, `Take_over`, `Interact`, `finish`
+
+#### Phase ⑩: 记忆更新 + 轨迹记录 (agent.py:817-866)
+
+```python
+# 自动学习流水线
 memory_manager.add_step(thinking, action, current_app)
-  ├─ _track_app_usage(app)        → APP_USAGE 记忆
+  ├─ _track_app_usage(app)        → APP_USAGE 记忆 (会话级去重)
   ├─ _learn_from_action(action)   → 联系人/搜索模式提取
   └─ _learn_from_thinking(thinking) → 实体提取+偏好推断
 
-# ⚠️ 在线图构建：agent.py 直接访问 graph_store
-memory_manager.graph_store.add_state_transition(
-    self._prev_state_id, current_state_id, action, task
+# ✅ 统一状态管理（v4.0 核心改进）
+memory_manager.update_state_and_transition(
+    screenshot_hash, semantic_layout, action, task
 )
-self._prev_state_id = current_state_id
+# 内部实现：
+#   1. StateManager.compute_state_id(hash, layout) → new_state_id
+#   2. StateManager.update_state(new_state_id) → (prev, current)
+#   3. GraphStore.add_state_transition(prev, current, action, task)
+#   4. Return current_state_id
 ```
+
+### 3.3 动作历史管理
+
+| 模型类型 | 历史管理方式 |
+|---------|------------|
+| AutoGLM | 追加 `thinking<answer>{action}</answer>` 格式到 context |
+| UI-TARS | 追加完整 raw_content 到 context |
+| MAI-UI | 追加完整 raw_content 到 context |
+| QwenVL | adapter.add_history(action_desc) → 下次 build_messages 时重建 |
+| GUI-Owl | adapter.add_history(action_desc) → 下次 build_messages 时重建 |
 
 ---
 
-## 四、双核记忆引擎详解
+## 四、双核记忆引擎
 
-### 4.1 语义记忆核 — MemoryStore (FAISS + SimpleEmbedder)
+![Memory System](docs/diagrams/03-memory-system.svg)
+
+### 4.1 架构总览：三层设计（v4.0 已统一）
+
+```
+agent.py
+   │
+   ▼
+MemoryManager (统一调度枢纽 — 不再被架空)
+   │           │           │
+   ▼           ▼           ▼
+MemoryStore  GraphStore  StateManager
+(语义核)      (空间核)      (状态核)
+FAISS 2048d  Neo4j        统一状态追踪
+```
+
+**v4.0 关键改进：** agent.py 不再直接访问 GraphStore。所有记忆系统交互都通过 MemoryManager 的统一 API。
+
+### 4.2 语义记忆核 — MemoryStore (FAISS 2048d)
 
 ```
 存储层:
-  memory_db/default/
+  memory_db/{user_id}/
     ├── memories_meta.json   ← 所有记忆的元数据 (JSON)
-    └── embeddings.npy       ← 128维向量 (NumPy)
+    └── embeddings.npy       ← 2048维向量 (NumPy)
 
-嵌入器: SimpleEmbedder(dim=128)
-  - 字符频率特征（位置加权）
-  - 二元组 (bigram) 特征
-  - L2 归一化 → 余弦相似度
-  - ⚠️ 仅基于字符分布，无法捕捉语义相似性
-  - ⚠️ embedding_client.py 的 embedding-3 API 未使用
+嵌入器 (双级回退):
+  1. EmbeddingClient (embedding-3 API, 2048d)      ← 主嵌入器
+  2. SimpleEmbedder (字符哈希, 128d → 补零到2048d)  ← 回退嵌入器
 
-搜索: O(n) 暴力遍历
-  for memory in self.memories.values():
-      similarity = cosine(query_emb, memory.embedding)
-      score = similarity * 0.7 + importance * 0.3
-  - ⚠️ search() 不使用 FAISS 索引 (_add_to_index 构建的索引是死代码)
-  - ⚠️ FAISS IndexFlatIP 只在 add/delete/rebuild 中维护，search 从未查询
+搜索: FAISS IndexFlatIP + L2归一化 = 余弦相似度  ✅ 已启用
+  - 得分 = similarity * 0.7 + importance * 0.3
+  - 暴力搜索作为 FAISS 的后备方案
+
+✅ v4.0 已修复：FAISS 索引不再死代码
+✅ v4.0 已修复：嵌入空间统一为 2048d
 ```
 
-**MemoryType 枚举 (13种):**
+**MemoryType 枚举 (13种)：**
 
 | 类型 | 值 | 默认重要性 | 说明 |
 |------|-----|----------|------|
 | USER_PREFERENCE | user_preference | 0.6 | 用户设置/使用偏好 |
 | CONTACT | contact | 0.7 | 联系人信息 |
-| CONTACT_APP_BINDNG | contact_app_binding | 0.8 | ⚠️ 枚举名少字母D：应为 BINDING |
+| CONTACT_APP_BINDING | contact_app_binding | 0.8 | ✅ 已修复拼写 |
 | APP_USAGE | app_usage | 0.5 | 应用使用记录 |
 | TASK_HISTORY | task_history | 0.4 | 任务执行历史 |
 | TASK_PATTERN | task_pattern | 0.6 | 任务模式/流程 |
@@ -286,12 +393,11 @@ self._prev_state_id = current_state_id
 | UI_STATE | ui_state | 0.4 | UI状态特征 |
 | UI_TRANSITION | ui_transition | 0.4 | UI状态转换 |
 
----
+### 4.3 空间记忆核 — GraphStore (Neo4j + TaskIndex)
 
-### 4.2 空间记忆核 — GraphStore (Neo4j + TaskIndex)
+**图数据模型：**
 
 ```
-图数据模型:
   ┌──────────────┐     NEXT_ACTION      ┌──────────┐     PRODUCES      ┌──────────────┐
   │   UIState    │ ──────────────────→  │  Action  │ ────────────────→ │   UIState    │
   │ state_id     │                      │ action_id│                    │ state_id     │
@@ -310,21 +416,20 @@ self._prev_state_id = current_state_id
                                        └──────────────┘
 ```
 
-**TaskIndex (FAISS + EmbeddingClient):**
+**TaskIndex (FAISS + EmbeddingClient)：**
 
 ```
 嵌入维度: 2048d (embedding-3 API)
 索引类型: FAISS IndexFlatIP + L2归一化 = 余弦相似度
 存储:
-  memory_db/default/
+  memory_db/{user_id}/
     ├── task_index.npy   ← FAISS 向量
     └── task_ids.json    ← 任务ID列表
 
-⚠️ 与 MemoryStore 的 128d SimpleEmbedder 是完全不相交的嵌入空间
-⚠️ 如果 EMBEDDING_API_KEY 未配置，返回全零向量（静默降级）
+✅ v4.0：与 MemoryStore 使用相同的 2048d 嵌入空间
 ```
 
-**轨迹提交流程:**
+**轨迹提交流程：**
 
 ```
 任务完成 → _save_pending_trajectory() → pending_trajectories.json (本地暂存, 最多20条)
@@ -334,13 +439,95 @@ self._prev_state_id = current_state_id
                               graph_store.commit_task_trajectory() → Neo4j + TaskIndex
 ```
 
+### 4.4 状态管理核 — StateManager (v4.0 新增)
+
+```python
+class StateManager:
+    """统一状态追踪器 — 解决 agent.py/MemoryManager 状态分裂"""
+
+    def compute_state_id(screenshot_hash, semantic_layout) -> str:
+        # "state_{semantic_layout}_{screenshot_hash[:8]}"
+        # 结合语义上下文 + 部分哈希 → 允许相似页面匹配
+
+    def update_state(new_state_id) -> tuple[str | None, str]:
+        # 返回 (prev_state, current_state)，原子性更新
+
+    def start_task(initial_state_id=None)
+    def end_task(final_state_id=None)
+    def get_current_state() -> str | None
+    def get_prev_state() -> str | None
+    def get_state_history() -> list[str]
+    def reset()
+```
+
+**状态 ID 设计：**
+`state_{semantic_layout}_{screenshot_hash[:8]}`
+
+- `semantic_layout`：当前 App 名称（如 "微信"）
+- `screenshot_hash[:8]`：MD5 前 8 位（允许同 App 内不同页面区分）
+- 组合后可在会话内稳定识别同一页面
+
+### 4.5 MemoryManager 统一 API（v4.0 不再被架空）
+
+```
+任务生命周期:
+  start_task(task, start_state_id)       → 提取实体，初始化 StateManager
+  end_task(success, result, end_state)   → 记录历史，学习模式，保存轨迹
+
+上下文检索:
+  locate_and_get_context(hash, layout, task) → {mode, context, actions, state_id}
+  get_relevant_context(task)              → 个性化上下文字符串
+  build_personalized_prompt(base, mm, task) → 注入记忆的系统提示词
+
+自动学习:
+  add_step(thinking, action, app)         → 自动提取管线
+
+状态管理 (统一入口):
+  update_state_and_transition(hash, layout, action, task) → current_state_id
+  get_current_state_id()                  → 委托给 StateManager
+
+轨迹管理:
+  commit_pending(index=0)                 → 提交待审核轨迹到 Neo4j
+```
+
+### 4.6 自动学习流水线
+
+```
+add_step(thinking, action, app)
+│
+├─ _track_app_usage(app)
+│   └─ MemoryStore.add(APP_USAGE, app)  ← 会话级去重
+│
+├─ _learn_from_action(action)
+│   ├─ Type_Name → 提取联系人 → MemoryStore.add(CONTACT)
+│   ├─ Launch → 提取App偏好
+│   └─ Type → 提取搜索模式
+│
+└─ _learn_from_thinking(thinking)
+    ├─ Regex提取联系人 (含黑名单过滤)
+    ├─ 偏好模式匹配 ("用户喜欢/偏好/习惯/经常")
+    └─ MemoryStore 去重检查 (threshold=0.85)
+```
+
+**成功模式学习（end_task 触发）：**
+
+```python
+_learn_successful_pattern():
+    # 记录 App 流程序列为 TASK_PATTERN
+    _learn_contact_app_binding():
+        # 关键机制：学习 "联系人 → 常用App" 绑定
+        # binding_key = f"{contact.lower()}_{app.lower()}"
+        # 含频率计数器 → 用于排序推荐
+        # CONTACT_APP_BINDING 类型，importance=0.8
+```
+
 ---
 
 ## 五、上下文注入机制
 
 ### 5.1 个性化上下文 (AutoGLM 专用)
 
-`get_relevant_context(task)` → 格式化为以下结构：
+`get_relevant_context(task)` → 格式化为以下结构（在系统提示词中插入）：
 
 ```
 【用户个性化信息 - 请严格按照以下信息选择应用】
@@ -371,190 +558,150 @@ self._prev_state_id = current_state_id
 ...
 ```
 
+**v4.0 改进：**
+- 上下文注入到消息**开头**（而非末尾），VLM 优先关注
+- 明确的歧义警告：历史轨迹仅为参考，用户指令优先级最高
+- 关键场景检测（购物规格页面）：注入强制性 Interact 提示
+
+### 5.3 SpecGuard 安全场景注入
+
+```python
+def _detect_critical_scenario(current_app, screenshot):
+    if current_app in _SHOPPING_APPS:
+        return """
+        ⚠️ 【关键场景检测】
+        当前处于购物应用的规格选择页面。
+        如果需要对商品规格（颜色、尺寸、容量等）进行选择：
+        - 唯一合法的操作是 Interact，向用户询问规格偏好
+        - 绝对不能点击任何购买按钮
+        - 绝对不能替用户做规格选择
+        """
+    return ""
+```
+
 ---
 
 ## 六、模型适配器体系
 
-| 适配器 | 模型 | 消息策略 | 图片限制 | 坐标空间 |
-|--------|------|---------|---------|---------|
-| AutoGLMAdapter | AutoGLM/GLM-4V | 追加式 | 无限制 | [0,1000] |
-| UITarsAdapter | UI-TARS (Doubao) | 追加式 | 5张 | 绝对像素 |
-| QwenVLAdapter | Qwen2.5/3-VL | 重构建式 | 1张 | [0,999] |
-| MAIUIAdapter | MAI-UI | 多消息追加 | 3张 | [0,999] |
-| GUIOwlAdapter | GUI-Owl | 重构建式 | 1张 | [0,999] |
+| 适配器 | 模型 | 消息策略 | 图片限制 | 坐标空间 | 推理内容 |
+|--------|------|---------|---------|---------|---------|
+| AutoGLMAdapter | AutoGLM/GLM-4V | 追加式 | 无限制 | [0,1000] | thinking |
+| UITarsAdapter | UI-TARS (Doubao) | 追加式 | 5张 | 绝对像素 | thinking |
+| QwenVLAdapter | Qwen2.5/3-VL | 重构建式 | 1张 | [0,999] | thinking |
+| MAIUIAdapter | MAI-UI | 多消息追加 | 3张 | [0,999] | reasoning_content |
+| GUIOwlAdapter | GUI-Owl | 重构建式 | 1张 | [0,999] | N/A |
 
 模型检测优先级：GUI-Owl > UI-TARS > Qwen-VL > MAI-UI > AutoGLM（默认）
 
----
+### 各适配器关键差异
 
-## 七、设计缺陷与协调问题分析
+**AutoGLM：** 唯一的"追加式+移除图片"策略 → 上下文不受图片数量限制，但累积的文本历史会增加 token 消耗。
 
-### 🔴 严重缺陷
+**QwenVL / GUI-Owl：** "重构建式"——每次都重新构建完整的 system + user 消息。历史操作通过 `add_history()` 追加以文本形式包含在 user_query 中。优势是始终只有 1 张图片。
 
-#### 7.1 agent.py 与 MemoryManager 的状态管理分裂
+**MAI-UI：** 独特的"多消息式"——第一条用户消息分成两条（先文本后图片），适配 MAI-UI 的输入格式要求。使用 `reasoning_content` 字段。
 
-**问题：** `_prev_state_id` 在 agent.py (line 205) 中追踪，但 `locate_and_get_context()` 在 MemoryManager 中返回 `current_state_id`。在线图构建时 agent.py 直接调用 `memory_manager.graph_store`（绕过 MemoryManager 抽象层），而 MemoryManager 自身也维护 `_current_state_id` / `_task_start_state_id` / `_task_end_state_id`（line 97-99），两者**各自管理状态、互不同步**。
-
-```python
-# agent.py:747 — 直接穿透 MemoryManager 访问 GraphStore
-self.memory_manager.graph_store.add_state_transition(
-    self._prev_state_id,        # ← agent.py 自己的状态
-    current_state_id,           # ← 来自 locate_and_get_context() 返回值
-    action, self._current_task
-)
-self._prev_state_id = current_state_id  # ← agent.py 管理
-
-# memory_manager.py:99 — MemoryManager 自己也有
-self._current_state_id: str | None = None  # ← 从未与 agent.py 同步
-```
-
-**影响：** 两层状态各自独立演化，MemoryManager 记录的 `start_state/end_state` 与 agent.py 实际传给 graph_store 的状态不一致。
-
-#### 7.2 嵌入维度分裂（128d vs 2048d）
-
-**问题：** 系统存在两套完全不相交的向量嵌入空间：
-
-| 组件 | 嵌入器 | 维度 | 底层技术 |
-|------|--------|------|---------|
-| MemoryStore (语义记忆) | SimpleEmbedder | 128 | 字符频率哈希 |
-| TaskIndex (任务索引) | EmbeddingClient | 2048 | embedding-3 API |
-
-- MemoryStore 的 128d 向量**无法参与** TaskIndex 的 2048d 语义搜索
-- 两个空间中的相似度值**不可比较**
-- embedding_client.py 存在但 MemoryStore 完全不使用它
-
-#### 7.3 MemoryStore 的 FAISS 索引是死代码
-
-**问题：** `MemoryStore.search()` (line 346-397) 使用 O(n) 暴力遍历所有记忆：
-
-```python
-for memory in self.memories.values():  # ← 暴力遍历
-    similarity = self._compute_similarity(...)
-```
-
-但 `_add_to_index()` (line 334-344) 正确地将每个新记忆添加到 FAISS IndexFlatIP，`_rebuild_index()` 也在增删后重建索引。这些 FAISS 索引**从未被 search() 查询**。FAISS 的 `index.search()` 调用只存在于 TaskIndex 类中，而 MemoryStore 类虽有 `self.index` 属性，search 方法完全无视它。
-
-#### 7.4 clarify.py 是孤立/重复文件
-
-**问题：** `phone_agent/clarify.py` (55行) 包含一个 `_clarify_task_if_needed` 方法，与 `agent.py:290-348` 中的版本功能相同但实现不同：
-- clarify.py 使用 `self.model_client.request(messages)` (非流式)
-- agent.py 使用 `self.model_client.client.chat.completions.create(...)` (直接HTTP + temperature=0.1)
-- clarify.py 缺少任务重组/重写步骤
-- 这个文件未被任何模块导入，是残余代码
+**UI-TARS：** 使用绝对像素坐标（非归一化），在 `smart_resize` 空间中操作。通过 `limit_context(5)` 防止上下文溢出。
 
 ---
 
-### 🟠 中等缺陷
+## 七、v3.0 设计缺陷修复追踪
 
-#### 7.5 Navigate 模式缺少置信度阈值
+### ✅ 已修复（9项）
 
-**问题：** agent.py:393 — 只要 `next_actions` 非空就触发 Navigate 模式，直接执行图快捷动作：
+| # | 缺陷 | 严重度 | 修复方式 | 相关 Commit |
+|---|------|--------|---------|------------|
+| 7.1 | agent.py/MemoryManager 状态分裂 | 🔴 CRITICAL | 新增 StateManager + update_state_and_transition() | afd550e, 0ab2fa8 |
+| 7.2 | 嵌入维度分裂 (128d vs 2048d) | 🔴 CRITICAL | MemoryStore 升级到 2048d embedding-3 | 44bd7d6 |
+| 7.3 | MemoryStore FAISS 索引死代码 | 🔴 CRITICAL | search() 改用 FAISS IndexFlatIP | 44bd7d6 |
+| 7.4 | clarify.py 孤立/重复文件 | 🔴 CRITICAL | 重写为 ClarificationAgent (281行) | f3109ec |
+| 7.5 | Navigate 模式无置信度阈值 | 🟠 MEDIUM | 添加 confidence >= 0.8 检查 | 0ab2fa8 |
+| 7.9 | Interact 回复捕获重复三次 | 🟡 MINOR | 删除重复代码块 | 0ab2fa8 |
+| 7.10 | CONTACT_APP_BINDNG 拼写错误 | 🟡 MINOR | 修正为 CONTACT_APP_BINDING | 0ab2fa8 |
+| 7.11 | 硬编码 15 步轨迹限制 | 🟡 MINOR | 改为可配置 max_steps 参数 | 0ab2fa8 |
+| 7.13 | start_state_id 从未传入 | 🟡 MINOR | StateManager.start_task() 接受并设置 | 0ab2fa8 |
 
-```python
-if mode == "navigate" and context_data.get("next_actions"):
-    best_action = context_data["next_actions"][0]
-    # 无 confidence 检查，任意匹配都执行
-```
+### ⚠️ 部分解决（2项）
 
-但 `locate_and_get_context()` 中高置信度阈值是 0.85。理论上进入 navigate 时 similarity >= 0.85，但动作并没有独立的置信度检查。graph_store 中边的 `confidence` 初始值 1.0 且永不衰减。
+| # | 缺陷 | 严重度 | 当前状态 |
+|---|------|--------|---------|
+| 7.6 | Neo4j 不可用时静默降级 | 🟠 MEDIUM | 现在连接失败会抛出 RuntimeError（不再静默），但无用户可见提示 |
+| 7.7 | MD5(截图) 状态标识不稳定 | 🟠 MEDIUM | StateManager 结合 semantic_layout + partial hash 改善会话内匹配 |
 
-#### 7.6 Neo4j 不可用时静默降级
+### ❌ 尚未解决（2项）
 
-**问题：** GraphStore.__init__() (graph_store.py:37-39) 捕获所有异常只打印警告，设 `self.driver = None`。之后所有方法检查 `if not self.driver: return None/[]/{}`。整个空间记忆核静默失效，用户和开发者无感知。
-
-#### 7.7 MD5(截图Base64) 作为状态标识根本性不稳定
-
-**问题：** agent.py:367-370 — 使用 `MD5(screenshot.base64_data)` 作为 UI state_id。这在两个层面失败：
-1. **会话内不稳定：** JPEG/PNG 编码器每次输出可能略有差异（元数据、时间戳）
-2. **会话间完全失效：** 同一界面在不同时刻的截图 base64 完全不同
-
-**影响：** Layer 1（图精确状态匹配）实际上永远不会命中，`add_state_transition` 创建的 UIState 节点无法被后续步骤的 `get_current_state()` 匹配到。
-
-#### 7.8 失败路径无惩罚学习
-
-**问题：** `add_state_transition()` 中的频率只增不减（`ON MATCH SET r.frequency = r.frequency + 1`），`end_task()` 不更新已有边的置信度。任务失败时不会降低对应路径的 confidence 或 success_rate。
-
----
-
-### 🟡 轻微缺陷
-
-#### 7.9 Interact 回复捕获重复三次
-
-agent.py:757-770 — 完全相同的 Interact 消息捕获逻辑重复了三次：
-
-```python
-# 第757-760行
-if action.get("action_type") == "Interact" or ...:
-    if hasattr(result, "message") and result.message:
-        self._last_user_reply = result.message
-
-# 第762-765行 — 完全相同
-# 第767-770行 — 完全相同
-```
-
-#### 7.10 CONTACT_APP_BINDNG 拼写错误
-
-memory_store.py:75 — 枚举名少字母 D：`CONTACT_APP_BINDNG = "contact_app_binding"`。虽然字符串值是正确的，但枚举名本身有误。代码中 6 处引用此枚举名（均为 `MemoryType.CONTACT_APP_BINDNG`）。
-
-#### 7.11 硬编码 15 步轨迹限制
-
-graph_store.py:252-304 — `get_task_trajectory()` 硬编码 `s0 → a1 → s1 → ... → a15 → s15` 的 Cypher 查询。超过 15 步的轨迹会被截断，且无法通过参数配置。
-
-#### 7.12 semantic_layout 粒度过粗
-
-agent.py:373 — 使用 `current_app` 名称作为 semantic_layout 的唯一输入，丢失了具体的页面/控件结构信息。MemoryManager 从未调用 `get_state_by_semantic()` 方法（发送 semantic_layout 给 Neo4j 做精确匹配的接口存在但未被使用）。
-
-#### 7.13 MemoryManager 的 start_state_id 参数从未传入
-
-MemoryManager.start_task() 接受 `start_state_id` 参数 (memory_manager.py:101)，但 agent.py:220 调用时从未传入：`self.memory_manager.start_task(task)`。导致 `_task_start_state_id` 始终为 None。
+| # | 缺陷 | 严重度 | 说明 |
+|---|------|--------|------|
+| 7.8 | 失败路径无惩罚学习 | 🟠 MEDIUM | 边的置信度只增不减，失败任务不影响路径权重 |
+| 7.12 | semantic_layout 粒度过粗 | 🟡 MINOR | 仍仅使用 current_app 名称，未包含具体页面结构 |
 
 ---
 
-## 八、协调缺陷根因分析
+## 八、v4.0 新增组件
 
-### 问题根因：三层架构的中间层被架空
+### 8.1 ClarificationAgent (clarify.py, 281行)
 
-理想的分层架构应该是：
+**目的：** 在 PhoneAgent 执行任何动作之前运行的专用子代理，检测购物/外卖任务是否包含足够信息。
+
+**设计：**
+- 使用与主代理相同的模型配置（从环境变量读取）
+- 独立的 `openai.OpenAI` 客户端实例（非流式 API）
+- 返回结构化的 `ClarifyResult` 数据类
+- 分三步执行：模糊性检测 → 用户提问 → 任务重写
+
+```python
+@dataclass
+class ClarifyResult:
+    needs_clarification: bool
+    question: str | None           # 向用户展示的问题
+    clarified_task: str | None     # 重写后的可执行任务
+```
+
+**关键实现细节：**
+- `_detect_ambiguity()` 使用专门的提示词，包含购物/外卖场景的详细判断标准
+- 响应解析通过搜索 `CLARIFY:` 子字符串（兼容模型添加前缀文本的情况）
+- `_reconstruct_task()` 将原始任务+用户补充重写为 < 50 字符的流畅指令
+- 在 WebUI 模式下通过 `clarification_callback`，CLI 模式下通过 stdin/TTY
+
+### 8.2 StateManager (memory/state_manager.py, 101行)
+
+**目的：** 为 agent.py 和 MemoryManager 提供统一的状态管理，消除状态分裂。
+
+**设计：**
+- 维护 prev_state / current_state / task_states / state_history
+- 计算复合状态 ID：`state_{semantic_layout}_{screenshot_hash[:8]}`
+- 原子性状态更新：返回 immutable 的 (prev, current) tuple
+- 任务边界追踪：start_task → [state1, state2, ...] → end_task
+
+### 8.3 SpecGuard (agent.py, 内嵌)
+
+**目的：** 确定性地防止模型在购物规格选择页面跳过 Interact 直接购买。
+
+**三层防护：**
 
 ```
-agent.py  →  MemoryManager (统一接口)  →  MemoryStore (语义) + GraphStore (空间)
+Layer 1 (Prompt): 系统提示词声明规则
+  "如果任务要求的任何参数未指定，唯一合法的操作是 Interact"
+
+Layer 2 (Pre-inference): _detect_critical_scenario()
+  在购物App截图时，向VLM上下文注入强制性Interact提示
+
+Layer 3 (Post-inference): _spec_guard_check()
+  代码级安全网：检查VLM输出 → 如果提到规格+购买意图但无Interact
+  → 确定性地将动作覆写为 Interact
 ```
 
-但实际运行时：
+### 8.4 _extract_function_call (handler.py)
 
+**目的：** 修复 VLM 在函数调用后追加自然语言解释导致的 `SyntaxError`。
+
+```python
+def _extract_function_call(response: str) -> str:
+    """使用括号深度追踪提取第一条 do()/finish() 调用"""
+    # 找到 do( 或 finish( 的起始位置
+    # 追踪括号深度 → 在 depth=0 处截断
+    # 丢弃之后的自然语言文本
 ```
-agent.py ──直接访问──→ GraphStore.add_state_transition()
-agent.py ──自己管理──→ _prev_state_id
-agent.py → MemoryManager.locate_and_get_context() → MemoryStore + GraphStore (只读)
-agent.py → MemoryManager.add_step() → MemoryStore (只写语义)
-agent.py → MemoryManager.start_task() / end_task() (生命周期，但状态不传)
-```
-
-MemoryManager 被架空为"只读查询 + 语义记录"的角色，图构建和状态追踪的实际权力在 agent.py 手中。这导致：
-1. **状态不一致：** agent.py 的 `_prev_state_id` 和 MemoryManager 的 `_current_state_id` 各自演化
-2. **抽象泄漏：** agent.py 需要知道 GraphStore 的存在和接口
-3. **改动困难：** 记忆系统的任何改动需要同时修改 agent.py 和 memory_manager.py
-
-### 修复方向
-
-**短期（低成本）：**
-- 删除 clarify.py，删除 agent.py 中重复的 Interact 捕获
-- 修复 CONTACT_APP_BINDNG 拼写
-- MemoryStore.search() 改用 FAISS index.search()
-- Navigate 模式添加 `CONFIDENCE_THRESHOLD >= 0.8` 检查
-
-**中期（结构修复）：**
-- 将 `_prev_state_id` 管理移入 MemoryManager，agent.py 通过 `memory_manager.set_current_state()` 更新
-- 将 `add_state_transition()` 封装为 MemoryManager 方法，agent.py 不再直接访问 graph_store
-- MemoryManager.start_task() 接受 start_state_id，end_task() 接受 end_state_id
-- 为 agent.py 添加统一的 `_update_memory(thinking, action, app, state_id)` 入口点
-
-**长期（架构重构）：**
-- 替换 MD5 截图哈希为 View Hierarchy Hash (Android: uiautomator dump) 或 VLM semantic layout
-- MemoryStore 升级到 embedding-3 client (统一 2048d 嵌入空间)
-- 添加 ShortTermMemory 组件维持跨步购物意图
-- 实现失败路径的 confidence 惩罚机制
-- Neo4j 不可用时在 UI 层给用户可见提示
 
 ---
 
@@ -566,53 +713,62 @@ User Task: "给张三发微信说晚上见面"
 PhoneAgent.run(task)
 │
 ├─ memory_manager.start_task(task)
-│   └─ _extract_from_task(): regex → 联系人"张三", App"微信"
-│       └─ MemoryStore.add(CONTACT: "张三")
-│       └─ MemoryStore.add(APP_USAGE: "微信")
+│   ├─ _extract_from_task() → regex 匹配 "张三", "微信"
+│   ├─ StateManager.start_task()
+│   └─ MemoryStore.add(CONTACT, APP_USAGE)
 │
 └─ [Loop] _execute_step()
     │
-    ├─ device_factory.get_screenshot() → base64 + w/h
-    ├─ device_factory.get_current_app() → "微信"
+    ├─ ① device_factory.get_screenshot() → base64 + w/h
+    ├─ ① device_factory.get_current_app() → "微信"
     │
-    ├─ memory_manager.locate_and_get_context(ui_hash, "微信", task)
-    │   │
+    ├─ ② memory_manager.locate_and_get_context(ui_hash, "微信", task)
     │   ├─ graph_store.find_similar_tasks("给张三发微信...")
-    │   │   ├─ TaskIndex.search() → embedding-3 FAISS 2048d → [(task_id, 0.72)]
-    │   │   └─ fallback: Neo4j N-gram match → [{description, similarity}]
-    │   │
-    │   ├─ graph_store.get_task_trajectory(task_id) → {steps: [...], app}
-    │   │
-    │   ├─ _condense_trajectory_context() → "【行动参考】发送消息(微信·5次)：搜索→张三→输入→发送"
-    │   │
+    │   │   ├─ TaskIndex.search() → embedding-3 FAISS 2048d
+    │   │   └─ fallback: Neo4j N-gram match
+    │   ├─ graph_store.get_task_trajectory(task_id) → {steps, app}
+    │   ├─ _condense_trajectory_context() → "发送消息(微信·5次)：搜索→张三→输入→发送"
     │   ├─ get_relevant_context(task) → "⚡ 联系张三：推荐微信(5次)"
-    │   │
-    │   └─ MemoryStore.search(UI_STATE) → fallback context
-    │
+    │   └─ MemoryStore.search(UI_STATE) → 页面特征参考
     │   return {mode: "explore", semantic_context: "...", max_similarity: 0.72}
     │
-    ├─ [if is_first and max_sim < 0.60] _clarify_task_if_needed()
+    ├─ ③ [if is_first] clarification_agent.check_and_clarify()
+    │   └─ 如 "给张三发" → CLARIFY: "用什么App发？" → 用户回复 "微信"
+    │       → _reconstruct_task() → "用微信给张三发消息说晚上见面"
     │
-    ├─ adapter.build_messages() → messages
-    ├─ inject semantic_context into last user message text
-    ├─ model_client.request(messages) → ModelResponse(thinking, action)
+    ├─ ④ [if mode=="navigate" and confidence>=0.8] 跳过VLM直接执行
     │
-    ├─ parse_action() → {"action": "Tap", "element": [500, 300]}
-    ├─ action_handler.execute() → ActionResult(success=True)
+    ├─ ⑤ adapter.build_messages() → messages
+    ├─ ⑥ inject semantic_context into message BEGINNING
+    │   └─ "⚡ 联系张三：推荐微信(5次)\n【行动参考】发送消息(微信·5次)...\n\n{original_prompt}"
     │
-    ├─ memory_manager.add_step(thinking, action, "微信")
-    │   ├─ _track_app_usage("微信")
-    │   ├─ _learn_from_action({"action": "Type_Name", "text": "张三"})
-    │   └─ _learn_from_thinking("在微信中找到张三的聊天窗口...")
+    ├─ ⑦ model_client.request(messages) → ModelResponse(thinking, action)
+    │   └─ thinking: "当前在微信主界面，需要找到张三..."
+    │   └─ action: 'do(action="Tap", element=[500, 300])'
     │
-    ├─ ⚠️ graph_store.add_state_transition(prev, current, action, task)
+    ├─ ⑧ parse_action(action_str) → {"action_type": "Tap", "element": [500, 300]}
+    ├─ ⑧ _spec_guard_check(action, thinking, "微信") → 非购物App，放行
+    │
+    ├─ ⑨ action_handler.execute(action, width, height) → ActionResult(success=True)
+    │   └─ _convert_relative_to_absolute([500, 300], 1080, 2400) → tap(540, 720)
+    │
+    ├─ ⑩ memory_manager.add_step(thinking, action, "微信")
+    │   ├─ _track_app_usage("微信") → 去重（已在本会话记录）
+    │   ├─ _learn_from_action({"action_type": "Tap"}) → 无联系人/App信息
+    │   └─ _learn_from_thinking("在微信中找到张三的聊天窗口...") → 提取 "张三"
+    │
+    ├─ ⑩ memory_manager.update_state_and_transition(hash, "微信", action, task)
+    │   ├─ StateManager.compute_state_id(hash, "微信") → "state_微信_a1b2c3d4"
+    │   ├─ StateManager.update_state("state_微信_a1b2c3d4") → (None, "state_微信_a1b2c3d4")
+    │   └─ GraphStore.add_state_transition(None, "state_微信_a1b2c3d4", action, task)
     │
     └─ context.append(assistant_message)
 
 Task完成:
   memory_manager.end_task(success=True, result, end_state)
   ├─ MemoryStore.add(TASK_HISTORY)
-  ├─ _learn_successful_pattern() → TASK_PATTERN + CONTACT_APP_BINDNG
+  ├─ _learn_successful_pattern() → TASK_PATTERN
+  │   └─ _learn_contact_app_binding("张三", "微信") → frequency++
   └─ _save_pending_trajectory() → pending_trajectories.json
 ```
 
@@ -620,19 +776,42 @@ Task完成:
 
 ## 十、文件规模与复杂度
 
-| 文件 | 行数 | 圈复杂度风险 | 核心职责 |
-|------|------|-------------|---------|
-| agent.py | 879 | 中 | Agent主循环 + 5种模型分支 + 记忆协调 |
-| memory/memory_manager.py | 1093 | 高 | 记忆调度+上下文构建+自动学习+图桥接 |
-| memory/memory_store.py | 549 | 低 | FAISS向量存储+SimpleEmbedder |
+| 文件 | 行数 | 复杂度风险 | 核心职责 |
+|------|------|-----------|---------|
+| agent.py | 946 | 中 | Agent主循环 + 5种模型分支 + SpecGuard |
+| memory/memory_manager.py | 1146 | 高 | 记忆调度+上下文构建+自动学习+状态协调 |
+| memory/memory_store.py | 666 | 低 | FAISS向量存储 2048d + 双级嵌入器 |
 | memory/graph_store.py | 433 | 中 | Neo4j图+Cypher查询+TaskIndex |
 | model/adapters.py | ~800 | 中 | 5个适配器的消息构建+解析 |
 | actions/handler*.py | ~1500 | 中 | 6个平台/模型专用处理器 |
-| memory/task_index.py | 109 | 低 | FAISS+EmbeddingClient任务索引 |
+| clarify.py | 281 | 低 | HITL任务澄清子代理 |
+| memory/state_manager.py | 101 | 低 | 统一状态追踪 |
+| memory/task_index.py | 108 | 低 | FAISS+EmbeddingClient任务索引 |
 | memory/embedding_client.py | 48 | 低 | embedding-3 HTTP客户端 |
-| clarify.py | 55 | 低 | ⚠️ 孤立/重复代码 |
-| **核心总计** | **~5450** | | |
+| **核心总计** | **~6000** | | |
 
 ---
 
-*本文档基于 2026-05-03 对 `phone_agent/` 全部源码的逐文件审计，覆盖所有 30+ 源文件的完整分析。*
+## 十一、环境变量与配置
+
+| 变量 | 默认值 | 用途 |
+|------|--------|------|
+| `PHONE_AGENT_BASE_URL` | `http://localhost:8000/v1` | 模型 API 端点 |
+| `PHONE_AGENT_MODEL` | `autoglm-phone-9b` | 模型名称 |
+| `PHONE_AGENT_API_KEY` | `EMPTY` | API 密钥 |
+| `PHONE_AGENT_MAX_STEPS` | `100` | 每任务最大步数 |
+| `PHONE_AGENT_DEVICE_ID` | 自动检测 | ADB 设备 ID |
+| `PHONE_AGENT_DEVICE_TYPE` | `adb` | `adb` / `hdc` / `ios` |
+| `PHONE_AGENT_WDA_URL` | `http://localhost:8100` | iOS WebDriverAgent URL |
+| `PHONE_AGENT_LANG` | `cn` | 提示词语言 `cn`/`en` |
+| `PHONE_AGENT_MODEL_TYPE` | `auto` | 模型类型（覆盖自动检测） |
+| `NEO4J_URI` | — | Neo4j 连接 URI |
+| `NEO4J_USER` | — | Neo4j 用户名 |
+| `NEO4J_PASSWORD` | — | Neo4j 密码 |
+| `NEO4J_DATABASE` | — | Neo4j 数据库名 |
+| `EMBEDDING_API_KEY` | — | embedding-3 API 密钥 |
+
+---
+
+*本文档基于 2026-05-03 对 `phone_agent/` 全部 46 个源文件的逐文件审计 + 15+ commits 的变更追踪。*
+*Architecture diagrams: [01-system-architecture.svg](docs/diagrams/01-system-architecture.svg), [02-execution-flow.svg](docs/diagrams/02-execution-flow.svg), [03-memory-system.svg](docs/diagrams/03-memory-system.svg)*
