@@ -380,7 +380,7 @@ class PhoneAgent:
         print(f"\n{'─' * 50}")
         print(f"🛑 [SpecGuard] 模型试图跳过规格询问，已拦截")
         print(f"   模型原计划: {thinking[:80]}...")
-        print(f"   强制执行: Interact → {question}")
+        print(f"   强制��为: Interact")
         print(f"{'─' * 50}")
 
         return {
