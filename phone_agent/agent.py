@@ -402,7 +402,7 @@ class PhoneAgent:
             # [HITL Active Clarification]
             if is_first:
                 max_sim = context_data.get("max_similarity", 0.0)
-                if max_sim < 0.75:  # 提高阈��，更���易触发主��提问
+                if max_sim < 0.65:  # lower threshold for better HITL trigger rate  # 提高阈��，更���易触发主��提问
                     clarified_task = self._clarify_task_if_needed(user_prompt or self._current_task, screenshot.base64_data, current_app)
                     if clarified_task != (user_prompt or self._current_task):
                         user_prompt = clarified_task
