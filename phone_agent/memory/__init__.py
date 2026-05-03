@@ -10,6 +10,7 @@ Inspired by TeleMem (https://github.com/TeleAI-UAGI/TeleMem)
 from .memory_store import MemoryStore, Memory, MemoryType, ShoppingMetadata, GraphMetadata
 from .graph_store import GraphStore
 from .memory_manager import MemoryManager
+from .state_manager import StateManager
 
 __all__ = [
     "MemoryStore",
@@ -19,6 +20,7 @@ __all__ = [
     "GraphMetadata",
     "GraphStore",
     "MemoryManager",
+    "StateManager",
 ]
 
 

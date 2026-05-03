@@ -80,7 +80,9 @@ class PhoneAgent:
         agent_config: AgentConfig | None = None,
         confirmation_callback: Callable[[str], bool] | None = None,
         takeover_callback: Callable[[str], None] | None = None,
+        clarification_callback: Callable[[str], str] | None = None,
     ):
+        self.clarification_callback = clarification_callback
         self.model_config = model_config or ModelConfig()
         self.agent_config = agent_config or AgentConfig()
 
@@ -201,6 +203,7 @@ class PhoneAgent:
         self._step_count = 0
         self._current_task = task
         self._last_state_hash: str | None = None
+        self._last_user_reply: str | None = None
 
         # Clear action history for QwenVL handler/adapter
         if self._specialized_handler is not None and hasattr(self._specialized_handler, 'clear_history'):
@@ -283,6 +286,67 @@ class PhoneAgent:
         self._context = []
         self._step_count = 0
 
+
+    def _clarify_task_if_needed(self, task: str, image_base64: str, current_app: str) -> str:
+        if self.agent_config.verbose:
+            print(f"🤔 任务置信度较低，评估是否需要主动澄清 (HITL)...")
+
+        prompt = (
+            f"用户下达了一个手机操作任务：「{task}」。\n"
+            f"当前所在APP：{current_app}\n"
+            "请判断这个任务是否足够清晰、明确，能够直接执行？\n"
+            "如果任务模糊（例如：想买东西但没说具体买什么、想发消息但没说发给谁/发什么、目标不明确等），"
+            "请回复需要向用户澄清的问题，格式必须为：'CLARIFY: 你的问题'\n"
+            "如果任务已经足够清晰（包含具体目标或意图明确），请直接回复：'CLEAR'\n"
+            "请严格遵循上述格式，不要输出其他多余内容。"
+        )
+        messages = [
+            {"role": "system", "content": "你是一个严谨的手机助手任务分析员。"},
+            {"role": "user", "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_base64}"}}
+            ]}
+        ]
+        try:
+            # Use the raw client to avoid stream formatting issues
+            completion = self.model_client.client.chat.completions.create(
+                messages=messages,
+                model=self.model_client.config.model_name,
+                temperature=0.1,  # Low temp for logic task
+            )
+            res_content = completion.choices[0].message.content.strip()
+            if res_content.startswith("CLARIFY:"):
+                question = res_content[8:].strip()
+                print(f"\n🙋 [主动提问] {question}")
+
+                user_answer = ""
+                import sys
+                if self.clarification_callback:
+                    user_answer = self.clarification_callback(question)
+                elif sys.stdout.isatty():
+                    user_answer = input(">>> (请输入补充信息，或直接回车跳过): ")
+
+                if user_answer and user_answer.strip():
+                    # Reconstruct task
+                    reconstruct_prompt = (
+                        f"原任务：「{task}」\n"
+                        f"助手提问：「{question}」\n"
+                        f"用户补充：「{user_answer}」\n"
+                        "请根据上述信息，重写出一个完整、清晰的任务指令。直接输出重写后的指令，不要有任何前缀。"
+                    )
+                    recon_response = self.model_client.request([
+                        {"role": "system", "content": "你是一个指令重写专家。"},
+                        {"role": "user", "content": reconstruct_prompt}
+                    ])
+                    new_task = recon_res_content
+                    print(f"✨ 任务已重组: {new_task}\n")
+                    return new_task
+        except Exception as e:
+            if self.agent_config.verbose:
+                print(f"⚠️ 任务澄清环节出错: {e}")
+
+        return task
+
     def _execute_step(
         self, user_prompt: str | None = None, is_first: bool = False
     ) -> StepResult:
@@ -313,23 +377,44 @@ class PhoneAgent:
             mode = context_data.get("mode", "explore")
             current_state_id = context_data.get("current_state_id")
 
+            # [HITL Active Clarification]
+            if is_first:
+                max_sim = context_data.get("max_similarity", 0.0)
+                if max_sim < 0.60:
+                    clarified_task = self._clarify_task_if_needed(user_prompt or self._current_task, screenshot.base64_data, current_app)
+                    if clarified_task != (user_prompt or self._current_task):
+                        user_prompt = clarified_task
+                        self._current_task = clarified_task
+                        # Re-evaluate memory with clarified task
+                        context_data = self.memory_manager.locate_and_get_context(ui_hash, semantic_layout, user_prompt)
+                        mode = context_data.get("mode", "explore")
+                        current_state_id = context_data.get("current_state_id")
+
             if mode == "navigate" and context_data.get("next_actions"):
                 # Fast track: return the highest confidence action directly without VLM inference
                 best_action = context_data["next_actions"][0]
-                action = {
-                    "_metadata": "do",
-                    "action_type": best_action["type"],
-                }
-                if best_action.get("target"):
-                    action["element"] = best_action["target"]
 
-                # Quick parse params
-                try:
-                    import ast
-                    params = ast.literal_eval(best_action.get("target_desc", "{}"))
-                    action.update(params)
-                except:
-                    pass
+                # Check confidence threshold before executing
+                action_confidence = best_action.get("confidence", 1.0)
+                if action_confidence < 0.8:
+                    # Confidence too low, fall back to explore mode
+                    mode = "explore"
+                    print(f"[Navigate] Confidence {action_confidence:.2f} < 0.8, falling back to explore mode")
+                else:
+                    action = {
+                        "_metadata": "do",
+                        "action_type": best_action["type"],
+                    }
+                    if best_action.get("target"):
+                        action["element"] = best_action["target"]
+
+                    # Quick parse params
+                    try:
+                        import ast
+                        params = ast.literal_eval(best_action.get("target_desc", "{}"))
+                        action.update(params)
+                    except:
+                        pass
 
                 print(f"🚀 Navigation Mode Triggered: Found Graph Shortcut: {best_action['type']}")
 
@@ -409,6 +494,9 @@ class PhoneAgent:
 
                 screen_info = MessageBuilder.build_screen_info(current_app)
                 text_content = f"{user_prompt}\n\n{screen_info}"
+                if getattr(self, "_last_user_reply", None):
+                    text_content += f"\n\n[用户补充约束]: {self._last_user_reply}"
+                    self._last_user_reply = None
 
                 self._context.append(
                     MessageBuilder.create_user_message(
@@ -418,6 +506,9 @@ class PhoneAgent:
             else:
                 screen_info = MessageBuilder.build_screen_info(current_app)
                 text_content = f"** Screen Info **\n\n{screen_info}"
+                if getattr(self, "_last_user_reply", None):
+                    text_content += f"\n\n[用户补充约束]: {self._last_user_reply}"
+                    self._last_user_reply = None
 
                 self._context.append(
                     MessageBuilder.create_user_message(
@@ -669,6 +760,12 @@ class PhoneAgent:
                     self._current_task
                 )
             self._prev_state_id = current_state_id
+
+
+        # Capture interact reply
+        if action.get("action_type") == "Interact" or action.get("action") == "Interact" or (action.get("_metadata") == "do" and action.get("action") == "Interact"):
+            if hasattr(result, "message") and result.message:
+                self._last_user_reply = result.message
 
         # Check if finished
         finished = action.get("_metadata") == "finish" or result.should_finish

@@ -286,8 +286,23 @@ class ActionHandler:
 
     def _handle_interact(self, action: dict, width: int, height: int) -> ActionResult:
         """Handle interaction request (user choice needed)."""
-        # This action signals that user input is needed
-        return ActionResult(True, False, message="User interaction required")
+        question = action.get("message", action.get("question", "需要用户做出选择，请问您的偏好是什么？"))
+        
+        import sys
+        user_answer = ""
+        # 尝试使用回调
+        if hasattr(self, 'takeover_callback') and self.takeover_callback:
+            user_answer = self.takeover_callback(question)
+
+        if not user_answer and sys.stdout.isatty():
+            # Use chr(10) instead of literal newline strings to avoid python syntax error with bash heredoc substitution
+            print(chr(10) + chr(128167) + " [AI 提问] " + str(question))
+            user_answer = input(">>> (请输入您的选择): ")
+            
+        if not user_answer or not user_answer.strip():
+            user_answer = "随便选一个"
+            
+        return ActionResult(True, False, message=user_answer.strip())
 
     def _send_keyevent(self, keycode: str) -> None:
         """Send a keyevent to the device."""

@@ -148,17 +148,16 @@ def process_task_directory(task_dir: Path, neo4j_session=None, memory_store=None
                     metadata=meta
                 )
 
-            # Only link START/END edges for the first variant ID
-            # (all variants share the same states/actions — only description differs)
-            first_task_id = task_ids[0] if task_ids else None
-
+            # Link START/END edges for ALL variant IDs
+            # (all variants share the same states/actions)
             # 2. Edges and Actions
-            if i == 0 and first_task_id:
-                neo4j_session.run(
-                    "MATCH (t:TaskTarget {target_id: $task_id}), (s:UIState {state_id: $state_id}) "
-                    "MERGE (t)-[:STARTS_AT]->(s)",
-                    task_id=first_task_id, state_id=state_id
-                )
+            if i == 0:
+                for t_id in task_ids:
+                    neo4j_session.run(
+                        "MATCH (t:TaskTarget {target_id: $task_id}), (s:UIState {state_id: $state_id}) "
+                        "MERGE (t)-[:STARTS_AT]->(s)",
+                        task_id=t_id, state_id=state_id
+                    )
 
             if prev_state_id and i - 1 < len(actions_data.get('actions', [])):
                 # Connect previous state to action, and action to this state
@@ -191,13 +190,14 @@ def process_task_directory(task_dir: Path, neo4j_session=None, memory_store=None
                     s1_id=prev_state_id, a_id=action_id, s2_id=state_id
                 )
 
-            if i == len(state_images) - 1 and first_task_id:
+            if i == len(state_images) - 1:
                 # End state
-                neo4j_session.run(
-                    "MATCH (t:TaskTarget {target_id: $task_id}), (s:UIState {state_id: $state_id}) "
-                    "MERGE (t)-[:ENDS_AT {success: true}]->(s)",
-                    task_id=first_task_id, state_id=state_id
-                )
+                for t_id in task_ids:
+                    neo4j_session.run(
+                        "MATCH (t:TaskTarget {target_id: $task_id}), (s:UIState {state_id: $state_id}) "
+                        "MERGE (t)-[:ENDS_AT {success: true}]->(s)",
+                        task_id=t_id, state_id=state_id
+                    )
 
             prev_state_id = state_id
 

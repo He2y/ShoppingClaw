@@ -1,6 +1,7 @@
 import os
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
+from .task_index import TaskIndex
 
 try:
     from neo4j import GraphDatabase
@@ -27,9 +28,31 @@ class GraphStore:
                 self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
                 # Test connection
                 self.driver.verify_connectivity()
+                
+                # Initialize FAISS TaskIndex
+                self.task_index = TaskIndex()
+                if not self.task_index.load():
+                    print("FAISS cache empty, triggering rebuild from Neo4j...")
+                    self._rebuild_task_index()
             except Exception as e:
-                print(f"Warning: Could not connect to Neo4j. Graph memory disabled. Error: {e}")
-                self.driver = None
+                print(f"✗ Neo4j connection failed: {e}")
+                raise RuntimeError(f"Neo4j is required but unavailable. Please ensure Neo4j is running at {uri}") from e
+
+
+    def _rebuild_task_index(self):
+        """Fetch all TaskTargets from Neo4j and rebuild the FAISS index."""
+        if not self.driver:
+            return
+        
+        query = "MATCH (t:TaskTarget) RETURN t.target_id AS id, t.description AS desc"
+        descriptions = []
+        with self.driver.session(database=self.database) as session:
+            for record in session.run(query):
+                descriptions.append((record["id"], record["desc"]))
+                
+        if descriptions:
+            self.task_index.rebuild_from_neo4j(descriptions)
+            print(f"✅ Rebuilt TaskIndex with {len(descriptions)} tasks")
 
     def close(self):
         if self.driver:
@@ -216,7 +239,7 @@ class GraphStore:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [r for _, r in scored[:top_k]]
 
-    def get_task_trajectory(self, task_id: str) -> Dict[str, Any]:
+    def get_task_trajectory(self, task_id: str, max_steps: int = 20) -> Dict[str, Any]:
         """
         Get the full action sequence for a completed task.
         Returns {description, app, steps: [{state_id, action_type, action_target}...], state_ids: [...]}

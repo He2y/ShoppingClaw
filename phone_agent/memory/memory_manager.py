@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any
 
 from .memory_store import MemoryStore, Memory, MemoryType
+from .state_manager import StateManager
 
 
 # Patterns for extracting user preferences
@@ -82,6 +83,9 @@ class MemoryManager:
         from .graph_store import GraphStore
         self.graph_store = GraphStore()
 
+        # Initialize StateManager (Unified State Tracking)
+        self.state_manager = StateManager()
+
         # Session history for context
         self.session_history: list[dict] = []
 
@@ -93,13 +97,13 @@ class MemoryManager:
         self._session_contacts: set[str] = set()
         self._session_apps: set[str] = set()
 
-        # Track task execution state for online graph learning
-        self._task_start_state_id: str | None = None
-        self._task_end_state_id: str | None = None
-        self._current_state_id: str | None = None
-
     def start_task(self, task: str, start_state_id: str | None = None):
-        """Called when a new task begins."""
+        """Called when a new task begins.
+
+        Args:
+            task: 任��描述
+            start_state_id: 任务开始��的状���ID
+        """
         self.current_task = task
         self.task_start_time = datetime.now().isoformat()
         self.session_history.clear()
@@ -107,9 +111,10 @@ class MemoryManager:
         # Reset session tracking
         self._session_contacts.clear()
         self._session_apps.clear()
-        self._task_start_state_id = start_state_id
-        self._task_end_state_id = None
-        self._current_state_id = start_state_id
+
+        # Initialize state tracking
+        if start_state_id:
+            self.state_manager.start_task(start_state_id)
 
         if self.enable_auto_extract:
             self._extract_from_task(task)
@@ -329,7 +334,7 @@ class MemoryManager:
         # 查找现有绑定
         existing_binding = None
         for memory in self.store.memories.values():
-            if memory.memory_type == MemoryType.CONTACT_APP_BINDNG:
+            if memory.memory_type == MemoryType.CONTACT_APP_BINDING:
                 if memory.metadata.get("binding_key") == binding_key:
                     existing_binding = memory
                     break
@@ -346,7 +351,7 @@ class MemoryManager:
             # 创建新绑定
             self.store.add(
                 content=f"联系人应用绑定: {contact} → {app}",
-                memory_type=MemoryType.CONTACT_APP_BINDNG,
+                memory_type=MemoryType.CONTACT_APP_BINDING,
                 metadata={
                     "contact": contact,
                     "app": app,
@@ -416,6 +421,19 @@ class MemoryManager:
     
     def _extract_from_task(self, task: str):
         """Extract memories from user task description."""
+        # Extract general shopping preferences
+        import re
+        shopping_prefs = [
+            r'(?:想要|买|要|选择|看)(?:个|一台|一部)?(.*?(?:品牌|牌子|便宜|贵|新款|折叠屏|全面屏|大杯|小杯|自营|旗舰店|百亿补贴))',
+            r'(最新款|最便宜|性价比最高|销量最高|官方自营|百亿补贴)'
+        ]
+        for pattern in shopping_prefs:
+            matches = re.findall(pattern, task, re.IGNORECASE)
+            for match in matches:
+                pref = match.strip() if isinstance(match, str) else match[0].strip()
+                if pref and len(pref) >= 2:
+                    self.add_user_preference(f"倾向于选择 {pref}", category="shopping", importance=0.7)
+
         # Extract contact mentions
         for pattern in PREFERENCE_PATTERNS["contact"]:
             matches = re.findall(pattern, task, re.IGNORECASE)
@@ -720,7 +738,7 @@ class MemoryManager:
         contact_app_stats = {}  # {contact: {app: count}}
         
         for memory in self.store.memories.values():
-            if memory.memory_type == MemoryType.CONTACT_APP_BINDNG:
+            if memory.memory_type == MemoryType.CONTACT_APP_BINDING:
                 contact = memory.metadata.get("contact", "")
                 app = memory.metadata.get("app", "")
                 use_count = memory.metadata.get("use_count", 1)
@@ -811,6 +829,18 @@ class MemoryManager:
             for hint in task_app_hints[:3]:
                 context_parts.append(f"  {hint}")
         
+        # Add shopping preferences
+        shopping_prefs = []
+        for memory in memories:
+            if memory.memory_type == MemoryType.USER_PREFERENCE and memory.metadata.get("category") == "shopping":
+                shopping_prefs.append(memory.content)
+        
+        if shopping_prefs:
+            context_parts.append("")
+            context_parts.append("**🛒 购物偏好:**")
+            for pref in shopping_prefs[:3]:
+                context_parts.append(f"  {pref}")
+
         # 6. 其他记忆（低优先级）
         other_context = []
         for memory in memories:
@@ -839,6 +869,7 @@ class MemoryManager:
         2. FAISS 向量语义 fallback → 仅补充 UI state 的探索上下文
         """
         context_data = {
+            "max_similarity": 0.0,
             "mode": "explore",
             "semantic_context": self.get_relevant_context(task),
             "next_actions": [],
@@ -853,6 +884,7 @@ class MemoryManager:
             if similar_tasks:
                 best = similar_tasks[0]
                 similarity = best.get("similarity", 0.0)
+                context_data["max_similarity"] = similarity
                 task_id = best.get("task_id", "")
                 task_desc = best.get("description", "")
 
@@ -867,9 +899,12 @@ class MemoryManager:
                         context_data["next_actions"] = [first_action]
                         print(f"🚀 语义命中: 「{task_desc}」(相似度={similarity:.2f})")
                         return context_data
+                    else:
+                        print(f"⚠️ 语义命中但无有效轨迹: 「{task_desc}」(相似度={similarity:.2f})，回退到 Explore 模式")
+                        similar_tasks = [t for t in similar_tasks if self.graph_store.get_task_trajectory(t.get("task_id", "")).get("steps", [])]
 
                 # 中/低置信度匹配：提取压缩轨迹注入上下文，交由大模型推理
-                if similarity >= 0.60:
+                if similar_tasks and similar_tasks[0].get("similarity", 0.0) >= 0.60:
                     condensed_text = self._condense_trajectory_context(similar_tasks)
                     context_data["semantic_context"] = (
                         f"{condensed_text}\n"

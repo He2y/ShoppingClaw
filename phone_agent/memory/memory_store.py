@@ -72,7 +72,7 @@ class MemoryType(Enum):
 
     # Contact-App association with frequency (联系人-应用关联及频率)
     # 用于记录：联系某人时使用哪个应用，以及使用次数
-    CONTACT_APP_BINDNG = "contact_app_binding"
+    CONTACT_APP_BINDING = "contact_app_binding"
 
     # Shopping-specific semantic types
     PRODUCT_PREFERENCE = "product_preference"
