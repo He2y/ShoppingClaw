@@ -338,7 +338,7 @@ class PhoneAgent:
                         {"role": "system", "content": "你是一个指令重写专家。"},
                         {"role": "user", "content": reconstruct_prompt}
                     ])
-                    new_task = recon_res_content
+                    new_task = recon_response.raw_content.strip() if hasattr(recon_response, 'raw_content') else str(recon_response).strip()
                     print(f"✨ 任务已重组: {new_task}\n")
                     return new_task
         except Exception as e:
@@ -380,7 +380,7 @@ class PhoneAgent:
             # [HITL Active Clarification]
             if is_first:
                 max_sim = context_data.get("max_similarity", 0.0)
-                if max_sim < 0.60:
+                if max_sim < 0.75:  # 提高阈��，更���易触发主��提问
                     clarified_task = self._clarify_task_if_needed(user_prompt or self._current_task, screenshot.base64_data, current_app)
                     if clarified_task != (user_prompt or self._current_task):
                         user_prompt = clarified_task
