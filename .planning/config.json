@@ -1,0 +1,11 @@
+{
+  "workflow": {
+    "mode": "interactive",
+    "commit_docs": true
+  },
+  "gates": {
+    "require_plan_before_execute": true,
+    "require_tests": true
+  },
+  "model_profile": "balanced"
+}
