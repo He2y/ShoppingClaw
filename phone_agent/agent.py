@@ -296,25 +296,99 @@ class PhoneAgent:
         self._step_count = 0
 
 
-    def _detect_critical_scenario(self, current_app: str, screenshot_base64: str) -> list[str]:
-        """
-        Detect if current page belongs to critical decision nodes
-        (e.g. product spec selection, multiple ambiguous options).
-        Returns list of critical hints to be prepended to context.
-        """
-        critical_hints = []
+    # ------------------------------------------------------------------
+    # Spec-page action guard: apps where skipping Interact is critical
+    # ------------------------------------------------------------------
+    _SHOPPING_APPS = [
+        "淘宝", "京东", "天猫", "拼多多", "美团", "饿了么",
+        "瑞幸", "星巴克", "叮咚买菜", "盒马",
+        "Taobao", "JD", "Tmall", "Meituan", "Eleme",
+    ]
 
-        # Product specification selection pages (shopping/food delivery apps)
-        shopping_apps = ["淘宝", "京东", "天猫", "拼多多", "美团", "饿了么", "瑞幸", "星巴克",
-                         "Taobao", "JD", "Tmall", "Meituan", "Eleme", "Luckin", "Starbucks"]
+    _SPEC_KEYWORDS = [
+        "规格", "颜色", "容量", "尺码", "口味", "温度", "糖度",
+        "浓度", "选配", "可选规格", "机身颜色", "存储容量",
+        "套餐类型", "配送方式",
+    ]
 
-        if any(app in (current_app or "") for app in shopping_apps):
-            critical_hints.append(
-                "【最高优先级规则】如果当前页面包含商品规格选择（颜色、尺码、口味、温度、糖度等），"
-                "且用户未在原始指令中明确指定这些参数，你必须立即执行 "
-                "do(action=\"Interact\", message=\"请问您需要什么规格/颜色/配置？\") "
-                "询问用户。严禁接受系统默认选项或自行决定！"
-            )
+    _PURCHASE_KEYWORDS = [
+        "领券购买", "立即购买", "加入购物车", "提交订单",
+        "确认下单", "结算", "选好了", "确定", "立即抢购",
+    ]
+
+    def _detect_critical_scenario(
+        self, current_app: str, screenshot_base64: str
+    ) -> list[str]:
+        """Return hints injected into VLM context when on a shopping spec page."""
+        if not any(app in (current_app or "") for app in self._SHOPPING_APPS):
+            return []
+
+        return [
+            "🚨 你正在商品详情/规格选择页面。用户未指定完整规格参数。\n"
+            "唯一正确操作：do(action=\"Interact\", message=\"请问您需要哪个规格？\")\n"
+            "如果你在想「我帮他选个默认的」——这是错误的，会导致用户收到不想要的商品。\n"
+            "立即执行 Interact，不要点任何购买/加入购物车按钮！"
+        ]
+
+    def _spec_guard_check(
+        self,
+        action: dict,
+        thinking: str,
+        current_app: str,
+    ) -> dict | None:
+        """
+        Code-level safety net: if the model is about to click purchase/confirm
+        on a spec page without having issued Interact in this step, override
+        the action with a forced Interact.
+
+        Returns a replacement action dict, or None if the action is safe.
+        """
+        if not any(app in (current_app or "") for app in self._SHOPPING_APPS):
+            return None
+
+        # Already issuing Interact – allow
+        if action.get("action") == "Interact" or action.get("action_type") == "Interact":
+            return None
+
+        # Check whether the model's thinking discusses specs
+        thinking_mentions_specs = any(
+            kw in thinking for kw in self._SPEC_KEYWORDS
+        )
+        if not thinking_mentions_specs:
+            return None
+
+        # Check whether the thinking mentions a purchase intent
+        thinking_has_purchase_intent = any(
+            kw in thinking for kw in self._PURCHASE_KEYWORDS
+        )
+        if not thinking_has_purchase_intent:
+            return None
+
+        # Build a contextual question from the thinking
+        question = "请问您需要什么规格和配置？"
+        if "颜色" in thinking and "容量" in thinking:
+            question = "这里有多种颜色和容量可选，请问您需要哪个配置？"
+        elif "颜色" in thinking:
+            question = "有多种颜色可选，请问您喜欢哪个颜色？"
+        elif "容量" in thinking:
+            question = "有多种容量可选，请问您需要多大容量？"
+        elif "温度" in thinking:
+            question = "请问您需要什么温度？"
+        elif "糖度" in thinking:
+            question = "请问您需要什么糖度？"
+
+        print(f"\n{'─' * 50}")
+        print(f"🛑 [SpecGuard] 模型试图跳过规格询问，已拦截")
+        print(f"   模型原计划: {thinking[:80]}...")
+        print(f"   强制执行: Interact → {question}")
+        print(f"{'─' * 50}")
+
+        return {
+            "_metadata": "do",
+            "action": "Interact",
+            "action_type": "Interact",
+            "message": question,
+        }
 
         return critical_hints
 
@@ -662,6 +736,11 @@ class PhoneAgent:
 
             # Remove image from context to save space
             self._context[-1] = MessageBuilder.remove_images_from_message(self._context[-1])
+
+            # SpecGuard: prevent model from skipping Interact on spec pages
+            guarded = self._spec_guard_check(action, thinking, current_app)
+            if guarded is not None:
+                action = guarded
 
             # Execute action
             try:
