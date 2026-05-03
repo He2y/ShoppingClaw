@@ -378,6 +378,33 @@ class ActionHandler:
         input(f"{message}\nPress Enter after completing manual operation...")
 
 
+def _extract_function_call(response: str) -> str:
+    """Extract just the do(...) or finish(...) call, stripping trailing natural language.
+
+    Uses bracket-depth tracking to find the matching closing paren, then discards
+    everything after it.  This handles cases where the VLM appends explanation
+    text after the action, e.g.:
+        do(action="Tap", element=[499,331])来点击第一个商品
+        → do(action="Tap", element=[499,331])
+    """
+    for prefix in ("do(", "finish("):
+        idx = response.find(prefix)
+        if idx == -1:
+            continue
+        depth = 0
+        for i in range(idx, len(response)):
+            ch = response[i]
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+                if depth == 0:
+                    return response[: i + 1]
+        # Unclosed paren – return as-is, let ast.parse report the error
+        break
+    return response
+
+
 def parse_action(response: str) -> dict[str, Any]:
     """
     Parse action from model response.
@@ -408,6 +435,10 @@ def parse_action(response: str) -> dict[str, Any]:
         
         # 防御性清理：去掉可能残留的 XML 标签（如 </answer>、</think> 等）
         response = re.sub(r'</?(answer|think|thought)>', '', response).strip()
+
+        # 提取干净的动作调用：移除 do()/finish() 后面的自然语言文本
+        # 例如: "do(action="Tap", element=[499,331])来点击..." -> "do(action="Tap", element=[499,331])"
+        response = _extract_function_call(response)
         
         # 🔧 处理 <tool_call> 格式（作为 fallback，支持 MAI-UI/QwenVL 的 tool_call 格式）
         # 例如: <tool_call>{"name":"mobile_use","arguments":{"action":"click","coordinate":[845,383]}}</tool_call>

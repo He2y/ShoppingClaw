@@ -107,6 +107,8 @@ class MemoryManager:
         self.current_task = task
         self.task_start_time = datetime.now().isoformat()
         self.session_history.clear()
+        self._task_start_state_id = start_state_id
+        self._current_state_id = start_state_id
 
         # Reset session tracking
         self._session_contacts.clear()
