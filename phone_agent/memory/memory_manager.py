@@ -946,7 +946,7 @@ class MemoryManager:
 
                 # 中/低置信度匹配：提取压缩轨迹注入上下文，交由大模型推理
                 if similar_tasks and similar_tasks[0].get("similarity", 0.0) >= 0.60:
-                    condensed_text = self._condense_trajectory_context(similar_tasks)
+                    condensed_text = self._condense_trajectory_context(similar_tasks, current_task=task)
                     context_data["semantic_context"] = (
                         f"{condensed_text}\n"
                         f"（注意：当前界面可能与历史轨迹不同，请根据实际截图调整动作）\n"
@@ -974,7 +974,7 @@ class MemoryManager:
 
         return context_data
 
-    def _condense_trajectory_context(self, similar_tasks: list[dict]) -> str:
+    def _condense_trajectory_context(self, similar_tasks: list[dict], current_task: str = "") -> str:
         """
         将相似任务凝练成≤200字的行动参考。
         格式：app→动作1→动作2→动作3→动作4→动作5
