@@ -1,0 +1,186 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 820" width="960" height="820">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+  </style>
+  <defs>
+    <marker id="arrow-main" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#059669"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
+    </marker>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="960" height="820" fill="#ffffff"/>
+
+  <text x="480" y="30" text-anchor="middle" fill="#1e40af" font-size="18" font-weight="700">ShoppingGraph 在线执行流程</text>
+  <text x="480" y="48" text-anchor="middle" fill="#6b7280" font-size="10">ShoppingGraphAgent.execute() — 意图驱动 + 图谱引导 + 增量学习</text>
+
+  <!-- ====== ROW 1: 用户输入 ====== -->
+  <rect x="280" y="65" width="400" height="42" rx="21" fill="#1e40af" filter="url(#shadow)"/>
+  <text x="480" y="91" text-anchor="middle" fill="#ffffff" font-size="14" font-weight="600">用户输入意图: "买500元以内的蓝牙耳机"</text>
+  <line x1="480" y1="107" x2="480" y2="130" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow-main)"/>
+
+  <!-- ====== ROW 2: 意图解析 ====== -->
+  <rect x="230" y="132" width="500" height="88" rx="10" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="480" y="154" text-anchor="middle" fill="#1e40af" font-size="14" font-weight="700">Step 1: 意图解析</text>
+
+  <rect x="250" y="162" width="148" height="28" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1"/>
+  <text x="324" y="181" text-anchor="middle" fill="#2563eb" font-size="10">意图分类 → "搜索购买"</text>
+
+  <rect x="406" y="162" width="148" height="28" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1"/>
+  <text x="480" y="181" text-anchor="middle" fill="#2563eb" font-size="10">实体提取 → "蓝牙耳机"</text>
+
+  <rect x="562" y="162" width="148" height="28" rx="6" fill="#ffffff" stroke="#93c5fd" stroke-width="1"/>
+  <text x="636" y="181" text-anchor="middle" fill="#2563eb" font-size="10">约束识别 → "≤500元"</text>
+
+  <!-- Helper services -->
+  <rect x="310" y="193" width="158" height="22" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="0.8"/>
+  <text x="389" y="208" text-anchor="middle" fill="#7c3aed" font-size="9">BPL: 匹配 "search_and_buy" 模式</text>
+
+  <rect x="492" y="193" width="158" height="22" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="0.8"/>
+  <text x="571" y="208" text-anchor="middle" fill="#059669" font-size="9">CKG: 解析类目 → 数码/耳机</text>
+
+  <line x1="480" y1="220" x2="480" y2="243" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow-main)"/>
+
+  <!-- ====== ROW 3: 路径检索 ====== -->
+  <rect x="230" y="245" width="500" height="100" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="480" y="267" text-anchor="middle" fill="#047857" font-size="14" font-weight="700">Step 2: 三阶段路径检索</text>
+
+  <rect x="248" y="278" width="148" height="36" rx="7" fill="#ffffff" stroke="#a7f3d0" stroke-width="1.2"/>
+  <text x="322" y="294" text-anchor="middle" fill="#059669" font-size="11" font-weight="600">① 向量检索</text>
+  <text x="322" y="308" text-anchor="middle" fill="#6b7280" font-size="8">意图嵌入→FAISS Top-K</text>
+
+  <rect x="406" y="278" width="148" height="36" rx="7" fill="#ffffff" stroke="#a7f3d0" stroke-width="1.2"/>
+  <text x="480" y="294" text-anchor="middle" fill="#059669" font-size="11" font-weight="600">② 页面过滤</text>
+  <text x="480" y="308" text-anchor="middle" fill="#6b7280" font-size="8">当前页面可达路径</text>
+
+  <rect x="564" y="278" width="148" height="36" rx="7" fill="#ffffff" stroke="#a7f3d0" stroke-width="1.2"/>
+  <text x="638" y="294" text-anchor="middle" fill="#059669" font-size="11" font-weight="600">③ 综合排序</text>
+  <text x="638" y="308" text-anchor="middle" fill="#6b7280" font-size="8">成功率×步数×耗时</text>
+
+  <text x="480" y="338" text-anchor="middle" fill="#6b7280" font-size="9">候选路径: home→search→result→detail→cart→checkout (预估 6 步, 成功率 92%)</text>
+
+  <line x1="480" y1="345" x2="480" y2="355"/>
+  <!-- Decision diamond: 是否有候选路径? -->
+  <line x1="480" y1="355" x2="480" y2="370" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow-main)"/>
+
+  <!-- ====== Decision: has candidates? ====== -->
+  <polygon points="480,373 560,407 480,441 400,407" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.5"/>
+  <text x="480" y="403" text-anchor="middle" fill="#991b1b" font-size="11" font-weight="600">有候选?</text>
+  <text x="480" y="416" text-anchor="middle" fill="#991b1b" font-size="8">→ 路径 ≥ 1 条?</text>
+
+  <!-- YES branch (down) -->
+  <text x="492" y="450" fill="#059669" font-size="9" font-weight="600">YES</text>
+  <line x1="480" y1="441" x2="480" y2="468" stroke="#059669" stroke-width="1.8" marker-end="url(#arrow-green)"/>
+
+  <!-- NO branch (right) -->
+  <text x="568" y="403" fill="#dc2626" font-size="9" font-weight="600">NO</text>
+  <line x1="560" y1="407" x2="680" y2="407" stroke="#dc2626" stroke-width="1.5" marker-end="url(#arrow-red)"/>
+  <rect x="682" y="390" width="170" height="34" rx="7" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.5"/>
+  <text x="767" y="412" text-anchor="middle" fill="#dc2626" font-size="11" font-weight="600">降级：基础VLM执行</text>
+  <path d="M 767,424 C 767,470 390,470 390,580" fill="none" stroke="#dc2626" stroke-width="1.2" stroke-dasharray="4,3"/>
+
+  <!-- ====== ROW 4: 路径执行循环 ====== -->
+  <rect x="180" y="470" width="600" height="115" rx="10" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="480" y="492" text-anchor="middle" fill="#c2410c" font-size="14" font-weight="700">Step 3: 路径执行 (循环遍历每一步)</text>
+
+  <!-- Execution steps inside -->
+  <rect x="200" y="502" width="135" height="46" rx="7" fill="#ffffff" stroke="#fed7aa" stroke-width="1"/>
+  <text x="267" y="520" text-anchor="middle" fill="#c2410c" font-size="10" font-weight="600">页面校验</text>
+  <text x="267" y="538" text-anchor="middle" fill="#6b7280" font-size="8">当前页嵌入 vs 预期节点</text>
+
+  <rect x="355" y="502" width="135" height="46" rx="7" fill="#ffffff" stroke="#fed7aa" stroke-width="1"/>
+  <text x="422" y="520" text-anchor="middle" fill="#c2410c" font-size="10" font-weight="600">执行动作</text>
+  <text x="422" y="538" text-anchor="middle" fill="#6b7280" font-size="8">点击/输入/滑动 → 截图</text>
+
+  <rect x="510" y="502" width="135" height="46" rx="7" fill="#ffffff" stroke="#fed7aa" stroke-width="1"/>
+  <text x="577" y="520" text-anchor="middle" fill="#c2410c" font-size="10" font-weight="600">结果判定</text>
+  <text x="577" y="538" text-anchor="middle" fill="#6b7280" font-size="8">成功→下一步 / 失败→处理</text>
+
+  <line x1="335" y1="525" x2="353" y2="525" stroke="#fdba74" stroke-width="1.2" marker-end="url(#arrow-orange)"/>
+  <line x1="490" y1="525" x2="508" y2="525" stroke="#fdba74" stroke-width="1.2" marker-end="url(#arrow-orange)"/>
+
+  <!-- Page mismatch -->
+  <path d="M 267,548 C 267,572 480,572 480,580" fill="none" stroke="#ea580c" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="370" y="562" fill="#ea580c" font-size="8">页面不匹配→重新规划</text>
+
+  <line x1="480" y1="585" x2="480" y2="610" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow-main)"/>
+
+  <!-- ====== Decision: more steps? ====== -->
+  <polygon points="480,613 560,647 480,681 400,647" fill="#f8fafc" stroke="#94a3b8" stroke-width="1.5"/>
+  <text x="480" y="643" text-anchor="middle" fill="#475569" font-size="11" font-weight="600">还有下一步?</text>
+  <text x="480" y="656" text-anchor="middle" fill="#475569" font-size="8">→ 路径中还有未执行的 step?</text>
+
+  <!-- YES branch (loop back) -->
+  <text x="578" y="643" fill="#059669" font-size="9" font-weight="600">YES</text>
+  <path d="M 560,647 C 630,647 630,555 577,525" fill="none" stroke="#059669" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+
+  <!-- NO branch (down) -->
+  <text x="492" y="688" fill="#2563eb" font-size="9" font-weight="600">NO</text>
+  <line x1="480" y1="681" x2="480" y2="710" stroke="#2563eb" stroke-width="1.8" marker-end="url(#arrow-main)"/>
+
+  <!-- ====== ROW 5: 任务完成 ====== -->
+  <rect x="280" y="712" width="400" height="42" rx="10" fill="#dcfce7" stroke="#86efac" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="480" y="730" text-anchor="middle" fill="#047857" font-size="13" font-weight="700">任务完成 + 增量更新图谱</text>
+  <text x="480" y="747" text-anchor="middle" fill="#059669" font-size="9">更新成功/失败计数 | 衰减旧数据 | 新增发现路径</text>
+
+  <!-- ====== Side annotation: 资源约束 ====== -->
+  <rect x="32" y="132" width="130" height="622" rx="8" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1"/>
+  <text x="97" y="155" text-anchor="middle" fill="#64748b" font-size="9" font-weight="700">性能约束</text>
+
+  <rect x="44" y="168" width="106" height="42" rx="5" fill="#eff6ff" stroke="#bfdbfe" stroke-width="0.8"/>
+  <text x="97" y="184" text-anchor="middle" fill="#2563eb" font-size="9" font-weight="600">意图嵌入</text>
+  <text x="97" y="200" text-anchor="middle" fill="#6b7280" font-size="8">&lt; 5ms</text>
+
+  <rect x="44" y="220" width="106" height="42" rx="5" fill="#f0fdf4" stroke="#a7f3d0" stroke-width="0.8"/>
+  <text x="97" y="236" text-anchor="middle" fill="#059669" font-size="9" font-weight="600">向量检索</text>
+  <text x="97" y="252" text-anchor="middle" fill="#6b7280" font-size="8">&lt; 10ms</text>
+
+  <rect x="44" y="272" width="106" height="42" rx="5" fill="#f0fdf4" stroke="#a7f3d0" stroke-width="0.8"/>
+  <text x="97" y="288" text-anchor="middle" fill="#059669" font-size="9" font-weight="600">路径规划</text>
+  <text x="97" y="304" text-anchor="middle" fill="#6b7280" font-size="8">&lt; 50ms</text>
+
+  <rect x="44" y="324" width="106" height="42" rx="5" fill="#fff7ed" stroke="#fed7aa" stroke-width="0.8"/>
+  <text x="97" y="340" text-anchor="middle" fill="#ea580c" font-size="9" font-weight="600">总检索延迟</text>
+  <text x="97" y="356" text-anchor="middle" fill="#6b7280" font-size="8">&lt; 100ms</text>
+
+  <line x1="44" y1="380" x2="150" y2="380" stroke="#e2e8f0" stroke-width="1"/>
+
+  <rect x="44" y="392" width="106" height="42" rx="5" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.8"/>
+  <text x="97" y="408" text-anchor="middle" fill="#64748b" font-size="9" font-weight="600">存储</text>
+  <text x="97" y="424" text-anchor="middle" fill="#6b7280" font-size="8">&lt; 12 MB</text>
+
+  <rect x="44" y="444" width="106" height="42" rx="5" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.8"/>
+  <text x="97" y="460" text-anchor="middle" fill="#64748b" font-size="9" font-weight="600">向量维度</text>
+  <text x="97" y="476" text-anchor="middle" fill="#6b7280" font-size="8">384d int8</text>
+
+  <rect x="44" y="496" width="106" height="42" rx="5" fill="#f8fafc" stroke="#e2e8f0" stroke-width="0.8"/>
+  <text x="97" y="512" text-anchor="middle" fill="#64748b" font-size="9" font-weight="600">适配模式</text>
+  <text x="97" y="528" text-anchor="middle" fill="#6b7280" font-size="8">量化/压缩/按需</text>
+
+  <!-- ====== Side annotation: failure handling ====== -->
+  <rect x="800" y="470" width="130" height="180" rx="8" fill="#fef2f2" stroke="#fecaca" stroke-width="1"/>
+  <text x="865" y="490" text-anchor="middle" fill="#991b1b" font-size="9" font-weight="700">异常处理策略</text>
+
+  <rect x="812" y="502" width="106" height="35" rx="5" fill="#ffffff" stroke="#fca5a5" stroke-width="0.8"/>
+  <text x="865" y="517" text-anchor="middle" fill="#dc2626" font-size="8" font-weight="600">页面不匹配</text>
+  <text x="865" y="531" text-anchor="middle" fill="#6b7280" font-size="7">重新规划路径</text>
+
+  <rect x="812" y="545" width="106" height="35" rx="5" fill="#ffffff" stroke="#fca5a5" stroke-width="0.8"/>
+  <text x="865" y="560" text-anchor="middle" fill="#dc2626" font-size="8" font-weight="600">连续失败 3 次</text>
+  <text x="865" y="574" text-anchor="middle" fill="#6b7280" font-size="7">触发局部重探索</text>
+
+  <rect x="812" y="588" width="106" height="35" rx="5" fill="#ffffff" stroke="#fca5a5" stroke-width="0.8"/>
+  <text x="865" y="603" text-anchor="middle" fill="#dc2626" font-size="8" font-weight="600">图谱无匹配</text>
+  <text x="865" y="617" text-anchor="middle" fill="#6b7280" font-size="7">降级基础VLM</text>
+</svg>
