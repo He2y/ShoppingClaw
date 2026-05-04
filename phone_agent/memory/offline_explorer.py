@@ -232,50 +232,55 @@ class OfflineExplorer:
     # naturally uses when describing what it sees.
     _PAGE_TYPE_PATTERNS: Dict[ShoppingPageType, List[str]] = {
         ShoppingPageType.HOME: [
-            "首页", "主页", "主屏幕", "桌面",
+            r"首页", r"主页", r"主屏幕",
         ],
         ShoppingPageType.SEARCH_INPUT: [
-            "搜索输入", "搜索框.*激活", "键盘.*弹出", "搜索页面", "搜索建议",
-            "输入.*搜索", "ADB Keyboard",
+            r"搜索输入", r"搜索框.*激活", r"键盘.*弹出", r"搜索页面",
+            r"输入.*搜索", r"ADB Keyboard",
         ],
         ShoppingPageType.SEARCH_RESULT: [
-            "搜索结果", "商品列表", "多个商品", "商品卡片",
+            r"搜索结果.*商品", r"搜索结果页", r"商品列表",
+            r"多个商品卡片", r"搜索结果列表",
         ],
         ShoppingPageType.PRODUCT_DETAIL: [
-            "商品详情", "详情页", "单品购买", "加入购物车.*按钮", "立即购买.*按钮",
-            "规格.*选择", "产品详情",
+            r"商品详情", r"详情页", r"单品购买",
+            r"加入购物车.*按钮", r"立即购买.*按钮",
+            r"规格.*选择|产品详情",
         ],
         ShoppingPageType.SPEC_SELECTION: [
-            "规格选择", "颜色.*容量.*选项", "弹窗.*规格", "选择.*规格",
-            "可选规格", "SKU",
+            r"规格选择", r"颜色.*容量.*选项", r"弹窗.*规格", r"选择.*规格",
+            r"可选规格", r"SKU",
         ],
         ShoppingPageType.CART: [
-            "购物车", "cart", "商品.*选中",
+            r"购物车页面", r"购物车.*商品", r"进入了?购物车",
+            r"在购物车[^按]", r"购物车\(\d+\)",
         ],
         ShoppingPageType.CHECKOUT: [
-            "结算", "订单确认", "提交订单", "收货地址", "支付方式",
+            r"结算", r"订单确认", r"提交订单", r"收货地址", r"支付方式",
         ],
         ShoppingPageType.CATEGORY: [
-            "分类浏览", "分类页", "品类", "商品分类",
+            r"分类浏览", r"分类页", r"品类", r"商品分类",
         ],
         ShoppingPageType.MY_ACCOUNT: [
-            "我的淘宝", "我的京东", "我的$", "个人中心", "账号", "会员中心",
-            "我的订单", "设置.*页",
+            r"我的页面", r"我的淘宝", r"我的京东",
+            r"个人中心", r"账号", r"会员中心",
+            r"我的订单", r"设置.*页", r"我的\b",
         ],
         ShoppingPageType.STORE: [
-            "店铺主页", "店铺首页", "旗舰店", "店铺.*页",
+            r"店铺主页", r"店铺首页", r"旗舰店", r"店铺.*页",
         ],
         ShoppingPageType.LOGIN: [
-            "登录", "注册", "验证码", "密码.*输入",
+            r"登录", r"注册", r"验证码", r"密码.*输入",
         ],
     }
 
-    # Order matters: check more specific patterns first
+    # Order matters: check more specific patterns first.
+    # Cart is intentionally low — the VLM mentions "购物车" in nav bar
+    # descriptions and action plans, so it's a very noisy keyword.
     _PRIORITY_ORDER: List[ShoppingPageType] = [
         ShoppingPageType.SPEC_SELECTION,
         ShoppingPageType.LOGIN,
         ShoppingPageType.CHECKOUT,
-        ShoppingPageType.CART,
         ShoppingPageType.PRODUCT_DETAIL,
         ShoppingPageType.SEARCH_RESULT,
         ShoppingPageType.SEARCH_INPUT,
@@ -283,6 +288,7 @@ class OfflineExplorer:
         ShoppingPageType.STORE,
         ShoppingPageType.MY_ACCOUNT,
         ShoppingPageType.HOME,
+        ShoppingPageType.CART,       # Lowest: "购物车" keyword is too common in nav bar
     ]
 
     def _exploration_loop(self) -> Trajectory:
@@ -415,15 +421,46 @@ class OfflineExplorer:
 
         Checks patterns in priority order — more specific types first.
         """
-        thinking_lower = thinking.lower()
+        cleaned = self._strip_nav_bar(thinking)
+        cleaned_lower = cleaned.lower()
 
         for pt in self._PRIORITY_ORDER:
             patterns = self._PAGE_TYPE_PATTERNS.get(pt, [])
             for pattern in patterns:
-                if re.search(pattern, thinking_lower):
+                if re.search(pattern, cleaned_lower):
                     return pt
 
         return ShoppingPageType.UNKNOWN
+
+    @staticmethod
+    def _strip_nav_bar(text: str) -> str:
+        """Remove bottom-nav-bar and action-intent descriptions from thinking.
+
+        The VLM frequently describes the bottom nav bar ('底部有导航栏：首页、
+        购物车、我的...') and action plans ('我需要点击购物车按钮') as part of
+        its reasoning. These contain keywords for multiple page types and cause
+        false matches.
+
+        We strip these lines before matching so only actual current-page
+        descriptions remain.
+        """
+        # Remove nav bar descriptions
+        nav_line_patterns = [
+            r'底部.{0,5}(?:导航栏|导航|Tab|标签栏).{0,40}(?:首页|消息|购物车|我的)',
+            r'底部有.*(?:首页|消息|购物车|我的).*(?:首页|消息|购物车|我的)',
+            r'(?:底部|下方).*(?:导航按钮|导航图标|Tab按钮)',
+        ]
+        for pat in nav_line_patterns:
+            text = re.sub(pat, '', text)
+
+        # Remove action-intent lines (describing what to do next, not current page)
+        action_intent_patterns = [
+            r'(?:需要|可以|尝试|打算|准备|想|要|让我|我要|我来).{0,20}(?:点击|进入|打开|查看|跳转).{0,30}(?:购物车|首页|分类|详情|结算|消息|我的)',
+        ]
+        for pat in action_intent_patterns:
+            text = re.sub(pat, '', text)
+
+        return text
 
     def _build_thinking_summary(
         self, page_type: ShoppingPageType, thinking: str, current_app: str
