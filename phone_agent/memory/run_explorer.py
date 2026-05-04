@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """
-Offline Explorer CLI - Run VLM-autonomous exploration of shopping apps.
+Offline Explorer CLI - Run task-directed VLM exploration of shopping apps.
 
-The explorer launches the target app, then enters a closed loop:
-screenshot → VLM decides next exploration action → execute → classify page → repeat.
+Each run focuses on ONE functional area (search, cart, category, account,
+product). Run multiple times with different --task values to build a
+complete app page graph. Combine all JSON outputs afterwards.
 
 Usage:
-    python -m phone_agent.memory.run_explorer --app 京东
-    python -m phone_agent.memory.run_explorer --app 淘宝 --max-steps 15
-    python -m phone_agent.memory.run_explorer --list-apps
+    python -m phone_agent.memory.run_explorer --app 京东 --task search
+    python -m phone_agent.memory.run_explorer --app 京东 --task cart
+    python -m phone_agent.memory.run_explorer --app 京东 --task category
+    python -m phone_agent.memory.run_explorer --app 京东 --task account
+    python -m phone_agent.memory.run_explorer --app 京东 --task product
+    python -m phone_agent.memory.run_explorer --app 京东 --task general
+    python -m phone_agent.memory.run_explorer --list-tasks
 """
 
 import argparse
@@ -19,18 +24,49 @@ load_dotenv()
 
 from phone_agent.device_factory import DeviceFactory, DeviceType
 from phone_agent.model.client import ModelClient, ModelConfig
-from phone_agent.memory.offline_explorer import OfflineExplorer
+from phone_agent.memory.offline_explorer import (
+    ExplorationTask,
+    OfflineExplorer,
+    _TASK_DESCRIPTIONS,
+)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="VLM-Autonomous App Explorer")
+    parser = argparse.ArgumentParser(
+        description="Task-Directed App Explorer — each run focuses on one functional area",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "Examples:\n"
+            "  %(prog)s --app 京东 --task search    # Explore search flow\n"
+            "  %(prog)s --app 京东 --task cart      # Explore cart & checkout\n"
+            "  %(prog)s --app 京东 --task category  # Explore category browsing\n"
+            "  %(prog)s --app 京东 --task account   # Explore account & settings\n"
+            "  %(prog)s --app 京东 --task product   # Explore product detail\n"
+            "  %(prog)s --app 京东 --task general   # Broad exploration\n\n"
+            "After running all tasks, combine JSONs in --storage dir to build the graph."
+        ),
+    )
     parser.add_argument("--app", type=str, default="京东", help="App name to explore")
+    parser.add_argument(
+        "--task", type=str, default="general",
+        choices=["search", "cart", "category", "account", "product", "general"],
+        help="Exploration direction (default: general)",
+    )
     parser.add_argument("--device-type", type=str, default="adb", help="Device type (adb/hdc/ios)")
-    parser.add_argument("--max-steps", type=int, default=20, help="Max exploration steps")
+    parser.add_argument("--max-steps", type=int, default=15, help="Max exploration steps (default: 15)")
     parser.add_argument("--storage", type=str, default="memory_db/exploration", help="Storage directory")
     parser.add_argument("--quiet", action="store_true", help="Suppress verbose output")
+    parser.add_argument("--list-tasks", action="store_true", help="List available task types")
     parser.add_argument("--list-apps", action="store_true", help="List supported shopping apps")
     args = parser.parse_args()
+
+    if args.list_tasks:
+        print("Available exploration tasks:")
+        print("-" * 50)
+        for key, desc in _TASK_DESCRIPTIONS.items():
+            print(f"  {key:<12} {desc}")
+        print("\nUse --task <name> to select one.")
+        return
 
     if args.list_apps:
         print("Supported shopping apps: 京东, 淘宝, 拼多多, 天猫, 美团, 饿了么")
@@ -63,13 +99,15 @@ def main():
         print("  Make sure a device is connected via ADB/HDC.")
         return
 
-    # ── Run VLM-autonomous exploration ──
+    # ── Run task-directed exploration ──
+    task = ExplorationTask(args.task)
     explorer = OfflineExplorer(
         app_name=args.app,
         device_factory=device_factory,
         model_client=model_client,
         storage_dir=args.storage,
         max_steps=args.max_steps,
+        exploration_task=task,
         verbose=not args.quiet,
     )
 
@@ -78,7 +116,7 @@ def main():
     if trajectories:
         t = trajectories[0]
         print(f"\n{'='*60}")
-        print(f"  Exploration Summary: {args.app}")
+        print(f"  Exploration Summary: {args.app} [{args.task}]")
         print(f"{'='*60}")
         print(f"  Steps taken: {len(t.steps)}")
         print(f"  Unique pages discovered: {len(explorer.discovered_pages)}")

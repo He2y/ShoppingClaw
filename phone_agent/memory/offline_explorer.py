@@ -49,6 +49,19 @@ class ShoppingPageType(Enum):
     UNKNOWN = "unknown"
 
 
+class ExplorationTask(Enum):
+    """定向探索任务类型 — 每次运行聚焦一个功能板块。
+
+    多次运行不同 task 后，合并所有 JSON 输出即可构建完整的 App 页面路径图谱。
+    """
+    SEARCH = "search"             # 搜索商品发现流程: 搜索框→结果→商品详情
+    CART_CHECKOUT = "cart"       # 购物车和结算流程: 购物车→管理→结算
+    CATEGORY_BROWSE = "category"  # 分类浏览: 分类入口→子分类→分类商品列表
+    ACCOUNT_SETTINGS = "account"  # 个人中心: 我的→订单→设置
+    PRODUCT_DETAIL = "product"    # 商品详情和规格: 详情页→规格选择→店铺
+    GENERAL = "general"           # 通用探索 (默认，广度优先)
+
+
 @dataclass
 class PageInfo:
     """Page analysis result."""
@@ -94,16 +107,141 @@ class Trajectory:
 
 # ── Exploration System Prompt ──────────────────────────────────
 
-def _build_exploration_system_prompt() -> str:
-    """Build the exploration-specific system prompt for AutoGLM VLM."""
+# Task-specific strategy sections injected into the system prompt.
+# Each defines what to focus on and what to skip for that task direction.
+_TASK_STRATEGIES: Dict[str, str] = {
+    "search": (
+        "=== 本次探索目标：搜索与商品发现 ===\n"
+        "你这次只探索搜索相关的流程，其他区域（购物车、我的、分类）本次不要点击。\n\n"
+        "具体步骤：\n"
+        "1. 在首页找到搜索框，点击激活搜索\n"
+        "2. 输入关键词搜索（尝试热门词如\"手机\"\"衣服\"）\n"
+        "3. 浏览搜索结果列表，观察筛选/排序选项\n"
+        "4. 点击搜索结果中的第一个商品，进入商品详情页\n"
+        "5. 在详情页观察：商品标题、价格、规格按钮、加购按钮、店铺入口\n"
+        "6. 如有规格选择入口，点击查看规格弹窗\n"
+        "7. Back返回搜索结果，再Back返回首页\n"
+        "8. 尝试搜索另一个不同的关键词（如\"耳机\"），观察结果差异\n"
+        "9. 共探索10-15步后 finish 报告你发现了哪些页面\n"
+    ),
+    "cart": (
+        "=== 本次探索目标：购物车与结算 ===\n"
+        "你这次只探索购物车和结算相关流程，其他区域（搜索、分类、我的）本次不要点击。\n\n"
+        "具体步骤：\n"
+        "1. 从首页点击底部\"购物车\"Tab进入购物车\n"
+        "2. 观察购物车页面结构：商品列表、全选按钮、结算按钮、编辑/管理按钮\n"
+        "3. 如有商品，尝试点击商品进入详情，再Back回来\n"
+        "4. 尝试选中/取消选中某个商品，观察总价变化\n"
+        "5. 点击\"结算\"或\"去结算\"按钮（注意：只观察页面，不要真正下单！）\n"
+        "6. 如果进入结算页：观察地址选择、支付方式、订单摘要、提交订单按钮\n"
+        "7. Back返回购物车，再Back返回首页\n"
+        "8. 共探索10-15步后 finish 报告你发现了哪些页面\n"
+    ),
+    "category": (
+        "=== 本次探索目标：分类浏览 ===\n"
+        "你这次只探索分类浏览相关的流程，其他区域（搜索、购物车、我的）本次不要点击。\n\n"
+        "具体步骤：\n"
+        "1. 在首页找到分类入口（可能在顶部导航、中间图标区、或底部Tab）\n"
+        "2. 进入分类页面，观察分类层级结构\n"
+        "3. 点击一个一级分类（如\"手机数码\"），观察子分类列表\n"
+        "4. 继续深入点击一个子分类（如\"手机\"），观察该分类下的商品列表\n"
+        "5. 尝试切换不同的同级分类，对比页面结构\n"
+        "6. Back逐层返回，回到首页\n"
+        "7. 尝试另一个完全不同的分类路径（如\"服装\"→\"男装\"）\n"
+        "8. 共探索10-15步后 finish 报告你发现了哪些页面\n"
+    ),
+    "account": (
+        "=== 本次探索目标：个人中心与设置 ===\n"
+        "你这次只探索个人中心相关的流程，其他区域（搜索、购物车、分类）本次不要点击。\n\n"
+        "具体步骤：\n"
+        "1. 从首页点击底部\"我的\"或\"我的淘宝\"/\"我的京东\"Tab\n"
+        "2. 如有弹窗（红包/活动），先关闭弹窗\n"
+        "3. 观察个人中心页面结构：会员信息、订单入口、优惠券、收藏、足迹等\n"
+        "4. 点击\"我的订单\"或\"查看全部订单\"，进入订单列表页\n"
+        "5. 尝试切换订单状态Tab（待付款/待发货/待收货/待评价）\n"
+        "6. 如有\"设置\"入口，点击进入设置页面\n"
+        "7. 在设置页面浏览：账号安全、地址管理、支付设置等入口\n"
+        "8. Back逐层返回个人中心，再回到首页\n"
+        "9. 共探索10-15步后 finish 报告你发现了哪些页面\n"
+    ),
+    "product": (
+        "=== 本次探索目标：商品详情与规格选择 ===\n"
+        "你这次只探索商品详情相关的流程，来源不限（可从搜索或推荐进入）。\n\n"
+        "具体步骤：\n"
+        "1. 从首页推荐区或搜索结果进入一个商品详情页\n"
+        "2. 观察详情页结构：商品图片/视频、价格、优惠信息、规格选择按钮\n"
+        "3. 点击\"规格\"或\"参数选择\"按钮，进入规格选择弹窗\n"
+        "4. 观察规格弹窗：颜色选项、容量选项、数量选择、价格变化\n"
+        "5. 尝试选择不同的规格组合（注意：不要点\"立即购买\"或\"加入购物车\"！）\n"
+        "6. 关闭规格弹窗，回到详情页\n"
+        "7. 在详情页向下滑动，查看商品评价、详情参数、店铺信息\n"
+        "8. 如有\"进入店铺\"入口，点击进入店铺主页\n"
+        "9. Back返回详情，再Back返回上一级\n"
+        "10. 共探索10-15步后 finish 报告你发现了哪些页面\n"
+    ),
+    "general": (
+        "=== 本次探索目标：广度优先通用探索 ===\n"
+        "你这次做广度优先的通用探索，快速覆盖所有主要页面类型。\n"
+        "不要在任何单一页面停留太久，目标是最大化发现的页面类型数量。\n\n"
+        "节奏：首页(2步)→搜索(3步)→Tab切换(3步)→分类(2步)→我的(2步)→总结\n"
+        "共探索12-16步后 finish 报告你发现了哪些页面。\n"
+    ),
+}
+
+# Page-type priority targets for each task — which page types
+# count as "success" and should be prioritized during exploration.
+_TASK_TARGET_TYPES: Dict[str, List[ShoppingPageType]] = {
+    "search": [
+        ShoppingPageType.SEARCH_INPUT, ShoppingPageType.SEARCH_RESULT,
+        ShoppingPageType.PRODUCT_DETAIL, ShoppingPageType.SPEC_SELECTION,
+    ],
+    "cart": [
+        ShoppingPageType.CART, ShoppingPageType.CHECKOUT,
+        ShoppingPageType.PRODUCT_DETAIL, ShoppingPageType.SPEC_SELECTION,
+    ],
+    "category": [
+        ShoppingPageType.CATEGORY, ShoppingPageType.SEARCH_RESULT,
+        ShoppingPageType.PRODUCT_DETAIL,
+    ],
+    "account": [
+        ShoppingPageType.MY_ACCOUNT, ShoppingPageType.LOGIN,
+        ShoppingPageType.CHECKOUT,
+    ],
+    "product": [
+        ShoppingPageType.PRODUCT_DETAIL, ShoppingPageType.SPEC_SELECTION,
+        ShoppingPageType.STORE,
+    ],
+    "general": [
+        ShoppingPageType.HOME, ShoppingPageType.SEARCH_INPUT,
+        ShoppingPageType.SEARCH_RESULT, ShoppingPageType.PRODUCT_DETAIL,
+        ShoppingPageType.CART, ShoppingPageType.CATEGORY,
+        ShoppingPageType.MY_ACCOUNT,
+    ],
+}
+
+# Task descriptions shown in CLI help and output
+_TASK_DESCRIPTIONS: Dict[str, str] = {
+    "search": "搜索商品发现 — 搜索框→关键词→搜索结果→商品详情",
+    "cart": "购物车结算 — 购物车→商品管理→结算页",
+    "category": "分类浏览 — 分类入口→子分类→分类商品列表",
+    "account": "个人中心 — 我的页面→订单→设置",
+    "product": "商品详情 — 详情页→规格选择→店铺主页",
+    "general": "通用探索 — 广度优先覆盖所有主要页面",
+}
+
+
+def _build_exploration_system_prompt(task: ExplorationTask = ExplorationTask.GENERAL) -> str:
+    """Build task-directed exploration system prompt for AutoGLM VLM."""
     today = datetime.today()
     weekday_names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
     weekday = weekday_names[today.weekday()]
     formatted_date = today.strftime("%Y年%m月%d日") + " " + weekday
 
+    task_strategy = _TASK_STRATEGIES.get(task.value, _TASK_STRATEGIES["general"])
+
     return (
         "今天的日期是: " + formatted_date + "\n"
-        "你是一个移动应用探索智能体，专门探索购物App的页面结构。\n"
+        "你是一个移动应用探索智能体，专门定向探索购物App的特定功能板块。\n"
         "你必须严格按照要求输出以下格式：\n"
         " thinking{think} response\n"
         "<answer>{action}</answer>\n\n"
@@ -119,51 +257,41 @@ def _build_exploration_system_prompt() -> str:
         "    Type是输入操作，在当前聚焦的输入框中输入文本。\n"
         '- do(action="Wait", duration="x seconds")\n'
         "    等待页面加载。\n"
-        '- do(action="Home")\n'
-        "    Home是回到系统桌面的操作。\n"
         '- finish(message="xxx")\n'
-        "    finish是结束探索任务的操作，message中总结你发现了哪些页面类型。\n\n"
+        "    finish是结束探索任务的操作，message中列出你发现的所有页面类型。\n\n"
 
-        "=== 你的任务 ===\n"
-        "你是App探索者。系统会自动启动目标App，你需要在该App内自由探索，\n"
-        "发现所有的页面类型和功能入口。把自己想象成一个测试工程师在做探索性测试。\n\n"
+        "=== 你的身份 ===\n"
+        "你是App定向探索者。系统已启动目标App，你需要聚焦本次指定的任务方向，\n"
+        "系统性地探索该方向涉及的所有页面类型和页面跳转关系。\n"
+        "把自己想象成测试工程师在做特定模块的探索性测试。\n\n"
 
-        "=== 探索策略 ===\n"
-        "1. 首页探索：识别搜索框、底部Tab（首页/分类/购物车/我的）、推荐位、顶部导航\n"
-        "2. 搜索流程：点击搜索框→输入关键词（如'手机'）→查看搜索结果→点击一个商品→进入详情\n"
-        "3. Tab切换：点击不同的底部Tab（分类、购物车、我的），探索每个Tab\n"
-        "4. 品类浏览：如果有分类入口，点击进入查看\n"
-        "5. 商品详情：在搜索结果或首页点一个商品，进入详情页查看\n"
-        "6. 用Back返回：每深入2-3层就Back返回，确保不迷失\n"
-        "7. 遇到弹窗：如果是广告弹窗，点X关闭或用Back；如果是登录弹窗，用Back跳过\n\n"
+        + task_strategy + "\n"
 
         "=== 重要约束 ===\n"
-        "- 这是一次性探索，不需要登录，遇到登录界面请Back\n"
-        "- 不要下单购买任何商品\n"
+        "- 不需要登录，遇到登录界面请Back\n"
+        "- 不要下单购买任何商品（可以进入结算页观察，但不要提交订单）\n"
         "- 不要修改任何个人信息\n"
-        "- 每个操作前思考：这个操作能帮我发现新页面吗？\n"
-        "- 避免重复点击已经看过的相同入口\n"
-        "- 探索12-18步后使用finish(message='探索完成，发现了: ...')结束\n\n"
-
-        "=== 探索节奏建议 ===\n"
-        "步骤1-3: 观察首页结构，识别所有入口\n"
-        "步骤4-7: 尝试搜索+查看商品详情\n"
-        "步骤8-11: 切换Tab探索其他区域\n"
-        "步骤12-15: 探索感兴趣的其他入口\n"
-        "步骤16+: 总结并用finish结束\n"
+        "- 遇到广告弹窗点X关闭或用Back跳过\n"
+        "- 聚焦本次任务方向，不要跳到其他板块\n"
+        "- 每操作完一步等待页面稳定（约2秒）后再截图\n"
     )
 
 
 # ── OfflineExplorer ────────────────────────────────────────────
 
 class OfflineExplorer:
-    """购物场景离线探索器
+    """购物场景离线探索器 — 任务导向型
 
-    VLM-autonomous exploration loop:
+    每次运行聚焦一个功能板块（ExplorationTask），多次运行不同 task 后
+    合并所有 JSON 输出即可构建完整的 App 页面路径图谱。
+
+    探索循环:
     1. Launch app
     2. Screenshot → VLM decides action → Execute → Analyze result → Record → Repeat
     3. VLM can finish() early when exploration is complete
     """
+
+    # ── Constructor ────────────────────────────────────────────
 
     def __init__(
         self,
@@ -171,7 +299,8 @@ class OfflineExplorer:
         device_factory: DeviceFactory,
         model_client: ModelClient,
         storage_dir: str = "memory_db/exploration",
-        max_steps: int = 20,
+        max_steps: int = 15,
+        exploration_task: ExplorationTask = ExplorationTask.GENERAL,
         verbose: bool = True,
     ):
         self.app_name = app_name
@@ -180,6 +309,7 @@ class OfflineExplorer:
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.max_steps = max_steps
+        self.exploration_task = exploration_task
         self.verbose = verbose
 
         # Action handler for executing VLM-decided actions
@@ -193,13 +323,15 @@ class OfflineExplorer:
     # ── Top-Level Entry ────────────────────────────────────────
 
     def explore(self) -> List[Trajectory]:
-        """Run VLM-autonomous exploration of the target app.
+        """Run task-directed VLM exploration of the target app.
 
         Returns:
             List of exploration trajectories.
         """
+        task_desc = _TASK_DESCRIPTIONS.get(self.exploration_task.value, "探索")
         self._log(f"\n{'='*60}")
         self._log(f"  Offline Explorer: {self.app_name}")
+        self._log(f"  Task: {self.exploration_task.value} — {task_desc}")
         self._log(f"{'='*60}\n")
 
         # Launch the target app
@@ -216,11 +348,19 @@ class OfflineExplorer:
         traj = self._exploration_loop()
         self.trajectories = [traj]
 
-        # Save results
+        # Save results with task label in filename
         self._save_results(traj)
+
+        target_types = _TASK_TARGET_TYPES.get(self.exploration_task.value, [])
+        target_names = {t.value for t in target_types}
+        found_targets = {
+            k: v for k, v in self.discovered_pages.items()
+            if v.page_type.value in target_names
+        }
 
         self._log(f"\n{'='*60}")
         self._log(f"  Done: {len(self.discovered_pages)} unique pages discovered")
+        self._log(f"  Task-relevant: {len(found_targets)} pages")
         self._log(f"  {len(traj.steps)} exploration steps taken")
         self._log(f"{'='*60}\n")
         return self.trajectories
@@ -292,19 +432,23 @@ class OfflineExplorer:
     ]
 
     def _exploration_loop(self) -> Trajectory:
-        """Run the closed-loop VLM exploration.
+        """Run the task-directed closed-loop VLM exploration.
 
         Loop: screenshot → VLM decides action (thinking describes page)
               → extract page info from thinking → execute action → repeat.
 
-        No separate classification VLM calls — page type is parsed from
-        the exploration VLM's own thinking text (regex patterns).
+        Page type is parsed from the exploration VLM's own thinking text.
         """
-        traj = Trajectory(task=f"探索{self.app_name}", app=self.app_name)
+        task_label = self.exploration_task.value
+        task_desc = _TASK_DESCRIPTIONS.get(task_label, "探索")
+        traj = Trajectory(
+            task=f"{task_label}: {task_desc} — {self.app_name}",
+            app=self.app_name,
+        )
         context: List[Dict[str, Any]] = []
 
-        # Build system prompt (sent once)
-        system_prompt = _build_exploration_system_prompt()
+        # Build task-directed system prompt
+        system_prompt = _build_exploration_system_prompt(self.exploration_task)
         context.append(MessageBuilder.create_system_message(system_prompt))
 
         for step_idx in range(self.max_steps):
@@ -318,13 +462,15 @@ class OfflineExplorer:
 
             if step_idx == 0:
                 task_text = (
-                    f"开始探索{self.app_name}。你已经在该App中。\n\n"
+                    f"【本次任务】{task_desc}\n"
+                    f"开始探索{self.app_name}。你已经在该App中。\n"
+                    f"请聚焦本次任务方向，不要跳到无关板块。\n\n"
                     f"{discovered_summary}\n\n"
                     f"{screen_info}"
                 )
             else:
                 task_text = (
-                    f"继续探索{self.app_name}。\n"
+                    f"继续探索{self.app_name}。记住：聚焦\"{task_desc}\"方向。\n"
                     f"{discovered_summary}\n\n"
                     f"{screen_info}"
                 )
@@ -347,7 +493,7 @@ class OfflineExplorer:
                 self._log(f"  Parse error: {e}")
                 action = {"_metadata": "finish", "message": str(e)}
 
-            # ── Extract page info from VLM's thinking (no extra API calls) ──
+            # ── Extract page info from VLM's thinking ──
             page_info = self._extract_page_info_from_thinking(
                 response.thinking, current_app or self.app_name, screenshot
             )
@@ -521,6 +667,7 @@ class OfflineExplorer:
         # Save pages catalog
         pages_data = {
             "app": self.app_name,
+            "task": self.exploration_task.value,
             "explored_at": datetime.now().isoformat(),
             "total_pages": len(self.discovered_pages),
             "pages": [
@@ -534,7 +681,7 @@ class OfflineExplorer:
                 for p in self.discovered_pages.values()
             ],
         }
-        pages_path = self.storage_dir / f"{self.app_name}_pages_{timestamp}.json"
+        pages_path = self.storage_dir / f"{self.app_name}_{self.exploration_task.value}_pages_{timestamp}.json"
         with open(pages_path, "w", encoding="utf-8") as f:
             json.dump(pages_data, f, ensure_ascii=False, indent=2)
         self._log(f"  saved: {pages_path.name}")
@@ -542,6 +689,7 @@ class OfflineExplorer:
         # Save trajectory
         traj_data = {
             "task": traj.task,
+            "task_type": self.exploration_task.value,
             "app": traj.app,
             "success": traj.success,
             "total_steps": len(traj.steps),
@@ -559,12 +707,8 @@ class OfflineExplorer:
                 for i, s in enumerate(traj.steps)
             ],
         }
-        traj_path = self.storage_dir / f"{self.app_name}_trajectory_{timestamp}.json"
+        traj_path = self.storage_dir / f"{self.app_name}_{self.exploration_task.value}_trajectory_{timestamp}.json"
         with open(traj_path, "w", encoding="utf-8") as f:
             json.dump(traj_data, f, ensure_ascii=False, indent=2)
         self._log(f"  saved: {traj_path.name}")
 
-    # Keep the original search_flow for backward compatibility
-    def explore_shopping_flows(self) -> List[Trajectory]:
-        """Legacy entry point — delegates to new explore()."""
-        return self.explore()
