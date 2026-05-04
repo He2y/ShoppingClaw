@@ -28,7 +28,7 @@ from typing import Any, Dict, List, Optional
 from phone_agent.actions.handler import ActionHandler, parse_action
 from phone_agent.config.apps import get_package_name
 from phone_agent.device_factory import DeviceFactory
-from phone_agent.model.client import MessageBuilder, ModelClient, ModelResponse
+from phone_agent.model.client import MessageBuilder, ModelClient
 
 
 # ── Enums & Data Classes ───────────────────────────────────────
@@ -154,27 +154,6 @@ def _build_exploration_system_prompt() -> str:
     )
 
 
-# ── Page Classification Prompt ─────────────────────────────────
-
-PAGE_CLASSIFY_PROMPT_TEMPLATE = """你是一个页面分类器。分析这个{app}的截图，判断它属于哪种页面类型。
-
-页面类型定义：
-- home: 首页/主页，有搜索框、多个商品推荐、分类入口、底部导航Tab
-- search_input: 搜索输入页，搜索框已激活获得焦点，可能键盘弹出
-- search_result: 搜索结果列表页，显示多个商品卡片
-- product_detail: 商品详情页，显示单个商品的大图、价格、规格按钮、加入购物车/立即购买按钮
-- spec_selection: 规格选择弹窗，显示颜色/尺寸/容量等选项供用户选择
-- cart: 购物车页面，显示已添加的商品列表，有结算按钮
-- checkout: 结算/订单确认页面，显示收货地址、支付方式、提交订单按钮
-- category: 商品分类浏览页，显示分类列表或某个分类下的商品
-- my_account: 个人中心/我的页面，显示用户头像、订单入口、设置等
-- store: 店铺主页，显示某个店铺的首页
-- login: 登录/注册页面
-- unknown: 无法识别
-
-请直接输出 finish(message="类型名称")，不要输出其他内容。例如：finish(message="home")\n"""
-
-
 # ── OfflineExplorer ────────────────────────────────────────────
 
 class OfflineExplorer:
@@ -248,10 +227,72 @@ class OfflineExplorer:
 
     # ── VLM-Driven Exploration Loop ────────────────────────────
 
+    # Keywords for extracting page type from VLM thinking text.
+    # Each page type maps to a list of Chinese phrase patterns the VLM
+    # naturally uses when describing what it sees.
+    _PAGE_TYPE_PATTERNS: Dict[ShoppingPageType, List[str]] = {
+        ShoppingPageType.HOME: [
+            "首页", "主页", "主屏幕", "桌面",
+        ],
+        ShoppingPageType.SEARCH_INPUT: [
+            "搜索输入", "搜索框.*激活", "键盘.*弹出", "搜索页面", "搜索建议",
+            "输入.*搜索", "ADB Keyboard",
+        ],
+        ShoppingPageType.SEARCH_RESULT: [
+            "搜索结果", "商品列表", "多个商品", "商品卡片",
+        ],
+        ShoppingPageType.PRODUCT_DETAIL: [
+            "商品详情", "详情页", "单品购买", "加入购物车.*按钮", "立即购买.*按钮",
+            "规格.*选择", "产品详情",
+        ],
+        ShoppingPageType.SPEC_SELECTION: [
+            "规格选择", "颜色.*容量.*选项", "弹窗.*规格", "选择.*规格",
+            "可选规格", "SKU",
+        ],
+        ShoppingPageType.CART: [
+            "购物车", "cart", "商品.*选中",
+        ],
+        ShoppingPageType.CHECKOUT: [
+            "结算", "订单确认", "提交订单", "收货地址", "支付方式",
+        ],
+        ShoppingPageType.CATEGORY: [
+            "分类浏览", "分类页", "品类", "商品分类",
+        ],
+        ShoppingPageType.MY_ACCOUNT: [
+            "我的淘宝", "我的京东", "我的$", "个人中心", "账号", "会员中心",
+            "我的订单", "设置.*页",
+        ],
+        ShoppingPageType.STORE: [
+            "店铺主页", "店铺首页", "旗舰店", "店铺.*页",
+        ],
+        ShoppingPageType.LOGIN: [
+            "登录", "注册", "验证码", "密码.*输入",
+        ],
+    }
+
+    # Order matters: check more specific patterns first
+    _PRIORITY_ORDER: List[ShoppingPageType] = [
+        ShoppingPageType.SPEC_SELECTION,
+        ShoppingPageType.LOGIN,
+        ShoppingPageType.CHECKOUT,
+        ShoppingPageType.CART,
+        ShoppingPageType.PRODUCT_DETAIL,
+        ShoppingPageType.SEARCH_RESULT,
+        ShoppingPageType.SEARCH_INPUT,
+        ShoppingPageType.CATEGORY,
+        ShoppingPageType.STORE,
+        ShoppingPageType.MY_ACCOUNT,
+        ShoppingPageType.HOME,
+    ]
+
     def _exploration_loop(self) -> Trajectory:
         """Run the closed-loop VLM exploration.
 
-        Loop: screenshot → classify page → ask VLM for next action → execute → repeat.
+        Loop: screenshot → VLM decides action (thinking describes page)
+              → extract page info from thinking → execute action → repeat.
+
+        No separate classification VLM calls — page type is parsed from
+        the exploration VLM's own thinking text (regex patterns).
         """
         traj = Trajectory(task=f"探索{self.app_name}", app=self.app_name)
         context: List[Dict[str, Any]] = []
@@ -265,17 +306,11 @@ class OfflineExplorer:
             screenshot = self.device.get_screenshot()
             current_app = self.device.get_current_app()
 
-            # Classify the current page (before VLM decides next action)
-            page_info = self._classify_current_page(screenshot, current_app)
-            self._record_page(page_info)
-            self._log(f"  [{step_idx+1}] {page_info.page_type.value}: {page_info.semantic_summary[:60]}")
-
             # Build user message for this step
             screen_info = MessageBuilder.build_screen_info(current_app)
             discovered_summary = self._build_discovered_summary()
 
             if step_idx == 0:
-                # First step: include the exploration task
                 task_text = (
                     f"开始探索{self.app_name}。你已经在该App中。\n\n"
                     f"{discovered_summary}\n\n"
@@ -283,6 +318,7 @@ class OfflineExplorer:
                 )
             else:
                 task_text = (
+                    f"继续探索{self.app_name}。\n"
                     f"{discovered_summary}\n\n"
                     f"{screen_info}"
                 )
@@ -291,7 +327,7 @@ class OfflineExplorer:
                 text=task_text, image_base64=screenshot.base64_data
             ))
 
-            # Get VLM's decision for next action
+            # Get VLM's decision for next action (thinking describes current page)
             try:
                 response = self.vlm.request(context)
             except Exception as e:
@@ -305,6 +341,13 @@ class OfflineExplorer:
                 self._log(f"  Parse error: {e}")
                 action = {"_metadata": "finish", "message": str(e)}
 
+            # ── Extract page info from VLM's thinking (no extra API calls) ──
+            page_info = self._extract_page_info_from_thinking(
+                response.thinking, current_app or self.app_name, screenshot
+            )
+            self._record_page(page_info)
+            self._log(f"  [{step_idx+1}] {page_info.page_type.value}: {page_info.semantic_summary[:60]}")
+
             # Check if exploration is complete
             if action.get("_metadata") == "finish":
                 traj.add_step(page_info, action, response.thinking)
@@ -316,7 +359,9 @@ class OfflineExplorer:
 
             # Update context
             context[-1] = MessageBuilder.remove_images_from_message(context[-1])
-            assistant_content = f" thinking{response.thinking} response<answer>{response.action}</answer>"
+            assistant_content = (
+                f" thinking{response.thinking} response<answer>{response.action}</answer>"
+            )
             context.append(MessageBuilder.create_assistant_message(assistant_content))
 
             # Execute the action
@@ -336,49 +381,28 @@ class OfflineExplorer:
         else:
             # Max steps reached
             self._log(f"  Max steps ({self.max_steps}) reached")
-            traj.success = True  # Still a valid exploration
+            traj.success = True
 
         return traj
 
-    # ── Page Classification ────────────────────────────────────
+    # ── Page Info Extraction from Thinking ─────────────────────
 
-    def _classify_current_page(self, screenshot: Any, current_app: str) -> PageInfo:
-        """Use a focused VLM call to classify the current page by type.
+    def _extract_page_info_from_thinking(
+        self, thinking: str, current_app: str, screenshot: Any
+    ) -> PageInfo:
+        """Extract page type and summary from VLM's thinking text.
 
-        This is a separate, stateless call — not part of the exploration conversation.
+        The exploration VLM naturally describes the current page in its thinking
+        (e.g. "现在进入了搜索结果页面", "我在购物车页面").  We match these
+        descriptions against keyword patterns — no extra VLM calls needed.
         """
-        prompt = PAGE_CLASSIFY_PROMPT_TEMPLATE.format(app=current_app or self.app_name)
-
-        messages = [{
-            "role": "user",
-            "content": [
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot.base64_data}"}},
-                {"type": "text", "text": prompt},
-            ],
-        }]
-
-        try:
-            response = self.vlm.request(messages)
-        except Exception:
-            return PageInfo(
-                page_type=ShoppingPageType.UNKNOWN,
-                semantic_summary="分类失败",
-                elements={},
-                screenshot_hash=hashlib.md5(screenshot.base64_data.encode()).hexdigest(),
-                app=current_app,
-                screenshot_base64=screenshot.base64_data,
-                width=screenshot.width,
-                height=screenshot.height,
-            )
-
-        page_type = self._parse_classify_response(response)
-        elements = self._extract_elements_for_type(screenshot, page_type)
-        summary = self._build_summary(page_type, elements, current_app)
+        page_type = self._match_page_type(thinking)
+        summary = self._build_thinking_summary(page_type, thinking, current_app)
 
         return PageInfo(
             page_type=page_type,
             semantic_summary=summary,
-            elements=elements,
+            elements={},  # Elements are extracted in post-processing if needed
             screenshot_hash=hashlib.md5(screenshot.base64_data.encode()).hexdigest(),
             app=current_app,
             screenshot_base64=screenshot.base64_data,
@@ -386,146 +410,43 @@ class OfflineExplorer:
             height=screenshot.height,
         )
 
-    def _parse_classify_response(self, response: ModelResponse) -> ShoppingPageType:
-        """Extract page type from finish(message="...") response."""
-        text = (response.action or response.raw_content or "").strip().lower()
+    def _match_page_type(self, thinking: str) -> ShoppingPageType:
+        """Match thinking text against page type keyword patterns.
 
-        # Try finish(message="type_name")
-        m = re.search(r'finish\(message="([^"]*)"\)', text)
-        if not m:
-            m = re.search(r"finish\(message='([^']*)'\)", text)
+        Checks patterns in priority order — more specific types first.
+        """
+        thinking_lower = thinking.lower()
 
-        if m:
-            type_str = m.group(1).strip().lower()
-            for pt in ShoppingPageType:
-                if pt.value == type_str or pt.value in type_str:
+        for pt in self._PRIORITY_ORDER:
+            patterns = self._PAGE_TYPE_PATTERNS.get(pt, [])
+            for pattern in patterns:
+                if re.search(pattern, thinking_lower):
                     return pt
-
-        # Fallback: keyword search in full response
-        full = (response.thinking + " " + text).lower()
-        for pt in ShoppingPageType:
-            if pt.value in full:
-                return pt
 
         return ShoppingPageType.UNKNOWN
 
-    def _extract_elements_for_type(
-        self, screenshot: Any, page_type: ShoppingPageType
-    ) -> Dict[str, Any]:
-        """Extract key UI elements based on page type.
-
-        Uses a separate, focused VLM call for element extraction.
-        Only for page types where structured element data is useful.
-        """
-        prompts = {
-            ShoppingPageType.HOME: (
-                "识别这个首页中所有可交互的关键元素。\n"
-                "返回JSON格式:\n"
-                '{"search_box": {"center_x": 0, "center_y": 0, "text": ""},'
-                '"tab_buttons": [{"name": "", "center_x": 0, "center_y": 0}],'
-                '"category_icons": [{"name": "", "center_x": 0, "center_y": 0}],'
-                '"product_cards": [{"title": "", "center_x": 0, "center_y": 0}]}\n'
-                "使用1-1000的坐标系统。输出 finish(message='{...JSON...}') 格式。"
-            ),
-            ShoppingPageType.SEARCH_RESULT: (
-                "识别搜索结果页的商品卡片列表。\n"
-                "返回JSON格式:\n"
-                '{"product_cards":[{"index":0,"title":"","price":"","center_x":0,"center_y":0}]}\n'
-                "使用1-1000的坐标系统。输出 finish(message='{...JSON...}') 格式。"
-            ),
-            ShoppingPageType.PRODUCT_DETAIL: (
-                "识别商品详情页的关键交互元素。\n"
-                "返回JSON格式:\n"
-                '{"product_title": {"text": ""},'
-                '"price": {"text": ""},'
-                '"spec_button": {"text": "", "center_x": 0, "center_y": 0},'
-                '"add_to_cart_button": {"center_x": 0, "center_y": 0},'
-                '"buy_now_button": {"center_x": 0, "center_y": 0},'
-                '"store_link": {"center_x": 0, "center_y": 0}}\n'
-                "使用1-1000的坐标系统。输出 finish(message='{...JSON...}') 格式。"
-            ),
-            ShoppingPageType.CART: (
-                "识别购物车页面的关键元素。\n"
-                "返回JSON格式:\n"
-                '{"cart_items": [{"title": "", "price": "", "center_x": 0, "center_y": 0}],'
-                '"select_all_button": {"center_x": 0, "center_y": 0},'
-                '"checkout_button": {"center_x": 0, "center_y": 0}}\n'
-                "使用1-1000的坐标系统。输出 finish(message='{...JSON...}') 格式。"
-            ),
-        }
-
-        prompt = prompts.get(page_type)
-        if not prompt:
-            return {}
-
-        messages = [{
-            "role": "user",
-            "content": [
-                {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot.base64_data}"}},
-                {"type": "text", "text": prompt},
-            ],
-        }]
-
-        try:
-            response = self.vlm.request(messages)
-            return self._parse_json_from_response(response)
-        except Exception:
-            return {}
-
-    def _parse_json_from_response(self, response: ModelResponse) -> Dict[str, Any]:
-        """Parse JSON from a finish(message='{...}') response."""
-        text = response.action or response.raw_content or ""
-
-        # Handle single-quote wrapped JSON (AutoGLM common pattern)
-        for pattern in [r"finish\(message='(\{.*?\})'\)", r'finish\(message="(\{.*?\})"\)']:
-            m = re.search(pattern, text, re.DOTALL)
-            if m:
-                try:
-                    return json.loads(m.group(1))
-                except json.JSONDecodeError:
-                    pass
-
-        # Fallback: find any JSON block
-        start = text.find('{')
-        end = text.rfind('}') + 1
-        if start >= 0 and end > start:
-            try:
-                return json.loads(text[start:end])
-            except json.JSONDecodeError:
-                pass
-
-        return {}
-
-    def _build_summary(
-        self, page_type: ShoppingPageType, elements: Dict, current_app: str
+    def _build_thinking_summary(
+        self, page_type: ShoppingPageType, thinking: str, current_app: str
     ) -> str:
-        """Build a human-readable summary of the page."""
-        if page_type == ShoppingPageType.HOME:
-            tabs = elements.get("tab_buttons", [])
-            tab_names = ", ".join(t.get("name", "") for t in tabs[:4])
-            return f"{current_app}首页" + (f" (Tab: {tab_names})" if tab_names else "")
-        elif page_type == ShoppingPageType.SEARCH_RESULT:
-            n = len(elements.get("product_cards", []))
-            return f"搜索结果页({n}个商品)"
-        elif page_type == ShoppingPageType.PRODUCT_DETAIL:
-            title = elements.get("product_title", {}).get("text", "")
-            price = elements.get("price", {}).get("text", "")
-            return f"商品详情: {title[:30]}" + (f" ¥{price}" if price else "")
-        elif page_type == ShoppingPageType.CART:
-            n = len(elements.get("cart_items", []))
-            return f"购物车({n}件商品)"
-        elif page_type == ShoppingPageType.CATEGORY:
-            return "分类浏览页"
-        elif page_type == ShoppingPageType.CHECKOUT:
-            return "结算/订单确认页"
-        elif page_type == ShoppingPageType.SPEC_SELECTION:
-            return "规格选择弹窗"
-        elif page_type == ShoppingPageType.MY_ACCOUNT:
-            return "个人中心页"
-        elif page_type == ShoppingPageType.LOGIN:
-            return "登录页面"
-        else:
-            return f"{current_app} - {page_type.value}"
+        """Build a page summary from thinking text."""
+        # Extract the first meaningful sentence about the current page
+        # Look for lines that describe the page state
+        page_clues = [
+            r'(?:进入|回到|在|到了|打开)[了]?[^\n。]{0,30}(?:页面|界面|页|屏幕)',
+            r'(?:当前|现在|目前)[^\n。]{0,30}(?:页面|界面|显示)',
+        ]
+
+        for clue_pattern in page_clues:
+            m = re.search(clue_pattern, thinking)
+            if m:
+                snippet = m.group(0).strip()
+                if len(snippet) > 4:
+                    return snippet[:80]
+
+        # Fallback
+        if page_type == ShoppingPageType.UNKNOWN:
+            return f"{current_app} - 未知页面"
+        return f"{current_app} - {page_type.value}"
 
     # ── Helpers ─────────────────────────────────────────────────
 
