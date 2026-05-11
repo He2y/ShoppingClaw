@@ -75,5 +75,9 @@ REMEMBER:
 - Think before you act: Always analyze the current UI and the best course of action before executing any step, and output in <think> part.
 - Only ONE LINE of action in <answer> part per response: Each step must contain exactly one line of executable code.
 - Generate execution code strictly according to format requirements.
+
+[Memory Assistance - Shopping Task Tracking]
+- Current shopping progress, viewed products, and cart contents are provided at the beginning of each message (marked with [📋] or [🔍]).
+- When thinking about product details (name, price, specs), mention them explicitly — this helps the system track shopping state.
 """
 )

@@ -12,6 +12,46 @@ from typing import Any
 
 from .memory_store import MemoryStore, Memory, MemoryType
 from .state_manager import StateManager
+from .session_memory import SessionMemory, ProductInfo
+
+
+# Patterns for extracting product/shopping info from thinking
+PRODUCT_PATTERNS = {
+    "product_name": [
+        # Chinese: "打开了「Nike Air Max」" / "看到Nike Air Max售价"
+        r'(?:商品|产品|看到|找到|点击|打开|进入)(?:了|的是)?\s*[""「『]?(.{2,50})[""」『]?(?:，|。|售价|价格|¥|￥|元)',
+        # Chinese: brand + model patterns
+        r'(?:Nike|Adidas|Apple|Samsung|华为|小米|OPPO|vivo|李宁|安踏|优衣库|ZARA|H&M)[\w\s\-\u4e00-\u9fa5]{2,40}',
+        # Generic brand+product: "XX牌XX"
+        r'([\u4e00-\u9fa5a-zA-Z]{2,6}牌[的]?[\u4e00-\u9fa5a-zA-Z0-9\-\s]{2,30})',
+    ],
+    "price": [
+        r'[¥￥]\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)',
+        r'(\d+(?:\.\d{1,2})?)\s*(?:元|块|块钱)',
+        r'(?:价格|售价|标价|现价|原价)(?:是|为|：|:)\s*[¥￥]?\s*(\d+(?:\.\d{1,2})?)',
+        r'(?:price|cost)\s*(?:is|:)?\s*\$?(\d+(?:\.\d{1,2})?)',
+    ],
+    "spec": [
+        r'(?:颜色|尺码|规格|容量|版本|型号|尺寸)(?:是|为|：|:)\s*(.{1,20}?)(?:，|。|,|\.|$)',
+        r'(?:选了?|选择了?|确定|选中)(.{1,10}?)(?:色|码|GB|TB|英寸|寸|ml|ML|g|G)',
+        r'(黑|白|红|蓝|绿|灰|粉|紫|黄|金|银|棕|橙)(?:色|的)',
+        r'(\d{2,3}(?:GB|TB|ml|g|L|码|号|寸|英寸))',
+    ],
+}
+
+# Shopping platforms to detect
+SHOPPING_PLATFORMS = {
+    "京东", "京东商城", "jd.com", "jd",
+    "淘宝", "taobao", "天猫", "tmall",
+    "拼多多", "pinduoduo",
+    "小红书", "xiaohongshu", "redbook",
+    "唯品会", "vipshop",
+    "苏宁易购", "suning",
+    "抖音商城", "douyin mall",
+    "得物", "dewu",
+    "美团", "meituan",
+    "饿了么", "eleme",
+}
 
 
 # Patterns for extracting user preferences
@@ -86,6 +126,9 @@ class MemoryManager:
         # Initialize StateManager (Unified State Tracking)
         self.state_manager = StateManager()
 
+        # Initialize SessionMemory (per-task structured product tracking)
+        self.session_memory = SessionMemory()
+
         # Session history for context
         self.session_history: list[dict] = []
 
@@ -114,6 +157,11 @@ class MemoryManager:
         self._session_contacts.clear()
         self._session_apps.clear()
 
+        # Reset SessionMemory for new task
+        self.session_memory.reset()
+        self.session_memory.task = task
+        self.session_memory.platform = self._detect_platform(task)
+
         # Initialize state tracking
         if start_state_id:
             self.state_manager.start_task(start_state_id)
@@ -138,6 +186,7 @@ class MemoryManager:
                     "steps": len(self.session_history),
                     "apps_used": list(self._session_apps),
                     "contacts_mentioned": list(self._session_contacts),
+                    "session_memory": self.session_memory.to_dict(),
                 },
                 importance=importance,
             )
@@ -426,11 +475,12 @@ class MemoryManager:
     def add_step(self, thinking: str, action: dict, screenshot_app: str = ""):
         """
         Record a step in the current task and auto-learn from it.
-        
+
         This method automatically extracts:
         - App usage patterns from the current app
         - Contact information from actions
         - User preferences from the thinking process
+        - Shopping product info (names, prices, specs) for SessionMemory
         """
         step = {
             "timestamp": datetime.now().isoformat(),
@@ -439,11 +489,11 @@ class MemoryManager:
             "app": screenshot_app,
         }
         self.session_history.append(step)
-        
+
         # Extract app usage patterns
         if screenshot_app:
             self._track_app_usage(screenshot_app)
-        
+
         # Auto-learn from action
         if self.enable_auto_extract:
             self._learn_from_action(action)
@@ -451,8 +501,40 @@ class MemoryManager:
         # Auto-learn from thinking (extract mentioned entities)
         if self.enable_thinking_analysis and thinking:
             self._learn_from_thinking(thinking)
-    
-    def _calculate_duration(self) -> float:
+
+        # Update SessionMemory: extract shopping info + generate step summary
+        if thinking and screenshot_app:
+            self._update_session_memory(thinking, action, screenshot_app)
+
+    def _update_session_memory(self, thinking: str, action: dict, screenshot_app: str) -> None:
+        """Update SessionMemory with extracted shopping info and step summary."""
+        # Extract product info from thinking
+        product = self._extract_product_from_text(thinking)
+        if product and product.name:
+            page_type = "product_detail" if any(
+                kw in thinking for kw in ["详情", "detail", "规格", "spec"]
+            ) else "search_result"
+            self.session_memory.set_current_product(product)
+
+        # Track cart action
+        action_type = action.get("action_type", action.get("action", ""))
+        if any(kw in thinking for kw in ["加入购物车", "加购", "add to cart", "购物车"]):
+            if self.session_memory.current_product:
+                self.session_memory.add_to_cart(self.session_memory.current_product)
+
+        # Track constraints from thinking
+        self._extract_constraints_from_text(thinking)
+
+        # Generate and store step summary
+        summary = self._generate_step_summary(action, screenshot_app, thinking)
+        page_type = self._infer_page_type(screenshot_app, thinking)
+        self.session_memory.add_step_summary(summary, action_type, page_type)
+
+        # Update platform if detected from app
+        if not self.session_memory.platform and screenshot_app:
+            platform = self._detect_platform(screenshot_app)
+            if platform:
+                self.session_memory.platform = platform
         """Calculate task duration in seconds."""
         if not self.task_start_time:
             return 0.0
@@ -628,13 +710,239 @@ class MemoryManager:
                     },
                     importance=0.4,
                 )
-    
+
+    # ------------------------------------------------------------------
+    # SessionMemory helpers — product extraction, summary, platform
+    # ------------------------------------------------------------------
+
+    def _extract_product_from_text(self, text: str) -> ProductInfo | None:
+        """Extract product information from thinking text."""
+        product_name = None
+        price = None
+        specs: dict[str, str] = {}
+
+        # Extract product name
+        for pattern in PRODUCT_PATTERNS["product_name"]:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                name = match.group(1) if match.lastindex else match.group(0)
+                name = name.strip().rstrip("，。,.》）\"'「」『』")
+                # Strip trailing price/status info
+                name = re.sub(r'(?:售价|价格|¥|￥|元|块)\s*\d*\.?\d*\s*$', '', name).strip()
+                name = re.sub(r'(?:，|。|,)\s*$', '', name).strip()
+                if len(name) >= 2 and len(name) <= 50:
+                    product_name = name
+                    break
+
+        if not product_name:
+            return None
+
+        # Extract price
+        for pattern in PRODUCT_PATTERNS["price"]:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                try:
+                    price = float(match.group(1).replace(",", ""))
+                    break
+                except (ValueError, IndexError):
+                    pass
+
+        # Extract specs
+        for pattern in PRODUCT_PATTERNS["spec"]:
+            for match in re.finditer(pattern, text, re.IGNORECASE):
+                if match.lastindex:
+                    spec_value = match.group(1).strip()
+                    if spec_value and len(spec_value) <= 20:
+                        # Infer spec key from context
+                        spec_key = self._infer_spec_key(spec_value)
+                        specs[spec_key] = spec_value
+
+        return ProductInfo(name=product_name, price=price, specs=specs)
+
+    def _extract_constraints_from_text(self, text: str) -> None:
+        """Extract user constraints (budget, brand preference) from thinking."""
+        # Budget constraint
+        budget_patterns = [
+            r'(?:预算|不超过|以内|之内|范围内)\s*[¥￥]?\s*(\d+(?:\.\d{1,2})?)',
+            r'(?:budget)\s*(?:is|:)?\s*\$?(\d+(?:\.\d{1,2})?)',
+        ]
+        for pattern in budget_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                self.session_memory.constraints["budget"] = match.group(1)
+                break
+
+        # Brand constraint
+        brand_patterns = [
+            r'(?:只要|就要|偏好|想买|买)(?:这个)?\s*([\u4e00-\u9fa5a-zA-Z]{2,15})(?:的|牌|品牌)',
+        ]
+        for pattern in brand_patterns:
+            match = re.search(pattern, text, re.IGNORECASE)
+            if match:
+                brand = match.group(1).strip()
+                if brand and len(brand) >= 2:
+                    self.session_memory.constraints["brand"] = brand
+                    break
+
+    def _generate_step_summary(
+        self, action: dict, current_app: str, thinking: str
+    ) -> str:
+        """Generate a one-line summary of the current step."""
+        action_type = action.get("action_type", action.get("action", ""))
+
+        target = self._infer_action_target(action, thinking)
+        step_num = len(self.session_memory.completed_steps) + 1
+
+        # Template-driven summary based on action type
+        if action_type == "Launch":
+            summary = f"已启动{current_app}"
+        elif action_type == "Tap":
+            if target:
+                summary = f"在{current_app}点击了「{target}」"
+            else:
+                summary = f"在{current_app}点击了界面元素"
+        elif action_type == "Type" or action_type == "Type_Name":
+            text = action.get("text", "")[:20]
+            if text:
+                summary = f"在{current_app}输入了「{text}」"
+            else:
+                summary = f"在{current_app}进行了文本输入"
+        elif action_type == "Swipe":
+            direction = action.get("direction", "")
+            summary = f"在{current_app}{direction}滑动浏览"
+        elif action_type == "Interact":
+            summary = f"向用户确认了选择"
+        elif action_type == "Back":
+            summary = f"在{current_app}返回上一页"
+        elif action_type == "Wait":
+            summary = f"等待页面加载"
+        elif action_type == "Long Press":
+            summary = f"在{current_app}长按操作"
+        elif action_type == "Double Tap":
+            summary = f"在{current_app}双击操作"
+        elif action_type == "finish" or action.get("_metadata") == "finish":
+            summary = f"任务完成"
+        else:
+            summary = f"在{current_app}执行了{action_type}"
+
+        return summary
+
+    def _infer_action_target(self, action: dict, thinking: str) -> str:
+        """Infer what the user clicked on from action context."""
+        # Try to extract target from thinking
+        tap_patterns = [
+            r'(?:点击|按下|选中|打开|进入)(?:了|的是)?\s*[""「『]?(.{1,30})[""」『]?(?:，|。|$)',
+        ]
+        for pattern in tap_patterns:
+            match = re.search(pattern, thinking)
+            if match:
+                target = match.group(1).strip().rstrip("，。,")
+                if target and len(target) <= 30:
+                    return target
+        return ""
+
+    def _infer_page_type(self, app: str, thinking: str) -> str:
+        """Infer the current page type based on thinking context."""
+        page_signals = {
+            "home": ["首页", "主页", "home", "主界面"],
+            "search": ["搜索", "search", "输入关键词", "搜索框"],
+            "search_result": ["搜索结果", "搜索列表", "找到.*个商品"],
+            "product_detail": ["详情", "detail", "规格", "参数", "商品介绍"],
+            "cart": ["购物车", "cart", "结算"],
+            "checkout": ["结算", "支付", "checkout", "提交订单"],
+            "spec_selection": ["规格", "颜色", "尺码", "选择.*规格"],
+            "order": ["订单", "order", "物流"],
+        }
+        for page_type, signals in page_signals.items():
+            if any(s in thinking.lower() for s in signals):
+                return page_type
+        return ""
+
+    def _infer_spec_key(self, spec_value: str) -> str:
+        """Infer spec key from value (e.g., '黑色' → '颜色', '42码' → '尺码')."""
+        if spec_value.endswith(("色",)):
+            return "颜色"
+        if spec_value.endswith(("码", "号")):
+            return "尺码"
+        if spec_value.endswith(("GB", "TB", "MB")):
+            return "容量"
+        if spec_value.endswith(("ml", "ML", "g", "G", "L")):
+            return "容量"
+        if spec_value.endswith(("英寸", "寸")):
+            return "尺寸"
+        return "规格"
+
+    def _detect_platform(self, text: str) -> str:
+        """Detect shopping platform from text."""
+        text_lower = text.lower()
+        for platform in SHOPPING_PLATFORMS:
+            if platform.lower() in text_lower:
+                return platform
+        return ""
+
+    def compress_session_history(self) -> str | None:
+        """
+        Compress every 5 template-based step summaries into one concise summary.
+
+        Uses a lightweight VLM call (reuses PHONE_AGENT_MODEL).
+        Returns the compressed summary string, or None if compression was skipped.
+        """
+        if not self.session_memory.should_compress():
+            return None
+
+        recent = self.session_memory.completed_steps[-5:]
+        summaries_text = "\n".join(
+            f"Step {s.step}: {s.summary}" for s in recent
+        )
+
+        try:
+            from openai import OpenAI
+            import os
+
+            model_name = os.getenv("PHONE_AGENT_MODEL", "autoglm-phone-9b")
+            base_url = os.getenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1")
+            api_key = os.getenv("PHONE_AGENT_API_KEY", "EMPTY")
+            client = OpenAI(base_url=base_url, api_key=api_key)
+
+            prompt = (
+                "将以下手机购物操作的 5 个步骤压缩为一句简洁的进展描述"
+                "（保留关键信息：App、商品名、价格、动作结果）：\n"
+                + summaries_text
+                + "\n\n压缩为一句："
+            )
+
+            response = client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model=model_name,
+                temperature=0.1,
+                max_tokens=80,
+            )
+            compressed = (response.choices[0].message.content or "").strip()
+
+            if compressed and len(compressed) >= 5:
+                # Replace the 5 template summaries with one compressed entry
+                del self.session_memory.completed_steps[-5:]
+                self.session_memory.completed_steps.append(
+                    StepSummary(
+                        step=recent[0].step,
+                        summary=f"[压缩] {compressed}",
+                        action_type="compress",
+                        page_type="",
+                    )
+                )
+                return compressed
+
+        except Exception:
+            pass
+
+        return None
+
     def _auto_add_contact(self, name: str, context: str):
         """Auto-add contact with deduplication."""
         if name in self._session_contacts:
             return
         self._session_contacts.add(name)
-        
+
         self.store.add(
             content=f"联系人: {name}",
             memory_type=MemoryType.CONTACT,
@@ -645,7 +953,7 @@ class MemoryManager:
             },
             importance=0.5,
         )
-    
+
     def _auto_add_app(self, app_name: str, context: str):
         """Auto-add frequently used app."""
         app_lower = app_name.lower()

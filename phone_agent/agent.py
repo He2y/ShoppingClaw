@@ -422,6 +422,10 @@ class PhoneAgent:
             mode = context_data.get("mode", "explore")
             current_state_id = context_data.get("current_state_id")
 
+            # Phase 2.5: SessionMemory compression (every 5 steps)
+            if current_app:
+                self.memory_manager.compress_session_history()
+
             # [HITL Active Clarification] - Use ClarificationAgent on first step
             if is_first and self.clarification_agent:
                 result = self.clarification_agent.check_and_clarify(
@@ -482,6 +486,7 @@ class PhoneAgent:
                     )
 
                 finished = action.get("_metadata") == "finish" or result.should_finish
+                self._last_thinking = "[Graph Shortcut Navigated]"
                 return StepResult(
                     success=result.success,
                     finished=finished,
@@ -567,21 +572,44 @@ class PhoneAgent:
                 )
 
         # =============================================
-        # 注入图谱语义上下文：让 VLM 知道相似任务轨迹
+        # Phase ⑥: 多层上下文注入
+        # Layer 1: SessionMemory 进度摘要（始终注入）
+        # Layer 2: SessionMemory 详细记忆（触发时注入）
+        # Layer 3: 图谱语义上下文
+        # Layer 4: 关键场景检测
         # =============================================
-        extra_context = context_data.get("semantic_context", "") if self.memory_manager else ""
+        extra_context_parts: list[str] = []
 
-        # =============================================
-        # 关键场景检测：动态强化提示
-        # =============================================
+        if self.memory_manager and current_app:
+            # Layer 1: Always inject progress summary
+            summary_ctx = self.memory_manager.session_memory.get_context_for_injection("summary")
+            if summary_ctx:
+                extra_context_parts.append(summary_ctx)
+
+            # Layer 2: Triggered detailed injection
+            last_thinking = getattr(self, "_last_thinking", "")
+            if self.memory_manager.session_memory.should_trigger_detailed_injection(last_thinking):
+                detailed_ctx = self.memory_manager.session_memory.get_context_for_injection("detailed")
+                if detailed_ctx:
+                    extra_context_parts.append(detailed_ctx)
+                if self.agent_config.verbose:
+                    print("🔍 [SessionMemory] 触发详细记忆注入")
+
+        # Layer 3: Graph semantic context
+        if self.memory_manager:
+            semantic_ctx = context_data.get("semantic_context", "")
+            if semantic_ctx:
+                extra_context_parts.append(semantic_ctx)
+
+        # Layer 4: Critical scenario detection
         if self.memory_manager:
             critical_hints = self._detect_critical_scenario(current_app, screenshot.base64_data)
             if critical_hints:
-                critical_hint_text = "\n\n".join(critical_hints)
-                # Prepend critical hints to ensure VLM sees them first
-                extra_context = f"{critical_hint_text}\n\n{extra_context}" if extra_context else critical_hint_text
+                extra_context_parts.append("\n\n".join(critical_hints))
                 if self.agent_config.verbose:
-                    print(f"🎯 检测到关键场景，注入强提示")
+                    print("🎯 检测到关键场景，注入强提示")
+
+        extra_context = "\n\n".join(extra_context_parts) if extra_context_parts else ""
 
         if extra_context and self._context:
             last_msg = self._context[-1]
@@ -821,6 +849,23 @@ class PhoneAgent:
                 action=action,
                 screenshot_app=current_app,
             )
+
+            # SessionMemory verbose logging
+            if self.agent_config.verbose:
+                sm = self.memory_manager.session_memory
+                product_count = len(sm.viewed_products)
+                cart_count = len(sm.cart_items)
+                if product_count > 0 or cart_count > 0:
+                    parts = []
+                    if sm.current_product:
+                        p = sm.current_product
+                        parts.append(f"{p.name}" + (f" ¥{p.price}" if p.price else ""))
+                    if cart_count:
+                        parts.append(f"购物车({cart_count}件)")
+                    if sm.viewed_products:
+                        parts.append(f"已看{product_count}件")
+                    print(f"📦 [SessionMemory] {' | '.join(parts)}")
+
             # Phase 4: Online Dynamic Graph construction - 使用统��接口
             if current_state_id:
                 self.memory_manager.update_state_and_transition(
@@ -841,12 +886,16 @@ class PhoneAgent:
 
         # Record step trace
         if self.tracer:
+            session_snapshot = None
+            if self.memory_manager:
+                session_snapshot = self.memory_manager.session_memory.to_dict()
             self.tracer.record_step(
                 step=self._step_count,
                 screenshot_base64=screenshot.base64_data,
                 model_raw_output=response.raw_content,
                 action=action,
                 finished=finished,
+                session_memory_snapshot=session_snapshot,
             )
 
         if finished and self.agent_config.verbose:
@@ -856,6 +905,9 @@ class PhoneAgent:
                 f"✅ {msgs['task_completed']}: {result.message or action.get('message', msgs['done'])}"
             )
             print("=" * 50 + "\n")
+
+        # Save last thinking for SessionMemory trigger detection
+        self._last_thinking = thinking
 
         return StepResult(
             success=result.success,

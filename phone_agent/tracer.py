@@ -67,16 +67,20 @@ class GUITracer:
         model_raw_output: str,
         action: dict[str, Any],
         finished: bool,
+        session_memory_snapshot: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         """Call at the end of PhoneAgent._execute_step()."""
         self._save_screenshot(step, screenshot_base64)
-        self._steps.append({
+        step_record = {
             "step": step,
             "model_output": model_raw_output,
             "action": action,
             "finished": finished,
-        })
+        }
+        if session_memory_snapshot:
+            step_record["session_memory"] = session_memory_snapshot
+        self._steps.append(step_record)
 
     def end_task(self, result: str, total_steps: int) -> None:
         """Call when PhoneAgent.run() is about to return. Writes episode.json."""
