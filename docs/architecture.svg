@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 840" width="1000" height="840">
+<style>
+text { font-family: "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Microsoft YaHei", "SimHei", sans-serif; }
+.stage-num { font-size: 11px; font-weight: 700; }
+.stage-label { font-size: 12px; font-weight: 600; }
+.stage-desc { font-size: 10px; }
+.box-title { font-size: 12px; font-weight: 700; }
+.box-sub { font-size: 10px; }
+.section-title { font-size: 13px; font-weight: 700; }
+</style>
+<defs>
+<marker id="a-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/></marker>
+<marker id="a-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#059669"/></marker>
+<marker id="a-purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#7c3aed"/></marker>
+<marker id="a-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/></marker>
+<marker id="a-gray" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0, 10 3.5, 0 7" fill="#6b7280"/></marker>
+<filter id="sh" x="-2%" y="-3%" width="106%" height="108%"><feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.06"/></filter>
+<filter id="sh2" x="-2%" y="-3%" width="106%" height="108%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.08"/></filter>
+</defs>
+<rect width="1000" height="840" fill="#ffffff"/>
+<text x="500" y="30" text-anchor="middle" fill="#111827" font-size="16" font-weight="700">Fig. 1. System Architecture of ShoppingClaw: A Memory-Decoupled Mobile GUI Agent for Shopping Scenarios</text>
+<text x="290" y="58" text-anchor="middle" fill="#111827" font-size="13" font-weight="700">(a) Agent Execution Pipeline</text>
+<rect x="60" y="70" width="460" height="46" rx="8" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1.5" filter="url(#sh)"/>
+<circle cx="84" cy="93" r="11" fill="#2563eb"/>
+<text x="84" y="97" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">0</text>
+<text x="106" y="92" fill="#111827" font-size="12" font-weight="600">User Task Input</text>
+<text x="106" y="108" fill="#64748b" font-size="10">Natural language shopping instruction (e.g. "Buy black Nike running shoes, size 42, budget 500")</text>
+<line x1="290" y1="116" x2="290" y2="136" stroke="#2563eb" stroke-width="1.5" marker-end="url(#a-blue)"/>
+<rect x="60" y="140" width="460" height="60" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5" filter="url(#sh)"/>
+<circle cx="84" cy="170" r="11" fill="#2563eb"/>
+<text x="84" y="174" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">1</text>
+<text x="106" y="166" fill="#1e40af" font-size="12" font-weight="600">Task Clarification &amp; Constraint Extraction (HITL)</text>
+<text x="106" y="183" fill="#3b82f6" font-size="10">Ambiguity detection → User clarification → Platform identification → Constraint parsing (budget, brand, specs)</text>
+<line x1="290" y1="200" x2="290" y2="220" stroke="#2563eb" stroke-width="1.5" marker-end="url(#a-blue)"/>
+<rect x="40" y="224" width="500" height="370" rx="12" fill="none" stroke="#2563eb" stroke-width="2" stroke-dasharray="8,4"/>
+<rect x="52" y="216" width="180" height="18" rx="4" fill="#2563eb"/>
+<text x="142" y="229" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">Closed-Loop Execution Engine</text>
+<rect x="70" y="242" width="440" height="36" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#sh)"/>
+<circle cx="94" cy="260" r="9" fill="#64748b"/>
+<text x="94" y="264" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">2</text>
+<text x="112" y="260" fill="#111827" font-size="11" font-weight="600">Screenshot Capture</text>
+<text x="112" y="274" fill="#64748b" font-size="9">Device screenshot (base64) + Current app detection → UI state hash computation</text>
+<line x1="290" y1="278" x2="290" y2="294" stroke="#2563eb" stroke-width="1.5" marker-end="url(#a-blue)"/>
+<rect x="70" y="298" width="440" height="52" rx="6" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5" filter="url(#sh)"/>
+<circle cx="94" cy="324" r="9" fill="#7c3aed"/>
+<text x="94" y="328" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">3</text>
+<text x="112" y="320" fill="#6b21a8" font-size="11" font-weight="600">Memory Retrieval — GraphRAG + On-Demand Lookup</text>
+<text x="112" y="336" fill="#7c3aed" font-size="9">Layer 1: TaskIndex FAISS semantic search | Layer 2: Neo4j N-gram fallback | Layer 3: UI state supplement</text>
+<text x="112" y="348" fill="#7c3aed" font-size="9">RetrievalGateway monitors thinking for 5 confusion signals → triggers KnowledgeBase query on demand</text>
+<line x1="290" y1="350" x2="290" y2="366" stroke="#2563eb" stroke-width="1.5" marker-end="url(#a-blue)"/>
+<rect x="70" y="370" width="440" height="36" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5" filter="url(#sh)"/>
+<circle cx="94" cy="388" r="9" fill="#059669"/>
+<text x="94" y="392" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">4</text>
+<text x="112" y="388" fill="#065f46" font-size="11" font-weight="600">Minimal Context Construction (Memory Decoupling)</text>
+<text x="112" y="402" fill="#047857" font-size="9">System prompt + Progress summary (1-2 lines) + Screenshot + [Conditional] retrieval result</text>
+<line x1="290" y1="406" x2="290" y2="422" stroke="#2563eb" stroke-width="1.5" marker-end="url(#a-blue)"/>
+<rect x="70" y="426" width="440" height="36" rx="6" fill="#ffffff" stroke="#cbd5e1" stroke-width="1" filter="url(#sh)"/>
+<circle cx="94" cy="444" r="9" fill="#64748b"/>
+<text x="94" y="448" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">5</text>
+<text x="112" y="444" fill="#111827" font-size="11" font-weight="600">VLM Inference (Model Adapter Layer)</text>
+<text x="112" y="458" fill="#64748b" font-size="9">AutoGLM / UI-TARS / QwenVL / MAI-UI / GUI-Owl → Thinking + Action generation</text>
+<line x1="290" y1="462" x2="290" y2="478" stroke="#2563eb" stroke-width="1.5" marker-end="url(#a-blue)"/>
+<rect x="70" y="482" width="440" height="36" rx="6" fill="#fef2f2" stroke="#fecaca" stroke-width="1.5" filter="url(#sh)"/>
+<circle cx="94" cy="500" r="9" fill="#dc2626"/>
+<text x="94" y="504" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">6</text>
+<text x="112" y="500" fill="#991b1b" font-size="11" font-weight="600">Action Parsing + SpecGuard Safety Check</text>
+<text x="112" y="514" fill="#b91c1c" font-size="9">Parse action JSON → SpecGuard: intercept wrong purchases on spec-selection pages → Override to Interact</text>
+<line x1="290" y1="518" x2="290" y2="534" stroke="#ea580c" stroke-width="1.5" marker-end="url(#a-orange)"/>
+<rect x="70" y="538" width="440" height="36" rx="6" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5" filter="url(#sh)"/>
+<circle cx="94" cy="556" r="9" fill="#ea580c"/>
+<text x="94" y="560" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">7</text>
+<text x="112" y="556" fill="#9a3412" font-size="11" font-weight="600">Device Execution</text>
+<text x="112" y="570" fill="#c2410c" font-size="9">Coordinate normalization → ADB (Android) / HDC (HarmonyOS) / XCTEST (iOS) → Execute action on device</text>
+<path d="M 510 556 L 572 556 L 572 260 L 514 260" stroke="#2563eb" stroke-width="1.5" stroke-dasharray="6,3" fill="none" marker-end="url(#a-blue)"/>
+<text x="580" y="410" text-anchor="middle" fill="#2563eb" font-size="9" font-weight="600" transform="rotate(90, 580, 410)">Next Iteration</text>
+<rect x="230" y="574" width="280" height="16" rx="4" fill="#059669" fill-opacity="0.1"/>
+<text x="370" y="586" text-anchor="middle" fill="#059669" font-size="9" font-weight="600">Step 8: Memory Update (KnowledgeBase record + Dual-Core store)</text>
+<line x1="540" y1="510" x2="550" y2="510" stroke="#059669" stroke-width="1" stroke-dasharray="4,2"/>
+<text x="770" y="58" text-anchor="middle" fill="#111827" font-size="13" font-weight="700">(b) Memory System — Decoupled Architecture</text>
+<rect x="570" y="70" width="400" height="420" rx="12" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
+<text x="770" y="92" text-anchor="middle" fill="#111827" font-size="12" font-weight="700">Dual-Core Memory Engine</text>
+<rect x="588" y="106" width="174" height="130" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="2" filter="url(#sh2)"/>
+<text x="675" y="126" text-anchor="middle" fill="#1e40af" font-size="11" font-weight="700">VLM Context Window</text>
+<text x="675" y="142" text-anchor="middle" fill="#6b7280" font-size="9">(Minimal — Pull Mode)</text>
+<rect x="598" y="152" width="154" height="22" rx="4" fill="#dbeafe"/>
+<text x="675" y="167" text-anchor="middle" fill="#1e40af" font-size="9">[Progress] Step 5 — Nike Air Max</text>
+<rect x="598" y="180" width="154" height="22" rx="4" fill="#dbeafe"/>
+<text x="675" y="195" text-anchor="middle" fill="#1e40af" font-size="9">+ Screenshot (base64 image)</text>
+<rect x="598" y="208" width="154" height="22" rx="4" fill="#fef3c7" stroke="#fcd34d" stroke-width="1" stroke-dasharray="3,2"/>
+<text x="675" y="223" text-anchor="middle" fill="#92400e" font-size="9">[Conditional] Retrieval result</text>
+<rect x="778" y="106" width="180" height="130" rx="8" fill="#faf5ff" stroke="#7c3aed" stroke-width="2" filter="url(#sh2)"/>
+<text x="868" y="126" text-anchor="middle" fill="#6b21a8" font-size="11" font-weight="700">RetrievalGateway</text>
+<text x="868" y="142" text-anchor="middle" fill="#6b7280" font-size="9">(On-Demand Trigger)</text>
+<text x="868" y="160" text-anchor="middle" fill="#6b21a8" font-size="9" font-weight="600">5 Signal Types:</text>
+<text x="868" y="176" text-anchor="middle" fill="#7c3aed" font-size="8">1. Uncertainty</text>
+<text x="868" y="190" text-anchor="middle" fill="#7c3aed" font-size="8">2. Comparison</text>
+<text x="868" y="204" text-anchor="middle" fill="#7c3aed" font-size="8">3. Calculation</text>
+<text x="868" y="218" text-anchor="middle" fill="#7c3aed" font-size="8">4. Product Lookup</text>
+<text x="868" y="232" text-anchor="middle" fill="#7c3aed" font-size="8">5. Stagnation</text>
+<text x="868" y="248" text-anchor="middle" fill="#6b7280" font-size="8">Cooldown: 3 steps</text>
+<line x1="762" y1="170" x2="776" y2="170" stroke="#7c3aed" stroke-width="1.2" marker-end="url(#a-purple)"/>
+<text x="769" y="163" text-anchor="middle" fill="#7c3aed" font-size="7" font-weight="600">thinking</text>
+<rect x="588" y="258" width="174" height="110" rx="8" fill="#f0fdf4" stroke="#059669" stroke-width="2" filter="url(#sh2)"/>
+<text x="675" y="278" text-anchor="middle" fill="#065f46" font-size="11" font-weight="700">KnowledgeBase</text>
+<text x="675" y="294" text-anchor="middle" fill="#6b7280" font-size="9">(External "K File")</text>
+<rect x="598" y="306" width="154" height="17" rx="3" fill="#dcfce7"/>
+<text x="675" y="318" text-anchor="middle" fill="#065f46" font-size="8" font-weight="600">ProductObservations</text>
+<rect x="598" y="326" width="154" height="17" rx="3" fill="#dcfce7"/>
+<text x="675" y="338" text-anchor="middle" fill="#065f46" font-size="8" font-weight="600">StepRecords</text>
+<rect x="598" y="346" width="154" height="17" rx="3" fill="#dcfce7"/>
+<text x="675" y="358" text-anchor="middle" fill="#065f46" font-size="8" font-weight="600">ProgressTracker</text>
+<rect x="778" y="258" width="180" height="110" rx="8" fill="#f0fdf4" stroke="#059669" stroke-width="2" filter="url(#sh2)"/>
+<text x="868" y="278" text-anchor="middle" fill="#065f46" font-size="11" font-weight="700">Dual-Core Storage</text>
+<text x="868" y="294" text-anchor="middle" fill="#6b7280" font-size="9">(Cross-Session Persistence)</text>
+<ellipse cx="868" cy="326" rx="55" ry="12" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+<rect x="813" y="314" width="110" height="24" fill="#dcfce7"/>
+<line x1="813" y1="326" x2="813" y2="338" stroke="#86efac" stroke-width="1"/>
+<line x1="923" y1="326" x2="923" y2="338" stroke="#86efac" stroke-width="1"/>
+<ellipse cx="868" cy="338" rx="55" ry="12" fill="#bbf7d0" stroke="#86efac" stroke-width="1"/>
+<text x="868" y="331" text-anchor="middle" fill="#065f46" font-size="9" font-weight="600">FAISS 2048d</text>
+<circle cx="820" cy="358" r="8" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+<circle cx="868" cy="358" r="8" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+<circle cx="916" cy="358" r="8" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+<text x="868" y="378" text-anchor="middle" fill="#065f46" font-size="9" font-weight="600">Neo4j Graph</text>
+<line x1="675" y1="248" x2="675" y2="255" stroke="#059669" stroke-width="1.2" marker-end="url(#a-green)"/>
+<line x1="868" y1="248" x2="868" y2="255" stroke="#059669" stroke-width="1.2" marker-end="url(#a-green)"/>
+<line x1="762" y1="313" x2="776" y2="313" stroke="#059669" stroke-width="1.2" marker-end="url(#a-green)"/>
+<text x="769" y="307" text-anchor="middle" fill="#059669" font-size="7">persist</text>
+<rect x="588" y="382" width="370" height="40" rx="6" fill="#ffffff" stroke="#d1d5db" stroke-width="1" stroke-dasharray="4,2"/>
+<text x="773" y="400" text-anchor="middle" fill="#64748b" font-size="10" font-weight="600">SessionMemory: Per-task product tracking → feeds KnowledgeBase on each step</text>
+<text x="773" y="414" text-anchor="middle" fill="#94a3b8" font-size="9">StateManager: Unified UI state tracking across sessions</text>
+<rect x="40" y="610" width="960" height="48" rx="8" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5"/>
+<text x="60" y="630" fill="#9a3412" font-size="11" font-weight="700">Device Abstraction Layer</text>
+<rect x="130" y="620" width="140" height="28" rx="6" fill="#ffffff" stroke="#d1d5db" stroke-width="1"/>
+<text x="200" y="639" text-anchor="middle" fill="#111827" font-size="11" font-weight="600">ADB — Android</text>
+<rect x="430" y="620" width="140" height="28" rx="6" fill="#ffffff" stroke="#d1d5db" stroke-width="1"/>
+<text x="500" y="639" text-anchor="middle" fill="#111827" font-size="11" font-weight="600">HDC — HarmonyOS</text>
+<rect x="730" y="620" width="140" height="28" rx="6" fill="#ffffff" stroke="#d1d5db" stroke-width="1"/>
+<text x="800" y="639" text-anchor="middle" fill="#111827" font-size="11" font-weight="600">XCTEST — iOS</text>
+<rect x="40" y="673" width="455" height="70" rx="8" fill="#fef2f2" stroke="#fecaca" stroke-width="1.5"/>
+<text x="267" y="693" text-anchor="middle" fill="#991b1b" font-size="11" font-weight="700">Traditional Push-Based Approach</text>
+<text x="267" y="711" text-anchor="middle" fill="#b91c1c" font-size="9">VLM Context = [System Prompt] + [Step1: full thinking + img] + [Step2: full thinking + img] + ...</text>
+<text x="267" y="727" text-anchor="middle" fill="#b91c1c" font-size="9">+ [4-layer injection: summary + detailed + graph + safety] → Context grows unboundedly</text>
+<text x="267" y="741" text-anchor="middle" fill="#dc2626" font-size="9" font-weight="600">Problems: Memory Degradation (13-22%), Progress Confusion (44-67%), Math Hallucination (7-11%)</text>
+<rect x="505" y="673" width="455" height="70" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5"/>
+<text x="732" y="693" text-anchor="middle" fill="#065f46" font-size="11" font-weight="700">Our Memory Decoupling Approach (Pull-Based)</text>
+<text x="732" y="711" text-anchor="middle" fill="#047857" font-size="9">VLM Context = [System Prompt] + [Progress: Step 5 | Nike Air Max] + [Screenshot]</text>
+<text x="732" y="727" text-anchor="middle" fill="#047857" font-size="9">+ [Only IF triggered: RetrievalGateway on-demand query result] → Context ~80% smaller</text>
+<text x="732" y="741" text-anchor="middle" fill="#059669" font-size="9" font-weight="600">Innovation: External KnowledgeBase stores observations; RetrievalGateway pulls relevant info on demand</text>
+<text x="480" y="713" text-anchor="middle" fill="#6b7280" font-size="14" font-weight="700" opacity="0.5">VS</text>
+<line x1="495" y1="687" x2="505" y2="687" stroke="#6b7280" stroke-width="1.5" marker-end="url(#a-gray)"/>
+<rect x="40" y="758" width="920" height="32" rx="6" fill="#f8fafc" stroke="#e5e7eb" stroke-width="1"/>
+<line x1="56" y1="778" x2="78" y2="778" stroke="#2563eb" stroke-width="2"/>
+<text x="84" y="782" fill="#64748b" font-size="9">Main flow</text>
+<line x1="211" y1="778" x2="233" y2="778" stroke="#7c3aed" stroke-width="2"/>
+<text x="239" y="782" fill="#64748b" font-size="9">Memory retrieval</text>
+<line x1="366" y1="778" x2="388" y2="778" stroke="#059669" stroke-width="2"/>
+<text x="394" y="782" fill="#64748b" font-size="9">Memory write/persist</text>
+<line x1="521" y1="778" x2="543" y2="778" stroke="#ea580c" stroke-width="2"/>
+<text x="549" y="782" fill="#64748b" font-size="9">Device control</text>
+<line x1="676" y1="778" x2="698" y2="778" stroke="#dc2626" stroke-width="2"/>
+<text x="704" y="782" fill="#64748b" font-size="9">Safety check</text>
+<line x1="831" y1="778" x2="853" y2="778" stroke="#6b7280" stroke-width="1.2" stroke-dasharray="4,2"/>
+<text x="859" y="782" fill="#64748b" font-size="9">--- Dashed = loop/cycle</text>
+<text x="500" y="820" text-anchor="middle" fill="#94a3b8" font-size="9">ShoppingClaw v2.0 — PhoneAgent architecture with Memory Decoupling, inspired by UI-Copilot (Lu et al., 2026)</text>
+</svg>
