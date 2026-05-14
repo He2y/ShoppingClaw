@@ -436,6 +436,15 @@ class PhoneAgent:
         if action.get("action") == "Interact" or action.get("action_type") == "Interact":
             return None
 
+        # Terminal actions (finish/terminate/answer) mean the model has decided
+        # the task is complete — don't second-guess that decision here
+        _metadata = (action.get("_metadata") or "").lower()
+        if _metadata == "finish":
+            return None
+        _action_name = (action.get("action") or "").lower()
+        if _action_name in ("terminate", "answer"):
+            return None
+
         thinking_mentions_specs = any(
             kw in thinking for kw in self._shopping_config.spec_keywords
         )

@@ -838,7 +838,7 @@ def main():
         model_name=args.model,
         api_key=args.apikey,
         lang=args.lang,
-        max_tokens=int(os.getenv("PHONE_AGENT_MAX_TOKENS", "9000")),
+        max_tokens=int(os.getenv("PHONE_AGENT_MAX_TOKENS", "4096")),
     )
 
     if device_type == DeviceType.IOS:
