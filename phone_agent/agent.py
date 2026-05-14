@@ -1,6 +1,7 @@
 """Main PhoneAgent class for orchestrating phone automation."""
 
 import json
+import re
 import time
 import traceback
 from dataclasses import dataclass, field
@@ -328,6 +329,94 @@ class PhoneAgent:
             "立即执行 Interact，不要点任何购买/加入购物车按钮！"
         ]
 
+    # ── SKU extraction patterns ──
+    _COLOR_VALUES = {
+        "银色", "蓝色", "黑色", "白色", "红色", "金色", "绿色", "紫色", "灰色",
+        "粉色", "橙色", "黄色", "棕色", "深空黑色", "星光色", "午夜色", "远峰蓝",
+        "苍岭绿", "暗紫色", "石墨色", "亮黑色", "土豪金", "玫瑰金", "深空灰",
+    }
+    _STORAGE_PATTERNS = [
+        r"(\d+\s*(?:TB?|GB?))",  # 512G, 512GB, 1TB, 256G
+    ]
+    _SIZE_VALUES = {"S", "M", "L", "XL", "XXL", "XXXL", "均码", "大码", "小码"}
+
+    def _extract_specs_from_task(self, task: str) -> dict[str, str]:
+        """
+        Parse the user's original task for explicit SKU specifications.
+        Returns a mapping from spec category to value, e.g.:
+        {'颜色': '银色', '容量': '512G'}
+        """
+        specs: dict[str, str] = {}
+
+        # Extract color
+        for color in sorted(self._COLOR_VALUES, key=len, reverse=True):
+            if color in task:
+                specs["颜色"] = color
+                break
+
+        # Extract storage
+        for pattern in self._STORAGE_PATTERNS:
+            m = re.search(pattern, task, re.IGNORECASE)
+            if m:
+                specs["容量"] = m.group(1).upper().replace(" ", "").replace("B", "B")
+                break
+
+        # Extract size
+        for size in sorted(self._SIZE_VALUES, key=len, reverse=True):
+            rsize = rf"\b{re.escape(size)}\b"
+            if re.search(rsize, task):
+                specs["尺码"] = size
+                break
+
+        return specs
+
+    def _is_spec_selected(
+        self, thinking: str, spec_key: str, spec_value: str
+    ) -> bool:
+        """
+        Check whether the thinking reflects that a specific SKU value
+        is already selected on the current page.
+        """
+        # Normalize spec_value for fuzzy matching
+        val = spec_value.upper().replace(" ", "")
+        # e.g. "512GB" -> also try "512G"
+        val_short = val.replace("GB", "G").replace("TB", "T")
+
+        # The thinking must mention the value
+        if spec_value not in thinking and val not in thinking and val_short not in thinking:
+            return False
+
+        # And it must appear near a "selected" marker
+        for sv in (spec_value, val, val_short):
+            # Pattern: value appears within 20 chars of a selection marker
+            if re.search(
+                rf"{re.escape(sv)}.{{0,20}}(?:已选中|已选[^项]|已选择|已勾选|✔|✓|\bselected\b|当前)",
+                thinking,
+            ):
+                return True
+            # Pattern: spec_key then value then selection marker
+            if re.search(
+                rf"{re.escape(spec_key)}.*?{re.escape(sv)}",
+                thinking,
+            ) and any(m in thinking for m in ("已选中", "已选", "已选择", "已勾选")):
+                return True
+
+        return False
+
+    def _build_spec_question(self, thinking: str) -> str:
+        """Build a contextual question when the user hasn't specified exact SKU."""
+        if "颜色" in thinking and "容量" in thinking:
+            return "这里有多种颜色和容量可选，请问您需要哪个配置？"
+        elif "颜色" in thinking:
+            return "有多种颜色可选，请问您喜欢哪个颜色？"
+        elif "容量" in thinking:
+            return "有多种容量可选，请问您需要多大容量？"
+        elif "温度" in thinking:
+            return "请问您需要什么温度？"
+        elif "糖度" in thinking:
+            return "请问您需要什么糖度？"
+        return "请问您需要什么规格和配置？"
+
     def _spec_guard_check(
         self,
         action: dict,
@@ -335,50 +424,63 @@ class PhoneAgent:
         current_app: str,
     ) -> dict | None:
         """
-        Code-level safety net: if the model is about to click purchase/confirm
-        on a spec page without having issued Interact in this step, override
-        the action with a forced Interact.
-
-        Returns a replacement action dict, or None if the action is safe.
+        Code-level safety net: before purchase/confirm on a spec page,
+        cross-reference the user's original task requirements against
+        what's currently selected. Intercepts only when:
+        - The user didn't specify exact SKU → must ask
+        - The user's specified SKU doesn't match what's selected → must correct
         """
         if not any(app in (current_app or "") for app in self._shopping_config.apps):
             return None
 
-        # Already issuing Interact – allow
         if action.get("action") == "Interact" or action.get("action_type") == "Interact":
             return None
 
-        # Check whether the model's thinking discusses specs
         thinking_mentions_specs = any(
             kw in thinking for kw in self._shopping_config.spec_keywords
         )
         if not thinking_mentions_specs:
             return None
 
-        # Check whether the thinking mentions a purchase intent
         thinking_has_purchase_intent = any(
             kw in thinking for kw in self._shopping_config.purchase_keywords
         )
         if not thinking_has_purchase_intent:
             return None
 
-        # Build a contextual question from the thinking
-        question = "请问您需要什么规格和配置？"
-        if "颜色" in thinking and "容量" in thinking:
-            question = "这里有多种颜色和容量可选，请问您需要哪个配置？"
-        elif "颜色" in thinking:
-            question = "有多种颜色可选，请问您喜欢哪个颜色？"
-        elif "容量" in thinking:
-            question = "有多种容量可选，请问您需要多大容量？"
-        elif "温度" in thinking:
-            question = "请问您需要什么温度？"
-        elif "糖度" in thinking:
-            question = "请问您需要什么糖度？"
+        # ── Self-reflection: cross-reference user's original task ──
+        original_task = self._current_task
+        user_requested_specs = self._extract_specs_from_task(original_task)
+
+        if user_requested_specs:
+            # User explicitly specified SKU — verify they're selected
+            missing = []
+            for spec_key, spec_value in user_requested_specs.items():
+                if not self._is_spec_selected(thinking, spec_key, spec_value):
+                    missing.append(f"{spec_key}={spec_value}")
+
+            if not missing:
+                print(
+                    f"✅ [SpecGuard] 用户指定SKU已全部选中 "
+                    f"({user_requested_specs})，放行"
+                )
+                return None
+
+            question = (
+                f"您要求的是{'，'.join(missing)}，"
+                f"但当前页面尚未选择。请确认规格后继续。"
+            )
+        else:
+            # User didn't specify exact SKU — must ask
+            question = self._build_spec_question(thinking)
 
         print(f"\n{'─' * 50}")
-        print(f"🛑 [SpecGuard] 模型试图跳过规格询问，已拦截")
-        print(f"   模型原计划: {thinking[:80]}...")
-        print(f"   强制��为: Interact")
+        print(f"🛑 [SpecGuard] 规格确认拦截")
+        print(f"   用户任务: {original_task[:100]}")
+        if user_requested_specs:
+            print(f"   用户指定SKU: {user_requested_specs}")
+        print(f"   模型试图: {thinking[:100]}...")
+        print(f"   强制为: Interact → {question}")
         print(f"{'─' * 50}")
 
         return {
@@ -387,8 +489,6 @@ class PhoneAgent:
             "action_type": "Interact",
             "message": question,
         }
-
-        return critical_hints
 
     def _execute_step(
         self, user_prompt: str | None = None, is_first: bool = False

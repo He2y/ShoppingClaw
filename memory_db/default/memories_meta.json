@@ -818,5 +818,33 @@
       ],
       "task_summary": "我想买一个iphone 17 pro max,帮我去京东和淘宝上对比一下价格，哪个便宜就买哪个"
     }
+  },
+  "4c766174b8ea0619": {
+    "id": "4c766174b8ea0619",
+    "content": "用户常用应用: 淘宝",
+    "memory_type": "app_usage",
+    "created_at": "2026-05-14T23:45:19.221678",
+    "last_accessed": "2026-05-14T23:54:22.936714",
+    "access_count": 33,
+    "importance": 1.0,
+    "metadata": {
+      "app_name": "淘宝",
+      "source": "auto_extract",
+      "context": "用户主动启动了应用: 淘宝"
+    }
+  },
+  "b01d42d19cdc48a0": {
+    "id": "b01d42d19cdc48a0",
+    "content": "从执行过程推断: 通常表示输入流已经结束",
+    "memory_type": "user_preference",
+    "created_at": "2026-05-14T23:51:24.970481",
+    "last_accessed": "2026-05-14T23:54:22.936721",
+    "access_count": 10,
+    "importance": 0.8500000000000003,
+    "metadata": {
+      "category": "time",
+      "source": "auto_thinking",
+      "context": "用户说\"Action failed: EOF when reading a line\"，这意味着在阅读某一行时遇到了文件结束（EOF）错误。这通常表示输入流已经结束，但可能还没有完全加载完所有内容。\n"
+    }
   }
 }

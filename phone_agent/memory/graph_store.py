@@ -22,21 +22,23 @@ class GraphStore:
         self.password = password or os.getenv("NEO4J_PASSWORD", "password")
         self.database = database or os.getenv("NEO4J_DATABASE", "shopping")
         self.driver = None
+        self.task_index = None
 
         if HAS_NEO4J:
             try:
                 self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
                 # Test connection
                 self.driver.verify_connectivity()
-                
+
                 # Initialize FAISS TaskIndex
                 self.task_index = TaskIndex()
                 if not self.task_index.load():
                     print("FAISS cache empty, triggering rebuild from Neo4j...")
                     self._rebuild_task_index()
             except Exception as e:
-                print(f"✗ Neo4j connection failed: {e}")
-                raise RuntimeError(f"Neo4j is required but unavailable. Please ensure Neo4j is running at {uri}") from e
+                print(f"⚠️ Neo4j 不可用（{e}），空间记忆图功能已降级")
+                self.driver = None
+                self.task_index = None
 
 
     def _rebuild_task_index(self):
