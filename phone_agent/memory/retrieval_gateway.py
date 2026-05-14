@@ -9,15 +9,17 @@ Two trigger paths:
   1. Implicit: parse VLM thinking for uncertainty/confusion signals
   2. Explicit: stagnation detection (same action on same page repeatedly)
 
-When triggered, queries KnowledgeBase and returns formatted context
+When triggered, queries UnifiedSessionState and returns formatted context
 for injection into the next VLM call.
 """
 
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from .core import ProductStatus
+
 if TYPE_CHECKING:
-    from .knowledge_base import KnowledgeBase, ProductObservation
+    from .core import UnifiedSessionState, Product
 
 
 @dataclass
@@ -38,7 +40,7 @@ class RetrievalGateway:
     """
     On-demand retrieval engine — inference-time equivalent of UI-Copilot's
     Retriever tool. Monitors agent thinking for signals of memory degradation
-    or progress confusion, and queries KnowledgeBase when triggered.
+    or progress confusion, and queries UnifiedSessionState when triggered.
     """
 
     UNCERTAINTY_SIGNALS: list[str] = [
@@ -59,8 +61,8 @@ class RetrievalGateway:
         "那个商品", "之前看过", "前面那个",
     ]
 
-    def __init__(self, knowledge_base: "KnowledgeBase"):
-        self.kb = knowledge_base
+    def __init__(self, state: "UnifiedSessionState"):
+        self.state = state
         self._last_retrieval_step: int = -1
         self._retrieval_cooldown: int = 3
 
@@ -72,7 +74,7 @@ class RetrievalGateway:
         if current_step - self._last_retrieval_step < self._retrieval_cooldown:
             return RetrievalResult(triggered=False)
 
-        if self.kb.is_stagnating():
+        if self.state.is_stagnating():
             return self._do_retrieve("recall", thinking, current_step, source="stagnation")
 
         thinking_lower = thinking.lower()
@@ -99,7 +101,7 @@ class RetrievalGateway:
         self, intent: str, thinking: str, step: int, source: str = "implicit",
     ) -> RetrievalResult:
         self._last_retrieval_step = step
-        keywords = self.kb._extract_product_keywords(thinking)
+        keywords = self.state._extract_product_keywords(thinking)
 
         if intent == "product_lookup":
             context = self._build_product_context(keywords)
@@ -113,7 +115,7 @@ class RetrievalGateway:
         return RetrievalResult(
             triggered=True, intent=intent,
             context_text=context,
-            products_found=self.kb.products,
+            products_found=self.state.products,
             source=source,
         )
 
@@ -125,24 +127,24 @@ class RetrievalGateway:
         parts: list[str] = ["[记忆检索] 已浏览的商品信息:"]
         found = False
         if keywords:
-            text = self.kb.retrieve_by_keywords(keywords)
+            text = self.state.retrieve_by_keywords(keywords)
             if text:
                 parts.append(text)
                 found = True
         if not found:
-            all_text = self.kb.retrieve_all_products_text()
+            all_text = self.state.retrieve_all_products_text()
             if all_text:
                 parts.append(all_text)
             else:
                 parts.append("  (暂无商品记录)")
-        if self.kb.constraints:
+        if self.state.constraints:
             parts.append("用户约束:")
-            for k, v in self.kb.constraints.items():
+            for k, v in self.state.constraints.items():
                 parts.append(f"  - {k}: {v}")
         return "\n".join(parts)
 
     def _build_comparison_context(self) -> str:
-        products = self.kb.products
+        products = self.state.products
         if len(products) < 2:
             return "[记忆检索] 目前仅浏览了1个商品，无法进行对比。"
 
@@ -161,7 +163,7 @@ class RetrievalGateway:
         return "\n".join(parts)
 
     def _build_calculation_context(self) -> str:
-        cart_items = [p for p in self.kb.products if p.status == "added_to_cart"]
+        cart_items = [p for p in self.state.products if p.status == ProductStatus.ADDED_TO_CART]
         if not cart_items:
             return "[记忆检索] 购物车为空，无法计算。"
 
@@ -173,7 +175,7 @@ class RetrievalGateway:
             parts.append(f"  - {p.name}: ¥{price}")
         parts.append(f"  合计: ¥{total}")
 
-        all_priced = [p for p in self.kb.products if p.price]
+        all_priced = [p for p in self.state.products if p.price]
         if all_priced:
             parts.append("\n所有已浏览商品价格:")
             for p in all_priced:
@@ -182,20 +184,20 @@ class RetrievalGateway:
 
     def _build_recall_context(self, keywords: list[str]) -> str:
         parts: list[str] = ["[记忆检索] 最近操作摘要:"]
-        recent_steps = self.kb.steps[-8:]
+        recent_steps = self.state.steps[-8:]
         if recent_steps:
             for r in recent_steps:
                 target = f" → {r.action_target}" if r.action_target else ""
                 parts.append(f"  Step {r.step}: {r.action_type}{target}")
 
         if keywords:
-            recall = self.kb.retrieve_by_keywords(keywords)
+            recall = self.state.retrieve_by_keywords(keywords)
             if recall:
                 parts.append("\n相关信息:")
                 parts.append(recall)
 
-        if self.kb.constraints:
+        if self.state.constraints:
             parts.append("\n用户约束:")
-            for k, v in self.kb.constraints.items():
+            for k, v in self.state.constraints.items():
                 parts.append(f"  - {k}: {v}")
         return "\n".join(parts)

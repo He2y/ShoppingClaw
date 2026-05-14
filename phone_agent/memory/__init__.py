@@ -10,13 +10,17 @@ Inspired by TeleMem (https://github.com/TeleAI-UAGI/TeleMem)
 from .memory_store import MemoryStore, Memory, MemoryType, ShoppingMetadata, GraphMetadata
 from .graph_store import GraphStore
 from .memory_manager import MemoryManager
-from .state_manager import StateManager
-from .session_memory import SessionMemory, ProductInfo, StepSummary
-from .knowledge_base import KnowledgeBase, ProductObservation, StepRecord, ProgressTracker
+from .core import UnifiedSessionState, Product, ProductStatus, StepRecord
 from .retrieval_gateway import RetrievalGateway, RetrievalResult
 from .offline_explorer import OfflineExplorer, ShoppingPageType, Trajectory, PageInfo, PageClassifier
 
+# Backward-compatible data type aliases
+ProductInfo = Product
+ProductObservation = Product
+StepSummary = StepRecord
+
 __all__ = [
+    # Core store
     "MemoryStore",
     "Memory",
     "MemoryType",
@@ -24,23 +28,22 @@ __all__ = [
     "GraphMetadata",
     "GraphStore",
     "MemoryManager",
-    "StateManager",
-    "SessionMemory",
-    "ProductInfo",
-    "StepSummary",
-    "KnowledgeBase",
-    "ProductObservation",
+    # Unified state (new)
+    "UnifiedSessionState",
+    "Product",
+    "ProductStatus",
     "StepRecord",
-    "ProgressTracker",
+    # Retrieval
     "RetrievalGateway",
     "RetrievalResult",
+    # Offline explorer
     "OfflineExplorer",
     "ShoppingPageType",
     "Trajectory",
     "PageInfo",
     "PageClassifier",
+    # Backward-compatible data type aliases
+    "ProductInfo",
+    "ProductObservation",
+    "StepSummary",
 ]
-
-
-
-

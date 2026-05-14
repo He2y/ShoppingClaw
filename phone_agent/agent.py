@@ -13,6 +13,7 @@ from phone_agent.device_factory import get_device_factory
 from phone_agent.model import ModelClient, ModelConfig
 from phone_agent.model.adapters import ModelType, detect_model_type, get_adapter
 from phone_agent.model.client import MessageBuilder
+from phone_agent.memory.core import ProductStatus
 
 
 @dataclass
@@ -838,21 +839,21 @@ class PhoneAgent:
                 screenshot_app=current_app,
             )
 
-            # SessionMemory verbose logging
+            # Unified state verbose logging
             if self.agent_config.verbose:
-                sm = self.memory_manager.session_memory
-                product_count = len(sm.viewed_products)
-                cart_count = len(sm.cart_items)
+                st = self.memory_manager.state
+                product_count = len(st.products)
+                cart_count = len([p for p in st.products if p.status == ProductStatus.ADDED_TO_CART])
                 if product_count > 0 or cart_count > 0:
                     parts = []
-                    if sm.current_product:
-                        p = sm.current_product
+                    if st._current_product:
+                        p = st._current_product
                         parts.append(f"{p.name}" + (f" ¥{p.price}" if p.price else ""))
                     if cart_count:
                         parts.append(f"购物车({cart_count}件)")
-                    if sm.viewed_products:
+                    if st.products:
                         parts.append(f"已看{product_count}件")
-                    print(f"📦 [SessionMemory] {' | '.join(parts)}")
+                    print(f"📦 [UnifiedState] {' | '.join(parts)}")
 
             # Phase 4: Online Dynamic Graph construction - 使用统��接口
             if current_state_id:
@@ -876,7 +877,7 @@ class PhoneAgent:
         if self.tracer:
             session_snapshot = None
             if self.memory_manager:
-                session_snapshot = self.memory_manager.session_memory.to_dict()
+                session_snapshot = self.memory_manager.state.to_dict()
             self.tracer.record_step(
                 step=self._step_count,
                 screenshot_base64=screenshot.base64_data,
@@ -894,7 +895,7 @@ class PhoneAgent:
             )
             print("=" * 50 + "\n")
 
-        # Save last thinking for SessionMemory trigger detection
+        # Save last thinking for retrieval trigger detection
         self._last_thinking = thinking
 
         return StepResult(
