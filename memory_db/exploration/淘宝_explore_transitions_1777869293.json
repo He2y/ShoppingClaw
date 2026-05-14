@@ -1,0 +1,76 @@
+{
+  "app": "淘宝",
+  "task": "探索一下商品加购示例流程：激活搜索框、输入'手机'、浏览商品列表、选择商品卡片、点击加入购物车、弹出SKU选择、确认后加入购物车",
+  "total_transitions": 6,
+  "transitions": [
+    {
+      "from": "home:首页推荐商品与活动入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          429,
+          114
+        ]
+      },
+      "to": "search_input:搜索框激活状态下的搜索页"
+    },
+    {
+      "from": "search_input:搜索框激活状态下的搜索页",
+      "action": {
+        "_metadata": "do",
+        "action": "Type",
+        "text": "手机"
+      },
+      "to": "search_input:搜索输入页，显示搜索词及热门联想词"
+    },
+    {
+      "from": "search_input:搜索输入页，显示搜索词及热门联想词",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          893,
+          129
+        ]
+      },
+      "to": "search_result:手机商品搜索结果列表"
+    },
+    {
+      "from": "search_result:手机商品搜索结果列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          448
+        ]
+      },
+      "to": "product_detail:OPPO Find X9 Ultra手机商品详情页"
+    },
+    {
+      "from": "product_detail:OPPO Find X9 Ultra手机商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          514,
+          959
+        ]
+      },
+      "to": "product_detail:手机商品详情页，含版本/颜色/容量选择"
+    },
+    {
+      "from": "product_detail:手机商品详情页，含版本/颜色/容量选择",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          952
+        ]
+      },
+      "to": "product_detail:OPPO Find X9 Ultra手机详情页"
+    }
+  ]
+}

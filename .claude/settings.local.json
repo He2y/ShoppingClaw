@@ -11,7 +11,9 @@
       "Bash(pytest:*)",
       "Bash(mkdir -p tests)",
       "Bash(touch tests/__init__.py)",
-      "Bash(git checkout:*)"
+      "Bash(git checkout:*)",
+      "Bash(ls -la /e/ClawGUI/clawgui-agent/*.py)",
+      "WebSearch"
     ]
   }
 }

@@ -1,0 +1,134 @@
+{
+  "app": "淘宝",
+  "task": "探索一下搜索栏上方的'闪购'板块，执行完整的点外卖示例流程：激活搜索框、输入'麦当劳'、选择店铺、激活店铺内的搜索框、输入具体商品（板烧鸡腿堡）、点击加号加入购物车，点击'去结算'下单",
+  "explored_at": "2026-05-04T12:31:38.432575",
+  "total_pages": 10,
+  "pages": [
+    {
+      "page_type": "home",
+      "summary": "首页推荐商品及活动入口",
+      "elements": {
+        "search_bar": "顶部搜索栏",
+        "banner": "Banner轮播图",
+        "recommend_cards": "推荐商品卡片列表",
+        "activity_icons": "活动入口图标",
+        "promotion_banner": "五一狂欢促销横幅"
+      },
+      "screenshot_hash": "d21a10a185cb42536af709bd6da1ac09",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "home",
+      "summary": "闪购首页商品推荐与分类入口",
+      "elements": {
+        "banner": "顶部闪购频道切换栏及搜索框",
+        "location_selector": "定位信息显示区域",
+        "category_icons": "各类服务图标网格（美食外卖、超市便利等）",
+        "promotions": "红包/优惠活动横幅（最高12元惊喜红包）",
+        "special_sections": "老友福利、到店团购等专属板块",
+        "product_cards": "商品卡片列表（如麦当劳咖啡、瑞幸咖啡）",
+        "filter_buttons": "底部筛选标签（全部、奶茶咖啡、米粉汤面等）"
+      },
+      "screenshot_hash": "a4b2636734bb81f558ddf55781c452d8",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_input",
+      "summary": "外卖搜索输入及历史/推荐关键词页",
+      "elements": {
+        "search_bar": "顶部搜索框，显示已输入关键词'麦当劳'，右侧有橙色'搜索'按钮",
+        "history_search": "历史搜索标签组，如'瑞幸咖啡'、'KFC'等",
+        "discovery_tags": "搜索发现标签组，如'麦当劳'、'肯德基'等",
+        "store_list": "专属好店列表，含店铺图标、名称及红包优惠信息",
+        "recommend_list": "为你精选列表，含菜品图片、名称及推荐系数"
+      },
+      "screenshot_hash": "00d40288b37b0b51b4060974ad68dfbe",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_result",
+      "summary": "麦当劳相关商品搜索结果列表",
+      "elements": {
+        "search_bar": "顶部搜索框（已输入'麦当劳'）",
+        "search_buttons": "搜索历史/热门词列表（含'麦当劳'等关键词）",
+        "result_count": "各搜索词结果数量显示"
+      },
+      "screenshot_hash": "c612e293e067f6a1338ea3f56bafbd5f",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "category",
+      "summary": "麦当劳外卖店铺列表页",
+      "elements": {
+        "store_list": "麦当劳店铺信息列表",
+        "product_cards": "店铺内商品卡片列表",
+        "filter_buttons": "综合/销量/速度筛选按钮",
+        "tag_filters": "外卖红包/可堂食/30分钟达等标签按钮"
+      },
+      "screenshot_hash": "7f8488582d4e7b2538c33eb0c0a7c9e4",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "麦当劳门店商品详情页",
+      "elements": {
+        "product_image_banner": "顶部菜品轮播图（含板烧鸡腿堡双堡）",
+        "product_info": "店铺名称、评分、月售、配送信息、可堂食标识",
+        "booking_button": "预订按钮",
+        "discount_banners": "优惠活动横幅（15减6等）",
+        "membership_section": "麦当劳会员入口及免费领取按钮",
+        "tab_navigation": "点餐/评价/品牌标签栏",
+        "menu_cards": "下方点餐商品卡片列表（含麦麦炸鸡黄金周、王牌吃鸡双...等）"
+      },
+      "screenshot_hash": "c43cb2dec17d393f539a344d7d9bf1aa",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_input",
+      "summary": "搜索框输入页，显示热门搜索词",
+      "elements": {
+        "search_bar": "顶部搜索输入框，内有占位文字'想吃什么搜一搜'，右侧有红色'搜索'按钮",
+        "hot_search_tags": "热门搜索词标签组"
+      },
+      "screenshot_hash": "5c424db5e5c192f06b10f1ea1dfa1367",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_result",
+      "summary": "搜索“板烧鸡腿堡”结果列表",
+      "elements": {
+        "search_bar": "顶部搜索框（含输入内容和搜索按钮）",
+        "product_cards": "商品卡片列表（含图片、名称、销量、评分、价格、套餐选项）",
+        "filter_buttons": "筛选/排序按钮（如价格、销量、综合）"
+      },
+      "screenshot_hash": "2539486c681ccf456c393c87b0d9fce7",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_result",
+      "summary": "搜索结果页展示板烧鸡腿堡相关商品",
+      "elements": {
+        "search_bar": "顶部搜索栏（显示搜索词“板烧鸡腿堡”）",
+        "product_cards": "商品卡片列表（含主品、套餐、促销活动）",
+        "quantity_selector": "商品数量选择器（减号、数字、加号）",
+        "setmeal_button": "“选套餐”按钮"
+      },
+      "screenshot_hash": "8867a20599223bedadbaca6f327f8479",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "checkout",
+      "summary": "订单结算页面，选择收货地址并确认商品信息",
+      "elements": {
+        "address_selector": "收货地址选择区域",
+        "delivery_option": "配送方式选择（立即送出/预约配送）",
+        "order_items": "商品列表及价格明细",
+        "discount_info": "优惠信息展示（已优惠金额、红包等）",
+        "payment_options": "支付方式选择区域",
+        "submit_button": "提交订单按钮"
+      },
+      "screenshot_hash": "bfebba04870f343459234730b6652cd3",
+      "app": "淘宝"
+    }
+  ]
+}

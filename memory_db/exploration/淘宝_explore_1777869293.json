@@ -1,0 +1,97 @@
+{
+  "app": "淘宝",
+  "task": "探索一下商品加购示例流程：激活搜索框、输入'手机'、浏览商品列表、选择商品卡片、点击加入购物车、弹出SKU选择、确认后加入购物车",
+  "explored_at": "2026-05-04T12:34:53.094034",
+  "total_pages": 7,
+  "pages": [
+    {
+      "page_type": "home",
+      "summary": "首页推荐商品与活动入口",
+      "elements": {
+        "search_bar": "顶部搜索栏（显示已输入关键词）",
+        "banner": "Banner轮播图（含淘宝直播、百亿补贴等广告位）",
+        "activity_icons": "活动入口图标（88VIP、天猫超市、领淘金币等）",
+        "product_cards": "商品卡片列表（OPPO Find X9 Ultra、安踏背包等）"
+      },
+      "screenshot_hash": "eec972450175aac19c7b53faa3fdfc4e",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_input",
+      "summary": "搜索框激活状态下的搜索页",
+      "elements": {
+        "search_bar": "顶部搜索栏，显示已输入'平板电脑'",
+        "history_tags": "历史搜索关键词标签",
+        "suggestion_list": "猜你想搜的推荐词列表",
+        "hot_trends": "淘宝热榜分类标签"
+      },
+      "screenshot_hash": "42576f32f32d847b9676fd77237fad50",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_input",
+      "summary": "搜索输入页，显示搜索词及热门联想词",
+      "elements": {
+        "search_bar": "已激活的搜索输入框，内有文字'手机'，右侧有清除按钮和橙色'搜索'按钮",
+        "suggestions": "搜索词联想列表，包含带图标和橙色关键词的搜索建议"
+      },
+      "screenshot_hash": "e711a002f471031a583e616917e60841",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_result",
+      "summary": "手机商品搜索结果列表",
+      "elements": {
+        "search_bar": "顶部搜索栏（显示‘手机’关键词）",
+        "filter_tabs": "分类筛选标签（综合、销量、全部等）",
+        "promo_banners": "促销活动横幅（五一狂欢9折起、国家补贴等）",
+        "product_cards": "商品卡片列表（含品牌、型号、价格、补贴信息）"
+      },
+      "screenshot_hash": "80992a61d4c55f002c25adba3cf3f194",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "OPPO Find X9 Ultra手机商品详情页",
+      "elements": {
+        "product_image": "主图视频播放按钮",
+        "image_tabs": "图片集切换标签（3D效果、图集等）",
+        "price_section": "补贴后价格区域",
+        "buy_buttons": "单品购买、以旧换新等购买选项",
+        "promo_badges": "百亿补贴、政府补贴等促销标签",
+        "product_name": "商品名称及型号"
+      },
+      "screenshot_hash": "fba01650236e276844328ea18321a013",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "手机商品详情页，含版本/颜色/容量选择",
+      "elements": {
+        "product_image": "商品主图",
+        "price_info": "券后价与原价信息",
+        "quantity_selector": "数量加减选择器",
+        "version_buttons": "版本选项按钮组",
+        "color_swatches": "机身颜色选择卡片",
+        "capacity_buttons": "存储容量选项按钮组"
+      },
+      "screenshot_hash": "e17ee3dc35b49538a14438e2d2cd8b14",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "OPPO Find X9 Ultra手机详情页",
+      "elements": {
+        "product_image_gallery": "商品主图轮播区",
+        "color_options": "颜色/版本选择项",
+        "price_section": "补贴后价格显示区域",
+        "buy_buttons": "单品购买、以旧换新等购买选项",
+        "promo_badges": "百亿补贴、政府补贴等促销标签",
+        "product_info": "商品名称及卖点描述",
+        "add_to_cart_notice": "加购成功提示弹窗"
+      },
+      "screenshot_hash": "ff073424b6d4aba0353dd06ca9801c91",
+      "app": "淘宝"
+    }
+  ]
+}

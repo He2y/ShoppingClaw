@@ -1,0 +1,121 @@
+{
+  "app": "淘宝",
+  "task": "探索一下搜索栏上方的'闪购'板块，执行完整的点外卖示例流程：激活搜索框、输入'麦当劳'、选择店铺、激活店铺内的搜索框、输入具体商品（板烧鸡腿堡）、点击加号加入购物车，点击'去结算'下单",
+  "total_transitions": 10,
+  "transitions": [
+    {
+      "from": "home:首页推荐商品及活动入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          358,
+          65
+        ]
+      },
+      "to": "home:闪购首页商品推荐与分类入口"
+    },
+    {
+      "from": "home:闪购首页商品推荐与分类入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          286,
+          114
+        ]
+      },
+      "to": "search_input:外卖搜索输入及历史/推荐关键词页"
+    },
+    {
+      "from": "search_input:外卖搜索输入及历史/推荐关键词页",
+      "action": {
+        "_metadata": "do",
+        "action": "Type",
+        "text": "麦当劳"
+      },
+      "to": "search_result:麦当劳相关商品搜索结果列表"
+    },
+    {
+      "from": "search_result:麦当劳相关商品搜索结果列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          163,
+          157
+        ]
+      },
+      "to": "category:麦当劳外卖店铺列表页"
+    },
+    {
+      "from": "category:麦当劳外卖店铺列表页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          241
+        ]
+      },
+      "to": "product_detail:麦当劳门店商品详情页"
+    },
+    {
+      "from": "product_detail:麦当劳门店商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          567,
+          71
+        ]
+      },
+      "to": "search_input:搜索框输入页，显示热门搜索词"
+    },
+    {
+      "from": "search_input:搜索框输入页，显示热门搜索词",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          389,
+          71
+        ]
+      },
+      "to": "search_input:搜索框输入页，显示热门搜索词"
+    },
+    {
+      "from": "search_input:搜索框输入页，显示热门搜索词",
+      "action": {
+        "_metadata": "do",
+        "action": "Type",
+        "text": "板烧鸡腿堡"
+      },
+      "to": "search_result:搜索“板烧鸡腿堡”结果列表"
+    },
+    {
+      "from": "search_result:搜索“板烧鸡腿堡”结果列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          937,
+          215
+        ]
+      },
+      "to": "search_result:搜索结果页展示板烧鸡腿堡相关商品"
+    },
+    {
+      "from": "search_result:搜索结果页展示板烧鸡腿堡相关商品",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          821,
+          961
+        ]
+      },
+      "to": "checkout:订单结算页面，选择收货地址并确认商品信息"
+    }
+  ]
+}
