@@ -1,6 +1,7 @@
 """Model client for AI inference using OpenAI-compatible API."""
 
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -17,7 +18,7 @@ class ModelConfig:
     base_url: str = "http://localhost:8000/v1"
     api_key: str = "EMPTY"
     model_name: str = "autoglm-phone-9b"
-    max_tokens: int = 3000
+    max_tokens: int = 9000
     temperature: float = 0.0
     top_p: float = 0.85
     frequency_penalty: float = 0.2
