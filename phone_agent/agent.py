@@ -145,6 +145,10 @@ class PhoneAgent:
         self._step_count = 0
         self._current_task = ""
 
+        # Load externalized shopping config (JSON with code defaults)
+        from phone_agent.config.shopping_config import ShoppingConfig
+        self._shopping_config = ShoppingConfig.load()
+
         # Initialize tracer if enabled
         self.tracer = None
         if self.agent_config.trace_enabled:
@@ -307,29 +311,14 @@ class PhoneAgent:
 
     # ------------------------------------------------------------------
     # Spec-page action guard: apps where skipping Interact is critical
+    # (loaded from config/shopping.json with code defaults as fallback)
     # ------------------------------------------------------------------
-    _SHOPPING_APPS = [
-        "淘宝", "京东", "天猫", "拼多多", "美团", "饿了么",
-        "瑞幸", "星巴克", "叮咚买菜", "盒马",
-        "Taobao", "JD", "Tmall", "Meituan", "Eleme",
-    ]
-
-    _SPEC_KEYWORDS = [
-        "规格", "颜色", "容量", "尺码", "口味", "温度", "糖度",
-        "浓度", "选配", "可选规格", "机身颜色", "存储容量",
-        "套餐类型", "配送方式",
-    ]
-
-    _PURCHASE_KEYWORDS = [
-        "领券购买", "立即购买", "加入购物车", "提交订单",
-        "确认下单", "结算", "选好了", "确定", "立即抢购",
-    ]
 
     def _detect_critical_scenario(
         self, current_app: str, screenshot_base64: str
     ) -> list[str]:
         """Return hints injected into VLM context when on a shopping spec page."""
-        if not any(app in (current_app or "") for app in self._SHOPPING_APPS):
+        if not any(app in (current_app or "") for app in self._shopping_config.apps):
             return []
 
         return [
@@ -352,7 +341,7 @@ class PhoneAgent:
 
         Returns a replacement action dict, or None if the action is safe.
         """
-        if not any(app in (current_app or "") for app in self._SHOPPING_APPS):
+        if not any(app in (current_app or "") for app in self._shopping_config.apps):
             return None
 
         # Already issuing Interact – allow
@@ -361,14 +350,14 @@ class PhoneAgent:
 
         # Check whether the model's thinking discusses specs
         thinking_mentions_specs = any(
-            kw in thinking for kw in self._SPEC_KEYWORDS
+            kw in thinking for kw in self._shopping_config.spec_keywords
         )
         if not thinking_mentions_specs:
             return None
 
         # Check whether the thinking mentions a purchase intent
         thinking_has_purchase_intent = any(
-            kw in thinking for kw in self._PURCHASE_KEYWORDS
+            kw in thinking for kw in self._shopping_config.purchase_keywords
         )
         if not thinking_has_purchase_intent:
             return None

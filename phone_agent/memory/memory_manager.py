@@ -832,9 +832,11 @@ class MemoryManager:
         return "规格"
 
     def _detect_platform(self, text: str) -> str:
-        """Detect shopping platform from text."""
+        """Detect shopping platform from text using externalized config."""
+        from phone_agent.config.shopping_config import ShoppingConfig
+        config = ShoppingConfig.load()
         text_lower = text.lower()
-        for platform in SHOPPING_PLATFORMS:
+        for platform in config.platforms:
             if platform.lower() in text_lower:
                 return platform
         return ""
