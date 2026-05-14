@@ -15,46 +15,7 @@ from .core import UnifiedSessionState, Product, ProductStatus
 from .retrieval_gateway import RetrievalGateway, RetrievalResult
 
 
-# Patterns for extracting product/shopping info from thinking
-PRODUCT_PATTERNS = {
-    "product_name": [
-        # Chinese: "打开了「Nike Air Max」" / "看到Nike Air Max售价"
-        r'(?:商品|产品|看到|找到|点击|打开|进入)(?:了|的是)?\s*[""「『]?(.{2,50})[""」『]?(?:，|。|售价|价格|¥|￥|元)',
-        # Chinese: brand + model patterns
-        r'(?:Nike|Adidas|Apple|Samsung|华为|小米|OPPO|vivo|李宁|安踏|优衣库|ZARA|H&M)[\w\s\-\u4e00-\u9fa5]{2,40}',
-        # Generic brand+product: "XX牌XX"
-        r'([\u4e00-\u9fa5a-zA-Z]{2,6}牌[的]?[\u4e00-\u9fa5a-zA-Z0-9\-\s]{2,30})',
-    ],
-    "price": [
-        r'[¥￥]\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)',
-        r'(\d+(?:\.\d{1,2})?)\s*(?:元|块|块钱)',
-        r'(?:价格|售价|标价|现价|原价)(?:是|为|：|:)\s*[¥￥]?\s*(\d+(?:\.\d{1,2})?)',
-        r'(?:price|cost)\s*(?:is|:)?\s*\$?(\d+(?:\.\d{1,2})?)',
-    ],
-    "spec": [
-        r'(?:颜色|尺码|规格|容量|版本|型号|尺寸)(?:是|为|：|:)\s*(.{1,20}?)(?:，|。|,|\.|$)',
-        r'(?:选了?|选择了?|确定|选中)(.{1,10}?)(?:色|码|GB|TB|英寸|寸|ml|ML|g|G)',
-        r'(黑|白|红|蓝|绿|灰|粉|紫|黄|金|银|棕|橙)(?:色|的)',
-        r'(\d{2,3}(?:GB|TB|ml|g|L|码|号|寸|英寸))',
-    ],
-}
-
-# Shopping platforms to detect
-SHOPPING_PLATFORMS = {
-    "京东", "京东商城", "jd.com", "jd",
-    "淘宝", "taobao", "天猫", "tmall",
-    "拼多多", "pinduoduo",
-    "小红书", "xiaohongshu", "redbook",
-    "唯品会", "vipshop",
-    "苏宁易购", "suning",
-    "抖音商城", "douyin mall",
-    "得物", "dewu",
-    "美团", "meituan",
-    "饿了么", "eleme",
-}
-
-
-# Patterns for extracting user preferences
+# Patterns for extracting user preferences (non-shopping: contacts, apps)
 PREFERENCE_PATTERNS = {
     "contact": [
         # 改进：更精确的联系人提取，限制长度，排除动词
@@ -731,48 +692,79 @@ class MemoryManager:
     # ------------------------------------------------------------------
 
     def _extract_product_from_text(self, text: str) -> Product | None:
-        """Extract product information from thinking text."""
-        product_name = None
-        price = None
+        """
+        Extract product information from VLM thinking text.
+
+        Uses the structured format guided by prompts (Phase 4):
+          "商品名为【Name】" / "价格为 ¥Price" / "颜色为Color"
+        Falls back to simple regex patterns when VLM doesn't follow format.
+        """
+        import re
+
+        product_name: str | None = None
+        price: float | None = None
         specs: dict[str, str] = {}
 
-        # Extract product name
-        for pattern in PRODUCT_PATTERNS["product_name"]:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                name = match.group(1) if match.lastindex else match.group(0)
-                name = name.strip().rstrip("，。,.》）\"'「」『』")
-                # Strip trailing price/status info
-                name = re.sub(r'(?:售价|价格|¥|￥|元|块)\s*\d*\.?\d*\s*$', '', name).strip()
-                name = re.sub(r'(?:，|。|,)\s*$', '', name).strip()
-                if len(name) >= 2 and len(name) <= 50:
-                    product_name = name
-                    break
+        # ── Primary: structured format from prompt guidance ──────────
+        name_match = re.search(r'商品名为【(.+?)】', text)
+        if not name_match:
+            name_match = re.search(r'product name is【(.+?)】', text)
+        if not name_match:
+            name_match = re.search(r'已加购【(.+?)】', text)
+        if not name_match:
+            name_match = re.search(r'added【(.+?)】to cart', text)
+        if name_match:
+            product_name = name_match.group(1).strip()
+            if not product_name or len(product_name) < 2:
+                return None
+
+        # ── Fallback: simple name extraction ──────────────────────────
+        if not product_name:
+            for pat in [
+                r'(?:看到|点击了?|打开了?|进入了?)\s*[""「『]?(.{2,40})[""」『]?(?:，|。|售价|价格|¥|￥)',
+            ]:
+                m = re.search(pat, text)
+                if m:
+                    name = m.group(1).strip().rstrip("，。,.》）\"'「」『』")
+                    # Strip trailing price info
+                    name = re.sub(r'(?:售价|价格|¥|￥|元|块)\s*\d*\.?\d*\s*$', '', name).strip()
+                    name = re.sub(r'(?:，|。|,)\s*$', '', name).strip()
+                    if 2 <= len(name) <= 50:
+                        product_name = name
+                        break
 
         if not product_name:
             return None
 
-        # Extract price
-        for pattern in PRODUCT_PATTERNS["price"]:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                try:
-                    price = float(match.group(1).replace(",", ""))
-                    break
-                except (ValueError, IndexError):
-                    pass
+        # ── Price: structured format first ────────────────────────────
+        price_match = re.search(r'价格为\s*[¥￥]\s*(\d+(?:\.\d{1,2})?)', text)
+        if not price_match:
+            price_match = re.search(r'price is\s*\$?(\d+(?:\.\d{1,2})?)', text)
+        if not price_match:
+            # Fallback: "¥数字" or "数字元"
+            price_match = re.search(r'[¥￥]\s*(\d+(?:\.\d{1,2})?)', text)
+        if not price_match:
+            price_match = re.search(r'(\d+(?:\.\d{1,2})?)\s*元', text)
+        if price_match:
+            try:
+                price = float(price_match.group(1).replace(",", ""))
+            except (ValueError, IndexError):
+                pass
 
-        # Extract specs
-        for pattern in PRODUCT_PATTERNS["spec"]:
-            for match in re.finditer(pattern, text, re.IGNORECASE):
-                if match.lastindex:
-                    spec_value = match.group(1).strip()
-                    if spec_value and len(spec_value) <= 20:
-                        # Infer spec key from context
-                        spec_key = self._infer_spec_key(spec_value)
-                        specs[spec_key] = spec_value
+        # ── Specs: structured format "X为Y" ────────────────────────────
+        for spec_key in self._shopping_config_spec_keys():
+            spec_match = re.search(rf'{spec_key}为\s*([^，。、,\s]+)', text)
+            if spec_match:
+                specs[spec_key] = spec_match.group(1).strip()
 
         return Product(name=product_name, price=price, specs=specs)
+
+    @staticmethod
+    def _shopping_config_spec_keys() -> list[str]:
+        """Get spec keywords from ShoppingConfig (lazy import to avoid circular)."""
+        from phone_agent.config.shopping_config import ShoppingConfig
+        config = ShoppingConfig.load()
+        return sorted(config.spec_keywords, key=len, reverse=True)
 
     def _extract_constraints_from_text(self, text: str) -> None:
         """Extract user constraints (budget, brand preference) from thinking."""
@@ -816,20 +808,6 @@ class MemoryManager:
             if any(s in thinking.lower() for s in signals):
                 return page_type
         return ""
-
-    def _infer_spec_key(self, spec_value: str) -> str:
-        """Infer spec key from value (e.g., '黑色' → '颜色', '42码' → '尺码')."""
-        if spec_value.endswith(("色",)):
-            return "颜色"
-        if spec_value.endswith(("码", "号")):
-            return "尺码"
-        if spec_value.endswith(("GB", "TB", "MB")):
-            return "容量"
-        if spec_value.endswith(("ml", "ML", "g", "G", "L")):
-            return "容量"
-        if spec_value.endswith(("英寸", "寸")):
-            return "尺寸"
-        return "规格"
 
     def _detect_platform(self, text: str) -> str:
         """Detect shopping platform from text using externalized config."""

@@ -78,6 +78,11 @@ REMEMBER:
 
 [Memory Assistance - Shopping Task Tracking]
 - Current shopping progress, viewed products, and cart contents are provided at the beginning of each message (marked with [📋] or [🔍]).
-- When thinking about product details (name, price, specs), mention them explicitly — this helps the system track shopping state.
+- When thinking about product details, use the following format to record them explicitly:
+  * Product seen: product name is【Full Product Name】
+  * Price seen: price is $number
+  * Specs seen: color is XXX, storage is XXX, size is XXX
+  * Added to cart: added【Product Name】to cart
+  Example: product name is【iPhone 15 Pro】, price is $799, color is Blue, storage is 256GB
 """
 )

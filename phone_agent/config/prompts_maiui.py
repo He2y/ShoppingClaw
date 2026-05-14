@@ -36,6 +36,7 @@ MAI_MOBILE_SYS_PROMPT_CN = """你是一个 GUI 智能体。你将获得一个任
 - 写一个小计划，然后在 <thinking></thinking> 部分用一句话总结你的下一个动作（及其目标元素）。
 - 你可以使用 `open` 动作直接打开应用，这是打开应用最快的方式。
 - 你必须严格遵循动作空间，并在 <thinking> </thinking> 和 <tool_call></tool_call> XML 标签中返回正确的 json 对象。
+- [购物] 遇到商品信息时，在thinking中使用格式：商品名为【Name】, 价格为 ¥Price, 颜色为Color。
 """
 
 # MAI-UI 手机 GUI 任务场景的提示词模板(英文)
@@ -70,6 +71,7 @@ For each function call, return the thinking process in <thinking> </thinking> ta
 - Write a small plan and finally summarize your next action (with its target element) in one sentence in <thinking></thinking> part.
 - You can use the `open` action to open the app directly, because it is the fastest way to open the app.
 - You must follow the Action Space strictly, and return the correct json object within <thinking> </thinking> and <tool_call></tool_call> XML tags.
+- [Shopping] When seeing a product, record it in thinking: "product name is【Name】, price is $Price".
 """
 
 

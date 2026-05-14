@@ -27,6 +27,7 @@ finished(content='xxx') # Use escape characters \\', \\", and \\n in content par
 ## Note
 - Use {language} in `Thought` part.
 - Write a small plan and finally summarize your next action (with its target element) in one sentence in `Thought` part.
+- [Shopping] When you see a product, record it in Thought: "商品名为【Name】, 价格为 ¥Price, 颜色为Color".
 
 ## User Instruction
 {instruction}
