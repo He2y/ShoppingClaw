@@ -1,9 +1,17 @@
 """Main PhoneAgent class for orchestrating phone automation."""
 
 import json
+import time
 import traceback
 from dataclasses import dataclass, field
 from typing import Any, Callable
+
+from openai import (
+    APIConnectionError,
+    APITimeoutError,
+    AuthenticationError,
+    RateLimitError,
+)
 
 from phone_agent.actions import ActionHandler
 from phone_agent.actions.handler import do, finish, parse_action
@@ -612,68 +620,60 @@ class PhoneAgent:
                 # Inject at text beginning, not end
                 last_msg["content"] = f"{extra_context}\n\n{last_msg['content']}"
 
-        # Get model response
-        try:
-            msgs = get_messages(self.agent_config.lang)
-            print("\n" + "=" * 50)
-            print(f"💭 {msgs['thinking']}:")
-            print("-" * 50)
-            
-            # # Print messages info for debugging
-            # if self.agent_config.verbose:
-            #     import json
-            #     print(f"\n📨 Messages count: {len(self._context)}")
-            #     print("=" * 50)
-            #     for msg in self._context:
-            #         # 创建一个副本用于打印，避免修改原始消息
-            #         msg_to_print = msg.copy()
-            #         
-            #         # 如果 content 是列表，处理图片 base64（截断显示）
-            #         if isinstance(msg_to_print.get("content"), list):
-            #             content_copy = []
-            #             for item in msg_to_print["content"]:
-            #                 if isinstance(item, dict):
-            #                     item_copy = item.copy()
-            #                     # 如果是图片，截断 base64
-            #                     if item_copy.get("type") == "image_url" and isinstance(item_copy.get("image_url"), dict):
-            #                         image_url = item_copy["image_url"].copy()
-            #                         if "url" in image_url and image_url["url"].startswith("data:"):
-            #                             # 只显示前 50 个字符 + "..." + 后 20 个字符
-            #                             url = image_url["url"]
-            #                             if len(url) > 100:
-            #                                 image_url["url"] = url[:50] + "...[base64 data truncated]..." + url[-20:]
-            #                         item_copy["image_url"] = image_url
-            #                     content_copy.append(item_copy)
-            #                 else:
-            #                     content_copy.append(item)
-            #             msg_to_print["content"] = content_copy
-            #         # 如果 content 是字符串且包含 base64，截断显示
-            #         elif isinstance(msg_to_print.get("content"), str):
-            #             content = msg_to_print["content"]
-            #             if "data:image" in content and len(content) > 500:
-            #                 # 截断 base64 部分
-            #                 import re
-            #                 msg_to_print["content"] = re.sub(
-            #                     r'data:image/[^;]+;base64,[A-Za-z0-9+/=]{100,}',
-            #                     lambda m: m.group(0)[:100] + '...[base64 truncated]...',
-            #                     content
-            #                 )
-            #         
-            #         # 直接打印完整的 message JSON 格式
-            #         print(json.dumps(msg_to_print, ensure_ascii=False, indent=2))
-            #     print("=" * 50)
-            
-            response = self.model_client.request(self._context)
-        except Exception as e:
-            if self.agent_config.verbose:
-                traceback.print_exc()
-            return StepResult(
-                success=False,
-                finished=True,
-                action=None,
-                thinking="",
-                message=f"Model error: {e}",
-            )
+        # Get model response (with smart retry)
+        msgs = get_messages(self.agent_config.lang)
+        max_retries = 3
+        response = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                print("\n" + "=" * 50)
+                print(f"💭 {msgs['thinking']}:")
+                print("-" * 50)
+
+                response = self.model_client.request(self._context)
+                break  # Success
+
+            except (APIConnectionError, APITimeoutError) as e:
+                if attempt == max_retries:
+                    print(f"❌ 网络错误（已重试{max_retries}次）: {e}")
+                    return StepResult(
+                        success=False, finished=True,
+                        action=None, thinking="",
+                        message=f"网络错误（已重试{max_retries}次）: {e}",
+                    )
+                backoff = 2 ** attempt  # 1s, 2s, 4s
+                print(f"⚠️ 网络错误，{backoff}秒后重试 ({attempt + 1}/{max_retries})...")
+                time.sleep(backoff)
+
+            except RateLimitError as e:
+                if attempt == max_retries:
+                    print(f"❌ API 限流: {e}")
+                    return StepResult(
+                        success=False, finished=True,
+                        action=None, thinking="",
+                        message=f"API 限流: {e}",
+                    )
+                print(f"⚠️ API 限流，等待 60 秒后重试 ({attempt + 1}/{max_retries})...")
+                time.sleep(60)
+
+            except AuthenticationError as e:
+                print(f"❌ 认证失败（检查 PHONE_AGENT_API_KEY）: {e}")
+                return StepResult(
+                    success=False, finished=True,
+                    action=None, thinking="",
+                    message=f"认证失败: {e}",
+                )
+
+            except Exception as e:
+                if self.agent_config.verbose:
+                    traceback.print_exc()
+                print(f"❌ 模型错误: {e}")
+                return StepResult(
+                    success=False, finished=True,
+                    action=None, thinking="",
+                    message=f"模型错误: {e}",
+                )
 
         # Parse action and execute based on model type
         thinking = response.thinking  # Default thinking
