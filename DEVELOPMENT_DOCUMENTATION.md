@@ -47,44 +47,80 @@ ClawGUI-Agent 是一个 VLM 驱动的 GUI 手机自动化框架，专注于**长
 ### 1.3 架构分层
 
 ```
-┌──────────────────────────────────────────────────────────────────┐
-│                      Entry Layer (入口层)                         │
-│                   CLI (main.py)  │  WebUI (webui.py)              │
-└─────────────────────────────┬────────────────────────────────────┘
-                              │ task
-                              ▼
-┌──────────────────────────────────────────────────────────────────┐
-│                      Agent Core (代理核心)                        │
-│                         PhoneAgent                               │
-│                                                                  │
-│  Execution Loop:                                                  │
-│    ① Screenshot  ② GraphRAG Lookup  ③ HITL Clarify               │
-│    ④ Navigate Check  ⑤ Message Build  ⑥ Memory Decoupling        │
-│    ⑦ VLM Inference (with retry)  ⑧ Action Parse + SpecGuard     │
-│    ⑨ Execute  ⑩ Memory Update  ⑪ Finish  ⑫ Trace                │
-└──┬──────────────┬──────────────┬──────────────┬──────────────────┘
-   │              │              │              │
-   ▼              ▼              ▼              ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────────────────────┐
-│  Model   │ │  Action  │ │  Device  │ │  Memory System             │
-│ Adapters │ │ Handlers │ │  Factory │ │  ┌───────────────────────┐ │
-│  (5)     │ │  (6)     │ │  (3)     │ │  │ UnifiedSessionState   │ │
-└──────────┘ └──────────┘ └─────┬────┘ │  │ (单一数据源)           │ │
-                                │       │  │ - Products            │ │
-                    ┌───────────┼───┐   │  │ - StepRecords         │ │
-                    ▼           ▼   ▼   │  │ - ReasoningArchive    │ │
-                  ADB         HDC  XCTEST│  └───────┬───────────────┘ │
-                  (Android) (Harmony) (iOS)│        │                  │
-                                          │ ┌──────▼───────────────┐ │
-                                          │ │ RetrievalGateway     │ │
-                                          │ │ (5 signals, cooldown)│ │
-                                          │ └──────┬───────────────┘ │
-                                          │        │                  │
-                                          │ ┌──────▼───────────────┐ │
-                                          │ │ Dual-Core Backend    │ │
-                                          │ │ FAISS 2048d + Neo4j  │ │
-                                          │ └──────────────────────┘ │
-                                          └──────────────────────────┘
+                        ┌─────────────────────────────┐
+                        │    Entry: CLI / WebUI        │
+                        └─────────────┬───────────────┘
+                                      │ task
+                                      ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                         PhoneAgent Core                              │
+│                                                                     │
+│   Loop: Screenshot → GraphRAG → Clarify → MemoryDecouple            │
+│          → VLM (with retry) → Parse + SpecGuard → Execute → Update  │
+│                                                                     │
+│   Config: ShoppingConfig ─ 外部化 JSON, 代码默认值回退               │
+│   Errors: ErrorCategory ── RECOVERABLE / RATE_LIMITED / FATAL       │
+└───┬──────────────┬──────────────┬──────────────┬────────────────────┘
+    │              │              │              │
+    ▼              ▼              ▼              ▼
+┌────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────────────┐
+│ Model  │  │  Action  │  │  Device  │  │     Memory System         │
+│ Client │  │ Handlers │  │ Factory  │  │                           │
+│        │  │          │  │          │  │  MemoryManager (调度层)    │
+│ AutoGLM│  │ handler  │  │   ADB    │  │  ┌─────────────────────┐  │
+│ UITARS │  │ h_uitars │  │   HDC    │  │  │ RetrievalGateway    │  │
+│ QwenVL │  │ h_qwenvl │  │  XCTEST  │  │  │ (5 signals+cooldown)│  │
+│ MAI-UI │  │ h_maiui  │  │          │  │  └─────────┬───────────┘  │
+│ GUI-Owl│  │ h_guiowl │  │          │  │            │              │
+│        │  │          │  │          │  │  ┌─────────▼───────────┐  │
+│ retry: │  │ SpecGuard│  │          │  │  │ UnifiedSessionState │  │
+│ 3x+exp │  │ 自反思    │  │          │  │  │ (单一数据源)        │  │
+└────────┘  └──────────┘  └──────────┘  │  │ Products·Steps·Arch  │  │
+                                         │  └─────────┬───────────┘  │
+                                         │            │              │
+                                         │  ┌─────────▼───────────┐  │
+                                         │  │   Dual-Core Store   │  │
+                                         │  │ FAISS 2048d + Neo4j │  │
+                                         │  │ (GraphStore 优雅降级)│  │
+                                         │  └─────────────────────┘  │
+                                         └──────────────────────────┘
+```
+
+**各层职责**:
+
+| 层 | 组件 | 职责 | 新增/增强 (v3.0) |
+|----|------|------|-------------------|
+| Agent Core | `PhoneAgent` | 主循环编排，14 阶段执行 | 智能重试、SpecGuard 自反思、ShoppingConfig 外部化 |
+| Model Client | `ModelClient` | OpenAI 兼容流式推理 | max_tokens=4096, 指数退避重试 |
+| Action Handlers | `handler*.py` (6个) | 模型特定动作解析+执行 | SpecGuard 拦截逻辑 |
+| Device Factory | `device_factory.py` | ADB/HDC/XCTEST 跨平台抽象 | — |
+| Memory System | `MemoryManager` | 记忆调度、上下文构建、自动学习 | 单写 UnifiedSessionState |
+| | `RetrievalGateway` | 5 种信号按需检索，3 步冷却 | ProductStatus 枚举替代字符串比较 |
+| | `UnifiedSessionState` | **单一数据源** — 合并旧三组件 | 新增 (559行) |
+| | `MemoryStore` | FAISS 2048d 语义向量存储 | — |
+| | `GraphStore` | Neo4j 空间图谱 + TaskIndex | **优雅降级**: Neo4j 不可用时返回空值 |
+
+### 1.4 架构对比: v2.0 → v3.0
+
+```
+v2.0 (重构前):                          v3.0 (重构后):
+                                        
+agent.py                               agent.py
+  │                                      │
+  ├─→ SessionMemory ──→ 产品追踪          │
+  ├─→ KnowledgeBase ──→ 外置存储          ├─→ UnifiedSessionState (单写)
+  └─→ StateManager  ──→ 状态追踪          │     ├─ 产品追踪 (曾属 SessionMemory)
+    三组件独立，数据冗余                    │     ├─ 外置存储 (曾属 KnowledgeBase)
+    每步双写 SessionMemory + KB            │     └─ 状态追踪 (曾属 StateManager)
+                                           │
+                                           ├─→ ShoppingConfig (外部化)
+                                           │     └─ config/shopping.json
+                                           │
+                                           ├─→ ErrorCategory (新增)
+                                           │     └─ 智能重试策略
+                                           │
+                                           └─→ SpecGuard 自反思 (增强)
+                                                 └─ 交叉验证用户 SKU
 ```
 
 ---
