@@ -13,6 +13,8 @@ from typing import Any
 from .memory_store import MemoryStore, Memory, MemoryType
 from .state_manager import StateManager
 from .session_memory import SessionMemory, ProductInfo
+from .knowledge_base import KnowledgeBase, ProductObservation
+from .retrieval_gateway import RetrievalGateway, RetrievalResult
 
 
 # Patterns for extracting product/shopping info from thinking
@@ -129,6 +131,12 @@ class MemoryManager:
         # Initialize SessionMemory (per-task structured product tracking)
         self.session_memory = SessionMemory()
 
+        # Initialize KnowledgeBase — external memory decoupling (UI-Copilot paradigm)
+        self.knowledge_base = KnowledgeBase()
+
+        # Initialize RetrievalGateway — on-demand memory retrieval
+        self.retrieval_gateway = RetrievalGateway(self.knowledge_base)
+
         # Session history for context
         self.session_history: list[dict] = []
 
@@ -162,6 +170,10 @@ class MemoryManager:
         self.session_memory.task = task
         self.session_memory.platform = self._detect_platform(task)
 
+        # Reset KnowledgeBase and RetrievalGateway for new task
+        self.knowledge_base.reset(task=task, platform=self.session_memory.platform)
+        self.retrieval_gateway.reset()
+
         # Initialize state tracking
         if start_state_id:
             self.state_manager.start_task(start_state_id)
@@ -187,6 +199,7 @@ class MemoryManager:
                     "apps_used": list(self._session_apps),
                     "contacts_mentioned": list(self._session_contacts),
                     "session_memory": self.session_memory.to_dict(),
+                    "knowledge_base": self.knowledge_base.to_dict(),
                 },
                 importance=importance,
             )
@@ -506,6 +519,19 @@ class MemoryManager:
         if thinking and screenshot_app:
             self._update_session_memory(thinking, action, screenshot_app)
 
+        # Record into KnowledgeBase for external memory decoupling
+        action_type = action.get("action_type", action.get("action", ""))
+        action_target = action.get("element", action.get("text", ""))
+        self.knowledge_base.record_step(
+            step=len(self.session_history),
+            action_type=action_type,
+            action_target=str(action_target)[:30] if action_target else "",
+            thinking_full=thinking,
+            page_type=self._infer_page_type(screenshot_app, thinking),
+            app=screenshot_app,
+        )
+        self.knowledge_base.set_current_focus(app=screenshot_app)
+
     def _update_session_memory(self, thinking: str, action: dict, screenshot_app: str) -> None:
         """Update SessionMemory with extracted shopping info and step summary."""
         # Extract product info from thinking
@@ -515,6 +541,18 @@ class MemoryManager:
                 kw in thinking for kw in ["详情", "detail", "规格", "spec"]
             ) else "search_result"
             self.session_memory.set_current_product(product)
+
+            # Also record into KnowledgeBase for on-demand retrieval
+            self.knowledge_base.record_product(
+                name=product.name,
+                price=product.price,
+                specs=product.specs,
+                page_type=page_type,
+                status="viewed",
+                step=len(self.session_history),
+            )
+            # Update constraints from extracted info
+            self.knowledge_base.set_current_focus(app=screenshot_app, page=page_type)
 
         # Track cart action
         action_type = action.get("action_type", action.get("action", ""))
@@ -1060,10 +1098,72 @@ class MemoryManager:
             importance=0.8,  # Corrections are highly important
         )
     
+    # ------------------------------------------------------------------
+    # Memory Decoupling: lightweight context + on-demand retrieval
+    # Replaces the old 4-layer push injection with UI-Copilot paradigm
+    # ------------------------------------------------------------------
+
+    def get_injection_context(
+        self, thinking: str = "", current_app: str = "", step: int = 0,
+    ) -> str:
+        """
+        Generate context for VLM injection using memory decoupling.
+
+        ALWAYS injected (lightweight):
+          - KnowledgeBase.progress_summary() — 1-2 lines of progress
+
+        ON-DEMAND injected (triggered by retrieval signals):
+          - RetrievalGateway.check_and_retrieve() — product details, recall, etc.
+
+        This replaces the old Phase-6 multi-layer push injection with
+        UI-Copilot's paradigm: minimal context by default, retrieval only
+        when the agent shows signs of needing it.
+        """
+        parts: list[str] = []
+
+        # Layer 1: Always-on progress summary (lightweight)
+        progress = self.knowledge_base.progress_summary()
+        if progress:
+            parts.append(f"[进度] {progress}")
+
+        # Layer 2: Current focus (1 line)
+        focus = self.knowledge_base.current_focus()
+        if focus:
+            parts.append(f"[当前] {focus}")
+
+        # Layer 3: On-demand retrieval (only when triggered)
+        if thinking and step > 0:
+            result = self.retrieval_gateway.check_and_retrieve(thinking, step)
+            if result.triggered:
+                parts.append(result.context_text)
+                if hasattr(self, '_verbose') and getattr(self, '_verbose', True):
+                    print(f"🔍 [On-Demand Retrieval] intent={result.intent} source={result.source}")
+
+        # Layer 4: Constraints reminder (if any)
+        if self.knowledge_base.constraints:
+            constraint_kv = ", ".join(
+                f"{k}={v}" for k, v in self.knowledge_base.constraints.items()
+            )
+            parts.append(f"[约束] {constraint_kv}")
+
+        return "\n".join(parts) if parts else ""
+
+    def record_product_to_kb(
+        self, name: str, price: float | None = None,
+        specs: dict | None = None, page_type: str = "",
+        status: str = "viewed",
+    ) -> None:
+        """Record a product observation into KnowledgeBase."""
+        step_num = len(self.session_history)
+        self.knowledge_base.record_product(
+            name=name, price=price, specs=specs,
+            page_type=page_type, status=status, step=step_num,
+        )
+
     def get_relevant_context(self, task: str, max_memories: int = 8) -> str:
         """
         Get relevant memories for a task as context.
-        
+
         Prioritizes contact-app bindings based on usage frequency.
         
         Args:

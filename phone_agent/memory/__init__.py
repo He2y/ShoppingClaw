@@ -12,6 +12,8 @@ from .graph_store import GraphStore
 from .memory_manager import MemoryManager
 from .state_manager import StateManager
 from .session_memory import SessionMemory, ProductInfo, StepSummary
+from .knowledge_base import KnowledgeBase, ProductObservation, StepRecord, ProgressTracker
+from .retrieval_gateway import RetrievalGateway, RetrievalResult
 from .offline_explorer import OfflineExplorer, ShoppingPageType, Trajectory, PageInfo, PageClassifier
 
 __all__ = [
@@ -26,6 +28,12 @@ __all__ = [
     "SessionMemory",
     "ProductInfo",
     "StepSummary",
+    "KnowledgeBase",
+    "ProductObservation",
+    "StepRecord",
+    "ProgressTracker",
+    "RetrievalGateway",
+    "RetrievalResult",
     "OfflineExplorer",
     "ShoppingPageType",
     "Trajectory",

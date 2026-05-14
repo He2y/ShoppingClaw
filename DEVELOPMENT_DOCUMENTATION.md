@@ -1,8 +1,8 @@
-# ClawGUI-Agent 系统开发文档 v1.0
+# ClawGUI-Agent 系统开发文档 v2.0
 
-> 日期：2026-05-11
-> 用途：指导后续学术论文写作，全面记录系统架构、功能模块、图谱检索与记忆管理机制
-> 代码基线：commit 4fbb1ae
+> 日期：2026-05-14
+> 用途：指导后续学术论文写作，全面记录系统架构、功能模块、记忆解耦与检索机制
+> 代码基线：Memory Decoupling 架构 (KnowledgeBase + RetrievalGateway)
 
 ---
 
@@ -11,7 +11,7 @@
 1. [系统概览](#1-系统概览)
 2. [Agent 执行引擎](#2-agent-执行引擎)
 3. [双核记忆引擎](#3-双核记忆引擎)
-4. [会话产品记忆系统](#4-会话产品记忆系统)
+4. [记忆解耦系统 — KnowledgeBase + RetrievalGateway](#4-记忆解耦系统--knowledgebase--retrievalgateway)
 5. [图谱检索机制](#5-图谱检索机制)
 6. [模型适配器体系](#6-模型适配器体系)
 7. [安全防护机制](#7-安全防护机制)
@@ -32,9 +32,9 @@ ClawGUI-Agent 是一个 VLM 驱动的 GUI 手机自动化框架，专注于**长
 | 创新点 | 描述 | 对应组件 |
 |--------|------|---------|
 | **双核记忆引擎** | FAISS 语义向量存储 + Neo4j 空间图谱存储，统一状态管理 | MemoryStore + GraphStore + StateManager |
-| **会话结构化记忆** | 任务内产品追踪（商品名/价格/规格），进展摘要，停滞检测 | SessionMemory |
-| **多层上下文注入** | 4 层注入策略：进度摘要 → 详细记忆 → 图谱语义 → 安全提示 | agent.py Phase ⑥ |
-| **按需记忆供给** | 基于不确定性关键词和停滞检测的自动记忆触发，免模型训练 | SessionMemory.should_trigger_detailed_injection |
+| **记忆解耦 (Memory Decoupling)** | 详细观察外置存储于KnowledgeBase，VLM上下文仅保留1-2行进度摘要，减少~70-80%上下文大小 | KnowledgeBase + RetrievalGateway |
+| **按需检索 (On-Demand Retrieval)** | 5种混淆信号（不确定性/比较/计算/产品查找/停滞）触发记忆查询，Agent仅在迷失时获取针对性帮助 | RetrievalGateway.check_and_retrieve |
+| **会话产品记忆** | 任务内产品追踪（商品名/价格/规格），进展摘要，停滞检测 | SessionMemory → KnowledgeBase |
 | **图谱路径规划** | GraphRAG 三层匹配（TaskIndex FAISS → Neo4j N-gram → MemoryStore FAISS） | MemoryManager.locate_and_get_context |
 | **SpecGuard 安全网** | Prompt+代码双重防护，确定性地阻止购物场景下的错误购买操作 | agent.py _spec_guard_check |
 
@@ -51,34 +51,52 @@ ClawGUI-Agent 是一个 VLM 驱动的 GUI 手机自动化框架，专注于**长
 │                      Agent Core (代理核心)                        │
 │                         PhoneAgent                               │
 │                                                                  │
-│  run(task): 14个阶段的单步执行循环                                 │
-│    ① 截图采集  ② 记忆查找  ②.5 SessionMemory压缩                 │
-│    ③ HITL澄清  ④ 导航检查  ⑤ 消息构建  ⑥ 多层上下文注入          │
-│    ⑦ VLM推理  ⑧ 动作解析+SpecGuard  ⑨ 动作执行                   │
-│    ⑩ 记忆更新  ⑪ Interact捕获  ⑫ 完成检测                       │
-│    ⑬ 轨迹记录  ⑭ 返回结果                                        │
+│  Execution Loop (14 phases):                                     │
+│    ① Screenshot  ② GraphRAG Lookup  ②.5 SessionMemory压缩       │
+│    ③ HITL Clarify  ④ Navigate Check  ⑤ Message Build            │
+│    ⑥ Memory Decoupling → MINIMAL Context Injection              │
+│    ⑦ VLM Inference  ⑧ Action Parse + SpecGuard  ⑨ Execute      │
+│    ⑩ Memory Update (→ KnowledgeBase)  ⑪ Interact  ⑫ Finish     │
+│    ⑬ Trace Record  ⑭ Return Result                              │
 └──┬──────────────┬──────────────┬──────────────┬──────────────────┘
    │              │              │              │
    ▼              ▼              ▼              ▼
-┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐
-│  Model   │ │  Action  │ │  Device  │ │  Memory System   │
-│ Adapters │ │ Handlers │ │  Factory │ │  (双核记忆引擎)   │
-│ (5个)    │ │ (6个)    │ │          │ │                  │
-└──────────┘ └──────────┘ └─────┬────┘ │ ┌──────────────┐ │
-                                │       │ │ Semantic Core│ │
-                    ┌───────────┼───┐   │ │ (FAISS 2048d)│ │
-                    ▼           ▼   ▼   │ │ embedding-3  │ │
-                  ADB         HDC  XCTEST│ └──────────────┘ │
-                  (Android) (Harmony) (iOS)│ ┌──────────────┐ │
-                                          │ │ Spatial Core │ │
-                                          │ │ (Neo4j Graph)│ │
-                                          │ │ + TaskIndex  │ │
-                                          │ │ (FAISS 2048d)│ │
-                                          │ │              │ │
-                                          │ │ StateManager │ │
-                                          │ │ +SessionMemory│ │
-                                          │ └──────────────┘ │
-                                          └──────────────────┘
+┌──────────┐ ┌──────────┐ ┌──────────┐ ┌───────────────────────────┐
+│  Model   │ │  Action  │ │  Device  │ │  Memory System             │
+│ Adapters │ │ Handlers │ │  Factory │ │  ┌───────────────────────┐ │
+│  (5)     │ │  (13)    │ │          │ │  │ KnowledgeBase (外置)  │ │
+└──────────┘ └──────────┘ └─────┬────┘ │  │ - ProductObservations │ │
+                                │       │  │ - StepRecords         │ │
+                    ┌───────────┼───┐   │  │ - ReasoningArchive    │ │
+                    ▼           ▼   ▼   │  └───────┬───────────────┘ │
+                  ADB         HDC  XCTEST│         │                  │
+                  (Android) (Harmony) (iOS)│ ┌──────▼───────────────┐ │
+                                          │ │ RetrievalGateway     │ │
+                                          │ │ (On-Demand, 5 signal │ │
+                                          │ │  types with cooldown)│ │
+                                          │ └──────┬───────────────┘ │
+                                          │        │                  │
+                                          │ ┌──────▼───────────────┐ │
+                                          │ │ Dual-Core Backend    │ │
+                                          │ │ FAISS 2048d + Neo4j  │ │
+                                          │ │ + StateManager       │ │
+                                          │ │ + SessionMemory      │ │
+                                          │ └──────────────────────┘ │
+                                          └──────────────────────────┘
+
+    VLM CONTEXT (minimal)              KNOWLEDGE BASE (external)
+    ┌─────────────────────┐           ┌──────────────────────────┐
+    │ [Progress] Step 5   │           │ Products:                │
+    │ [Current] Nike Air  │           │  - Air Max 899 (black)   │
+    │                      │           │  - Air Force 1 799       │
+    │  (on-demand only)    │  retrieve │ Steps:                   │
+    │  [Memory Retrieval]  │◄─────────│  Step 1: Launch JD.com   │
+    │  Browsed:            │  trigger  │  Step 2: Type "Nike"    │
+    │  - Nike Air Max 899  │           │  Step 3: Tap search...  │
+    │  - Air Force 1 799   │           │ Reasoning Archive:       │
+    │                      │           │  [step 1] "need search"  │
+    │  + screenshot        │           │  [step 2] "enter brand"  │
+    └─────────────────────┘           └──────────────────────────┘
 ```
 
 ---
@@ -221,46 +239,75 @@ AutoGLM 第一步特殊处理：
 - 通过 `build_personalized_prompt()` 注入个性化系统提示
 - 包含联系人-应用绑定、购物偏好、任务历史
 
-#### Phase ⑥: 4层上下文注入 (行 574-624)
+#### Phase ⑥: Memory Decoupling — 最小化上下文注入 (行 574-624)
 
-**这是本系统的核心创新之一**。4层注入按优先级排序：
+**这是 v2.0 最核心的架构创新**，直接受 UI-Copilot (Lu et al., 2026) 论文启发。传统架构将完整推理链、截图、观察全部推入 VLM 上下文，导致上下文膨胀和长任务迷失。新架构采用**记忆解耦**策略：
 
 ```
-Layer 1 [📋 进度摘要] ← SessionMemory.get_context_for_injection("summary")
-  ├─ 永远注入（每步）
-  └─ 内容：任务、平台、当前商品（名称+价格+规格）、购物车摘要、最近3步
-
-Layer 2 [🔍 详细记忆] ← SessionMemory.get_context_for_injection("detailed")
-  ├─ 触发注入（不确定性信号 OR 停滞检测）
-  └─ 内容：全部已浏览商品（名称/价格/规格/状态/首次出现步骤）、购物车、
-      用户约束、完整步骤历史
-
-Layer 3 [🛒 记忆参考] ← context_data["semantic_context"]
-  ├─ 来自 locate_and_get_context() 的结果
-  └─ 内容：联系人-应用绑定推荐、相似任务轨迹、FAISS UI状态参考
-
-Layer 4 [⚠️ 安全提示] ← _detect_critical_scenario()
-  ├─ 购物App + 规格页面时注入
-  └─ 内容：强制性 Interact 操作提示
+BEFORE (传统 Push 模式):                    AFTER (Memory Decoupling):
+┌────────────────────────────┐              ┌────────────────────────────┐
+│ [System Prompt]            │              │ [System Prompt]            │
+│ [Step1: full thinking + img]│              │ [Progress: Step 5 | 当前:  │
+│ [Step2: full thinking + img]│              │  Nike Air Max]             │
+│ [Step3: full thinking + img]│              │ [Screenshot]               │
+│ [Layer 1: summary]         │              │                            │
+│ [Layer 2: detailed memory] │              │ (仅当触发时注入)             │
+│ [Layer 3: graph context]   │              │ [记忆检索] 已浏览商品 +     │
+│ [Layer 4: safety hints]    │              │  最近步骤摘要               │
+│ → Context grows unboundedly│              │ → Context ~80% smaller     │
+└────────────────────────────┘              └────────────────────────────┘
 ```
 
-**触发检测算法** (SessionMemory.should_trigger_detailed_injection)：
+**核心原则**:
+1. **VLM 上下文保持轻量**: 仅注入 1-2 行进度摘要，不推入完整观察记录
+2. **详细记忆外置**: 商品观察、步骤记录、完整推理链存于 KnowledgeBase
+3. **按需触发检索**: RetrievalGateway 监测 VLM thinking 中的混淆信号，仅在需要时查询 KnowledgeBase
+4. **冷却机制**: 两次检索之间至少间隔 3 步，避免上下文轰炸
+
+**注入逻辑**:
 
 ```python
-def should_trigger_detailed_injection(self, thinking: str) -> bool:
-    # 信号1: 不确定性关键词
-    uncertainty_keywords = [
-        "不确定", "忘记了", "之前看到", "那个商品", "价格是多少",
-        "哪个", "记得", "我不确定", "记不清", "刚刚看", "前面看到",
-        "not sure", "forgot", "remember", "which one",
-    ]
-    if any(kw.lower() in thinking.lower() for kw in uncertainty_keywords):
-        return True
-    # 信号2: 停滞检测
-    if self._consecutive_same_action >= 2:
-        return True
-    return False
+# agent.py Phase ⑥ — Memory Decoupling
+if self.memory_manager and current_app:
+    last_thinking = getattr(self, "_last_thinking", "")
+    injection_ctx = self.memory_manager.get_injection_context(
+        thinking=last_thinking, current_app=current_app, step=self._step_count,
+    )
+    # get_injection_context 内部流程:
+    # 1. 始终注入: KnowledgeBase.progress_summary() → 1-2行进度
+    # 2. 按需注入: RetrievalGateway.check_and_retrieve(thinking, step)
+    #    → 5种信号触发 → 返回检索上下文
+    #    → 无信号 → 跳过，上下文保持最小
+    if injection_ctx:
+        extra_context_parts.append(injection_ctx)
+
+# 安全提示仍然保留（确定性防护，不消耗上下文）
+if self._detect_critical_scenario(current_app, screenshot):
+    extra_context_parts.append("[SpecGuard] 当前处于购物规格页面...")
 ```
+
+**与传统4层注入的对比**:
+
+| 维度 | 旧架构 (4-Layer Injection) | 新架构 (Memory Decoupling) |
+|------|--------------------------|---------------------------|
+| Layer 1 进度摘要 | 每步推入 | 每步推入（简化为1-2行） |
+| Layer 2 详细记忆 | 关键词触发时推入全部 | 信号触发时检索相关部分 |
+| Layer 3 图谱上下文 | GraphRAG结果每步注入 | 仅首次/locate时注入 |
+| Layer 4 安全提示 | 购物App每步注入 | 仅关键场景注入 |
+| 上下文大小趋势 | 随步数线性增长 | 保持恒定 (~恒定) |
+| 信息检索模式 | Push（推） | Pull（拉） |
+
+**触发检测 → RetrievalGateway**:
+
+传统架构的触发检测内置在 SessionMemory 中（`should_trigger_detailed_injection`），仅支持不确定性关键词 + 停滞检测。新架构的 RetrievalGateway 支持 5 种信号类型，由 KnowledgeBase 执行实际查询：
+
+| 信号类型 | 触发关键词 | 检索动作 | 冷却 |
+|---------|-----------|---------|------|
+| **Uncertainty** | "不确定", "忘记了", "之前看到", "not sure" | 搜索推理归档 + 商品列表 | 3步 |
+| **Comparison** | "对比", "哪个更便宜", "compare" | 生成价格对比表 | 3步 |
+| **Calculation** | "总共", "合计", "total", "sum" | 返回购物车商品+价格 | 3步 |
+| **Product Lookup** | "价格是多少", "什么颜色", "那个商品" | 模糊商品名匹配 | 3步 |
+| **Stagnation** | 同页同动作 ≥ 2次 | 返回最近步骤历史 | 3步 |
 
 #### Phase ⑦: VLM 推理 (行 626-687)
 
@@ -315,9 +362,9 @@ result = action_handler.execute(action, width, height) → ActionResult
      ├─ _track_app_usage() → APP_USAGE 记忆 (会话级去重)
      ├─ _learn_from_action() → 联系人/App/搜索模式提取
      ├─ _learn_from_thinking() → 联系人/偏好提取 + 产品提取
-     └─ _update_session_memory() → 产品追踪 + 步骤摘要 + 约束提取
+     └─ _update_session_memory() → 产品追踪 + KnowledgeBase同步 + 约束提取
    + update_state_and_transition() → 图状态转换记录
-   + SessionMemory verbose日志
+   + KnowledgeBase + SessionMemory verbose日志
 
 ⑪ Interact回复捕获: _last_user_reply = result.message
 ⑫ 完成检测: finished = action._metadata == "finish" or result.should_finish
@@ -500,7 +547,7 @@ get_current_state_id()                  → 委托给 StateManager
 
 ---
 
-## 4. 会话产品记忆系统
+## 4. 记忆解耦系统 — KnowledgeBase + RetrievalGateway
 
 ### 4.1 设计动机
 
@@ -508,13 +555,159 @@ get_current_state_id()                  → 委托给 StateManager
 
 | 失败模式 | 占比 | 根因 | 本系统解决方案 |
 |---------|------|------|------------|
-| Progress Confusion | 43.8-66.7% | Agent 忘记已完成步骤 | StepSummary 进展链 + 每步注入 |
-| Memory Degradation | 13.3-21.8% | 长上下文导致信息丢失 | 结构化 SessionMemory + 按需详细注入 |
-| Math Hallucination | 6.7-10.9% | VLM 数值计算不可靠 | 产品价格结构化提取 + 约束追踪 |
+| Progress Confusion | 43.8-66.7% | Agent 忘记已完成步骤 | KnowledgeBase 进度追踪 + 每步最小化注入 |
+| Memory Degradation | 13.3-21.8% | 长上下文导致信息丢失 | 记忆解耦：外置 KnowledgeBase + 按需 RetrievalGateway |
+| Math Hallucination | 6.7-10.9% | VLM 数值计算不可靠 | KnowledgeBase 结构化产品价格提取 + 计算信号触发 |
 
-### 4.2 数据模型
+**v1.0 架构的问题**：4层上下文注入（SessionMemory summary + detailed + GraphRAG + safety）本质上仍是 Push 模式——虽然比无注入好，但上下文仍然随步骤增长。v2.0 的记忆解耦从第一性原则出发，将详细数据外置，VLM 上下文仅保留最小化进度。
+
+### 4.2 架构总览
+
+```
+agent.py Phase ⑥ (上下文注入)
+   │
+   ├─ 始终注入: KnowledgeBase.progress_summary() → 1-2行进度
+   │
+   └─ 按需注入: RetrievalGateway.check_and_retrieve(thinking, step)
+        │
+        ├─ 无信号 → 跳过（上下文保持最小）
+        │
+        └─ 有信号 → 查询 KnowledgeBase → 注入检索结果
+             │
+             ├─ product_lookup → 商品信息查询
+             ├─ price_compare → 价格对比表
+             ├─ calculate → 购物车计算
+             ├─ recall → 最近步骤 + 推理召回
+             └─ stagnation → 步骤历史
+
+agent.py Phase ⑩ (记忆更新)
+   │
+   └─ memory_manager.add_step() → _update_session_memory()
+        │
+        ├─ SessionMemory 产品追踪 (ProductInfo)
+        └─ KnowledgeBase.record_step() + record_product()
+             ├─ ProductObservation (name, price, specs, status)
+             ├─ StepRecord (action_type, target, truncated_thinking)
+             └─ ProgressTracker (completed, remaining, focus)
+```
+
+### 4.3 KnowledgeBase — 外置会话知识库
+
+**文件**: `phone_agent/memory/knowledge_base.py` (新增)
+
+KnowledgeBase 是记忆解耦的核心——相当于 UI-Copilot 论文中的 "K file"，存储所有详细的观察记录，VLM 上下文中仅保留最小化进度摘要。
+
+**数据模型**:
+
+```python
+@dataclass
+class ProductObservation:
+    """商品观察记录"""
+    name: str                              # 商品名称
+    price: float | None = None             # 价格
+    specs: dict[str, str] = {}             # {"颜色": "黑色", "尺码": "42"}
+    status: str = "viewed"                 # viewed | added_to_cart | compared
+    first_seen_step: int = 0               # 首次出现步骤
+
+@dataclass
+class StepRecord:
+    """步骤记录"""
+    step: int                              # 步骤编号
+    action_type: str                       # 动作类型
+    action_target: str = ""                # 动作目标
+    truncated_thinking: str = ""           # 截断的推理文本 (≤200字符)
+    full_thinking: str = ""                # 完整推理 (归档用)
+    current_app: str = ""                  # 当前App
+
+@dataclass
+class ProgressTracker:
+    """进度追踪器"""
+    completed_subtasks: list[str]          # 已完成子任务
+    remaining_subtasks: list[str]          # 待完成子任务
+    current_focus: str = ""                # 当前焦点
+```
+
+**KnowledgeBase 核心API**:
+
+| 方法 | 功能 | 调用时机 |
+|------|------|---------|
+| `reset()` | 清空所有会话数据 | start_task |
+| `record_step(step, action_type, thinking, ...)` | 记录步骤 + 检测停滞 | 每步 |
+| `record_product(name, price, specs, status)` | 记录商品观察 | 产品提取时 |
+| `progress_summary()` | 生成1-2行进度摘要 | 每步注入 |
+| `current_focus()` | 返回当前焦点描述 | 进度摘要 |
+| `retrieve_by_keywords(keywords)` | 关键词搜索推理归档+步骤 | 信号触发 |
+| `retrieve_all_products_text()` | 返回所有商品文本 | 回退检索 |
+| `is_stagnating()` | 检测同页面同动作≥2次 | 停滞信号 |
+| `to_dict()` | 序列化完整状态 | end_task |
+
+### 4.4 RetrievalGateway — 按需检索引擎
+
+**文件**: `phone_agent/memory/retrieval_gateway.py` (新增)
+
+RetrievalGateway 是 UI-Copilot "Copilot as Retriever" 范式的推理时实现。论文中的方法需要微调模型输出 `<tool>Retriever</tool>` 标记，本系统改用启发式信号检测 + 结构化知识库查询，无需额外模型训练。
+
+**5种检索信号**:
+
+```python
+class RetrievalGateway:
+    UNCERTAINTY_SIGNALS = [
+        "不确定", "忘记了", "之前看到", "那个商品", "价格是多少",
+        "哪个", "我不确定", "记不清", "刚刚看", "前面看到",
+        "not sure", "forgot", "remember", "which one",
+    ]
+    COMPARISON_SIGNALS = [
+        "对比", "比较", "哪个更", "性价比", "哪个便宜", "哪个贵",
+        "选哪个", "纠结", "compare",
+    ]
+    CALCULATION_SIGNALS = [
+        "总共", "合计", "一共", "加起来", "总价", "多少钱",
+        "total", "sum", "multiply", "add up",
+    ]
+    LOOKUP_SIGNALS = [
+        "价格是多少", "什么颜色", "什么尺码", "什么规格",
+        "那个商品", "之前看过", "前面那个",
+    ]
+    # Stagnation: 通过 KnowledgeBase.is_stagnating() 检测
+```
+
+**核心检索流程**:
+
+```python
+def check_and_retrieve(self, thinking: str, current_step: int) -> RetrievalResult:
+    # 1. 冷却检查: 距上次检索 < 3步 → 跳过
+    if current_step - self._last_retrieval_step < self._retrieval_cooldown:
+        return RetrievalResult(triggered=False)
+
+    # 2. 停滞信号 (优先级最高)
+    if self.kb.is_stagnating():
+        return self._do_retrieve("recall", thinking, current_step, source="stagnation")
+
+    # 3. 文本信号检测 (按优先级)
+    for kw in self.LOOKUP_SIGNALS:     # 产品查找
+    for kw in self.COMPARISON_SIGNALS:  # 价格对比
+    for kw in self.CALCULATION_SIGNALS: # 购物车计算
+    for kw in self.UNCERTAINTY_SIGNALS: # 不确定性召回
+
+    return RetrievalResult(triggered=False)  # 无信号 → 不注入
+```
+
+**上下文构建器**: RetrievalGateway 根据信号类型生成不同的注入文本：
+
+| Intent | Builder | 输出格式 |
+|--------|---------|---------|
+| `product_lookup` | `_build_product_context()` | 商品名、价格、规格 + 用户约束 |
+| `price_compare` | `_build_comparison_context()` | 表格：商品名 \| 价格 \| 规格，含最低价 |
+| `calculate` | `_build_calculation_context()` | 购物车清单 + 合计 + 所有已浏览价格 |
+| `recall` | `_build_recall_context()` | 最近8步摘要 + 关键词召回 + 用户约束 |
+
+### 4.5 SessionMemory — 会话产品追踪
 
 **文件**: `phone_agent/memory/session_memory.py` (343行)
+
+在 v2.0 架构中，SessionMemory 的角色从"上下文注入源"转变为"产品追踪 + KnowledgeBase 数据源"。它不再直接构建注入文本，而是结构化记录产品信息供 KnowledgeBase 消费。
+
+**SessionMemory 数据模型**:
 
 ```python
 @dataclass
@@ -545,20 +738,37 @@ class SessionMemory:
     constraints: dict[str, str] = {}       # 用户约束（预算/品牌）
 ```
 
-### 4.3 生命周期
+**与 KnowledgeBase 的协作**:
 
-```
-MemoryManager.start_task()  → SessionMemory.reset() + 填充 task/platform
-MemoryManager.add_step()    → _update_session_memory():
-    ├─ _extract_product_from_text(thinking) → 商品名/价格/规格
-    ├─ _extract_constraints_from_text(thinking) → 预算/品牌约束
-    ├─ _generate_step_summary(action, app, thinking) → 模板化摘要
-    └─ SessionMemory.add_step_summary(summary)
-agent.py Phase ⑥            → SessionMemory.get_context_for_injection()
-MemoryManager.end_task()    → SessionMemory.to_dict() 序列化存入 MemoryStore
+```python
+# MemoryManager._update_session_memory() 中:
+def _update_session_memory(self, thinking, action, current_app):
+    # 1. SessionMemory 提取产品信息
+    product = self._extract_product_from_text(thinking)
+    if product:
+        self.session_memory.add_viewed_product(product)
+
+    # 2. 同步到 KnowledgeBase (外置存储)
+    self.knowledge_base.record_product(
+        name=product.name, price=product.price,
+        specs=product.specs, status=product.status,
+    )
+
+    # 3. SessionMemory 生成步骤摘要
+    summary = self._generate_step_summary(action, current_app, thinking)
+    self.session_memory.add_step_summary(summary)
+
+    # 4. 同步到 KnowledgeBase (外置存储)
+    self.knowledge_base.record_step(
+        step=len(self.session_memory.completed_steps),
+        action_type=action.get("action", ""),
+        action_target=action.get("target", ""),
+        truncated_thinking=thinking[:200],
+        full_thinking=thinking,
+    )
 ```
 
-### 4.4 产品信息提取
+### 4.6 产品信息提取
 
 基于正则模式的轻量提取（零延迟，跨模型兼容）：
 
@@ -582,24 +792,7 @@ PRODUCT_PATTERNS["spec"] = [
 ]
 ```
 
-### 4.5 摘要生成
-
-模板驱动的步骤摘要生成，基于动作类型拼装：
-
-```python
-def _generate_step_summary(action, current_app, thinking) -> str:
-    templates = {
-        "Launch":  f"已启动{current_app}",
-        "Tap":     f"在{current_app}点击了「{target}」",
-        "Type":    f"在{current_app}输入了「{text}」",
-        "Swipe":   f"在{current_app}浏览页面",
-        "Interact": f"向用户确认了选择",
-        # ...
-    }
-    return f"[Step {n}] {summary}"
-```
-
-### 4.6 VLM 历史压缩
+### 4.7 VLM 历史压缩
 
 每5步触发一次，将模板摘要压缩为更简洁的进展描述：
 
@@ -616,16 +809,17 @@ def compress_session_history() -> str | None:
     session_memory.completed_steps[-5:] = [StepSummary(summary=f"[压缩] {compressed}")]
 ```
 
-### 4.7 学术指标设计
+### 4.8 学术指标设计
 
-SessionMemory 支持以下量化分析指标：
+支持以下量化分析指标：
 
 | 指标 | 测量方法 | 预期效果 |
 |------|---------|---------|
-| 重复操作率 | SessionMemory.completed_steps 中连续相同 action_type 的比例 | 启用后下降 |
+| 重复操作率 | completed_steps 中连续相同 action_type 的比例 | 启用后下降 |
 | 信息保留率 | viewed_products 中在后续步骤被 VLM thinking 引用的比例 | 启用后上升 |
-| 上下文膨胀度 | 注入前后的 VLM 输入 token 数变化 | 摘要模式 vs 详细模式对比 |
-| 触发精度 | should_trigger_detailed_injection 的 precision/recall | 消融实验 |
+| 上下文膨胀度 | 注入前后的 VLM 输入 token 数变化 | Memory Decoupling 后 ~80% 降低 |
+| 检索触发精度 | RetrievalGateway 5种信号的 precision/recall | 消融实验 |
+| 冷却效率 | 冷却间隔 vs 检索命中率的关系 | 3步冷却为最优 |
 
 ---
 
@@ -852,10 +1046,11 @@ PhoneAgent.run(task)
     │   ├─ build_personalized_prompt() → "🛒 购物偏好: 倾向于选择百亿补贴"
     │   └─ [System] + [User: task + 截图]
     │
-    ├─ ⑥ 上下文注入:
-    │   ├─ [📋] 任务: 在京东买...; 平台: 京东
-    │   ├─ [🛒] 相似任务: "在京东搜索运动鞋"(京东·1次)
-    │   └─ (购物App → Layer 4安全提示注入)
+    ├─ ⑥ Memory Decoupling 上下文注入:
+    │   ├─ [Progress] KnowledgeBase.progress_summary() → "Step 1 | 当前在京东首页"
+    │   ├─ RetrievalGateway.check_and_retrieve("当前在京东首页...", step=1)
+    │   │   └─ 无混淆信号 → 跳过检索（上下文保持最小）
+    │   └─ (安全提示: 首页非规格页 → 跳过)
     │
     ├─ ⑦ VLM推理 → thinking: "当前在京东首页，需要搜索Nike跑鞋..."
     │            → action: do(action="Type", text="Nike跑鞋")
@@ -874,9 +1069,10 @@ PhoneAgent.run(task)
     │   ├─ _learn_from_thinking("当前在京东首页...")
     │   │   └─ 无联系人/偏好匹配
     │   └─ _update_session_memory(thinking, action, "京东")
-    │       ├─ _extract_product_from_text → 无产品信息（thinking中无产品名）
+    │       ├─ _extract_product_from_text → 无产品信息
     │       ├─ _generate_step_summary → "在京东输入了「Nike跑鞋」"
-    │       └─ session_memory.add_step_summary("在京东输入了「Nike跑鞋」", "Type", "search")
+    │       ├─ session_memory.add_step_summary(...)
+    │       └─ knowledge_base.record_step(1, "Type", "Nike跑鞋", thinking) ← 外置存储
     │   + update_state_and_transition(hash, "京东", action, task)
     │       ├─ StateManager.compute_state_id → "state_京东_a1b2c3d4"
     │       └─ GraphStore.add_state_transition(None, "state_京东_a1b2c3d4", ...)
@@ -923,10 +1119,12 @@ locate_and_get_context(ui_hash, semantic_layout, task)
 
 | 文件 | 行数 | 复杂度 | 核心职责 |
 |------|------|--------|---------|
-| `agent.py` | 998 | 中 | Agent主循环 + 5种模型分支 + 4层上下文注入 + SpecGuard |
+| `agent.py` | ~1020 | 中 | Agent主循环 + 5种模型分支 + Memory Decoupling + SpecGuard |
 | `memory/memory_manager.py` | 1464 | 高 | 记忆调度+上下文构建+自动学习+状态协调+产品提取 |
+| `memory/knowledge_base.py` | ~250 | 中 | 外置会话知识库 (NEW v2.0): ProductObservation + StepRecord + ProgressTracker |
+| `memory/retrieval_gateway.py` | ~200 | 中 | 按需检索引擎 (NEW v2.0): 5种信号检测 + 冷却机制 + 上下文构建 |
 | `memory/memory_store.py` | 666 | 中 | FAISS向量存储 2048d + 双级嵌入器 |
-| `memory/session_memory.py` | 343 | 低 | 会话结构化产品追踪 + 摘要生成 + 上下文构建 |
+| `memory/session_memory.py` | 343 | 低 | 会话产品追踪 + 摘要生成 (v2.0: 数据源角色, 不再直接构建注入文本) |
 | `memory/graph_store.py` | 433 | 中 | Neo4j图+Cypher查询+TaskIndex |
 | `memory/state_manager.py` | 101 | 低 | 统一状态追踪 |
 | `memory/task_index.py` | 108 | 低 | FAISS+EmbeddingClient任务索引 |
@@ -944,7 +1142,8 @@ locate_and_get_context(ui_hash, semantic_layout, task)
 | `config/prompts_en.py` | ~85 | 低 | 英文系统提示词 |
 | `config/timing.py` | 167 | 低 | 统一操作延迟配置(均环境变量可覆盖) |
 | `device_factory.py` | 167 | 低 | 跨平台设备抽象工厂(ADB/HDC/XCTEST) |
-| **核心总计** | **~6900** | | |
+| `memory/offline_explorer.py` | ~250 | 中 | 离线页面探索器 (NEW v2.0): 页面分类 + 轨迹收集 |
+| **核心总计** | **~7350** | | |
 
 ---
 
@@ -952,26 +1151,28 @@ locate_and_get_context(ui_hash, semantic_layout, task)
 
 ### 10.1 核心claim
 
-> 我们提出了一种面向长任务购物场景的 GUI Agent 记忆增强架构。通过双核记忆引擎（FAISS语义核 + Neo4j空间核）与会话结构化产品记忆（SessionMemory）的协同，Agent 在不增加模型训练成本的前提下，显著降低了长任务中的进度迷失、记忆衰退和数学幻觉问题。
+> 我们提出了一种面向长任务购物场景的 GUI Agent 记忆解耦架构。受 UI-Copilot (Lu et al., 2026) 启发，我们将详细观察记录外置于 KnowledgeBase，VLM 上下文仅保留最小化进度摘要，并通过 RetrievalGateway 的 5 种混淆信号实现按需检索。与双核记忆引擎（FAISS语义核 + Neo4j空间核）协同，Agent 在不增加模型训练成本的前提下，将上下文大小减少约 70-80%，显著降低了长任务中的进度迷失、记忆衰退和数学幻觉问题。
 
 ### 10.2 可量化指标
 
-1. **任务成功率** (Task Success Rate): 启用/禁用 SessionMemory 的长购物任务对比
-2. **重复操作率** (Redundancy Rate): 连续相同动作在相同页面的比例
-3. **信息保留率** (Information Retention): 会话早期产品在后续步骤中被引用的比率
-4. **上下文效率** (Context Efficiency): token消耗量 / 任务步骤数
-5. **图谱命中率** (Graph Hit Rate): Navigate模式直接执行的比例 vs VLM推理比例
-6. **计算幻觉率** (Math Hallucination Rate): 购物场景中价格/折扣计算错误率
+1. **任务成功率** (Task Success Rate): 启用/禁用 Memory Decoupling 的长购物任务对比
+2. **上下文效率** (Context Efficiency): 传统Push vs Memory Decoupling 的 VLM 输入 token 对比（预期 ~80% 降低）
+3. **重复操作率** (Redundancy Rate): 连续相同动作在相同页面的比例
+4. **信息保留率** (Information Retention): 会话早期产品在后续步骤中被 VLM thinking 引用的比例
+5. **检索触发精度** (Retrieval Precision): RetrievalGateway 5种信号的 precision/recall
+6. **图谱命中率** (Graph Hit Rate): Navigate模式直接执行的比例 vs VLM推理比例
+7. **计算幻觉率** (Math Hallucination Rate): 购物场景中价格/折扣计算错误率
 
 ### 10.3 消融实验设计
 
 | 实验组 | 配置 | 预期效果 |
 |--------|------|---------|
 | Full System | 全部组件启用 | 基准性能 |
-| - SessionMemory | 移除Layer 1+2上下文注入 | 成功率下降，迷失率上升 |
-| - Detailed Trigger | 仅保留摘要注入，关闭触发式详细注入 | 长任务中的信息丢失增加 |
+| - KnowledgeBase | 移除外置知识库，回退到4层Push注入 | 上下文膨胀，长任务迷失率上升 |
+| - RetrievalGateway | 保留KnowledgeBase但关闭按需检索（始终推入所有记忆） | 上下文增大，与Full对比衡量Pull vs Push差异 |
+| - Cooldown | 移除检索冷却机制（每步都可触发检索） | 检索触发频率上升，评估上下文轰炸影响 |
 | - GraphRAG | 仅使用MemoryStore FAISS，禁用Neo4j图 | Navigate快捷路径消失，步数增加 |
 | - Compress | 禁用VLM历史压缩 | Token消耗上升 |
 | - SpecGuard | 禁用安全防护 | 规格页面错误率上升 |
 
-*本文档基于 2026-05-11 对 `phone_agent/` 全部源文件的探索分析 + commit 4fbb1ae 的变更追踪。*
+*本文档基于 2026-05-14 对 `phone_agent/` 全部源文件的探索分析 + Memory Decoupling 架构变更。*

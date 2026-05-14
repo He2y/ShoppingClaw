@@ -572,36 +572,24 @@ class PhoneAgent:
                 )
 
         # =============================================
-        # Phase ⑥: 多层上下文注入
-        # Layer 1: SessionMemory 进度摘要（始终注入）
-        # Layer 2: SessionMemory 详细记忆（触发时注入）
-        # Layer 3: 图谱语义上下文
-        # Layer 4: 关键场景检测
+        # Phase ⑥: Memory Decoupling Context (UI-Copilot paradigm)
+        # MINIMAL by default — only progress + on-demand retrieval.
+        # Detailed observations live in KnowledgeBase, not in VLM context.
         # =============================================
         extra_context_parts: list[str] = []
 
         if self.memory_manager and current_app:
-            # Layer 1: Always inject progress summary
-            summary_ctx = self.memory_manager.session_memory.get_context_for_injection("summary")
-            if summary_ctx:
-                extra_context_parts.append(summary_ctx)
-
-            # Layer 2: Triggered detailed injection
+            # Core: lightweight progress + on-demand retrieval
             last_thinking = getattr(self, "_last_thinking", "")
-            if self.memory_manager.session_memory.should_trigger_detailed_injection(last_thinking):
-                detailed_ctx = self.memory_manager.session_memory.get_context_for_injection("detailed")
-                if detailed_ctx:
-                    extra_context_parts.append(detailed_ctx)
-                if self.agent_config.verbose:
-                    print("🔍 [SessionMemory] 触发详细记忆注入")
+            injection_ctx = self.memory_manager.get_injection_context(
+                thinking=last_thinking,
+                current_app=current_app,
+                step=self._step_count,
+            )
+            if injection_ctx:
+                extra_context_parts.append(injection_ctx)
 
-        # Layer 3: Graph semantic context
-        if self.memory_manager:
-            semantic_ctx = context_data.get("semantic_context", "")
-            if semantic_ctx:
-                extra_context_parts.append(semantic_ctx)
-
-        # Layer 4: Critical scenario detection
+        # Critical scenario detection (spec-guard — keep, it prevents bad purchases)
         if self.memory_manager:
             critical_hints = self._detect_critical_scenario(current_app, screenshot.base64_data)
             if critical_hints:
