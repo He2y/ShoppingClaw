@@ -17,8 +17,7 @@
 
 [English](README.md) | [中文](README_CN.md)
 
-
-**ClawGUI-Agent** is the deployment module of [ClawGUI](../README.md). Built on [OpenClaw](https://github.com/openclaw/openclaw) and powered by [nanobot](https://github.com/HKUDS/nanobot), it provides two core capabilities: **GUI phone control** and **one-command evaluation**. For phone control, it drives a Vision-Language Model through a closed-loop "screenshot → reasoning → action" cycle to autonomously complete tasks on Android, HarmonyOS, and iOS devices — accessible from Feishu, QQ, Telegram, and 12+ other chat platforms. For evaluation, a single natural-language command triggers the full [ClawGUI-Eval](../clawgui-eval) pipeline: environment check, multi-GPU inference, judging, and metric reporting.
+**ClawGUI-Agent** is a VLM-driven GUI phone automation framework specializing in **long-horizon shopping scenarios**. Built on [OpenClaw](https://github.com/openclaw/openclaw) and powered by [nanobot](https://github.com/HKUDS/nanobot), it implements a closed-loop "screenshot → reasoning → action" control cycle with a **dual-core memory engine** (FAISS semantic + Neo4j spatial) for cross-session personalization.
 
 ## 📑 Table of Contents
 
@@ -32,45 +31,88 @@
   - [3. Connect Android Device](#3-connect-android-device)
   - [4. Configure Chat Platforms (optional)](#4-configure-chat-platforms-optional)
 - [Run](#-run)
-- [ClawGUI-Eval Evaluation](#-clawgui-eval-evaluation)
-- [GUI Phone Control](#-gui-phone-control)
-  - [Web UI](#web-ui)
-  - [Memory System](#memory-system)
-  - [Supported GUI Models](#supported-gui-models)
+- [Memory System](#-memory-system)
+  - [Dual-Core Memory Engine](#dual-core-memory-engine)
+  - [Session Product Memory](#session-product-memory)
+  - [GraphRAG Retrieval](#graphrag-retrieval)
+- [SpecGuard Safety Mechanism](#-specguard-safety-mechanism)
+- [Supported GUI Models](#-supported-gui-models)
+- [Web UI](#-web-ui)
 - [Directory Structure](#-directory-structure)
 - [License](#-license)
 
 ## ✨ Key Features
 
-- **nanobot Integration** — Remotely control phones from 12+ chat platforms including Feishu / DingTalk / Telegram / Discord / Slack / QQ, issue tasks anytime anywhere
-- **GUI Phone Control** — Powered by OpenClaw, AI autonomously captures screenshots, understands the screen, and performs tap/swipe/type GUI actions to complete complex tasks
-- **ClawGUI-Eval Integration** — Built-in [ClawGUI-Eval](../clawgui-eval) evaluation skill, launch GUI Grounding model benchmarks with natural language (environment check → multi-GPU inference → judging → metric calculation), with automatic progress monitoring and result comparison against official baselines
-- **Multi-Model Support** — Compatible with AutoGLM, Qwen VL, UI-TARS, MAI-UI, GUI-Owl and more VLMs, connected via OpenAI-compatible API
-- **Personalized Memory** — Automatically learns user preferences (contacts, frequently used apps, habits), with a vector-search-based persistent memory system
-- **Real-time Episode Recording** — Each task execution (screenshots + model outputs + actions) is saved as a structured episode, enabling replay and dataset construction
-- **Web UI** — Gradio-based web interface for device management, task execution visualization, manual takeover, memory management and more
+- **Dual-Core Memory Engine** — FAISS semantic vector store + Neo4j spatial graph store with unified state management, enabling cross-session personalization without model training
+- **Session Product Memory** — Structured tracking of products (name/price/specs), progress summaries, and stagnation detection to prevent progress confusion and memory degradation in long tasks
+- **Multi-Layer Context Injection** — 4-layer injection strategy: progress summary → detailed memory → graph semantics → safety hints, with on-demand triggering based on uncertainty signals
+- **GraphRAG Navigation** — Three-layer retrieval (TaskIndex FAISS → Neo4j N-gram → MemoryStore FAISS) enabling shortcut execution for repeated tasks
+- **SpecGuard Safety Net** — Prompt + code dual-layer protection that deterministically prevents erroneous purchase operations in shopping scenarios
+- **nanobot Integration** — Remotely control phones from 12+ chat platforms including Feishu / DingTalk / Telegram / Discord / Slack / QQ
+- **Multi-Model Support** — Compatible with AutoGLM, Qwen VL, UI-TARS, MAI-UI, GUI-Owl and more VLMs via OpenAI-compatible API
 
 ## 🏗️ Architecture
 
-<p align="center">
-  <img src="assets/clawgui-agent-logo.png" alt="ClawGUI-Agent Architecture" width="800">
-</p>
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                      Entry Layer (入口层)                         │
+│                   CLI (main.py)  │  WebUI (webui.py)              │
+└─────────────────────────────┬────────────────────────────────────┘
+                              │ task
+                              ▼
+┌──────────────────────────────────────────────────────────────────┐
+│                      Agent Core (代理核心)                        │
+│                         PhoneAgent                               │
+│                                                                  │
+│  run(task): 14-phase execution loop                              │
+│    ① Screenshot  ② Memory Lookup  ②.5 Compression               │
+│    ③ HITL Clarify  ④ Navigate Check  ⑤ Message Build            │
+│    ⑥ 4-Layer Context Injection  ⑦ VLM Inference                 │
+│    ⑧ Action Parse + SpecGuard  ⑨ Execute  ⑩ Memory Update       │
+│    ⑪ Interact Capture  ⑫ Completion  ⑬ Trace  ⑭ Return         │
+└──┬──────────────┬──────────────┬──────────────┬──────────────────┘
+   │              │              │              │
+   ▼              ▼              ▼              ▼
+┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────────┐
+│  Model   │ │  Action  │ │  Device  │ │  Memory System   │
+│ Adapters │ │ Handlers │ │  Factory │ │ (Dual-Core)      │
+│ (5)      │ │ (6)      │ │          │ │                  │
+└──────────┘ └──────────┘ └─────┬────┘ │ ┌──────────────┐ │
+                                │       │ │ Semantic Core│ │
+                    ┌───────────┼───┐   │ │ (FAISS 2048d)│ │
+                    ▼           ▼   ▼   │ │ embedding-3  │ │
+                  ADB         HDC  XCTEST│ └──────────────┘ │
+                  (Android) (Harmony) (iOS)│ ┌──────────────┐ │
+                                          │ │ Spatial Core │ │
+                                          │ │ (Neo4j Graph)│ │
+                                          │ │ + TaskIndex  │ │
+                                          │ │ +StateManager│ │
+                                          │ │ +SessionMemory│ │
+                                          │ └──────────────┘ │
+                                          └──────────────────┘
+```
 
 ## 🔄 How the Agent Works
 
-Understanding the execution loop helps with configuration and debugging. `PhoneAgent.run()` in `phone_agent/agent.py` follows this cycle for each task:
+The `PhoneAgent.run()` execution loop consists of 14 phases:
 
-1. **Screenshot** — Capture the current screen via ADB (`screencap`), HDC, or XCTest depending on the device backend.
-2. **Memory retrieval** — Query the vector memory store for relevant memories from past interactions (contacts, app knowledge, user preferences). Top-k similar memories are appended to the system context.
-3. **History construction** — Assemble the multi-turn conversation history: each past step contributes a `(user: screenshot + instruction, assistant: reasoning + action)` pair, up to `history_length` steps back.
-4. **VLM call** — Send the prompt (system prompt + history + current screenshot + task instruction) to the configured GUI model via OpenAI-compatible API.
-5. **Action parsing** — Extract the structured action from the model output. Different models use different output formats (`autoglm`, `uitars`, `qwenvl`, `maiui`, `guiowl` adapters in `phone_agent/model/adapters.py`).
-6. **Coordinate normalization** — Convert the model's output coordinates to absolute device pixels. AutoGLM uses `[0, 1000]` normalized coordinates; UI-TARS uses absolute pixel coordinates in `smart_resize` space; Qwen-VL uses absolute pixels; MAI-UI uses `[0, 1000]`.
-7. **Action execution** — Send the action to the device backend: tap, long-press, swipe, type, home, back, or task-complete. Each action type has a dedicated handler in `phone_agent/actions/`.
-8. **Trace recording** — If `traceEnabled=True`, append the screenshot, reasoning, and action to the episode tracer for later replay or training data export.
-9. **Memory update** — After task completion, extract contact names, app knowledge, and user habits from the conversation and upsert them into the vector store with deduplication.
-
-This loop runs until the model outputs a `terminate` or `answer` action, or `max_steps` is reached.
+| Phase | Description |
+|-------|-------------|
+| ① Screenshot | Capture screen via ADB/HDC/XCTest |
+| ② Memory Lookup | GraphRAG three-layer matching for task context |
+| ②.5 Compression | VLM-based history compression every 5 steps |
+| ③ HITL Clarify | Detect ambiguity and ask user for clarification |
+| ④ Navigate Check | Execute graph shortcut if confidence ≥ 0.8 |
+| ⑤ Message Build | Construct messages based on model adapter |
+| ⑥ Context Injection | 4-layer injection (summary → detailed → graph → safety) |
+| ⑦ VLM Inference | Stream thinking + action from GUI model |
+| ⑧ Action Parse + SpecGuard | Parse action with safety override |
+| ⑨ Execute | Send action to device backend |
+| ⑩ Memory Update | Extract entities, update SessionMemory |
+| ⑪ Interact Capture | Store user replies for context |
+| ⑫ Completion | Check for finish/answer action |
+| ⑬ Trace | Record step with session snapshot |
+| ⑭ Return | Yield StepResult |
 
 ## 🚀 Quick Start
 
@@ -81,23 +123,13 @@ This loop runs until the model outputs a `terminate` or `answer` action, or `max
 
 ### 1. Installation
 
-Assuming you have cloned the ClawGUI project and are in the root directory:
-
 #### Option A: uv (recommended)
 
 ```bash
 cd clawgui-agent
-
-# Create virtual environment
 uv venv .venv --python 3.12
-
-# Activate
 source .venv/bin/activate
-
-# Install phone_agent
 uv pip install -e .
-
-# Install nanobot
 uv pip install -e nanobot/
 ```
 
@@ -105,29 +137,19 @@ uv pip install -e nanobot/
 
 ```bash
 cd clawgui-agent
-
-# Create conda environment
 conda create -n opengui python=3.12 -y
 conda activate opengui
-
-# Install phone_agent
 pip install -e .
-
-# Install nanobot
 pip install -e nanobot/
 ```
 
 ### 2. Initialize and Edit Configuration
 
-Run the onboard wizard to generate default config:
-
 ```bash
 nanobot onboard
 ```
 
-Then edit `~/.nanobot/config.json`. Here is a reference configuration:
-
-> We recommend using **autoglm-phone** as the external GUI model for phone control.
+Edit `~/.nanobot/config.json`:
 
 ```json
 {
@@ -137,19 +159,13 @@ Then edit `~/.nanobot/config.json`. Here is a reference configuration:
       "model": "glm-5",
       "provider": "zhipu",
       "maxTokens": 8192,
-      "contextWindowTokens": 131072,
-      "temperature": 0.1,
-      "maxToolIterations": 40
+      "temperature": 0.1
     }
   },
   "providers": {
     "zhipu": {
       "apiKey": "YOUR_ZHIPU_API_KEY",
       "apiBase": "https://open.bigmodel.cn/api/paas/v4/"
-    },
-    "openrouter": {
-      "apiKey": "YOUR_OPENROUTER_API_KEY",
-      "apiBase": "https://openrouter.ai/api/v1"
     }
   },
   "tools": {
@@ -163,310 +179,207 @@ Then edit `~/.nanobot/config.json`. Here is a reference configuration:
       "guiApiKey": "YOUR_OPENROUTER_API_KEY",
       "guiModelName": "autoglm-phone",
       "promptTemplateLang": "en",
-      "promptTemplateStyle": "autoglm",
-      "traceEnabled": false,
-      "traceDir": "gui_trace"
-    },
-    "exec": {
-      "enable": true,
-      "timeout": 60
+      "promptTemplateStyle": "autoglm"
     }
   }
 }
 ```
 
-> **Important: `workspace` Path Setting**
->
-> Set `workspace` to the ClawGUI project root — the directory that contains both `clawgui-agent/` and `clawgui-eval/`. The built-in evaluation skill uses this path to locate the evaluation framework. For example, if your project lives at `/home/user/ClawGUI`, set `workspace` to `"/home/user/ClawGUI"`.
-
-#### GUI Tool Parameters
-
-| Parameter | Description |
-|-----------|-------------|
-| `enable` | Enable/disable the GUI phone control tool |
-| `deviceType` | Device type: `adb` (Android) or `hdc` (HarmonyOS) |
-| `deviceId` | Specific device ID, `null` for auto-detection |
-| `maxSteps` | Maximum execution steps per task |
-| `useExternalModel` | Use an external GUI-specific model (recommended `true`) |
-| `guiBaseUrl` | API endpoint for the external GUI model |
-| `guiApiKey` | API key for the external GUI model |
-| `guiModelName` | External GUI model name, used with guiBaseUrl |
-| `promptTemplateLang` | Prompt language: `cn` / `en` |
-| `promptTemplateStyle` | Prompt template style: `autoglm` / `uitars` / `qwenvl` etc. |
-| `traceEnabled` | Enable episode recording |
-| `traceDir` | Episode save directory |
-
 ### 3. Connect Android Device
 
-> The controlled phone must be connected (e.g. via USB) to the server machine where ClawGUI-Agent is installed.
-
-#### Step 1: Install ADB
-
-**Option A: Install via package manager**
-
-**macOS (recommended: brew):**
-
-```bash
-brew install android-platform-tools
-```
-
-**Linux:**
-
-```bash
-sudo apt install android-tools-adb   # Ubuntu/Debian
-```
-
-**Windows:** See this [blog tutorial](https://blog.csdn.net/x2584179909/article/details/108319973) to download and configure PATH.
-
-**Option B: Manual download**
-
-Download the official [ADB platform-tools](https://developer.android.com/tools/releases/platform-tools) and extract it, then add it to your PATH:
-
-**macOS / Linux:**
-
-```bash
-# Assuming extracted to ~/Downloads/platform-tools
-export PATH=${PATH}:~/Downloads/platform-tools
-```
-
-**Windows:** Add the extracted directory (e.g. `C:\platform-tools`) to the system PATH environment variable.
-
-#### Step 2: Connect Phone and Enable USB Debugging
-
-1. **Enable Developer Mode**: Go to Settings > About Phone > Build Number, tap rapidly ~10 times until you see "You are now a developer"
-2. **Enable USB Debugging**: Go to Settings > Developer Options > USB Debugging, toggle it on (some devices may require a restart)
+1. **Enable Developer Mode**: Settings > About Phone > Build Number (tap 10x)
+2. **Enable USB Debugging**: Settings > Developer Options > USB Debugging
 3. **Verify connection**:
 
 ```bash
 adb devices
-
-# Expected output:
-# List of devices attached
-# <your_device_id>   device
+# Expected: <device_id>   device
 ```
-
-#### Step 3: Install ADB Keyboard (optional)
-
-ADB Keyboard is used for text input. Download [ADBKeyboard.apk](https://github.com/senzhk/ADBKeyBoard/blob/master/ADBKeyboard.apk) and install:
-
-```bash
-adb install ADBKeyboard.apk
-adb shell ime enable com.android.adbkeyboard/.AdbIME
-```
-
-> Note: This step is optional. The framework will auto-detect and prompt installation when needed.
-
-#### Other Platforms (HarmonyOS / iOS)
-
-See the [Open-AutoGLM](https://github.com/zai-org/Open-AutoGLM) device connection guide.
 
 ### 4. Configure Chat Platforms (optional)
 
-To remotely control the phone via chat platforms, enable the corresponding platform in `channels` within `config.json` and fill in credentials.
-
-#### Feishu / Lark
-
-<details>
-<summary>📖 Click to expand setup steps</summary>
-
-- **Step 1**: Go to [Feishu Open Platform](https://open.feishu.cn/), click **Create App** on the homepage, select **Enterprise Self-Built App**, fill in the app name and description, and enable the **Bot** capability.
-- **Step 2**: Click **Permission Management** on the left sidebar, then click **Enable Permissions**.
-- **Step 3**: Search for and enable the following permissions in the text box: `im:message`, `im:message.p2p_msg:readonly`, `cardkit:card:write`
-  > If `cardkit:card:write` cannot be added, set `"streaming": false` in `channels.feishu` (see config below). The bot will still work normally; replies use regular interactive cards without token-by-token streaming.
-- **Step 4**: Click **Event & Callback** on the left, click **Subscription Method**, and select **Persistent Event Reception** (requires ClawGUI-Agent to be running to establish the connection).
-- **Step 5**: Go to **Credentials & Basic Info** on the left to get your `App ID` and `App Secret`.
-- **Step 6**: Click **Publish App**.
-- **Step 7**: Open Feishu, go to any group, click the group settings, click **Group Bots**, then **Add Bot**, and add the bot you just created to the group.
-- **Step 8**: @mention the bot in the group and send a message.
-
-</details>
-
-4. Configure in `~/.nanobot/config.json`:
+Enable platforms in `channels` within `config.json`:
 
 ```json
-"feishu": {
-  "enabled": true,
-  "appId": "YOUR_APP_ID",
-  "appSecret": "YOUR_APP_SECRET",
-  "encryptKey": "",
-  "verificationToken": "",
-  "allowFrom": ["*"],
-  "groupPolicy": "mention"
+"channels": {
+  "feishu": {
+    "enabled": true,
+    "appId": "YOUR_APP_ID",
+    "appSecret": "YOUR_APP_SECRET"
+  }
 }
 ```
-
-> `allowFrom` set to `["*"]` allows all users. To restrict, provide a list of user Open IDs. `groupPolicy` set to `"mention"` means the bot only responds when @mentioned in groups.
-
-#### QQ
-
-1. Go to [QQ Open Platform](https://q.qq.com/) and create a bot application
-2. Obtain the `App ID` and `Secret`
-3. Configure in `~/.nanobot/config.json`:
-
-```json
-"qq": {
-  "enabled": true,
-  "appId": "YOUR_APP_ID",
-  "secret": "YOUR_SECRET",
-  "allowFrom": ["*"]
-}
-```
-
-#### Other Platforms
-
-nanobot also supports Telegram, Discord, Slack, DingTalk, WeCom, WhatsApp, Email and 12+ more platforms. Set `"enabled": true` in the corresponding `channels` field and fill in credentials.
 
 ## 🚀 Run
 
 ### Control Phone via nanobot Chat
 
-Start the nanobot gateway service:
-
 ```bash
 nanobot gateway
 ```
 
-Once started, you can send messages on configured chat platforms (e.g. Feishu) to control the phone:
+Then send messages on configured chat platforms:
 
 ```
-Open WeChat and send "I'll be late" to Zhang San
+Open WeChat, send message to Zhang San
 ```
 
-nanobot will invoke the `gui_execute` tool, automatically capturing screenshots → VLM reasoning → executing phone actions in a loop until the task is completed.
-
-## 📊 ClawGUI-Eval Evaluation
-
-ClawGUI-Agent includes a built-in [ClawGUI-Eval](../clawgui-eval) skill that turns natural language into a complete benchmark run — from GPU environment check through multi-GPU inference, judging, and metric reporting — without writing a single script.
-
-### Prerequisites
-
-1. **workspace correctly set**: `workspace` in `config.json` points to the ClawGUI root directory (see configuration above)
-2. **ClawGUI-Eval environment installed**: Follow [ClawGUI-Eval README](../clawgui-eval/README.md) to install and download data
-3. **GPU available**: Inference requires NVIDIA GPUs
-4. **(Recommended) Install FlashAttention-2**: `pip install flash-attn --no-build-isolation` — the framework falls back to SDPA automatically if not installed, but precision may be slightly lower
-
-### Usage
-
-Simply say it in a nanobot conversation:
-
-```
-Benchmark qwen3vl 2b model on screenspot-pro
-```
-
-```
-Run uivision and osworld-g evaluation with MAI-UI-8B
-```
-
-nanobot will automatically:
-
-1. **Environment Check** — Check GPU, CUDA, FlashAttention-2, data integrity
-2. **Inference** — Generate run scripts from templates, launch multi-GPU parallel inference in background, monitor progress in real-time
-3. **Judging** — Automatically select and run the corresponding judge script
-4. **Metric Calculation** — Automatically select and run the corresponding metric script
-5. **Result Report** — Present accuracy, sub-category breakdowns, and comparison against official baselines
-
-### Supported Evaluation Models
-
-| Model Type | Example HuggingFace ID |
-|------------|----------------------|
-| `qwen3vl` | Qwen/Qwen3-VL-2B/4B/8B-Instruct |
-| `qwen25vl` | Qwen/Qwen2.5-VL-3B/7B-Instruct |
-| `maiui` | Tongyi-MAI/MAI-UI-2B/8B |
-| `uitars` | ByteDance-Seed/UI-TARS-1.5-7B |
-| `uivenus15` | inclusionAI/UI-Venus-1.5-2B/8B |
-| `guiowl15` | mPLUG/GUI-Owl-1.5-2B/4B/8B-Instruct |
-| `guig2` | inclusionAI/GUI-G2-7B |
-| `stepgui` | stepfun-ai/GELab-Zero-4B-preview |
-| `uivenus` | inclusionAI/UI-Venus-Ground-7B |
-
-Supported Benchmarks: ScreenSpot-Pro, ScreenSpot-V2, UIVision, MMBench-GUI, OSWorld-G, AndroidControl
-
-
-## 📱 GUI Phone Control
-
-The following features are part of ClawGUI-Agent's phone/device control capabilities, driven by the `gui_execute` tool.
-
-You can also invoke the GUI agent directly via command line:
+### CLI Direct Control
 
 ```bash
 python main.py \
-  --base-url https://open.bigmodel.cn/api/paas/v4/ \
   --model autoglm-phone \
-  --apikey <YOUR_API_KEY> \
   --max-steps 100 \
-  --lang cn \
-  "Open QQ Music, play Justin Bieber's Baby and add it to favorites. If it is already favorited, just play it. After it starts playing, pause it, then go back and play Bieber's Love Me."
+  "在京东搜索Nike跑鞋，找黑色42码，预算500以内"
 ```
 
-### Web UI
+## 🧠 Memory System
 
-In addition to chat platform control, you can use the Web UI directly:
+### Dual-Core Memory Engine
+
+The framework features a dual-core memory architecture:
+
+| Core | Technology | Purpose |
+|------|------------|---------|
+| **Semantic Core** | FAISS IndexFlatIP + embedding-3 (2048d) | Vector similarity search for memories |
+| **Spatial Core** | Neo4j Graph + TaskIndex | State transitions, task trajectories |
+
+**Memory Types (14 types)**:
+
+| Type | Importance | Description |
+|------|------------|-------------|
+| USER_PREFERENCE | 0.6 | User settings and preferences |
+| CONTACT | 0.7 | Contact information |
+| CONTACT_APP_BINDING | 0.8 | Contact → App binding (frequency-weighted) |
+| APP_USAGE | 0.5 | App usage records |
+| TASK_HISTORY | 0.4 | Task execution history |
+| TASK_PATTERN | 0.6 | Task patterns and workflows |
+| USER_CORRECTION | 1.0 | User corrections (highest priority) |
+| PRODUCT_PREFERENCE | 0.5 | Product category preferences |
+| UI_STATE | 0.4 | UI state features |
+| UI_TRANSITION | 0.4 | UI state transitions |
+
+### Session Product Memory
+
+Addresses three failure modes in long-horizon tasks (validated by UI-Copilot):
+
+| Failure Mode | Cause | Solution |
+|--------------|-------|----------|
+| **Progress Confusion** (43.8-66.7%) | Agent forgets completed steps | StepSummary chain + per-step injection |
+| **Memory Degradation** (13.3-21.8%) | Long context loses information | Structured SessionMemory + on-demand detailed injection |
+| **Math Hallucination** (6.7-10.9%) | VLM unreliable at numerical calculation | Structured product price extraction + constraint tracking |
+
+**Data Model**:
+
+```python
+@dataclass
+class ProductInfo:
+    name: str                    # Product name
+    price: float | None          # Price
+    specs: dict[str, str]        # {"color": "black", "size": "42"}
+    status: str                  # "viewed" | "added_to_cart" | "compared"
+    first_seen_step: int         # Step number when first seen
+
+@dataclass
+class SessionMemory:
+    task: str                    # Current task description
+    platform: str                # Shopping platform (京东/淘宝/...)
+    viewed_products: list[ProductInfo]
+    cart_items: list[ProductInfo]
+    completed_steps: list[StepSummary]
+    constraints: dict[str, str]  # Budget/brand constraints
+```
+
+### GraphRAG Retrieval
+
+Three-layer matching strategy for context retrieval:
+
+```
+Layer 1: TaskIndex FAISS (2048d)
+  similarity ≥ 0.85 → Navigate mode (skip VLM, execute shortcut)
+  similarity ≥ 0.60 → Explore mode (inject trajectory context)
+
+Layer 2: Neo4j N-gram Fallback
+  Chinese N-gram tokenization + token overlap scoring
+
+Layer 3: MemoryStore UI_STATE Fallback
+  Search UI_STATE memories for page features
+```
+
+## 🛡️ SpecGuard Safety Mechanism
+
+Prevents erroneous purchase operations in shopping scenarios with three-layer protection:
+
+| Layer | Mechanism | Trigger |
+|-------|-----------|---------|
+| **Layer 1** | System Prompt | Always active |
+| **Layer 2** | Dynamic Injection | Shopping app + spec page detected |
+| **Layer 3** | Code Safety Net | Post-inference override |
+
+**Code Safety Net Logic**:
+
+```python
+def _spec_guard_check(action, thinking, current_app):
+    if current_app not in SHOPPING_APPS:
+        return None  # Allow
+    if action.type == "Interact":
+        return None  # Allow
+    if has_spec_keywords(thinking) and has_purchase_intent(thinking):
+        return Interact("Multiple options available, which do you prefer?")
+    return None
+```
+
+## 🔧 Supported GUI Models
+
+| Model | Adapter | Coordinate Space | Provider |
+|-------|---------|-----------------|----------|
+| **AutoGLM-Phone-9B** | `autoglm` | [0, 1000] normalized | Zhipu AI |
+| **Doubao-1.5-UI-TARS** | `uitars` | Absolute pixels (smart_resize) | ByteDance |
+| **Qwen2.5-VL / Qwen3-VL** | `qwenvl` | [0, 999] | Alibaba Cloud |
+| **MAI-UI** | `maiui` | [0, 999] | Alibaba Cloud |
+| **GUI-Owl** | `guiowl` | [0, 999] | mPLUG |
+
+All models connect via **OpenAI-compatible API** and can be deployed locally with vLLM/SGLang.
+
+## 🖥️ Web UI
 
 ```bash
 python webui.py
 ```
 
-Opens at `http://localhost:7860` by default, featuring:
+Opens at `http://localhost:7860`:
 
-- **Device Management**: Connect/disconnect devices, view device status
-- **Task Execution**: Enter task descriptions, watch screenshots and AI reasoning in real-time
-- **Manual Takeover**: Switch to manual control for scenarios like CAPTCHAs
+- **Device Management**: Connect/disconnect, view status
+- **Task Execution**: Real-time screenshots and AI reasoning
+- **Manual Takeover**: Switch to manual control for CAPTCHAs
 - **Memory Management**: View/edit/clear memory data
-- **Configuration Panel**: Graphical model parameter settings
-
-### Memory System
-
-The framework includes a built-in personalized memory system (`phone_agent/memory/`). After each completed task, the agent extracts structured facts from the conversation — contact names and relationships, app-specific knowledge, user habits and preferences — and upserts them into a persistent store as JSON records with numpy vector embeddings. On subsequent tasks, the top-k most semantically similar memories are retrieved and injected into the system context, letting the agent recognize "Zhang San" as the user's colleague or know which music app the user prefers. Duplicate memories are detected and merged rather than accumulated, keeping the store lean. Multi-user isolation is supported via per-user namespaces.
-
-### Supported GUI Models
-
-The framework supports multiple Vision-Language Models via an adapter pattern:
-
-| Model | `promptTemplateStyle` | Provider |
-|-------|----------------------|----------|
-| **AutoGLM-Phone-9B** | `autoglm` | Zhipu AI |
-| **Doubao-1.5-UI-TARS** | `uitars` | ByteDance |
-| **Qwen2.5-VL / Qwen3-VL** | `qwenvl` | Alibaba Cloud |
-| **MAI-UI** | `maiui` | Alibaba Cloud |
-| **GUI-Owl-7B/32B** | `guiowl` | mPLUG |
-
-All models are connected via **OpenAI-compatible API** and can be deployed locally with vLLM / SGLang, or connected to cloud services such as Zhipu BigModel, Alibaba Cloud Bailian, or OpenRouter.
-
 
 ## 📁 Directory Structure
 
 ```
 ClawGUI-Agent/
 ├── main.py                      # CLI entry point
-├── webui.py                     # Gradio Web UI entry point
-├── ios.py                       # iOS CLI entry point
-├── setup.py                     # Package setup
-├── requirements.txt             # Python dependencies
-│
-├── phone_agent/                 # Core phone automation package
-│   ├── agent.py                 # PhoneAgent main class (screenshot→VLM→action loop)
-│   ├── agent_ios.py             # IOSPhoneAgent class
-│   ├── device_factory.py        # Device type factory (ADB / HDC / XCTest)
-│   ├── tracer.py                # Episode execution tracer
-│   ├── config/                  # Configuration & prompts (8 template files)
-│   ├── model/                   # Model clients & adapters (5 VLM adapters)
-│   ├── adb/                     # Android ADB device control
-│   ├── hdc/                     # HarmonyOS HDC device control
-│   ├── xctest/                  # iOS XCTest device control
-│   ├── actions/                 # Action handlers (tap, swipe, type, etc.)
-│   └── memory/                  # Personalized memory system (vector store)
-│
-├── nanobot/                     # nanobot subproject
-│   ├── nanobot/                 # nanobot core package
-│   │   ├── agent/               # Agent core + GUI tool
-│   │   ├── channels/            # 12+ chat platform integrations
-│   │   ├── providers/           # 20+ LLM provider adapters
-│   │   └── skills/              # Pluggable skills (gui-mobile, clawgui-eval)
-│   ├── pyproject.toml
-│   └── README.md
-│
-├── examples/                    # Usage examples
-└── scripts/                     # Deployment & verification scripts
+├── webui.py                     # Gradio Web UI
+├── phone_agent/
+│   ├── agent.py                 # PhoneAgent (998 lines, 14-phase loop)
+│   ├── clarify.py               # HITL clarification agent
+│   ├── tracer.py                # Episode recording
+│   ├── device_factory.py        # Device abstraction (ADB/HDC/XCTest)
+│   ├── config/                  # Prompts & configuration
+│   ├── model/                   # Model adapters (5 VLM adapters)
+│   ├── adb/                     # Android device control
+│   ├── hdc/                     # HarmonyOS device control
+│   ├── xctest/                  # iOS device control
+│   ├── actions/                 # Action handlers (13 action types)
+│   └── memory/
+│       ├── memory_manager.py    # Unified memory API (1464 lines)
+│       ├── memory_store.py      # FAISS semantic core (666 lines)
+│       ├── graph_store.py       # Neo4j spatial core (433 lines)
+│       ├── session_memory.py    # Session product memory (343 lines)
+│       ├── state_manager.py     # Unified state tracking
+│       └── task_index.py        # Task FAISS index
+├── nanobot/                     # Chat platform gateway
+└── examples/                    # Usage examples
 ```
 
 ## 📄 License
