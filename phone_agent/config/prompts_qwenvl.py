@@ -98,7 +98,8 @@ PHONE_USE_QWEN_CN = '''# 工具
 - 严格按照 Thought、Action、<tool_call> 的顺序输出。
 - 保持简洁：Thought 一句话，Action 一句话。
 - 不要在这三部分之外输出任何其他内容。
-- 如果任务完成，请在 tool_call 中使用 action=terminate。'''
+- 如果任务完成，请在 tool_call 中使用 action=terminate。
+- [购物] 遇到商品信息时，在Thought中使用格式：商品名为【Name】, 价格为 ¥Price, 颜色为Color。'''
 
 
 # 英文 system prompt 模板

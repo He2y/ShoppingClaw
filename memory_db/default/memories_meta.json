@@ -818,5 +818,381 @@
       ],
       "task_summary": "我想买一个iphone 17 pro max,帮我去京东和淘宝上对比一下价格，哪个便宜就买哪个"
     }
+  },
+  "4c766174b8ea0619": {
+    "id": "4c766174b8ea0619",
+    "content": "用户常用应用: 淘宝",
+    "memory_type": "app_usage",
+    "created_at": "2026-05-14T23:45:19.221678",
+    "last_accessed": "2026-05-15T00:07:55.310738",
+    "access_count": 67,
+    "importance": 1.0,
+    "metadata": {
+      "app_name": "淘宝",
+      "source": "auto_extract",
+      "context": "用户主动启动了应用: 淘宝"
+    }
+  },
+  "b01d42d19cdc48a0": {
+    "id": "b01d42d19cdc48a0",
+    "content": "从执行过程推断: 通常表示输入流已经结束",
+    "memory_type": "user_preference",
+    "created_at": "2026-05-14T23:51:24.970481",
+    "last_accessed": "2026-05-15T00:07:55.310740",
+    "access_count": 42,
+    "importance": 1.0,
+    "metadata": {
+      "category": "time",
+      "source": "auto_thinking",
+      "context": "用户说\"Action failed: EOF when reading a line\"，这意味着在阅读某一行时遇到了文件结束（EOF）错误。这通常表示输入流已经结束，但可能还没有完全加载完所有内容。\n"
+    }
+  },
+  "73f228d641b1fbcd": {
+    "id": "73f228d641b1fbcd",
+    "content": "任务: 去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max，银色，512G | 结果: 模型错误: Error code: 400 - {'error': {'code': '1210', 'message': 'API 调用参数有误，请检查文档。'}} | 失败",
+    "memory_type": "task_history",
+    "created_at": "2026-05-15T00:03:50.961886",
+    "last_accessed": "2026-05-15T00:07:55.310732",
+    "access_count": 15,
+    "importance": 1.0,
+    "metadata": {
+      "task": "去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max，银色，512G",
+      "result": "模型错误: Error code: 400 - {'error': {'code': '1210', 'message': 'API 调用参数有误，请检查文档。'}}",
+      "success": false,
+      "duration": 10.094597,
+      "steps": 0,
+      "apps_used": [],
+      "contacts_mentioned": [],
+      "session_state": {
+        "task": "去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max，银色，512G",
+        "platform": "淘宝",
+        "current_product": null,
+        "products": [],
+        "cart_items": [],
+        "steps": [],
+        "constraints": {},
+        "progress": {
+          "completed": [],
+          "remaining": [],
+          "current": ""
+        },
+        "state": {
+          "current_state_id": null,
+          "prev_state_id": null,
+          "task_start_state_id": null,
+          "task_end_state_id": null,
+          "state_history_size": 0
+        },
+        "statistics": {
+          "total_products": 0,
+          "cart_items": 0,
+          "total_steps": 0,
+          "stagnation_count": 0
+        }
+      }
+    }
+  },
+  "615feca3b21603ae": {
+    "id": "615feca3b21603ae",
+    "content": "任务: 去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max，银色，512G | 结果: 任务已完成！我已经成功为您在淘宝苹果官方旗舰店选择了iPhone 17 Pro Max，银色，512GB，并进入了订单确认页面。\n\n订单详情：\n- 商品：Apple/苹果 iPhone 17 Pro Max\n- 颜色：银色\n- 存储容量：512GB\n- 套餐类型：官方标配（需现场激活）\n- 价格：¥11894.8\n- 配送：顺丰包邮，预计明天18点前送达\n- 退货权益：88VIP专享，官方退货可用\n\n订单已准备就绪，您可以点击页面底部的\"立即支付¥11894.8\"按钮来完成支付。 | 成功",
+    "memory_type": "task_history",
+    "created_at": "2026-05-15T00:08:03.291225",
+    "last_accessed": "2026-05-15T00:08:03.291227",
+    "access_count": 1,
+    "importance": 0.6,
+    "metadata": {
+      "task": "去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max，银色，512G",
+      "result": "任务已完成！我已经成功为您在淘宝苹果官方旗舰店选择了iPhone 17 Pro Max，银色，512GB，并进入了订单确认页面。\n\n订单详情：\n- 商品：Apple/苹果 iPhone 17 Pro Max\n- 颜色：银色\n- 存储容量：512GB\n- 套餐类型：官方标配（需现场激活）\n- 价格：¥11894.8\n- 配送：顺丰包邮，预计明天18点前送达\n- 退货权益：88VIP专享，官方退货可用\n\n订单已准备就绪，您可以点击页面底部的\"立即支付¥11894.8\"按钮来完成支付。",
+      "success": true,
+      "duration": 177.239367,
+      "steps": 13,
+      "apps_used": [
+        "淘宝",
+        "system home"
+      ],
+      "contacts_mentioned": [],
+      "session_state": {
+        "task": "去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max，银色，512G",
+        "platform": "淘宝",
+        "current_product": {
+          "name": "立即支付¥11894.8\"按钮来完成购买",
+          "price": 11894.8,
+          "currency": "¥",
+          "specs": {},
+          "source_page": "product_detail",
+          "status": "viewed",
+          "first_seen_step": 13
+        },
+        "products": [
+          {
+            "name": "。我可以看到淘宝首页，上面有搜索框。我需要点击搜索框",
+            "price": null,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "home",
+            "status": "viewed",
+            "first_seen_step": 2
+          },
+          {
+            "name": "弹窗上有一个关闭按钮（X按钮），在弹窗底部中间位置",
+            "price": null,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "search",
+            "status": "viewed",
+            "first_seen_step": 3
+          },
+          {
+            "name": "淘宝首页，搜索框显示\"早春外套漂亮\"。我需要点击搜索框",
+            "price": null,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "home",
+            "status": "viewed",
+            "first_seen_step": 4
+          },
+          {
+            "name": "ADB Keyboard {ON}\"的提示，说明键盘已经激活",
+            "price": null,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "search",
+            "status": "viewed",
+            "first_seen_step": 5
+          },
+          {
+            "name": "搜索按钮来搜索。搜索按钮在右上角，显示\"搜索",
+            "price": null,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "search",
+            "status": "viewed",
+            "first_seen_step": 6
+          },
+          {
+            "name": "多个iPhone 17 Pro Max的商品。我需要找到苹果官方旗舰店的商品",
+            "price": 10999.0,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "search",
+            "status": "viewed",
+            "first_seen_step": 7
+          },
+          {
+            "name": "全部\"按钮来查看所有颜色选项，然后选择银色",
+            "price": 11486.21,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "product_detail",
+            "status": "added_to_cart",
+            "first_seen_step": 8
+          },
+          {
+            "name": "全部\"来查看所有颜色选项，然后选择银色",
+            "price": null,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "product_detail",
+            "status": "viewed",
+            "first_seen_step": 10
+          },
+          {
+            "name": "领券购买\"按钮来进行购买",
+            "price": 9566.21,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "product_detail",
+            "status": "viewed",
+            "first_seen_step": 11
+          },
+          {
+            "name": "订单确认页面。我可以看到：\\n- 收货地址：铜川路2655弄鼎秀园23号903",
+            "price": 12199.0,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "checkout",
+            "status": "viewed",
+            "first_seen_step": 12
+          },
+          {
+            "name": "立即支付¥11894.8\"按钮来完成购买",
+            "price": 11894.8,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "product_detail",
+            "status": "viewed",
+            "first_seen_step": 13
+          }
+        ],
+        "cart_items": [
+          {
+            "name": "全部\"按钮来查看所有颜色选项，然后选择银色",
+            "price": 11486.21,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "product_detail",
+            "status": "added_to_cart",
+            "first_seen_step": 8
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "action_type": "Launch",
+            "action_target": "",
+            "thinking_short": "用户想要在淘宝苹果官方旗舰店购买一个iPhone 17 Pro Max，银色，512G。",
+            "page_type": "search",
+            "app": "System Home",
+            "timestamp": "2026-05-15T00:05:22.684804"
+          },
+          {
+            "step": 2,
+            "action_type": "Tap",
+            "action_target": "[429, 114]",
+            "thinking_short": "好的，淘宝已经打开了。",
+            "page_type": "home",
+            "app": "淘宝",
+            "timestamp": "2026-05-15T00:05:59.846059"
+          },
+          {
+            "step": 3,
+            "action_type": "Tap",
+            "action_target": "[499, 774]",
+            "thinking_short": "好的，弹出了一个优惠券弹窗。",
+            "page_type": "search",
+            "app": "淘宝",
+            "timestamp": "2026-05-15T00:06:06.405639"
+          },
+          {
+            "step": 4,
+            "action_type": "Tap",
+            "action_target": "[429, 114]",
+            "thinking_short": "好的，弹窗已经关闭了。",
+            "page_type": "home",
+            "app": "淘宝",
+            "timestamp": "2026-05-15T00:06:13.519078"
+          },
+          {
+            "step": 5,
+            "action_type": "Type",
+            "action_target": "苹果官方旗舰店 iPhone 17 Pro Max 银色 5",
+            "thinking_short": "好的，搜索框已经被激活了，我可以看到\"ADB Keyboard {ON}\"的提示，说明键盘已经激活。",
+            "page_type": "search",
+            "app": "淘宝",
+            "timestamp": "2026-05-15T00:06:23.898643"
+          },
+          {
+            "step": 6,
+            "action_type": "Tap",
+            "action_target": "[893, 71]",
+            "thinking_short": "好的，文本已经输入了，搜索框显示\"早春外套漂亮\"，我需要点击搜索按钮来搜索。",
+            "page_type": "search",
+            "app": "淘宝",
+            "timestamp": "2026-05-15T00:06:31.743807"
+          },
+          {
+            "step": 7,
+            "action_type": "Tap",
+            "action_target": "[499, 856]",
+            "thinking_short": "好的，搜索结果已经出来了。",
+            "page_type": "search",
+            "app": "淘宝",
+            "timestamp": "2026-05-15T00:06:41.479695"
+          },
+          {
+            "step": 8,
+            "action_type": "Interact",
+            "action_target": "",
+            "thinking_short": "好的，商品详情页已经打开了。",
+            "page_type": "product_detail",
+            "app": "淘宝",
+            "timestamp": "2026-05-15T00:07:06.643141"
+          },
+          {
+            "step": 9,
+            "action_type": "Interact",
+            "action_target": "",
+            "thinking_short": "好的，用户已经补充了约束信息。",
+            "page_type": "product_detail",
+            "app": "淘宝",
+            "timestamp": "2026-05-15T00:07:20.828138"
+          },
+          {
+            "step": 10,
+            "action_type": "Tap",
+            "action_target": "[911, 495]",
+            "thinking_short": "用户要求在淘宝苹果官方旗舰店购买一个iPhone 17 Pro Max，银色，512G。",
+            "page_type": "product_detail",
+            "app": "淘宝",
+            "timestamp": "2026-05-15T00:07:28.738793"
+          },
+          {
+            "step": 11,
+            "action_type": "Tap",
+            "action_target": "[731, 952]",
+            "thinking_short": "好的，现在弹出了规格选择页面。",
+            "page_type": "product_detail",
+            "app": "淘宝",
+            "timestamp": "2026-05-15T00:07:39.586736"
+          },
+          {
+            "step": 12,
+            "action_type": "Interact",
+            "action_target": "",
+            "thinking_short": "好的，现在进入了订单确认页面。",
+            "page_type": "checkout",
+            "app": "淘宝",
+            "timestamp": "2026-05-15T00:07:53.661666"
+          },
+          {
+            "step": 13,
+            "action_type": "",
+            "action_target": "",
+            "thinking_short": "用户要求在淘宝苹果官方旗舰店购买一个iPhone 17 Pro Max，银色，512G。",
+            "page_type": "product_detail",
+            "app": "淘宝",
+            "timestamp": "2026-05-15T00:08:02.799728"
+          }
+        ],
+        "constraints": {},
+        "progress": {
+          "completed": [
+            "启动应用"
+          ],
+          "remaining": [],
+          "current": ""
+        },
+        "state": {
+          "current_state_id": null,
+          "prev_state_id": null,
+          "task_start_state_id": null,
+          "task_end_state_id": null,
+          "state_history_size": 0
+        },
+        "statistics": {
+          "total_products": 11,
+          "cart_items": 1,
+          "total_steps": 13,
+          "stagnation_count": 1
+        }
+      }
+    }
+  },
+  "307efd2c5c6dc61d": {
+    "id": "307efd2c5c6dc61d",
+    "content": "任务执行流程: 去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max 使用了 System Home → 淘宝",
+    "memory_type": "task_pattern",
+    "created_at": "2026-05-15T00:08:03.904925",
+    "last_accessed": "2026-05-15T00:08:03.904926",
+    "access_count": 1,
+    "importance": 0.4,
+    "metadata": {
+      "task_type": "shopping",
+      "apps_flow": [
+        "System Home",
+        "淘宝"
+      ],
+      "task_summary": "去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max，银色，512G"
+    }
   }
 }

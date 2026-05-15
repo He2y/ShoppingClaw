@@ -11,52 +11,11 @@ from datetime import datetime
 from typing import Any
 
 from .memory_store import MemoryStore, Memory, MemoryType
-from .state_manager import StateManager
-from .session_memory import SessionMemory, ProductInfo
-from .knowledge_base import KnowledgeBase, ProductObservation
+from .core import UnifiedSessionState, Product, ProductStatus
 from .retrieval_gateway import RetrievalGateway, RetrievalResult
 
 
-# Patterns for extracting product/shopping info from thinking
-PRODUCT_PATTERNS = {
-    "product_name": [
-        # Chinese: "打开了「Nike Air Max」" / "看到Nike Air Max售价"
-        r'(?:商品|产品|看到|找到|点击|打开|进入)(?:了|的是)?\s*[""「『]?(.{2,50})[""」『]?(?:，|。|售价|价格|¥|￥|元)',
-        # Chinese: brand + model patterns
-        r'(?:Nike|Adidas|Apple|Samsung|华为|小米|OPPO|vivo|李宁|安踏|优衣库|ZARA|H&M)[\w\s\-\u4e00-\u9fa5]{2,40}',
-        # Generic brand+product: "XX牌XX"
-        r'([\u4e00-\u9fa5a-zA-Z]{2,6}牌[的]?[\u4e00-\u9fa5a-zA-Z0-9\-\s]{2,30})',
-    ],
-    "price": [
-        r'[¥￥]\s*(\d+(?:,\d{3})*(?:\.\d{1,2})?)',
-        r'(\d+(?:\.\d{1,2})?)\s*(?:元|块|块钱)',
-        r'(?:价格|售价|标价|现价|原价)(?:是|为|：|:)\s*[¥￥]?\s*(\d+(?:\.\d{1,2})?)',
-        r'(?:price|cost)\s*(?:is|:)?\s*\$?(\d+(?:\.\d{1,2})?)',
-    ],
-    "spec": [
-        r'(?:颜色|尺码|规格|容量|版本|型号|尺寸)(?:是|为|：|:)\s*(.{1,20}?)(?:，|。|,|\.|$)',
-        r'(?:选了?|选择了?|确定|选中)(.{1,10}?)(?:色|码|GB|TB|英寸|寸|ml|ML|g|G)',
-        r'(黑|白|红|蓝|绿|灰|粉|紫|黄|金|银|棕|橙)(?:色|的)',
-        r'(\d{2,3}(?:GB|TB|ml|g|L|码|号|寸|英寸))',
-    ],
-}
-
-# Shopping platforms to detect
-SHOPPING_PLATFORMS = {
-    "京东", "京东商城", "jd.com", "jd",
-    "淘宝", "taobao", "天猫", "tmall",
-    "拼多多", "pinduoduo",
-    "小红书", "xiaohongshu", "redbook",
-    "唯品会", "vipshop",
-    "苏宁易购", "suning",
-    "抖音商城", "douyin mall",
-    "得物", "dewu",
-    "美团", "meituan",
-    "饿了么", "eleme",
-}
-
-
-# Patterns for extracting user preferences
+# Patterns for extracting user preferences (non-shopping: contacts, apps)
 PREFERENCE_PATTERNS = {
     "contact": [
         # 改进：更精确的联系人提取，限制长度，排除动词
@@ -125,17 +84,12 @@ class MemoryManager:
         from .graph_store import GraphStore
         self.graph_store = GraphStore()
 
-        # Initialize StateManager (Unified State Tracking)
-        self.state_manager = StateManager()
-
-        # Initialize SessionMemory (per-task structured product tracking)
-        self.session_memory = SessionMemory()
-
-        # Initialize KnowledgeBase — external memory decoupling (UI-Copilot paradigm)
-        self.knowledge_base = KnowledgeBase()
+        # Initialize UnifiedSessionState — single source of truth
+        # (replaces StateManager + SessionMemory + KnowledgeBase)
+        self.state = UnifiedSessionState()
 
         # Initialize RetrievalGateway — on-demand memory retrieval
-        self.retrieval_gateway = RetrievalGateway(self.knowledge_base)
+        self.retrieval_gateway = RetrievalGateway(self.state)
 
         # Session history for context
         self.session_history: list[dict] = []
@@ -165,18 +119,14 @@ class MemoryManager:
         self._session_contacts.clear()
         self._session_apps.clear()
 
-        # Reset SessionMemory for new task
-        self.session_memory.reset()
-        self.session_memory.task = task
-        self.session_memory.platform = self._detect_platform(task)
-
-        # Reset KnowledgeBase and RetrievalGateway for new task
-        self.knowledge_base.reset(task=task, platform=self.session_memory.platform)
+        # Reset unified state for new task
+        platform = self._detect_platform(task)
+        self.state.reset(task=task, platform=platform)
         self.retrieval_gateway.reset()
 
         # Initialize state tracking
         if start_state_id:
-            self.state_manager.start_task(start_state_id)
+            self.state.start_task_state(start_state_id)
 
         if self.enable_auto_extract:
             self._extract_from_task(task)
@@ -198,8 +148,7 @@ class MemoryManager:
                     "steps": len(self.session_history),
                     "apps_used": list(self._session_apps),
                     "contacts_mentioned": list(self._session_contacts),
-                    "session_memory": self.session_memory.to_dict(),
-                    "knowledge_base": self.knowledge_base.to_dict(),
+                    "session_state": self.state.to_dict(),
                 },
                 importance=importance,
             )
@@ -247,10 +196,10 @@ class MemoryManager:
             新��状态ID
         """
         # 计算新状��ID
-        new_state_id = self.state_manager.compute_state_id(screenshot_hash, semantic_layout)
+        new_state_id = self.state.compute_state_id(screenshot_hash, semantic_layout)
 
         # 更新状态��理器
-        prev_state, current_state = self.state_manager.update_state(new_state_id)
+        prev_state, current_state = self.state.update_state(new_state_id)
 
         # 记录图��换（只有��有前���状态时才记��）
         if prev_state and self.graph_store.driver:
@@ -262,7 +211,7 @@ class MemoryManager:
 
     def get_current_state_id(self) -> str | None:
         """获取当��状态ID"""
-        return self.state_manager.get_current_state()
+        return self.state.get_current_state()
 
     def _save_pending_trajectory(self, task: str, success: bool, result: str,
                                  steps: list, apps: list, start_state: str | None,
@@ -493,7 +442,7 @@ class MemoryManager:
         - App usage patterns from the current app
         - Contact information from actions
         - User preferences from the thinking process
-        - Shopping product info (names, prices, specs) for SessionMemory
+        - Shopping product info (names, prices, specs) for unified state
         """
         step = {
             "timestamp": datetime.now().isoformat(),
@@ -515,64 +464,53 @@ class MemoryManager:
         if self.enable_thinking_analysis and thinking:
             self._learn_from_thinking(thinking)
 
-        # Update SessionMemory: extract shopping info + generate step summary
+        # Update unified session state
         if thinking and screenshot_app:
-            self._update_session_memory(thinking, action, screenshot_app)
+            self._update_session_state(thinking, action, screenshot_app)
 
-        # Record into KnowledgeBase for external memory decoupling
+    def _update_session_state(self, thinking: str, action: dict, screenshot_app: str) -> None:
+        """Update unified session state with step data (single write, no dual-write)."""
         action_type = action.get("action_type", action.get("action", ""))
         action_target = action.get("element", action.get("text", ""))
-        self.knowledge_base.record_step(
+        page_type = self._infer_page_type(screenshot_app, thinking)
+
+        # Record step into unified state
+        self.state.record_step(
             step=len(self.session_history),
             action_type=action_type,
             action_target=str(action_target)[:30] if action_target else "",
             thinking_full=thinking,
-            page_type=self._infer_page_type(screenshot_app, thinking),
+            page_type=page_type,
             app=screenshot_app,
         )
-        self.knowledge_base.set_current_focus(app=screenshot_app)
+        self.state.set_current_focus(app=screenshot_app, page=page_type)
 
-    def _update_session_memory(self, thinking: str, action: dict, screenshot_app: str) -> None:
-        """Update SessionMemory with extracted shopping info and step summary."""
         # Extract product info from thinking
         product = self._extract_product_from_text(thinking)
         if product and product.name:
-            page_type = "product_detail" if any(
-                kw in thinking for kw in ["详情", "detail", "规格", "spec"]
-            ) else "search_result"
-            self.session_memory.set_current_product(product)
-
-            # Also record into KnowledgeBase for on-demand retrieval
-            self.knowledge_base.record_product(
+            self.state.record_product(
                 name=product.name,
                 price=product.price,
                 specs=product.specs,
                 page_type=page_type,
-                status="viewed",
                 step=len(self.session_history),
             )
-            # Update constraints from extracted info
-            self.knowledge_base.set_current_focus(app=screenshot_app, page=page_type)
 
         # Track cart action
-        action_type = action.get("action_type", action.get("action", ""))
         if any(kw in thinking for kw in ["加入购物车", "加购", "add to cart", "购物车"]):
-            if self.session_memory.current_product:
-                self.session_memory.add_to_cart(self.session_memory.current_product)
+            if self.state._current_product:
+                self.state.add_to_cart(self.state._current_product)
 
         # Track constraints from thinking
         self._extract_constraints_from_text(thinking)
 
-        # Generate and store step summary
-        summary = self._generate_step_summary(action, screenshot_app, thinking)
-        page_type = self._infer_page_type(screenshot_app, thinking)
-        self.session_memory.add_step_summary(summary, action_type, page_type)
-
         # Update platform if detected from app
-        if not self.session_memory.platform and screenshot_app:
+        if not self.state.platform and screenshot_app:
             platform = self._detect_platform(screenshot_app)
             if platform:
-                self.session_memory.platform = platform
+                self.state.platform = platform
+
+    def _calculate_duration(self) -> float:
         """Calculate task duration in seconds."""
         if not self.task_start_time:
             return 0.0
@@ -753,49 +691,80 @@ class MemoryManager:
     # SessionMemory helpers — product extraction, summary, platform
     # ------------------------------------------------------------------
 
-    def _extract_product_from_text(self, text: str) -> ProductInfo | None:
-        """Extract product information from thinking text."""
-        product_name = None
-        price = None
+    def _extract_product_from_text(self, text: str) -> Product | None:
+        """
+        Extract product information from VLM thinking text.
+
+        Uses the structured format guided by prompts (Phase 4):
+          "商品名为【Name】" / "价格为 ¥Price" / "颜色为Color"
+        Falls back to simple regex patterns when VLM doesn't follow format.
+        """
+        import re
+
+        product_name: str | None = None
+        price: float | None = None
         specs: dict[str, str] = {}
 
-        # Extract product name
-        for pattern in PRODUCT_PATTERNS["product_name"]:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                name = match.group(1) if match.lastindex else match.group(0)
-                name = name.strip().rstrip("，。,.》）\"'「」『』")
-                # Strip trailing price/status info
-                name = re.sub(r'(?:售价|价格|¥|￥|元|块)\s*\d*\.?\d*\s*$', '', name).strip()
-                name = re.sub(r'(?:，|。|,)\s*$', '', name).strip()
-                if len(name) >= 2 and len(name) <= 50:
-                    product_name = name
-                    break
+        # ── Primary: structured format from prompt guidance ──────────
+        name_match = re.search(r'商品名为【(.+?)】', text)
+        if not name_match:
+            name_match = re.search(r'product name is【(.+?)】', text)
+        if not name_match:
+            name_match = re.search(r'已加购【(.+?)】', text)
+        if not name_match:
+            name_match = re.search(r'added【(.+?)】to cart', text)
+        if name_match:
+            product_name = name_match.group(1).strip()
+            if not product_name or len(product_name) < 2:
+                return None
+
+        # ── Fallback: simple name extraction ──────────────────────────
+        if not product_name:
+            for pat in [
+                r'(?:看到|点击了?|打开了?|进入了?)\s*[""「『]?(.{2,40})[""」『]?(?:，|。|售价|价格|¥|￥)',
+            ]:
+                m = re.search(pat, text)
+                if m:
+                    name = m.group(1).strip().rstrip("，。,.》）\"'「」『』")
+                    # Strip trailing price info
+                    name = re.sub(r'(?:售价|价格|¥|￥|元|块)\s*\d*\.?\d*\s*$', '', name).strip()
+                    name = re.sub(r'(?:，|。|,)\s*$', '', name).strip()
+                    if 2 <= len(name) <= 50:
+                        product_name = name
+                        break
 
         if not product_name:
             return None
 
-        # Extract price
-        for pattern in PRODUCT_PATTERNS["price"]:
-            match = re.search(pattern, text, re.IGNORECASE)
-            if match:
-                try:
-                    price = float(match.group(1).replace(",", ""))
-                    break
-                except (ValueError, IndexError):
-                    pass
+        # ── Price: structured format first ────────────────────────────
+        price_match = re.search(r'价格为\s*[¥￥]\s*(\d+(?:\.\d{1,2})?)', text)
+        if not price_match:
+            price_match = re.search(r'price is\s*\$?(\d+(?:\.\d{1,2})?)', text)
+        if not price_match:
+            # Fallback: "¥数字" or "数字元"
+            price_match = re.search(r'[¥￥]\s*(\d+(?:\.\d{1,2})?)', text)
+        if not price_match:
+            price_match = re.search(r'(\d+(?:\.\d{1,2})?)\s*元', text)
+        if price_match:
+            try:
+                price = float(price_match.group(1).replace(",", ""))
+            except (ValueError, IndexError):
+                pass
 
-        # Extract specs
-        for pattern in PRODUCT_PATTERNS["spec"]:
-            for match in re.finditer(pattern, text, re.IGNORECASE):
-                if match.lastindex:
-                    spec_value = match.group(1).strip()
-                    if spec_value and len(spec_value) <= 20:
-                        # Infer spec key from context
-                        spec_key = self._infer_spec_key(spec_value)
-                        specs[spec_key] = spec_value
+        # ── Specs: structured format "X为Y" ────────────────────────────
+        for spec_key in self._shopping_config_spec_keys():
+            spec_match = re.search(rf'{spec_key}为\s*([^，。、,\s]+)', text)
+            if spec_match:
+                specs[spec_key] = spec_match.group(1).strip()
 
-        return ProductInfo(name=product_name, price=price, specs=specs)
+        return Product(name=product_name, price=price, specs=specs)
+
+    @staticmethod
+    def _shopping_config_spec_keys() -> list[str]:
+        """Get spec keywords from ShoppingConfig (lazy import to avoid circular)."""
+        from phone_agent.config.shopping_config import ShoppingConfig
+        config = ShoppingConfig.load()
+        return sorted(config.spec_keywords, key=len, reverse=True)
 
     def _extract_constraints_from_text(self, text: str) -> None:
         """Extract user constraints (budget, brand preference) from thinking."""
@@ -807,7 +776,7 @@ class MemoryManager:
         for pattern in budget_patterns:
             match = re.search(pattern, text, re.IGNORECASE)
             if match:
-                self.session_memory.constraints["budget"] = match.group(1)
+                self.state.constraints["budget"] = match.group(1)
                 break
 
         # Brand constraint
@@ -819,65 +788,9 @@ class MemoryManager:
             if match:
                 brand = match.group(1).strip()
                 if brand and len(brand) >= 2:
-                    self.session_memory.constraints["brand"] = brand
+                    self.state.constraints["brand"] = brand
                     break
 
-    def _generate_step_summary(
-        self, action: dict, current_app: str, thinking: str
-    ) -> str:
-        """Generate a one-line summary of the current step."""
-        action_type = action.get("action_type", action.get("action", ""))
-
-        target = self._infer_action_target(action, thinking)
-        step_num = len(self.session_memory.completed_steps) + 1
-
-        # Template-driven summary based on action type
-        if action_type == "Launch":
-            summary = f"已启动{current_app}"
-        elif action_type == "Tap":
-            if target:
-                summary = f"在{current_app}点击了「{target}」"
-            else:
-                summary = f"在{current_app}点击了界面元素"
-        elif action_type == "Type" or action_type == "Type_Name":
-            text = action.get("text", "")[:20]
-            if text:
-                summary = f"在{current_app}输入了「{text}」"
-            else:
-                summary = f"在{current_app}进行了文本输入"
-        elif action_type == "Swipe":
-            direction = action.get("direction", "")
-            summary = f"在{current_app}{direction}滑动浏览"
-        elif action_type == "Interact":
-            summary = f"向用户确认了选择"
-        elif action_type == "Back":
-            summary = f"在{current_app}返回上一页"
-        elif action_type == "Wait":
-            summary = f"等待页面加载"
-        elif action_type == "Long Press":
-            summary = f"在{current_app}长按操作"
-        elif action_type == "Double Tap":
-            summary = f"在{current_app}双击操作"
-        elif action_type == "finish" or action.get("_metadata") == "finish":
-            summary = f"任务完成"
-        else:
-            summary = f"在{current_app}执行了{action_type}"
-
-        return summary
-
-    def _infer_action_target(self, action: dict, thinking: str) -> str:
-        """Infer what the user clicked on from action context."""
-        # Try to extract target from thinking
-        tap_patterns = [
-            r'(?:点击|按下|选中|打开|进入)(?:了|的是)?\s*[""「『]?(.{1,30})[""」『]?(?:，|。|$)',
-        ]
-        for pattern in tap_patterns:
-            match = re.search(pattern, thinking)
-            if match:
-                target = match.group(1).strip().rstrip("，。,")
-                if target and len(target) <= 30:
-                    return target
-        return ""
 
     def _infer_page_type(self, app: str, thinking: str) -> str:
         """Infer the current page type based on thinking context."""
@@ -896,41 +809,29 @@ class MemoryManager:
                 return page_type
         return ""
 
-    def _infer_spec_key(self, spec_value: str) -> str:
-        """Infer spec key from value (e.g., '黑色' → '颜色', '42码' → '尺码')."""
-        if spec_value.endswith(("色",)):
-            return "颜色"
-        if spec_value.endswith(("码", "号")):
-            return "尺码"
-        if spec_value.endswith(("GB", "TB", "MB")):
-            return "容量"
-        if spec_value.endswith(("ml", "ML", "g", "G", "L")):
-            return "容量"
-        if spec_value.endswith(("英寸", "寸")):
-            return "尺寸"
-        return "规格"
-
     def _detect_platform(self, text: str) -> str:
-        """Detect shopping platform from text."""
+        """Detect shopping platform from text using externalized config."""
+        from phone_agent.config.shopping_config import ShoppingConfig
+        config = ShoppingConfig.load()
         text_lower = text.lower()
-        for platform in SHOPPING_PLATFORMS:
+        for platform in config.platforms:
             if platform.lower() in text_lower:
                 return platform
         return ""
 
     def compress_session_history(self) -> str | None:
         """
-        Compress every 5 template-based step summaries into one concise summary.
+        Compress every 5 steps into one concise summary using a lightweight VLM call.
 
-        Uses a lightweight VLM call (reuses PHONE_AGENT_MODEL).
+        Uses UnifiedSessionState steps (thinking_short) instead of old StepSummary.
         Returns the compressed summary string, or None if compression was skipped.
         """
-        if not self.session_memory.should_compress():
+        if not self.state.should_compress():
             return None
 
-        recent = self.session_memory.completed_steps[-5:]
+        recent = self.state.steps[-5:]
         summaries_text = "\n".join(
-            f"Step {s.step}: {s.summary}" for s in recent
+            f"Step {s.step}: {s.thinking_short or s.action_type}" for s in recent
         )
 
         try:
@@ -958,16 +859,8 @@ class MemoryManager:
             compressed = (response.choices[0].message.content or "").strip()
 
             if compressed and len(compressed) >= 5:
-                # Replace the 5 template summaries with one compressed entry
-                del self.session_memory.completed_steps[-5:]
-                self.session_memory.completed_steps.append(
-                    StepSummary(
-                        step=recent[0].step,
-                        summary=f"[压缩] {compressed}",
-                        action_type="compress",
-                        page_type="",
-                    )
-                )
+                # Store compressed summary as overall progress
+                self.state.overall_progress = f"[压缩] {compressed}"
                 return compressed
 
         except Exception:
@@ -1122,12 +1015,12 @@ class MemoryManager:
         parts: list[str] = []
 
         # Layer 1: Always-on progress summary (lightweight)
-        progress = self.knowledge_base.progress_summary()
+        progress = self.state.progress_summary()
         if progress:
             parts.append(f"[进度] {progress}")
 
         # Layer 2: Current focus (1 line)
-        focus = self.knowledge_base.current_focus()
+        focus = self.state.current_focus()
         if focus:
             parts.append(f"[当前] {focus}")
 
@@ -1140,9 +1033,9 @@ class MemoryManager:
                     print(f"🔍 [On-Demand Retrieval] intent={result.intent} source={result.source}")
 
         # Layer 4: Constraints reminder (if any)
-        if self.knowledge_base.constraints:
+        if self.state.constraints:
             constraint_kv = ", ".join(
-                f"{k}={v}" for k, v in self.knowledge_base.constraints.items()
+                f"{k}={v}" for k, v in self.state.constraints.items()
             )
             parts.append(f"[约束] {constraint_kv}")
 
@@ -1153,11 +1046,16 @@ class MemoryManager:
         specs: dict | None = None, page_type: str = "",
         status: str = "viewed",
     ) -> None:
-        """Record a product observation into KnowledgeBase."""
+        """Record a product observation into unified state."""
         step_num = len(self.session_history)
-        self.knowledge_base.record_product(
+        from .core import ProductStatus as PS
+        try:
+            ps = PS(status)
+        except ValueError:
+            ps = PS.VIEWED
+        self.state.record_product(
             name=name, price=price, specs=specs,
-            page_type=page_type, status=status, step=step_num,
+            page_type=page_type, status=ps, step=step_num,
         )
 
     def get_relevant_context(self, task: str, max_memories: int = 8) -> str:

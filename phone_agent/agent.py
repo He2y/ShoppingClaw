@@ -1,9 +1,18 @@
 """Main PhoneAgent class for orchestrating phone automation."""
 
 import json
+import re
+import time
 import traceback
 from dataclasses import dataclass, field
 from typing import Any, Callable
+
+from openai import (
+    APIConnectionError,
+    APITimeoutError,
+    AuthenticationError,
+    RateLimitError,
+)
 
 from phone_agent.actions import ActionHandler
 from phone_agent.actions.handler import do, finish, parse_action
@@ -13,6 +22,7 @@ from phone_agent.device_factory import get_device_factory
 from phone_agent.model import ModelClient, ModelConfig
 from phone_agent.model.adapters import ModelType, detect_model_type, get_adapter
 from phone_agent.model.client import MessageBuilder
+from phone_agent.memory.core import ProductStatus
 
 
 @dataclass
@@ -135,6 +145,10 @@ class PhoneAgent:
         self._context: list[dict[str, Any]] = []
         self._step_count = 0
         self._current_task = ""
+
+        # Load externalized shopping config (JSON with code defaults)
+        from phone_agent.config.shopping_config import ShoppingConfig
+        self._shopping_config = ShoppingConfig.load()
 
         # Initialize tracer if enabled
         self.tracer = None
@@ -298,29 +312,14 @@ class PhoneAgent:
 
     # ------------------------------------------------------------------
     # Spec-page action guard: apps where skipping Interact is critical
+    # (loaded from config/shopping.json with code defaults as fallback)
     # ------------------------------------------------------------------
-    _SHOPPING_APPS = [
-        "淘宝", "京东", "天猫", "拼多多", "美团", "饿了么",
-        "瑞幸", "星巴克", "叮咚买菜", "盒马",
-        "Taobao", "JD", "Tmall", "Meituan", "Eleme",
-    ]
-
-    _SPEC_KEYWORDS = [
-        "规格", "颜色", "容量", "尺码", "口味", "温度", "糖度",
-        "浓度", "选配", "可选规格", "机身颜色", "存储容量",
-        "套餐类型", "配送方式",
-    ]
-
-    _PURCHASE_KEYWORDS = [
-        "领券购买", "立即购买", "加入购物车", "提交订单",
-        "确认下单", "结算", "选好了", "确定", "立即抢购",
-    ]
 
     def _detect_critical_scenario(
         self, current_app: str, screenshot_base64: str
     ) -> list[str]:
         """Return hints injected into VLM context when on a shopping spec page."""
-        if not any(app in (current_app or "") for app in self._SHOPPING_APPS):
+        if not any(app in (current_app or "") for app in self._shopping_config.apps):
             return []
 
         return [
@@ -330,6 +329,94 @@ class PhoneAgent:
             "立即执行 Interact，不要点任何购买/加入购物车按钮！"
         ]
 
+    # ── SKU extraction patterns ──
+    _COLOR_VALUES = {
+        "银色", "蓝色", "黑色", "白色", "红色", "金色", "绿色", "紫色", "灰色",
+        "粉色", "橙色", "黄色", "棕色", "深空黑色", "星光色", "午夜色", "远峰蓝",
+        "苍岭绿", "暗紫色", "石墨色", "亮黑色", "土豪金", "玫瑰金", "深空灰",
+    }
+    _STORAGE_PATTERNS = [
+        r"(\d+\s*(?:TB?|GB?))",  # 512G, 512GB, 1TB, 256G
+    ]
+    _SIZE_VALUES = {"S", "M", "L", "XL", "XXL", "XXXL", "均码", "大码", "小码"}
+
+    def _extract_specs_from_task(self, task: str) -> dict[str, str]:
+        """
+        Parse the user's original task for explicit SKU specifications.
+        Returns a mapping from spec category to value, e.g.:
+        {'颜色': '银色', '容量': '512G'}
+        """
+        specs: dict[str, str] = {}
+
+        # Extract color
+        for color in sorted(self._COLOR_VALUES, key=len, reverse=True):
+            if color in task:
+                specs["颜色"] = color
+                break
+
+        # Extract storage
+        for pattern in self._STORAGE_PATTERNS:
+            m = re.search(pattern, task, re.IGNORECASE)
+            if m:
+                specs["容量"] = m.group(1).upper().replace(" ", "").replace("B", "B")
+                break
+
+        # Extract size
+        for size in sorted(self._SIZE_VALUES, key=len, reverse=True):
+            rsize = rf"\b{re.escape(size)}\b"
+            if re.search(rsize, task):
+                specs["尺码"] = size
+                break
+
+        return specs
+
+    def _is_spec_selected(
+        self, thinking: str, spec_key: str, spec_value: str
+    ) -> bool:
+        """
+        Check whether the thinking reflects that a specific SKU value
+        is already selected on the current page.
+        """
+        # Normalize spec_value for fuzzy matching
+        val = spec_value.upper().replace(" ", "")
+        # e.g. "512GB" -> also try "512G"
+        val_short = val.replace("GB", "G").replace("TB", "T")
+
+        # The thinking must mention the value
+        if spec_value not in thinking and val not in thinking and val_short not in thinking:
+            return False
+
+        # And it must appear near a "selected" marker
+        for sv in (spec_value, val, val_short):
+            # Pattern: value appears within 20 chars of a selection marker
+            if re.search(
+                rf"{re.escape(sv)}.{{0,20}}(?:已选中|已选[^项]|已选择|已勾选|✔|✓|\bselected\b|当前)",
+                thinking,
+            ):
+                return True
+            # Pattern: spec_key then value then selection marker
+            if re.search(
+                rf"{re.escape(spec_key)}.*?{re.escape(sv)}",
+                thinking,
+            ) and any(m in thinking for m in ("已选中", "已选", "已选择", "已勾选")):
+                return True
+
+        return False
+
+    def _build_spec_question(self, thinking: str) -> str:
+        """Build a contextual question when the user hasn't specified exact SKU."""
+        if "颜色" in thinking and "容量" in thinking:
+            return "这里有多种颜色和容量可选，请问您需要哪个配置？"
+        elif "颜色" in thinking:
+            return "有多种颜色可选，请问您喜欢哪个颜色？"
+        elif "容量" in thinking:
+            return "有多种容量可选，请问您需要多大容量？"
+        elif "温度" in thinking:
+            return "请问您需要什么温度？"
+        elif "糖度" in thinking:
+            return "请问您需要什么糖度？"
+        return "请问您需要什么规格和配置？"
+
     def _spec_guard_check(
         self,
         action: dict,
@@ -337,50 +424,72 @@ class PhoneAgent:
         current_app: str,
     ) -> dict | None:
         """
-        Code-level safety net: if the model is about to click purchase/confirm
-        on a spec page without having issued Interact in this step, override
-        the action with a forced Interact.
-
-        Returns a replacement action dict, or None if the action is safe.
+        Code-level safety net: before purchase/confirm on a spec page,
+        cross-reference the user's original task requirements against
+        what's currently selected. Intercepts only when:
+        - The user didn't specify exact SKU → must ask
+        - The user's specified SKU doesn't match what's selected → must correct
         """
-        if not any(app in (current_app or "") for app in self._SHOPPING_APPS):
+        if not any(app in (current_app or "") for app in self._shopping_config.apps):
             return None
 
-        # Already issuing Interact – allow
         if action.get("action") == "Interact" or action.get("action_type") == "Interact":
             return None
 
-        # Check whether the model's thinking discusses specs
+        # Terminal actions (finish/terminate/answer) mean the model has decided
+        # the task is complete — don't second-guess that decision here
+        _metadata = (action.get("_metadata") or "").lower()
+        if _metadata == "finish":
+            return None
+        _action_name = (action.get("action") or "").lower()
+        if _action_name in ("terminate", "answer"):
+            return None
+
         thinking_mentions_specs = any(
-            kw in thinking for kw in self._SPEC_KEYWORDS
+            kw in thinking for kw in self._shopping_config.spec_keywords
         )
         if not thinking_mentions_specs:
             return None
 
-        # Check whether the thinking mentions a purchase intent
         thinking_has_purchase_intent = any(
-            kw in thinking for kw in self._PURCHASE_KEYWORDS
+            kw in thinking for kw in self._shopping_config.purchase_keywords
         )
         if not thinking_has_purchase_intent:
             return None
 
-        # Build a contextual question from the thinking
-        question = "请问您需要什么规格和配置？"
-        if "颜色" in thinking and "容量" in thinking:
-            question = "这里有多种颜色和容量可选，请问您需要哪个配置？"
-        elif "颜色" in thinking:
-            question = "有多种颜色可选，请问您喜欢哪个颜色？"
-        elif "容量" in thinking:
-            question = "有多种容量可选，请问您需要多大容量？"
-        elif "温度" in thinking:
-            question = "请问您需要什么温度？"
-        elif "糖度" in thinking:
-            question = "请问您需要什么糖度？"
+        # ── Self-reflection: cross-reference user's original task ──
+        original_task = self._current_task
+        user_requested_specs = self._extract_specs_from_task(original_task)
+
+        if user_requested_specs:
+            # User explicitly specified SKU — verify they're selected
+            missing = []
+            for spec_key, spec_value in user_requested_specs.items():
+                if not self._is_spec_selected(thinking, spec_key, spec_value):
+                    missing.append(f"{spec_key}={spec_value}")
+
+            if not missing:
+                print(
+                    f"✅ [SpecGuard] 用户指定SKU已全部选中 "
+                    f"({user_requested_specs})，放行"
+                )
+                return None
+
+            question = (
+                f"您要求的是{'，'.join(missing)}，"
+                f"但当前页面尚未选择。请确认规格后继续。"
+            )
+        else:
+            # User didn't specify exact SKU — must ask
+            question = self._build_spec_question(thinking)
 
         print(f"\n{'─' * 50}")
-        print(f"🛑 [SpecGuard] 模型试图跳过规格询问，已拦截")
-        print(f"   模型原计划: {thinking[:80]}...")
-        print(f"   强制��为: Interact")
+        print(f"🛑 [SpecGuard] 规格确认拦截")
+        print(f"   用户任务: {original_task[:100]}")
+        if user_requested_specs:
+            print(f"   用户指定SKU: {user_requested_specs}")
+        print(f"   模型试图: {thinking[:100]}...")
+        print(f"   强制为: Interact → {question}")
         print(f"{'─' * 50}")
 
         return {
@@ -389,8 +498,6 @@ class PhoneAgent:
             "action_type": "Interact",
             "message": question,
         }
-
-        return critical_hints
 
     def _execute_step(
         self, user_prompt: str | None = None, is_first: bool = False
@@ -611,68 +718,60 @@ class PhoneAgent:
                 # Inject at text beginning, not end
                 last_msg["content"] = f"{extra_context}\n\n{last_msg['content']}"
 
-        # Get model response
-        try:
-            msgs = get_messages(self.agent_config.lang)
-            print("\n" + "=" * 50)
-            print(f"💭 {msgs['thinking']}:")
-            print("-" * 50)
-            
-            # # Print messages info for debugging
-            # if self.agent_config.verbose:
-            #     import json
-            #     print(f"\n📨 Messages count: {len(self._context)}")
-            #     print("=" * 50)
-            #     for msg in self._context:
-            #         # 创建一个副本用于打印，避免修改原始消息
-            #         msg_to_print = msg.copy()
-            #         
-            #         # 如果 content 是列表，处理图片 base64（截断显示）
-            #         if isinstance(msg_to_print.get("content"), list):
-            #             content_copy = []
-            #             for item in msg_to_print["content"]:
-            #                 if isinstance(item, dict):
-            #                     item_copy = item.copy()
-            #                     # 如果是图片，截断 base64
-            #                     if item_copy.get("type") == "image_url" and isinstance(item_copy.get("image_url"), dict):
-            #                         image_url = item_copy["image_url"].copy()
-            #                         if "url" in image_url and image_url["url"].startswith("data:"):
-            #                             # 只显示前 50 个字符 + "..." + 后 20 个字符
-            #                             url = image_url["url"]
-            #                             if len(url) > 100:
-            #                                 image_url["url"] = url[:50] + "...[base64 data truncated]..." + url[-20:]
-            #                         item_copy["image_url"] = image_url
-            #                     content_copy.append(item_copy)
-            #                 else:
-            #                     content_copy.append(item)
-            #             msg_to_print["content"] = content_copy
-            #         # 如果 content 是字符串且包含 base64，截断显示
-            #         elif isinstance(msg_to_print.get("content"), str):
-            #             content = msg_to_print["content"]
-            #             if "data:image" in content and len(content) > 500:
-            #                 # 截断 base64 部分
-            #                 import re
-            #                 msg_to_print["content"] = re.sub(
-            #                     r'data:image/[^;]+;base64,[A-Za-z0-9+/=]{100,}',
-            #                     lambda m: m.group(0)[:100] + '...[base64 truncated]...',
-            #                     content
-            #                 )
-            #         
-            #         # 直接打印完整的 message JSON 格式
-            #         print(json.dumps(msg_to_print, ensure_ascii=False, indent=2))
-            #     print("=" * 50)
-            
-            response = self.model_client.request(self._context)
-        except Exception as e:
-            if self.agent_config.verbose:
-                traceback.print_exc()
-            return StepResult(
-                success=False,
-                finished=True,
-                action=None,
-                thinking="",
-                message=f"Model error: {e}",
-            )
+        # Get model response (with smart retry)
+        msgs = get_messages(self.agent_config.lang)
+        max_retries = 3
+        response = None
+
+        for attempt in range(max_retries + 1):
+            try:
+                print("\n" + "=" * 50)
+                print(f"💭 {msgs['thinking']}:")
+                print("-" * 50)
+
+                response = self.model_client.request(self._context)
+                break  # Success
+
+            except (APIConnectionError, APITimeoutError) as e:
+                if attempt == max_retries:
+                    print(f"❌ 网络错误（已重试{max_retries}次）: {e}")
+                    return StepResult(
+                        success=False, finished=True,
+                        action=None, thinking="",
+                        message=f"网络错误（已重试{max_retries}次）: {e}",
+                    )
+                backoff = 2 ** attempt  # 1s, 2s, 4s
+                print(f"⚠️ 网络错误，{backoff}秒后重试 ({attempt + 1}/{max_retries})...")
+                time.sleep(backoff)
+
+            except RateLimitError as e:
+                if attempt == max_retries:
+                    print(f"❌ API 限流: {e}")
+                    return StepResult(
+                        success=False, finished=True,
+                        action=None, thinking="",
+                        message=f"API 限流: {e}",
+                    )
+                print(f"⚠️ API 限流，等待 60 秒后重试 ({attempt + 1}/{max_retries})...")
+                time.sleep(60)
+
+            except AuthenticationError as e:
+                print(f"❌ 认证失败（检查 PHONE_AGENT_API_KEY）: {e}")
+                return StepResult(
+                    success=False, finished=True,
+                    action=None, thinking="",
+                    message=f"认证失败: {e}",
+                )
+
+            except Exception as e:
+                if self.agent_config.verbose:
+                    traceback.print_exc()
+                print(f"❌ 模型错误: {e}")
+                return StepResult(
+                    success=False, finished=True,
+                    action=None, thinking="",
+                    message=f"模型错误: {e}",
+                )
 
         # Parse action and execute based on model type
         thinking = response.thinking  # Default thinking
@@ -838,21 +937,21 @@ class PhoneAgent:
                 screenshot_app=current_app,
             )
 
-            # SessionMemory verbose logging
+            # Unified state verbose logging
             if self.agent_config.verbose:
-                sm = self.memory_manager.session_memory
-                product_count = len(sm.viewed_products)
-                cart_count = len(sm.cart_items)
+                st = self.memory_manager.state
+                product_count = len(st.products)
+                cart_count = len([p for p in st.products if p.status == ProductStatus.ADDED_TO_CART])
                 if product_count > 0 or cart_count > 0:
                     parts = []
-                    if sm.current_product:
-                        p = sm.current_product
+                    if st._current_product:
+                        p = st._current_product
                         parts.append(f"{p.name}" + (f" ¥{p.price}" if p.price else ""))
                     if cart_count:
                         parts.append(f"购物车({cart_count}件)")
-                    if sm.viewed_products:
+                    if st.products:
                         parts.append(f"已看{product_count}件")
-                    print(f"📦 [SessionMemory] {' | '.join(parts)}")
+                    print(f"📦 [UnifiedState] {' | '.join(parts)}")
 
             # Phase 4: Online Dynamic Graph construction - 使用统��接口
             if current_state_id:
@@ -876,7 +975,7 @@ class PhoneAgent:
         if self.tracer:
             session_snapshot = None
             if self.memory_manager:
-                session_snapshot = self.memory_manager.session_memory.to_dict()
+                session_snapshot = self.memory_manager.state.to_dict()
             self.tracer.record_step(
                 step=self._step_count,
                 screenshot_base64=screenshot.base64_data,
@@ -894,7 +993,7 @@ class PhoneAgent:
             )
             print("=" * 50 + "\n")
 
-        # Save last thinking for SessionMemory trigger detection
+        # Save last thinking for retrieval trigger detection
         self._last_thinking = thinking
 
         return StepResult(

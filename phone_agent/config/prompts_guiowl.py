@@ -146,7 +146,8 @@ Rules:
 - Output exactly in the order: Action, <tool_call>.
 - Be brief: one for Action.
 - Do not output anything else outside those two parts.
-- If finishing, use mobile_use with action=terminate in the tool call.'''
+- If finishing, use mobile_use with action=terminate in the tool call.
+- [Shopping] When seeing a product, record it in Action: "商品名为【Name】, 价格为 $Price".'''
 
 
 # ==================== 中文 System Prompt 模板 ====================
@@ -174,7 +175,8 @@ GUIOWL_SYSTEM_PROMPT_CN = '''# 工具
 - 严格按照 Action、<tool_call> 的顺序输出。
 - 保持简洁：Action 只需一句话。
 - 不要输出这两部分以外的任何内容。
-- 如果任务完成，在 tool_call 中使用 mobile_use 的 action=terminate。'''
+- 如果任务完成，在 tool_call 中使用 mobile_use 的 action=terminate。
+- [购物] 遇到商品信息时，在Action中使用格式：商品名为【Name】, 价格为 ¥Price, 颜色为Color。'''
 
 
 # ==================== User Prompt 模板 ====================
