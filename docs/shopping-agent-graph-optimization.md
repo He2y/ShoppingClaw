@@ -1,180 +1,152 @@
 # 购物 Agent 图谱记忆优化方案
 
-## 1. 目标
+## 目标
 
-本方案把购物 Agent 的图谱记忆从“相似任务轨迹召回”升级为“训练无关的 App 空间认知系统”。核心约束是不引入额外模型训练成本，不依赖人工标注轨迹，而是复用现有 GUI/VLM 模型完成自探索、页面抽象、路径规划和运行时纠错。
+把购物 Agent 的图谱记忆从“相似任务轨迹召回”升级为“训练无关的 App 空间认知系统”。核心约束是不训练新模型、不新增人工标注轨迹，只复用已有 GUI/VLM 模型和离线探索产物，让 Agent 能定位当前页面、规划路径、识别高风险页面，并在偏航后回退或重规划。
 
-当前系统已经具备四个基础：
+对用户的直接影响是：面对淘宝这类弹窗多、入口多、促销干扰强的 App，Agent 不再只记“上次怎么点”，而是知道“我在哪个页面、下一步应去哪个页面、哪些页面需要用户确认”。
 
-- `OfflineExplorer` 可以探索购物 App 并产出页面与转移 JSON。
-- `GraphStore` 可以用 Neo4j 存储 UI 状态和动作转移。
-- `MemoryManager.locate_and_get_context()` 已接入 Agent 执行循环。
-- `SpecGuard` 已能在购物规格/确认场景中阻止高风险误触。
+## 当前已实现
 
-主要问题是图谱尚未成为 Agent 的空间导航核心。它现在更多是相似任务召回和首步复用，缺少页面定位、目标状态推断、路径规划、失败惩罚和回退重规划。
+### Spatial Page Graph
 
-## 2. 核心概念
+`phone_agent/memory/spatial_graph_memory.py` 已实现训练无关的空间图谱核心：
 
-新增深模块 `SpatialGraphMemory`，位于 `MemoryManager` 和 `GraphStore` 之间。调用方只关心四个行为：
+- `PageState`：页面节点，包含 `app`、`page_type`、`summary`、`landmarks`、`affordances`、`slots`、`risk_level`、`semantic_signature`。
+- `TransitionEdge`：页面转移边，包含动作类型、目标、参数、后置页面、成功/失败计数、风险等级和加权成本。
+- `PageBelief`：当前页面 belief，保留 top candidates 和置信度。
+- `GoalSpec`：把任务解析成目标页面类型和槽位条件。
+- `RoutePlan`：基于图谱的下一步路径计划。
+- `RepairDecision`：动作后页面不符合预期时，输出 `retry`、`rollback`、`replan`、`ask_user` 或 `fallback_to_vlm`。
 
-- `locate(screen, task, previous_action) -> PageBelief`
-- `plan(belief, goal_spec) -> RoutePlan`
-- `record_observation(before, action, after, outcome) -> None`
-- `repair(observed, expected, route_plan) -> RepairDecision`
+### 页面抽象增强
 
-### PageState
-
-`PageState` 是页面节点抽象，不再等同于截图 hash。
-
-字段包括：
-
-- `app`：当前 App。
-- `page_type`：`home`、`search_input`、`search_result`、`product_detail`、`spec_selection`、`cart`、`checkout`、`login` 等。
-- `landmarks`：稳定地标，如搜索框、商品卡片、购物车按钮、规格选项。
-- `affordances`：可执行动作，如搜索、打开商品、选择规格、返回。
-- `slots`：动态槽位，如商品名、价格、规格、地址。
-- `risk_level`：`normal`、`medium`、`high`。
-- `semantic_signature`：`app + page_type + landmarks + affordances` 形成的页面级语义签名。
-
-### TransitionEdge
-
-`TransitionEdge` 是带条件的页面转移边。
-
-字段包括：
-
-- `source_id`、`target_id`
-- `action_type`、`action_target`、`action_params`
-- `precondition`、`postcondition`
-- `success_count`、`fail_count`
-- `rollback_action`
-- `cost`、`risk`、`confidence`
-
-边成本由动作开销、失败率、风险等级和置信度共同决定。购物确认页、支付页、地址页、登录页等高风险页面会提高路径成本。
-
-## 3. 执行闭环
-
-### 3.1 页面定位
-
-执行时不再只返回相似任务，而是先生成页面 belief：
+页面签名已经从 `semantic_layout = current_app` 扩展为：
 
 ```text
-b_t(v) = P(current_page = v | screenshot, history, last_action, task)
+app + page_type + landmarks + affordances + slots
 ```
 
-第一版使用确定性启发式：
+其中：
 
-- 当前截图 hash 和页面语义签名生成当前 `PageState`。
-- Neo4j 中存在语义匹配节点时加入候选。
-- 返回 top-k candidates、`current_state_id`、`confidence` 和 `is_novel`。
+- `page_type` 来自页面类型关键词、离线探索的 `page_type` 或执行时传入的页面摘要。
+- `landmarks` 从页面类型默认结构和 `OfflineExplorer` 的 `elements` key 抽取，例如 `search_bar`、`product_cards`、`buy_buttons`。
+- `affordances` 从页面类型和元素语义抽取，例如 `tap_search`、`open_product`、`add_to_cart`、`checkout`。
+- `slots` 从任务和页面摘要中抽取商品、搜索词、价格等轻量条件。
+- `risk_level` 对 `cart`、`spec_selection`、`checkout`、`payment`、`login`、`address` 做风险分层。
 
-后续可以接入 OCR、布局解析和视觉 embedding，但不改变接口。
+这相当于把 VLM 看到的一张截图压缩成可规划的空间路标，而不是只保存截图 hash。
 
-### 3.2 目标状态推断
+### 离线探索导入
 
-用户任务先转为 `GoalSpec`，而不是直接匹配历史任务。
+新增 `phone_agent/memory/import_exploration.py`，可以把 `memory_db/exploration/*_explore_*.json` 和对应的 `*_explore_transitions_*.json` 导入空间图谱。
 
-例如“把手机加入购物车”对应：
-
-```text
-domain = shopping
-target_page_types = [cart]
-forbidden_actions = [pay, submit_order, payment]
-missing_info_policy = ask_user
+```bash
+python -m phone_agent.memory.import_exploration --storage memory_db/exploration
 ```
 
-目标是页面类型和槽位条件，不是固定截图。
+仅验证解析、不写 Neo4j：
 
-### 3.3 路径规划
-
-`SpatialGraphMemory.plan()` 在图谱上搜索从当前页面到目标页面的最小成本路径。第一版使用确定性最短路径，边权为：
-
-```text
-weighted_cost =
-  base_cost
-  + failure_rate * 3
-  + risk_penalty
-  - confidence_bonus
+```bash
+python -m phone_agent.memory.import_exploration --storage memory_db/exploration --dry-run
 ```
 
-当找到可执行路线时，`MemoryManager.locate_and_get_context()` 返回：
+导入逻辑：
 
-- `mode = navigate`
-- `next_actions = [route_plan.next_action]`
-- `route_plan`
+1. 读取 `pages`，把每个探索页转成 `PageState`。
+2. 用 `page_type:summary` 建立探索文件中的页面 key 到状态节点的映射。
+3. 读取 `transitions`，把 `from -> action -> to` 转成 `TransitionEdge`。
+4. 本地内存始终可用；Neo4j 可用时同步写入 `UIState`、`Action`、`NEXT_ACTION`、`PRODUCES`。
+
+### Neo4j 图存储增强
+
+`GraphStore` 现在支持：
+
+- `upsert_page_state()`：单独写入页面节点，即使页面暂无出边也不会丢失。
+- `add_state_transition()`：在记录边时 `MERGE` 缺失的 `UIState`，并同步页面摘要、地标、可操作性、槽位和风险等级。
+- `get_state_by_semantic()`：支持按 `semantic_signature` 或旧的 `semantic_layout` 查询。
+- `get_outgoing_transitions()`：返回可用于 Dijkstra 规划的 `TransitionEdge`。
+
+### 执行期接入
+
+`MemoryManager.locate_and_get_context()` 已委托给 `SpatialGraphMemory`，并保持旧字段兼容，同时新增：
+
+- `current_state_id`
 - `belief`
 - `goal_spec`
+- `route_plan`
+- `repair_hint`
+- `semantic_context`
 
-找不到路线时继续进入 VLM explore 模式，并把空间图谱摘要注入上下文。
+当图谱能规划出路线时，`PhoneAgent` 的 `navigate` 模式可以拿到风险感知的下一步动作；当置信度不足时，仍回退给 VLM 自主决策。
 
-### 3.4 转移记录
+## 后续计划
 
-当前执行循环的截图在动作前采集，动作后页面只能在下一轮看到。因此图谱转移不能在同一轮立刻写死。新的逻辑是：
+### 1. 打通真实探索闭环
 
-1. 动作执行后缓存 `source_page + action`。
-2. 下一轮 `locate_and_get_context()` 定位到新页面。
-3. 写入真实的 `source_page -> action -> observed_page`。
-
-这样能避免把动作前截图误当成动作后页面。
-
-### 3.5 反思纠错
-
-每次规划都有预期后置条件。下一轮观测后，系统比较：
+当前导入器能消费已有 JSON，下一步要让 `OfflineExplorer` 探索结束后自动调用导入器，形成：
 
 ```text
-expected postcondition vs observed PageBelief
+explore App -> save pages/transitions JSON -> import SpatialGraph -> execute with graph route
 ```
 
-若不匹配，`repair()` 返回：
+这样探索不再是离线日志，而是可直接服务在线 Agent 的空间地图。
 
-- `retry`：已经到达预期页面或状态。
-- `rollback`：页面偏离路线，优先执行边上的回退动作。
-- `replan`：没有可靠回退边，重新规划。
-- `ask_user`：进入支付、地址、登录等用户拥有信息或高风险页面。
-- `fallback_to_vlm`：没有足够图谱证据，交回 VLM。
+### 2. 增强页面 belief
 
-## 4. 当前工程落点
+当前 belief 主要来自页面语义签名和图查询。下一步需要把定位分数拆成多项：
 
-第一版实现重点是闭环，而不是追求完整研究系统：
+```text
+belief_score =
+  visual_or_hash_similarity
+  + text_similarity
+  + layout_landmark_similarity
+  + previous_action_transition_prior
+  + task_relevance
+```
 
-- 新增 `phone_agent/memory/spatial_graph_memory.py`。
-- `MemoryManager` 初始化并委托 `SpatialGraphMemory`。
-- `locate_and_get_context()` 保持旧字段兼容，同时新增 `belief`、`goal_spec`、`route_plan`、`repair_hint`。
-- `GraphStore.add_state_transition()` 改为 `MERGE` 缺失的 `UIState`，并记录成功/失败计数和置信度。
-- `GraphStore.get_outgoing_transitions()` 为路径规划提供边。
-- `PhoneAgent` 的 navigate 模式修正为使用 `action` 字段，并且只在置信度足够时直接执行。
+目标是从单点页面匹配升级为 top-k belief，让 Agent 在页面变体、弹窗遮挡、搜索结果刷新时仍能保持位置感。
 
-## 5. 评估指标
+### 3. 运行时后置条件校验
 
-建议论文和工程评估都围绕空间认知是否有效：
+每次执行图谱边的第一步后，需要重新观测并校验：
 
-- `Task Success Rate`
-- `Average Steps`
-- `Loop Rate`
-- `Wrong Page Entry Rate`
-- `Recovery Success Rate`
-- `High-risk Action Avoidance Rate`
-- `Graph Reuse Rate`
-- `Replanning Count`
-- `Human Annotation Cost`
+```text
+expected postcondition == observed page_type or observed state_id
+```
 
-关键消融：
+不匹配时调用 `repair()`，根据偏航原因选择回退、重试、重规划、询问用户或回退 VLM。
 
-- 去掉页面 belief。
-- 去掉失败边惩罚。
-- 去掉风险边权。
-- 去掉 route repair。
-- 只用相似任务轨迹召回。
+### 4. 购物高干扰页面特化
 
-## 6. 后续路线
+优先补强这些节点：
 
-短期优先级：
+- SKU/规格弹窗：允许选择规格，但缺失用户偏好时必须 `ask_user`。
+- 优惠/广告弹窗：优先识别为干扰节点，提供关闭或回退边。
+- 登录页：不自动输入隐私信息，进入 `ask_user`。
+- 支付/提交订单页：高风险，路径成本显著提高，禁止自动提交。
+- 地址页：高风险用户数据页，缺失明确指令时停止询问。
 
-1. 用已有淘宝探索 JSON 构建图谱导入器。
-2. 增强 `PageState`：接入 OCR、布局区域和可点击元素摘要。
-3. 给 `RoutePlan` 增加多候选路径和路线解释。
-4. 把 `SpecGuard` 产生的拦截结果写回边权，形成高风险动作负反馈。
-5. 建立购物任务回放集，固定比较优化前后的成功率、步数和恢复能力。
+### 5. 实验与论文指标
 
-研究表述上，本文的核心主张是：
+建议围绕以下指标做优化前后对比：
 
-> 现有移动 GUI Agent 主要记住轨迹；Spatial Page Graph 让 Agent 形成可导航的 App 空间认知，在不训练新模型、不依赖人工轨迹标注的前提下，自己探索、认路、规划和纠错。
+- 任务成功率
+- 平均步数
+- 重复动作率
+- 错误页面进入率
+- 回退成功率
+- 高风险误触率
+- 图谱复用率
+- 重规划次数
+- 人工轨迹标注成本
+
+消融实验：
+
+- 去掉页面 belief
+- 去掉离线探索导入
+- 去掉失败边惩罚
+- 去掉风险边权
+- 去掉反思修复
+
+论文表达上，核心创新点应聚焦为：无需训练新模型的 Spatial Page Graph，把 GUI Agent 的记忆单位从人工轨迹迁移到可定位、可规划、可修复的 App 空间认知结构。

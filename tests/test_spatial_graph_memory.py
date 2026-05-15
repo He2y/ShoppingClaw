@@ -1,3 +1,5 @@
+import json
+
 from phone_agent.memory.memory_manager import MemoryManager
 from phone_agent.memory.spatial_graph_memory import (
     PageBelief,
@@ -23,15 +25,41 @@ def test_page_state_uses_page_level_signature():
     state = memory.build_page_state(
         ui_hash="abcdef1234567890",
         semantic_layout="淘宝 搜索结果",
-        task="搜索手机并打开商品",
+        task="搜索耳机商品",
     )
 
     assert state.state_id.startswith("state_")
-    assert state.app == "淘宝 搜索结果"
+    assert state.app == "淘宝"
     assert state.page_type == "search_result"
     assert "product_cards" in state.landmarks
     assert "open_product" in state.affordances
     assert state.semantic_signature
+
+
+def test_page_state_from_exploration_page_extracts_elements():
+    memory = SpatialGraphMemory()
+
+    state = memory.page_state_from_exploration_page(
+        {
+            "app": "淘宝",
+            "page_type": "search_result",
+            "summary": "耳机搜索结果 商品列表",
+            "elements": {
+                "search_bar": "contains current query",
+                "product_cards": "tap a product card to open detail",
+                "filter_tabs": "filter and sort controls",
+            },
+            "screenshot_hash": "1234567890abcdef",
+        }
+    )
+
+    assert state.page_type == "search_result"
+    assert state.summary == "耳机搜索结果 商品列表"
+    assert "search_bar" in state.landmarks
+    assert "filter_tabs" in state.landmarks
+    assert "tap_search" in state.affordances
+    assert "open_product" in state.affordances
+    assert "filter" in state.affordances
 
 
 def test_local_route_planning_prefers_recorded_success_edge():
@@ -39,12 +67,12 @@ def test_local_route_planning_prefers_recorded_success_edge():
     home = memory.build_page_state(
         ui_hash="11111111aaaaaaaa",
         semantic_layout="淘宝 首页",
-        task="搜索手机",
+        task="搜索耳机",
     )
     search_result = memory.build_page_state(
         ui_hash="22222222bbbbbbbb",
         semantic_layout="淘宝 搜索结果",
-        task="搜索手机",
+        task="搜索耳机",
     )
 
     memory.record_observation(
@@ -59,12 +87,88 @@ def test_local_route_planning_prefers_recorded_success_edge():
         candidates=(PageBeliefCandidate(home, 1.0, "test"),),
         confidence=1.0,
     )
-    route = memory.plan(belief, memory.infer_goal("搜索手机", app="淘宝"))
+    route = memory.plan(belief, memory.infer_goal("搜索耳机", app="淘宝"))
 
     assert route.mode == "navigate"
     assert route.next_action is not None
     assert route.next_action["type"] == "Tap"
     assert route.steps[0].edge.target_id == search_result.state_id
+
+
+def test_import_exploration_files_builds_route(tmp_path):
+    pages_path = tmp_path / "taobao_explore_1.json"
+    transitions_path = tmp_path / "taobao_explore_transitions_1.json"
+    pages = {
+        "app": "淘宝",
+        "pages": [
+            {
+                "page_type": "home",
+                "summary": "首页",
+                "elements": {"search_bar": "tap to search"},
+                "screenshot_hash": "homehash00000001",
+                "app": "淘宝",
+            },
+            {
+                "page_type": "search_result",
+                "summary": "耳机搜索结果",
+                "elements": {"product_cards": "tap product card"},
+                "screenshot_hash": "resulthash000001",
+                "app": "淘宝",
+            },
+            {
+                "page_type": "product_detail",
+                "summary": "耳机商品详情",
+                "elements": {"buy_buttons": "add to cart button"},
+                "screenshot_hash": "detailhash00001",
+                "app": "淘宝",
+            },
+            {
+                "page_type": "cart",
+                "summary": "购物车",
+                "elements": {"cart_items": "selected cart items"},
+                "screenshot_hash": "carthash0000001",
+                "app": "淘宝",
+            },
+        ],
+    }
+    transitions = {
+        "app": "淘宝",
+        "transitions": [
+            {
+                "from": "home:首页",
+                "action": {"action": "Tap", "element": [400, 120]},
+                "to": "search_result:耳机搜索结果",
+            },
+            {
+                "from": "search_result:耳机搜索结果",
+                "action": {"action": "Tap", "element": [300, 500]},
+                "to": "product_detail:耳机商品详情",
+            },
+            {
+                "from": "product_detail:耳机商品详情",
+                "action": {"action": "Tap", "semantic_target": "add_to_cart"},
+                "to": "cart:购物车",
+            },
+        ],
+    }
+    pages_path.write_text(json.dumps(pages, ensure_ascii=False), encoding="utf-8")
+    transitions_path.write_text(json.dumps(transitions, ensure_ascii=False), encoding="utf-8")
+
+    memory = SpatialGraphMemory()
+    result = memory.import_exploration_files(pages_path, persist=False)
+    home = next(state for state in memory._local_states.values() if state.page_type == "home")
+    belief = PageBelief(
+        current_state_id=home.state_id,
+        candidates=(PageBeliefCandidate(home, 1.0, "imported"),),
+        confidence=1.0,
+    )
+    route = memory.plan(belief, memory.infer_goal("加入购物车", app="淘宝"))
+
+    assert result.pages_imported == 4
+    assert result.transitions_imported == 3
+    assert route.mode == "navigate"
+    assert route.steps[-1].edge.postcondition == "cart"
+    assert route.next_action["type"] == "Tap"
 
 
 def test_failed_edge_has_higher_weighted_cost():
@@ -117,7 +221,7 @@ def test_memory_manager_returns_spatial_context(tmp_path):
     context = manager.locate_and_get_context(
         ui_hash="44444444dddddddd",
         semantic_layout="淘宝 首页",
-        task="搜索手机",
+        task="搜索耳机",
     )
 
     assert context["current_state_id"].startswith("state_")

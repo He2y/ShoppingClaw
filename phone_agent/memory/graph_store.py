@@ -1,4 +1,5 @@
 import hashlib
+import json
 import os
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
@@ -79,7 +80,12 @@ class GraphStore:
 
         # In a real implementation this should use vector search,
         # but for now we try a simple string similarity or exact match on layout
-        query = "MATCH (s:UIState) WHERE s.semantic_layout = $layout RETURN s LIMIT $limit"
+        query = """
+        MATCH (s:UIState)
+        WHERE s.semantic_signature = $layout OR s.semantic_layout = $layout
+        RETURN s
+        LIMIT $limit
+        """
         with self.driver.session(database=self.database) as session:
             result = session.run(query, layout=semantic_layout, limit=limit)
             record = result.single()
@@ -414,6 +420,41 @@ class GraphStore:
             return "state_unknown"
         return state_id if state_id.startswith("state_") else f"state_{state_id}"
 
+    def upsert_page_state(self, state_metadata: Dict[str, Any]) -> None:
+        """Create or update a UIState node from a SpatialGraphMemory PageState."""
+        if not self.driver:
+            return
+
+        state_id = self._normalize_state_id(str(state_metadata.get("state_id") or ""))
+        query = """
+        MERGE (s:UIState {state_id: $state_id})
+        SET s.app = coalesce($app, s.app),
+            s.page_type = coalesce($page_type, s.page_type),
+            s.summary = coalesce($summary, s.summary),
+            s.semantic_layout = coalesce($semantic_signature, s.semantic_layout),
+            s.semantic_signature = coalesce($semantic_signature, s.semantic_signature),
+            s.landmarks = $landmarks,
+            s.affordances = $affordances,
+            s.slots = $slots,
+            s.risk_level = coalesce($risk_level, s.risk_level),
+            s.screenshot_hash = coalesce($screenshot_hash, s.screenshot_hash),
+            s.updated_at = timestamp()
+        """
+        with self.driver.session(database=self.database) as session:
+            session.run(
+                query,
+                state_id=state_id,
+                app=state_metadata.get("app"),
+                page_type=state_metadata.get("page_type"),
+                summary=state_metadata.get("summary"),
+                semantic_signature=state_metadata.get("semantic_signature"),
+                landmarks=list(state_metadata.get("landmarks") or []),
+                affordances=list(state_metadata.get("affordances") or []),
+                slots=json.dumps(state_metadata.get("slots") or {}, ensure_ascii=False),
+                risk_level=state_metadata.get("risk_level"),
+                screenshot_hash=state_metadata.get("screenshot_hash"),
+            )
+
     def add_state_transition(
         self,
         source_state_hash: str,
@@ -441,14 +482,24 @@ class GraphStore:
         query = """
         MERGE (s1:UIState {state_id: $s1_id})
         SET s1.semantic_layout = coalesce($s1_semantic_layout, s1.semantic_layout),
+            s1.semantic_signature = coalesce($s1_semantic_layout, s1.semantic_signature),
             s1.app = coalesce($s1_app, s1.app),
             s1.page_type = coalesce($s1_page_type, s1.page_type),
+            s1.summary = coalesce($s1_summary, s1.summary),
+            s1.landmarks = coalesce($s1_landmarks, s1.landmarks),
+            s1.affordances = coalesce($s1_affordances, s1.affordances),
+            s1.slots = coalesce($s1_slots, s1.slots),
             s1.risk_level = coalesce($s1_risk_level, s1.risk_level),
             s1.updated_at = timestamp()
         MERGE (s2:UIState {state_id: $s2_id})
         SET s2.semantic_layout = coalesce($s2_semantic_layout, s2.semantic_layout),
+            s2.semantic_signature = coalesce($s2_semantic_layout, s2.semantic_signature),
             s2.app = coalesce($s2_app, s2.app),
             s2.page_type = coalesce($s2_page_type, s2.page_type),
+            s2.summary = coalesce($s2_summary, s2.summary),
+            s2.landmarks = coalesce($s2_landmarks, s2.landmarks),
+            s2.affordances = coalesce($s2_affordances, s2.affordances),
+            s2.slots = coalesce($s2_slots, s2.slots),
             s2.risk_level = coalesce($s2_risk_level, s2.risk_level),
             s2.updated_at = timestamp()
         MERGE (a:Action {action_id: $a_id})
@@ -485,10 +536,18 @@ class GraphStore:
                 s1_semantic_layout=source_metadata.get("semantic_signature") or source_metadata.get("semantic_layout"),
                 s1_app=source_metadata.get("app"),
                 s1_page_type=source_metadata.get("page_type"),
+                s1_summary=source_metadata.get("summary"),
+                s1_landmarks=list(source_metadata["landmarks"]) if "landmarks" in source_metadata else None,
+                s1_affordances=list(source_metadata["affordances"]) if "affordances" in source_metadata else None,
+                s1_slots=json.dumps(source_metadata.get("slots") or {}, ensure_ascii=False) if "slots" in source_metadata else None,
                 s1_risk_level=source_metadata.get("risk_level"),
                 s2_semantic_layout=target_metadata.get("semantic_signature") or target_metadata.get("semantic_layout"),
                 s2_app=target_metadata.get("app"),
                 s2_page_type=target_metadata.get("page_type"),
+                s2_summary=target_metadata.get("summary"),
+                s2_landmarks=list(target_metadata["landmarks"]) if "landmarks" in target_metadata else None,
+                s2_affordances=list(target_metadata["affordances"]) if "affordances" in target_metadata else None,
+                s2_slots=json.dumps(target_metadata.get("slots") or {}, ensure_ascii=False) if "slots" in target_metadata else None,
                 s2_risk_level=target_metadata.get("risk_level"),
                 a_id=action_id,
                 type=action_type,

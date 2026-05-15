@@ -11,6 +11,7 @@ from .memory_store import MemoryStore, Memory, MemoryType, ShoppingMetadata, Gra
 from .graph_store import GraphStore
 from .spatial_graph_memory import (
     GoalSpec,
+    ExplorationImportResult,
     PageBelief,
     PageState,
     RepairDecision,
@@ -41,6 +42,7 @@ __all__ = [
     "TransitionEdge",
     "PageBelief",
     "GoalSpec",
+    "ExplorationImportResult",
     "RoutePlan",
     "RepairDecision",
     "MemoryManager",

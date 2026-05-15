@@ -1,16 +1,18 @@
 """Training-free spatial page graph memory for mobile GUI agents.
 
-This module sits above GraphStore.  It turns low-level graph storage into a
-small interface for page localization, route planning, observation recording,
-and route repair.  The first implementation is deterministic and heuristic so
-it can run with the existing VLM/GUI models without adding model training cost.
+This module sits above GraphStore. It turns low-level graph storage into a
+compact interface for page localization, route planning, observation recording,
+offline exploration import, and route repair. The implementation is deliberately
+deterministic so it can reuse existing GUI/VLM models without extra training.
 """
 
 from __future__ import annotations
 
 import heapq
+import json
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Iterable
 
 
@@ -28,30 +30,57 @@ _SHOPPING_APPS = {
     "拼多多",
     "美团",
     "饿了么",
+    # Keep mojibake variants because existing exploration fixtures were saved
+    # with a broken encoding and still need to be importable.
+    "å¨£æ¨ºç–‚",
 }
 
 _HIGH_RISK_PAGE_TYPES = {"checkout", "payment", "address", "login", "confirm"}
 _MEDIUM_RISK_PAGE_TYPES = {"spec_selection", "cart"}
 
 _PAGE_TYPE_KEYWORDS = [
-    ("spec_selection", ("spec", "sku", "规格", "颜色", "尺码", "容量", "版本", "口味")),
-    ("checkout", ("checkout", "order", "结算", "订单", "提交订单", "确认订单")),
-    ("payment", ("pay", "payment", "支付", "付款")),
-    ("cart", ("cart", "购物车", "加购", "加入购物车")),
-    ("product_detail", ("detail", "商品详情", "详情", "立即购买", "加购物车")),
-    ("search_result", ("result", "搜索结果", "商品列表", "筛选", "销量", "综合")),
-    ("search_input", ("search_input", "搜索框", "搜索页", "输入", "键盘")),
-    ("home", ("home", "首页", "推荐", "底部导航")),
-    ("login", ("login", "登录", "验证码", "手机号")),
-    ("address", ("address", "地址", "收货")),
+    ("spec_selection", ("spec", "sku", "规格", "型号", "颜色", "尺码", "数量", "确定")),
+    ("checkout", ("checkout", "order", "提交订单", "确认订单", "结算", "收货地址")),
+    ("payment", ("pay", "payment", "付款", "支付", "收银台")),
+    ("cart", ("cart", "购物车", "加入购物车", "去结算")),
+    ("product_detail", ("detail", "product_detail", "商品详情", "详情", "价格", "立即购买")),
+    ("search_result", ("result", "search_result", "搜索结果", "商品列表", "筛选", "综合")),
+    ("search_input", ("search_input", "搜索框", "搜索输入", "历史搜索", "猜你想搜")),
+    ("home", ("home", "首页", "推荐", "搜索栏")),
+    ("login", ("login", "登录", "验证码", "账号")),
+    ("address", ("address", "地址", "收货人")),
 ]
 
 _GOAL_PAGE_KEYWORDS = [
-    ("cart", ("购物车", "加购", "加入购物车", "add cart", "cart")),
-    ("checkout", ("结算", "下单", "订单", "checkout")),
-    ("product_detail", ("详情", "商品", "product")),
-    ("search_result", ("搜索", "查找", "search", "找")),
+    ("cart", ("购物车", "加入购物车", "加购", "add cart", "cart")),
+    ("checkout", ("结算", "提交订单", "确认订单", "checkout")),
+    ("product_detail", ("详情", "商品", "product", "detail")),
+    ("search_result", ("搜索", "search", "结果")),
 ]
+
+_ELEMENT_AFFORDANCE_HINTS = {
+    "search": "tap_search",
+    "search_bar": "tap_search",
+    "suggestion": "submit_search",
+    "product": "open_product",
+    "card": "open_product",
+    "filter": "filter",
+    "sort": "sort",
+    "button": "tap_button",
+    "buy": "open_spec",
+    "cart": "add_to_cart",
+    "spec": "choose_spec",
+    "sku": "choose_spec",
+    "confirm": "confirm_spec",
+    "checkout": "checkout",
+    "back": "back",
+}
+
+_SLOT_PATTERNS = {
+    "query": (r"query[:=]\s*([^,;]+)", r"搜索[：:]\s*([^,;，。]+)"),
+    "product": (r"product[:=]\s*([^,;]+)", r"商品[：:]\s*([^,;，。]+)"),
+    "price": (r"(?:¥|￥)\s*([0-9]+(?:\.[0-9]+)?)",),
+}
 
 
 def _safe_slug(value: str, limit: int = 48) -> str:
@@ -64,6 +93,20 @@ def _safe_slug(value: str, limit: int = 48) -> str:
 def _contains_any(text: str, keywords: Iterable[str]) -> bool:
     lowered = text.lower()
     return any(keyword.lower() in lowered for keyword in keywords)
+
+
+def _dedupe(values: Iterable[str], limit: int | None = None) -> tuple[str, ...]:
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = str(value).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(normalized)
+        if limit and len(result) >= limit:
+            break
+    return tuple(result)
 
 
 @dataclass(frozen=True)
@@ -235,7 +278,8 @@ class GoalSpec:
             target_page_types = ["search_result", "product_detail", "cart"]
 
         domain = "shopping" if _contains_any(f"{task} {app}", _SHOPPING_APPS) else "general"
-        return cls(domain=domain, target_page_types=tuple(dict.fromkeys(target_page_types)))
+        slots = SpatialGraphMemory.extract_slots_from_text(task)
+        return cls(domain=domain, target_page_types=tuple(dict.fromkeys(target_page_types)), slots=slots)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -297,6 +341,24 @@ class RepairDecision:
         }
 
 
+@dataclass(frozen=True)
+class ExplorationImportResult:
+    pages_imported: int
+    transitions_imported: int
+    pages_path: str
+    transitions_path: str = ""
+    persisted_to_graph: bool = False
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "pages_imported": self.pages_imported,
+            "transitions_imported": self.transitions_imported,
+            "pages_path": self.pages_path,
+            "transitions_path": self.transitions_path,
+            "persisted_to_graph": self.persisted_to_graph,
+        }
+
+
 class SpatialGraphMemory:
     """Deep graph-memory module for page localization and route planning."""
 
@@ -313,27 +375,114 @@ class SpatialGraphMemory:
         ui_hash: str,
         semantic_layout: str,
         task: str = "",
+        app: str | None = None,
+        page_type: str | None = None,
+        summary: str = "",
+        elements: dict[str, Any] | None = None,
     ) -> PageState:
-        app = semantic_layout or "home_screen"
-        page_type = self._infer_page_type(semantic_layout)
-        if page_type == "unknown":
-            page_type = self._infer_page_type(task)
-        risk_level = self._infer_risk_level(page_type, task)
-        landmarks = self._infer_landmarks(page_type)
-        affordances = self._infer_affordances(page_type)
-        signature = self._semantic_signature(app, page_type, landmarks, affordances)
-        state_id = f"state_{_safe_slug(signature)}_{ui_hash[:8]}"
+        app_name = app or self._infer_app(semantic_layout) or semantic_layout or "home_screen"
+        combined_text = " ".join([semantic_layout, summary, task, self._elements_text(elements)])
+        inferred_type = page_type or self._infer_page_type(combined_text)
+        if inferred_type == "unknown":
+            inferred_type = self._infer_page_type(task)
+
+        element_landmarks = self._extract_landmarks_from_elements(elements)
+        element_affordances = self._extract_affordances_from_elements(elements)
+        landmarks = _dedupe((*self._infer_landmarks(inferred_type), *element_landmarks), limit=12)
+        affordances = _dedupe((*self._infer_affordances(inferred_type), *element_affordances), limit=12)
+        slots = self.extract_slots_from_text(combined_text)
+        risk_level = self._infer_risk_level(inferred_type, combined_text)
+        signature = self._semantic_signature(app_name, inferred_type, landmarks, affordances, slots)
+        hash_suffix = (ui_hash or _safe_slug(signature, 16))[:8]
+        state_id = f"state_{_safe_slug(signature)}_{hash_suffix}"
         return PageState(
             state_id=state_id,
-            app=app,
-            page_type=page_type,
-            summary=f"{app}:{page_type}",
+            app=app_name,
+            page_type=inferred_type,
+            summary=summary or f"{app_name}:{inferred_type}",
             landmarks=landmarks,
             affordances=affordances,
+            slots=slots,
             risk_level=risk_level,
             screenshot_hash=ui_hash,
             semantic_signature=signature,
         )
+
+    def page_state_from_exploration_page(self, page: dict[str, Any], fallback_app: str = "") -> PageState:
+        """Convert OfflineExplorer page JSON into a stable PageState."""
+        app = str(page.get("app") or fallback_app or "")
+        page_type = str(page.get("page_type") or "unknown")
+        summary = str(page.get("summary") or "")
+        elements = page.get("elements") if isinstance(page.get("elements"), dict) else {}
+        semantic_layout = " ".join([app, page_type, summary])
+        return self.build_page_state(
+            ui_hash=str(page.get("screenshot_hash") or ""),
+            semantic_layout=semantic_layout,
+            task=summary,
+            app=app or None,
+            page_type=page_type if page_type else None,
+            summary=summary,
+            elements=elements,
+        )
+
+    def import_exploration_files(
+        self,
+        pages_path: str | Path,
+        transitions_path: str | Path | None = None,
+        *,
+        persist: bool = True,
+    ) -> ExplorationImportResult:
+        """Import OfflineExplorer pages/transitions into local memory and Neo4j when available."""
+        pages_file = Path(pages_path)
+        transitions_file = Path(transitions_path) if transitions_path else self.match_transitions_path(pages_file)
+        pages_data = self._read_json(pages_file)
+        transitions_data = self._read_json(transitions_file) if transitions_file and transitions_file.exists() else {}
+        app = str(pages_data.get("app") or transitions_data.get("app") or "")
+
+        key_to_state: dict[str, PageState] = {}
+        for page in pages_data.get("pages", []):
+            if not isinstance(page, dict):
+                continue
+            state = self.page_state_from_exploration_page(page, fallback_app=app)
+            self._local_states[state.state_id] = state
+            key_to_state[self._transition_key(state.page_type, state.summary)] = state
+            if persist:
+                self._persist_page_state(state)
+
+        transition_count = 0
+        for item in transitions_data.get("transitions", []):
+            if not isinstance(item, dict):
+                continue
+            source = self._state_for_transition_key(str(item.get("from") or ""), key_to_state, app)
+            target = self._state_for_transition_key(str(item.get("to") or ""), key_to_state, app)
+            action = item.get("action") if isinstance(item.get("action"), dict) else {"action": "unknown"}
+            self.record_observation(source, action, target, outcome=str(item.get("outcome") or "success"))
+            transition_count += 1
+
+        return ExplorationImportResult(
+            pages_imported=len(key_to_state),
+            transitions_imported=transition_count,
+            pages_path=str(pages_file),
+            transitions_path=str(transitions_file) if transitions_file else "",
+            persisted_to_graph=bool(persist and self.graph_store and getattr(self.graph_store, "driver", None)),
+        )
+
+    @staticmethod
+    def match_transitions_path(pages_path: str | Path) -> Path:
+        pages_file = Path(pages_path)
+        name = pages_file.name.replace("_explore_", "_explore_transitions_")
+        return pages_file.with_name(name)
+
+    @staticmethod
+    def extract_slots_from_text(text: str) -> dict[str, str]:
+        slots: dict[str, str] = {}
+        for slot, patterns in _SLOT_PATTERNS.items():
+            for pattern in patterns:
+                match = re.search(pattern, text, flags=re.IGNORECASE)
+                if match:
+                    slots[slot] = match.group(1).strip()
+                    break
+        return slots
 
     def locate(
         self,
@@ -345,6 +494,10 @@ class SpatialGraphMemory:
             ui_hash=str(screen.get("ui_hash", "")),
             semantic_layout=str(screen.get("semantic_layout", "")),
             task=task,
+            app=str(screen.get("app") or "") or None,
+            page_type=str(screen.get("page_type") or "") or None,
+            summary=str(screen.get("summary") or ""),
+            elements=screen.get("elements") if isinstance(screen.get("elements"), dict) else None,
         )
         self._local_states[page_state.state_id] = page_state
 
@@ -410,12 +563,13 @@ class SpatialGraphMemory:
 
         total_cost = sum(step.edge.weighted_cost for step in best_path)
         high_risk = [step.edge.risk for step in best_path if step.edge.risk == "high"]
+        medium_risk = [step.edge.risk for step in best_path if step.edge.risk == "medium"]
         route = RoutePlan(
             mode="navigate",
             steps=tuple(best_path),
             total_cost=total_cost,
             confidence=max(0.0, min(1.0, belief.confidence / max(1.0, total_cost))),
-            risk_summary="high risk route" if high_risk else "normal route",
+            risk_summary="high risk route" if high_risk else "medium risk route" if medium_risk else "normal route",
             goal=goal_spec,
         )
         self._last_route = route
@@ -494,7 +648,8 @@ class SpatialGraphMemory:
         if top:
             parts.append(
                 f"[SpatialGraph] current={top.app}/{top.page_type} "
-                f"risk={top.risk_level} confidence={belief.confidence:.2f}"
+                f"risk={top.risk_level} confidence={belief.confidence:.2f} "
+                f"landmarks={','.join(top.landmarks[:4])}"
             )
         if route_plan.mode == "navigate" and route_plan.steps:
             next_edge = route_plan.steps[0].edge
@@ -508,6 +663,47 @@ class SpatialGraphMemory:
         if repair_hint:
             parts.append(f"[SpatialGraph Repair] {repair_hint.action}: {repair_hint.reason}")
         return "\n".join(parts)
+
+    def _persist_page_state(self, state: PageState) -> None:
+        if not self.graph_store or not getattr(self.graph_store, "driver", None):
+            return
+        try:
+            self.graph_store.upsert_page_state(state.to_dict())
+        except AttributeError:
+            return
+
+    def _state_for_transition_key(
+        self,
+        key: str,
+        key_to_state: dict[str, PageState],
+        app: str,
+    ) -> PageState:
+        if key in key_to_state:
+            return key_to_state[key]
+
+        page_type, _, summary = key.partition(":")
+        state = self.build_page_state(
+            ui_hash="",
+            semantic_layout=" ".join([app, page_type, summary]),
+            task=summary,
+            app=app or None,
+            page_type=page_type or None,
+            summary=summary,
+        )
+        key_to_state[key] = state
+        self._local_states[state.state_id] = state
+        self._persist_page_state(state)
+        return state
+
+    @staticmethod
+    def _transition_key(page_type: str, summary: str) -> str:
+        return f"{page_type}:{summary}"
+
+    @staticmethod
+    def _read_json(path: Path) -> dict[str, Any]:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
 
     def _load_graph_candidate(self, page_state: PageState) -> PageState | None:
         if not self.graph_store or not getattr(self.graph_store, "driver", None):
@@ -533,12 +729,13 @@ class SpatialGraphMemory:
         return local_edges + graph_edges
 
     def _shortest_path(self, start_id: str, target_page_types: tuple[str, ...]) -> list[RouteStep]:
-        queue: list[tuple[float, str, list[TransitionEdge]]] = [(0.0, start_id, [])]
+        counter = 0
+        queue: list[tuple[float, int, str, list[TransitionEdge]]] = [(0.0, counter, start_id, [])]
         best_cost: dict[str, float] = {start_id: 0.0}
         visited: set[str] = set()
 
         while queue:
-            cost, state_id, path = heapq.heappop(queue)
+            cost, _, state_id, path = heapq.heappop(queue)
             if state_id in visited:
                 continue
             visited.add(state_id)
@@ -554,11 +751,18 @@ class SpatialGraphMemory:
                 if next_cost >= best_cost.get(edge.target_id, float("inf")):
                     continue
                 best_cost[edge.target_id] = next_cost
-                heapq.heappush(queue, (next_cost, edge.target_id, path + [edge]))
+                counter += 1
+                heapq.heappush(queue, (next_cost, counter, edge.target_id, path + [edge]))
 
         return []
 
     def _page_state_from_graph(self, data: dict[str, Any], fallback: PageState) -> PageState:
+        slots = data.get("slots") or fallback.slots
+        if isinstance(slots, str):
+            try:
+                slots = json.loads(slots)
+            except json.JSONDecodeError:
+                slots = fallback.slots
         return PageState(
             state_id=str(data.get("state_id") or fallback.state_id),
             app=str(data.get("app") or data.get("app_name") or fallback.app),
@@ -566,7 +770,7 @@ class SpatialGraphMemory:
             summary=str(data.get("summary") or data.get("semantic_layout") or fallback.summary),
             landmarks=tuple(data.get("landmarks") or fallback.landmarks),
             affordances=tuple(data.get("affordances") or fallback.affordances),
-            slots=dict(data.get("slots") or fallback.slots),
+            slots=dict(slots or {}),
             risk_level=str(data.get("risk_level") or fallback.risk_level),
             screenshot_hash=str(data.get("screenshot_hash") or fallback.screenshot_hash),
             semantic_signature=str(data.get("semantic_signature") or fallback.semantic_signature),
@@ -578,8 +782,24 @@ class SpatialGraphMemory:
         page_type: str,
         landmarks: tuple[str, ...],
         affordances: tuple[str, ...],
+        slots: dict[str, str] | None = None,
     ) -> str:
-        return "|".join([app or "unknown", page_type or "unknown", ",".join(landmarks), ",".join(affordances)])
+        slot_text = ",".join(f"{key}={value}" for key, value in sorted((slots or {}).items()))
+        return "|".join(
+            [
+                app or "unknown",
+                page_type or "unknown",
+                ",".join(landmarks),
+                ",".join(affordances),
+                slot_text,
+            ]
+        )
+
+    def _infer_app(self, text: str) -> str:
+        for app in _SHOPPING_APPS:
+            if app and app in text:
+                return app
+        return ""
 
     def _infer_page_type(self, text: str) -> str:
         for page_type, keywords in _PAGE_TYPE_KEYWORDS:
@@ -588,7 +808,7 @@ class SpatialGraphMemory:
         return "unknown"
 
     def _infer_risk_level(self, page_type: str, task: str) -> str:
-        if page_type in _HIGH_RISK_PAGE_TYPES or _contains_any(task, ("支付", "付款", "提交订单")):
+        if page_type in _HIGH_RISK_PAGE_TYPES or _contains_any(task, ("付款", "支付", "提交订单", "confirm order")):
             return "high"
         if page_type in _MEDIUM_RISK_PAGE_TYPES:
             return "medium"
@@ -604,6 +824,7 @@ class SpatialGraphMemory:
             "cart": ("cart_items", "select_all", "checkout_button"),
             "checkout": ("address", "order_items", "submit_order_button"),
             "login": ("phone_input", "verification_code"),
+            "address": ("address_list", "confirm_button"),
         }
         return mapping.get(page_type, ())
 
@@ -617,5 +838,34 @@ class SpatialGraphMemory:
             "cart": ("select_item", "checkout", "back"),
             "checkout": ("review_order", "back", "ask_user"),
             "login": ("back", "ask_user"),
+            "address": ("choose_address", "back", "ask_user"),
         }
         return mapping.get(page_type, ())
+
+    @staticmethod
+    def _extract_landmarks_from_elements(elements: dict[str, Any] | None) -> tuple[str, ...]:
+        if not elements:
+            return ()
+        return _dedupe(elements.keys(), limit=10)
+
+    @staticmethod
+    def _extract_affordances_from_elements(elements: dict[str, Any] | None) -> tuple[str, ...]:
+        if not elements:
+            return ()
+        affordances: list[str] = []
+        for name, desc in elements.items():
+            text = f"{name} {desc}".lower()
+            for hint, affordance in _ELEMENT_AFFORDANCE_HINTS.items():
+                if hint in text:
+                    affordances.append(affordance)
+        return _dedupe(affordances, limit=10)
+
+    @staticmethod
+    def _elements_text(elements: dict[str, Any] | None) -> str:
+        if not elements:
+            return ""
+        parts: list[str] = []
+        for name, desc in elements.items():
+            parts.append(str(name))
+            parts.append(str(desc))
+        return " ".join(parts)
