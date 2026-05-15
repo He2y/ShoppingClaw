@@ -551,7 +551,11 @@ class PhoneAgent:
                     mode = context_data.get("mode", "explore")
                     current_state_id = context_data.get("current_state_id")
 
-            if mode == "navigate" and context_data.get("next_actions"):
+            if (
+                mode == "navigate"
+                and context_data.get("next_actions")
+                and context_data["next_actions"][0].get("confidence", 1.0) >= 0.8
+            ):
                 # Fast track: return the highest confidence action directly without VLM inference
                 best_action = context_data["next_actions"][0]
 
@@ -564,10 +568,10 @@ class PhoneAgent:
                 else:
                     action = {
                         "_metadata": "do",
-                        "action_type": best_action["type"],
+                        "action": best_action["type"],
                     }
                     if best_action.get("target"):
-                        action["element"] = best_action["target"]
+                        action["semantic_target"] = best_action["target"]
 
                     # Quick parse params
                     try:

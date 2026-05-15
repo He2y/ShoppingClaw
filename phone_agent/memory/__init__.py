@@ -9,6 +9,15 @@ Inspired by TeleMem (https://github.com/TeleAI-UAGI/TeleMem)
 
 from .memory_store import MemoryStore, Memory, MemoryType, ShoppingMetadata, GraphMetadata
 from .graph_store import GraphStore
+from .spatial_graph_memory import (
+    GoalSpec,
+    PageBelief,
+    PageState,
+    RepairDecision,
+    RoutePlan,
+    SpatialGraphMemory,
+    TransitionEdge,
+)
 from .memory_manager import MemoryManager
 from .core import UnifiedSessionState, Product, ProductStatus, StepRecord
 from .retrieval_gateway import RetrievalGateway, RetrievalResult
@@ -27,6 +36,13 @@ __all__ = [
     "ShoppingMetadata",
     "GraphMetadata",
     "GraphStore",
+    "SpatialGraphMemory",
+    "PageState",
+    "TransitionEdge",
+    "PageBelief",
+    "GoalSpec",
+    "RoutePlan",
+    "RepairDecision",
     "MemoryManager",
     # Unified state (new)
     "UnifiedSessionState",

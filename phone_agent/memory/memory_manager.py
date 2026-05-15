@@ -13,6 +13,7 @@ from typing import Any
 from .memory_store import MemoryStore, Memory, MemoryType
 from .core import UnifiedSessionState, Product, ProductStatus
 from .retrieval_gateway import RetrievalGateway, RetrievalResult
+from .spatial_graph_memory import SpatialGraphMemory
 
 
 # Patterns for extracting user preferences (non-shopping: contacts, apps)
@@ -83,6 +84,7 @@ class MemoryManager:
         # Initialize GraphStore (Spatial Memory)
         from .graph_store import GraphStore
         self.graph_store = GraphStore()
+        self.spatial_graph_memory = SpatialGraphMemory(self.graph_store)
 
         # Initialize UnifiedSessionState — single source of truth
         # (replaces StateManager + SessionMemory + KnowledgeBase)
@@ -97,6 +99,11 @@ class MemoryManager:
         # Current task context
         self.current_task: str = ""
         self.task_start_time: str = ""
+        self._task_start_state_id: str | None = None
+        self._current_state_id: str | None = None
+        self._current_page_state = None
+        self._pending_transition_source = None
+        self._pending_transition_action: dict | None = None
 
         # Track extracted info in current session to avoid duplicates
         self._session_contacts: set[str] = set()
@@ -114,6 +121,9 @@ class MemoryManager:
         self.session_history.clear()
         self._task_start_state_id = start_state_id
         self._current_state_id = start_state_id
+        self._current_page_state = None
+        self._pending_transition_source = None
+        self._pending_transition_action = None
 
         # Reset session tracking
         self._session_contacts.clear()
@@ -172,7 +182,7 @@ class MemoryManager:
         self.current_task = ""
         self.task_start_time = ""
 
-    def update_state_and_transition(
+    def _legacy_update_state_and_transition(
         self,
         screenshot_hash: str,
         semantic_layout: str,
@@ -209,9 +219,34 @@ class MemoryManager:
 
         return current_state
 
+    def update_state_and_transition(
+        self,
+        screenshot_hash: str,
+        semantic_layout: str,
+        action: dict,
+        task: str
+    ) -> str:
+        """Cache source page/action and record the edge on next localization."""
+        page_state = self.spatial_graph_memory.build_page_state(
+            ui_hash=screenshot_hash,
+            semantic_layout=semantic_layout,
+            task=task,
+        )
+        self._pending_transition_source = page_state
+        self._pending_transition_action = action
+        self._current_page_state = page_state
+        self._current_state_id = page_state.state_id
+
+        if not self.state.current_state_id:
+            self.state.start_task_state(page_state.state_id)
+        elif self.state.current_state_id != page_state.state_id:
+            self.state.update_state(page_state.state_id)
+
+        return page_state.state_id
+
     def get_current_state_id(self) -> str | None:
         """获取当��状态ID"""
-        return self.state.get_current_state()
+        return self.state.current_state_id
 
     def _save_pending_trajectory(self, task: str, success: bool, result: str,
                                  steps: list, apps: list, start_state: str | None,
@@ -1208,7 +1243,7 @@ class MemoryManager:
         
         return "\n".join(context_parts)
     
-    def locate_and_get_context(self, ui_hash: str, semantic_layout: str, task: str) -> dict:
+    def _legacy_locate_and_get_context(self, ui_hash: str, semantic_layout: str, task: str) -> dict:
         """
         基于 GraphRAG 的双层匹配策略：
 
@@ -1284,6 +1319,129 @@ class MemoryManager:
                         + f"\n[参考历史页面] {matched_content[:200]}"
                     )
                     print(f"🔄 FAISS Semantic Hint: 参考历史页面特征")
+
+        return context_data
+
+    def locate_and_get_context(self, ui_hash: str, semantic_layout: str, task: str) -> dict:
+        """Locate current page, plan graph route, and build VLM context.
+
+        This method keeps the legacy return fields while adding spatial graph
+        fields: belief, goal_spec, route_plan, and repair_hint.
+        """
+        context_data = {
+            "max_similarity": 0.0,
+            "mode": "explore",
+            "semantic_context": self.get_relevant_context(task),
+            "next_actions": [],
+            "current_state_id": None,
+            "task_trajectory": None,
+            "belief": None,
+            "goal_spec": None,
+            "route_plan": None,
+            "repair_hint": None,
+        }
+
+        screen = {"ui_hash": ui_hash, "semantic_layout": semantic_layout}
+        belief = self.spatial_graph_memory.locate(
+            screen,
+            task,
+            previous_action=self._pending_transition_action,
+        )
+        current_page_state = belief.candidates[0].state if belief.candidates else None
+        self._current_page_state = current_page_state
+        self._current_state_id = belief.current_state_id
+        context_data["current_state_id"] = belief.current_state_id
+        context_data["belief"] = belief.to_dict()
+
+        if not self._task_start_state_id:
+            self._task_start_state_id = belief.current_state_id
+        if not self.state.current_state_id:
+            self.state.start_task_state(belief.current_state_id)
+        elif self.state.current_state_id != belief.current_state_id:
+            self.state.update_state(belief.current_state_id)
+
+        if (
+            self._pending_transition_source is not None
+            and self._pending_transition_action is not None
+            and current_page_state is not None
+        ):
+            self.spatial_graph_memory.record_observation(
+                self._pending_transition_source,
+                self._pending_transition_action,
+                current_page_state,
+                outcome="success",
+            )
+            self._pending_transition_source = None
+            self._pending_transition_action = None
+
+        goal_spec = self.spatial_graph_memory.infer_goal(
+            task,
+            app=current_page_state.app if current_page_state else semantic_layout,
+        )
+        route_plan = self.spatial_graph_memory.plan(belief, goal_spec)
+        repair_hint = None
+        if route_plan.mode == "navigate" and route_plan.steps:
+            expected = route_plan.steps[0].edge.postcondition or route_plan.steps[0].edge.target_id
+            repair_hint = self.spatial_graph_memory.repair(belief, expected, route_plan)
+
+        context_data["goal_spec"] = goal_spec.to_dict()
+        context_data["route_plan"] = route_plan.to_dict()
+        context_data["repair_hint"] = repair_hint.to_dict() if repair_hint else None
+
+        spatial_context = self.spatial_graph_memory.context_summary(
+            belief,
+            route_plan,
+            repair_hint=repair_hint,
+        )
+        if spatial_context:
+            context_data["semantic_context"] = (
+                f"{spatial_context}\n{context_data.get('semantic_context', '')}"
+            ).strip()
+
+        if route_plan.mode == "navigate" and route_plan.next_action:
+            context_data["mode"] = "navigate"
+            context_data["next_actions"] = [route_plan.next_action]
+            return context_data
+
+        similar_tasks = self.graph_store.find_similar_tasks(task, top_k=3)
+        if similar_tasks:
+            best = similar_tasks[0]
+            similarity = best.get("similarity", 0.0)
+            context_data["max_similarity"] = similarity
+            task_id = best.get("task_id", "")
+            trajectory = self.graph_store.get_task_trajectory(task_id)
+
+            if similarity >= 0.85:
+                first_action = self._get_first_action(trajectory)
+                if first_action:
+                    context_data["mode"] = "navigate"
+                    context_data["next_actions"] = [first_action]
+                    context_data["task_trajectory"] = trajectory
+                    return context_data
+
+            if similarity >= 0.60:
+                condensed_text = self._condense_trajectory_context(similar_tasks, current_task=task)
+                context_data["semantic_context"] = (
+                    f"{context_data.get('semantic_context', '')}\n"
+                    "[Historical trajectory reference]\n"
+                    f"{condensed_text}"
+                ).strip()
+                context_data["task_trajectory"] = trajectory
+
+        if semantic_layout and len(semantic_layout) > 5:
+            similar_states = self.store.search(
+                query=semantic_layout,
+                top_k=1,
+                min_importance=0.0,
+                memory_types=[MemoryType.UI_STATE],
+            )
+            if similar_states:
+                matched_content = similar_states[0].content or ""
+                if len(matched_content) > 10:
+                    context_data["semantic_context"] = (
+                        context_data.get("semantic_context", "")
+                        + f"\n[Historical page hint] {matched_content[:200]}"
+                    ).strip()
 
         return context_data
 

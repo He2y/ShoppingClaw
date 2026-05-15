@@ -1,3 +1,4 @@
+import hashlib
 import os
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
@@ -406,30 +407,141 @@ class GraphStore:
             print(f"Warning: failed to commit task trajectory: {e}")
             return False
 
-    def add_state_transition(self, source_state_hash: str, target_state_hash: str, action_data: Dict[str, Any], task_id: str = None):
-        """Record a new transition during online exploration."""
+    @staticmethod
+    def _normalize_state_id(state_id: str) -> str:
+        """Return a Neo4j UIState id without adding duplicate state_ prefixes."""
+        if not state_id:
+            return "state_unknown"
+        return state_id if state_id.startswith("state_") else f"state_{state_id}"
+
+    def add_state_transition(
+        self,
+        source_state_hash: str,
+        target_state_hash: str,
+        action_data: Dict[str, Any],
+        task_id: str = None,
+        outcome: str = "success",
+        source_metadata: Optional[Dict[str, Any]] = None,
+        target_metadata: Optional[Dict[str, Any]] = None,
+    ):
+        """Record a transition and create missing UIState nodes if needed."""
         if not self.driver:
             return
 
-        action_id = f"act_{source_state_hash}_{target_state_hash}"
-        action_type = action_data.get("action_type", "unknown")
+        source_state_id = self._normalize_state_id(source_state_hash)
+        target_state_id = self._normalize_state_id(target_state_hash)
+        action_hash = hashlib.md5(str(action_data).encode("utf-8")).hexdigest()[:8]
+        action_id = f"act_{source_state_id}_{target_state_id}_{action_hash}"
+        action_type = action_data.get("action_type") or action_data.get("action") or "unknown"
+        success_delta = 0 if outcome == "failure" else 1
+        fail_delta = 1 if outcome == "failure" else 0
+        source_metadata = source_metadata or {}
+        target_metadata = target_metadata or {}
 
         query = """
-        MATCH (s1:UIState {state_id: $s1_id}), (s2:UIState {state_id: $s2_id})
+        MERGE (s1:UIState {state_id: $s1_id})
+        SET s1.semantic_layout = coalesce($s1_semantic_layout, s1.semantic_layout),
+            s1.app = coalesce($s1_app, s1.app),
+            s1.page_type = coalesce($s1_page_type, s1.page_type),
+            s1.risk_level = coalesce($s1_risk_level, s1.risk_level),
+            s1.updated_at = timestamp()
+        MERGE (s2:UIState {state_id: $s2_id})
+        SET s2.semantic_layout = coalesce($s2_semantic_layout, s2.semantic_layout),
+            s2.app = coalesce($s2_app, s2.app),
+            s2.page_type = coalesce($s2_page_type, s2.page_type),
+            s2.risk_level = coalesce($s2_risk_level, s2.risk_level),
+            s2.updated_at = timestamp()
         MERGE (a:Action {action_id: $a_id})
-        SET a.type = $type, a.target_desc = $target
+        SET a.type = $type,
+            a.target_desc = $target,
+            a.semantic_target = $semantic_target,
+            a.reasoning = $reasoning,
+            a.updated_at = timestamp()
         MERGE (s1)-[r1:NEXT_ACTION]->(a)
-        ON CREATE SET r1.confidence = 1.0, r1.frequency = 1
-        ON MATCH SET r1.frequency = r1.frequency + 1
+        ON CREATE SET r1.confidence = $confidence,
+                      r1.frequency = 0,
+                      r1.fail_count = 0,
+                      r1.task_id = $task_id
+        SET r1.frequency = r1.frequency + $success_delta,
+            r1.fail_count = coalesce(r1.fail_count, 0) + $fail_delta,
+            r1.confidence = CASE
+                WHEN (r1.frequency + coalesce(r1.fail_count, 0)) = 0 THEN $confidence
+                ELSE toFloat(r1.frequency) / toFloat(r1.frequency + coalesce(r1.fail_count, 0))
+            END
         MERGE (a)-[r2:PRODUCES]->(s2)
-        ON CREATE SET r2.success_rate = 1.0
+        ON CREATE SET r2.success_count = 0, r2.fail_count = 0
+        SET r2.success_count = r2.success_count + $success_delta,
+            r2.fail_count = r2.fail_count + $fail_delta,
+            r2.success_rate = CASE
+                WHEN (r2.success_count + r2.fail_count) = 0 THEN $confidence
+                ELSE toFloat(r2.success_count) / toFloat(r2.success_count + r2.fail_count)
+            END
         """
         with self.driver.session(database=self.database) as session:
             session.run(
                 query,
-                s1_id=f"state_{source_state_hash}",
-                s2_id=f"state_{target_state_hash}",
+                s1_id=source_state_id,
+                s2_id=target_state_id,
+                s1_semantic_layout=source_metadata.get("semantic_signature") or source_metadata.get("semantic_layout"),
+                s1_app=source_metadata.get("app"),
+                s1_page_type=source_metadata.get("page_type"),
+                s1_risk_level=source_metadata.get("risk_level"),
+                s2_semantic_layout=target_metadata.get("semantic_signature") or target_metadata.get("semantic_layout"),
+                s2_app=target_metadata.get("app"),
+                s2_page_type=target_metadata.get("page_type"),
+                s2_risk_level=target_metadata.get("risk_level"),
                 a_id=action_id,
                 type=action_type,
-                target=str(action_data)
+                target=str(action_data),
+                semantic_target=str(action_data.get("semantic_target") or action_data.get("target") or action_data.get("element") or action_data.get("text") or ""),
+                reasoning=str(action_data.get("reasoning") or ""),
+                confidence=0.4 if outcome == "failure" else 1.0,
+                success_delta=success_delta,
+                fail_delta=fail_delta,
+                task_id=task_id,
             )
+
+    def get_outgoing_transitions(self, state_id: str, limit: int = 20):
+        """Return outgoing graph edges as TransitionEdge objects."""
+        if not self.driver:
+            return []
+
+        from .spatial_graph_memory import TransitionEdge
+
+        normalized_state_id = self._normalize_state_id(state_id)
+        query = """
+        MATCH (s:UIState {state_id: $state_id})-[r:NEXT_ACTION]->(a:Action)-[p:PRODUCES]->(t:UIState)
+        RETURN s.state_id AS source_id,
+               t.state_id AS target_id,
+               t.page_type AS target_page_type,
+               t.risk_level AS target_risk,
+               a.type AS action_type,
+               a.semantic_target AS action_target,
+               a.target_desc AS action_params,
+               r.confidence AS confidence,
+               r.frequency AS success_count,
+               coalesce(r.fail_count, 0) AS fail_count,
+               coalesce(p.success_rate, 1.0) AS success_rate
+        ORDER BY confidence DESC, success_count DESC
+        LIMIT $limit
+        """
+        edges = []
+        with self.driver.session(database=self.database) as session:
+            for record in session.run(query, state_id=normalized_state_id, limit=limit):
+                target_page_type = record["target_page_type"] or ""
+                target_risk = record["target_risk"] or "normal"
+                edges.append(
+                    TransitionEdge(
+                        source_id=record["source_id"],
+                        target_id=record["target_id"],
+                        action_type=record["action_type"] or "unknown",
+                        action_target=record["action_target"] or "",
+                        action_params={"raw": record["action_params"] or ""},
+                        postcondition=target_page_type,
+                        success_count=record["success_count"] or 0,
+                        fail_count=record["fail_count"] or 0,
+                        risk=target_risk,
+                        confidence=record["confidence"] or record["success_rate"] or 0.0,
+                    )
+                )
+        return edges
