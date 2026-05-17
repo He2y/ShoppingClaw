@@ -58,6 +58,12 @@ python -m phone_agent.memory.import_exploration --storage memory_db/exploration 
 3. 读取 `transitions`，把 `from -> action -> to` 转成 `TransitionEdge`。
 4. 本地内存始终可用；Neo4j 可用时同步写入 `UIState`、`Action`、`NEXT_ACTION`、`PRODUCES`。
 
+`OfflineExplorer` 已经接入自动导入：探索结束保存 JSON 后，可以直接调用 `SpatialGraphMemory.import_exploration_files()` 把本次探索写入图谱。`run_explorer.py` 的 CLI 入口也已经修复为调用 `explore()`，默认探索后导入图谱；需要只保存 JSON 时使用：
+
+```bash
+python -m phone_agent.memory.run_explorer --app 淘宝 --queries "耳机,iPhone" --no-import-graph
+```
+
 ### Neo4j 图存储增强
 
 `GraphStore` 现在支持：
@@ -80,17 +86,25 @@ python -m phone_agent.memory.import_exploration --storage memory_db/exploration 
 
 当图谱能规划出路线时，`PhoneAgent` 的 `navigate` 模式可以拿到风险感知的下一步动作；当置信度不足时，仍回退给 VLM 自主决策。
 
+执行期后置条件校验也已经接入：图谱导航动作会携带 `_expected_postcondition`，动作执行后的下一次页面定位会比较预期页面与实际页面。如果不匹配，系统会：
+
+1. 把该边记录为失败边，增加 `fail_count`。
+2. 返回 `repair_hint`，提示 `replan`、`rollback`、`ask_user` 等修复策略。
+3. 基于当前真实页面重新规划，而不是继续沿着错误路线执行。
+
+同时修复了一个页面抽象问题：任务文本不再直接参与当前页面类型推断，只在页面观测无法判断时作为兜底。这样“加入购物车”任务不会把商品详情页误判成购物车页。
+
 ## 后续计划
 
-### 1. 打通真实探索闭环
+### 1. 增强真实探索闭环
 
-当前导入器能消费已有 JSON，下一步要让 `OfflineExplorer` 探索结束后自动调用导入器，形成：
+当前已经形成：
 
 ```text
 explore App -> save pages/transitions JSON -> import SpatialGraph -> execute with graph route
 ```
 
-这样探索不再是离线日志，而是可直接服务在线 Agent 的空间地图。
+下一步应把探索策略从“VLM 自由探索”升级成“图谱覆盖率驱动探索”：优先选择未知页面类型、未知 affordance、低风险未访问边，避免重复点同一类入口。
 
 ### 2. 增强页面 belief
 
@@ -107,15 +121,9 @@ belief_score =
 
 目标是从单点页面匹配升级为 top-k belief，让 Agent 在页面变体、弹窗遮挡、搜索结果刷新时仍能保持位置感。
 
-### 3. 运行时后置条件校验
+### 3. 修复动作落地
 
-每次执行图谱边的第一步后，需要重新观测并校验：
-
-```text
-expected postcondition == observed page_type or observed state_id
-```
-
-不匹配时调用 `repair()`，根据偏航原因选择回退、重试、重规划、询问用户或回退 VLM。
+当前已经能产生 `repair_hint` 并惩罚失败边。下一步要把 `repair_hint.action` 真正落到动作层：例如 `rollback` 自动执行 Back，`ask_user` 触发 Interact，`replan` 禁止继续复用刚失败的边。
 
 ### 4. 购物高干扰页面特化
 

@@ -1,39 +1,45 @@
 #!/usr/bin/env python3
-"""
-Offline Explorer CLI - Run systematic exploration of shopping apps.
+"""CLI for task-directed offline exploration of shopping apps."""
 
-Usage:
-    python -m phone_agent.memory.run_explorer --app 京东
-    python -m phone_agent.memory.run_explorer --app 淘宝 --queries "手机,iPhone,耳机"
-    python -m phone_agent.memory.run_explorer --list-apps
-"""
+from __future__ import annotations
 
 import argparse
 import os
 
 from dotenv import load_dotenv
-load_dotenv()
 
 from phone_agent.device_factory import DeviceFactory, DeviceType
-from phone_agent.model.client import ModelClient, ModelConfig
 from phone_agent.memory.offline_explorer import OfflineExplorer
+from phone_agent.model.client import ModelClient, ModelConfig
+
+load_dotenv()
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Offline Explorer for Shopping Apps")
-    parser.add_argument("--app", type=str, default="京东", help="App name to explore")
-    parser.add_argument("--device-type", type=str, default="adb", help="Device type (adb/hdc/ios)")
-    parser.add_argument("--queries", type=str, default="手机,iPhone", help="Comma-separated search queries")
+def _device_type(value: str) -> DeviceType:
+    normalized = value.lower()
+    if normalized == "hdc":
+        return DeviceType.HDC
+    if normalized == "ios":
+        return DeviceType.IOS
+    return DeviceType.ADB
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Offline Explorer for shopping apps")
+    parser.add_argument("--app", type=str, default="淘宝", help="App name to explore")
+    parser.add_argument("--device-type", type=str, default="adb", help="Device type: adb, hdc, or ios")
+    parser.add_argument("--queries", type=str, default="耳机,iPhone", help="Comma-separated search queries")
     parser.add_argument("--storage", type=str, default="memory_db/exploration", help="Storage directory")
-    parser.add_argument("--list-apps", action="store_true", help="List supported apps only")
+    parser.add_argument("--max-steps", type=int, default=15, help="Max exploration steps")
+    parser.add_argument("--no-import-graph", action="store_true", help="Skip SpatialGraphMemory import after saving JSON")
+    parser.add_argument("--list-apps", action="store_true", help="List common shopping apps only")
     args = parser.parse_args()
 
     if args.list_apps:
-        print("Supported shopping apps: 京东, 淘宝, 拼多多")
+        print("Supported shopping apps: 淘宝, 天猫, 京东, 拼多多")
         print("Make sure the app is installed on the connected device.")
-        return
+        return 0
 
-    # ── Init ModelClient (reuse existing pipeline) ──
     config = ModelConfig(
         base_url=os.getenv("PHONE_AGENT_BASE_URL"),
         api_key=os.getenv("PHONE_AGENT_API_KEY"),
@@ -44,41 +50,38 @@ def main():
         lang=os.getenv("PHONE_AGENT_LANG", "cn"),
     )
     model_client = ModelClient(config)
+    device_factory = DeviceFactory(_device_type(args.device_type))
 
-    # ── Init DeviceFactory ──
-    dt = DeviceType.ADB
-    if args.device_type == "hdc":
-        dt = DeviceType.HDC
-    elif args.device_type == "ios":
-        dt = DeviceType.IOS
-    device_factory = DeviceFactory(dt)
-
-    # ── Check device connectivity ──
     try:
         device_factory.get_screenshot()
         print("  Device connected OK")
     except Exception as e:
         print(f"  Device connection failed: {e}")
-        print("  Make sure a device is connected via ADB.")
-        return
+        print("  Make sure a device is connected via ADB/HDC/iOS backend.")
+        return 1
 
-    # ── Run exploration ──
     explorer = OfflineExplorer(
         app_name=args.app,
         device_factory=device_factory,
         model_client=model_client,
         storage_dir=args.storage,
+        max_steps=args.max_steps,
+        task_description=f"Explore {args.app} shopping flows for queries: {args.queries}",
+        auto_import_graph=not args.no_import_graph,
     )
+    trajectories = explorer.explore()
 
-    trajectories = explorer.explore_shopping_flows()
-
-    print(f"\n{'='*60}")
-    print(f"  Summary")
-    print(f"{'='*60}")
-    for t in trajectories:
-        print(f"  [{t.app}] {t.task}: {len(t.steps)} steps, success={t.success}")
+    print(f"\n{'=' * 60}")
+    print("  Summary")
+    print(f"{'=' * 60}")
+    for trajectory in trajectories:
+        print(f"  [{trajectory.app}] {trajectory.task}: {len(trajectory.steps)} steps, success={trajectory.success}")
     print(f"\n  Files saved to: {args.storage}/")
+    if explorer.last_import_result:
+        result = explorer.last_import_result
+        print(f"  Spatial graph imported: {result.pages_imported} pages, {result.transitions_imported} transitions")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

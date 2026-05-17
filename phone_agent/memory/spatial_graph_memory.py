@@ -381,8 +381,9 @@ class SpatialGraphMemory:
         elements: dict[str, Any] | None = None,
     ) -> PageState:
         app_name = app or self._infer_app(semantic_layout) or semantic_layout or "home_screen"
-        combined_text = " ".join([semantic_layout, summary, task, self._elements_text(elements)])
-        inferred_type = page_type or self._infer_page_type(combined_text)
+        visual_text = " ".join([semantic_layout, summary, self._elements_text(elements)])
+        combined_text = " ".join([visual_text, task])
+        inferred_type = page_type or self._infer_page_type(visual_text)
         if inferred_type == "unknown":
             inferred_type = self._infer_page_type(task)
 

@@ -572,6 +572,8 @@ class PhoneAgent:
                     }
                     if best_action.get("target"):
                         action["semantic_target"] = best_action["target"]
+                    if best_action.get("postcondition"):
+                        action["_expected_postcondition"] = best_action["postcondition"]
 
                     # Quick parse params
                     try:
@@ -598,6 +600,19 @@ class PhoneAgent:
 
                 finished = action.get("_metadata") == "finish" or result.should_finish
                 self._last_thinking = "[Graph Shortcut Navigated]"
+                if self.memory_manager:
+                    self.memory_manager.add_step(
+                        thinking="[Graph Shortcut Navigated]",
+                        action=action,
+                        screenshot_app=current_app,
+                    )
+                    self.memory_manager.update_state_and_transition(
+                        screenshot_hash=ui_hash,
+                        semantic_layout=semantic_layout,
+                        action=action,
+                        task=self._current_task,
+                        expected_postcondition=action.get("_expected_postcondition"),
+                    )
                 return StepResult(
                     success=result.success,
                     finished=finished,
@@ -963,7 +978,8 @@ class PhoneAgent:
                     screenshot_hash=ui_hash,
                     semantic_layout=semantic_layout,
                     action=action,
-                    task=self._current_task
+                    task=self._current_task,
+                    expected_postcondition=action.get("_expected_postcondition"),
                 )
 
 

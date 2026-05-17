@@ -1,6 +1,7 @@
 import json
 
 from phone_agent.memory.memory_manager import MemoryManager
+from phone_agent.memory.offline_explorer import OfflineExplorer, PageInfo, ShoppingPageType, Trajectory
 from phone_agent.memory.spatial_graph_memory import (
     PageBelief,
     PageBeliefCandidate,
@@ -228,3 +229,68 @@ def test_memory_manager_returns_spatial_context(tmp_path):
     assert context["belief"]["current_state_id"] == context["current_state_id"]
     assert context["goal_spec"]["domain"] == "shopping"
     assert "SpatialGraph" in context["semantic_context"]
+
+
+def test_memory_manager_marks_pending_transition_failure_on_postcondition_mismatch(tmp_path):
+    manager = MemoryManager(storage_dir=str(tmp_path), user_id="tester")
+    manager.graph_store = FakeGraphStore()
+    manager.spatial_graph_memory = SpatialGraphMemory(manager.graph_store)
+
+    source_id = manager.update_state_and_transition(
+        screenshot_hash="sourcehash000001",
+        semantic_layout="淘宝 商品详情",
+        action={"action": "Tap", "semantic_target": "add_to_cart", "_expected_postcondition": "cart"},
+        task="加入购物车",
+    )
+    context = manager.locate_and_get_context(
+        ui_hash="wronghash0000001",
+        semantic_layout="淘宝 搜索结果",
+        task="加入购物车",
+    )
+
+    edge = manager.spatial_graph_memory._local_edges[source_id][0]
+    assert edge.fail_count == 1
+    assert edge.success_count == 0
+    assert context["repair_hint"]["action"] == "replan"
+    assert "SpatialGraph Repair" in context["semantic_context"]
+
+
+def test_offline_explorer_save_results_auto_imports_spatial_graph(tmp_path):
+    explorer = object.__new__(OfflineExplorer)
+    explorer.app_name = "淘宝"
+    explorer.task_description = "探索淘宝购物路径"
+    explorer.storage_dir = tmp_path
+    explorer.discovered_pages = {}
+    explorer.transitions = []
+    explorer.auto_import_graph = True
+    explorer.graph_store = FakeGraphStore()
+    explorer.last_import_result = None
+    explorer.verbose = False
+
+    home = PageInfo(
+        page_type=ShoppingPageType.HOME,
+        semantic_summary="首页",
+        elements={"search_bar": "tap to search"},
+        screenshot_hash="homehash00000001",
+        app="淘宝",
+    )
+    cart = PageInfo(
+        page_type=ShoppingPageType.CART,
+        semantic_summary="购物车",
+        elements={"cart_items": "cart items"},
+        screenshot_hash="carthash0000001",
+        app="淘宝",
+    )
+    explorer.discovered_pages = {home.state_key(): home, cart.state_key(): cart}
+    explorer.transitions = [
+        {"from": home.state_key(), "action": {"action": "Tap", "semantic_target": "cart"}, "to": cart.state_key()}
+    ]
+    trajectory = Trajectory(task="探索淘宝购物路径", app="淘宝")
+    trajectory.add_step(home, {"action": "Tap"}, "tap cart")
+    trajectory.add_step(cart, {"_metadata": "finish"}, "done")
+
+    explorer._save_results(trajectory)
+
+    assert explorer.last_import_result is not None
+    assert explorer.last_import_result.pages_imported == 2
+    assert explorer.last_import_result.transitions_imported == 1

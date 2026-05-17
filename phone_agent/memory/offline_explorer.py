@@ -323,6 +323,8 @@ class OfflineExplorer:
         classifier_api_key: str = "",
         classifier_base_url: str = "https://dashscope.aliyuncs.com/apps/anthropic",
         classifier_model: str = "qwen3-vl-flash",
+        auto_import_graph: bool = False,
+        graph_store: Any | None = None,
         verbose: bool = True,
     ):
         self.app_name = app_name
@@ -332,6 +334,9 @@ class OfflineExplorer:
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.max_steps = max_steps
         self.task_description = task_description
+        self.auto_import_graph = auto_import_graph
+        self.graph_store = graph_store
+        self.last_import_result = None
         self.verbose = verbose
 
         # Action handler for executing VLM-decided actions
@@ -611,6 +616,7 @@ class OfflineExplorer:
         self._log(f"  saved: {traj_path.name}")
 
         # Save transitions (edges)
+        trans_path = None
         if self.transitions:
             transitions_data = {
                 "app": self.app_name,
@@ -622,4 +628,34 @@ class OfflineExplorer:
             with open(trans_path, "w", encoding="utf-8") as f:
                 json.dump(transitions_data, f, ensure_ascii=False, indent=2)
             self._log(f"  saved: {trans_path.name} ({len(self.transitions)} transitions)")
+
+        if self.auto_import_graph:
+            self._import_saved_graph(pages_path, trans_path)
+
+    def _import_saved_graph(self, pages_path: Path, transitions_path: Path | None) -> None:
+        """Import saved exploration artifacts into SpatialGraphMemory."""
+        owns_graph_store = self.graph_store is None
+        graph_store = self.graph_store
+        if graph_store is None:
+            from .graph_store import GraphStore
+
+            graph_store = GraphStore()
+
+        try:
+            from .spatial_graph_memory import SpatialGraphMemory
+
+            memory = SpatialGraphMemory(graph_store)
+            self.last_import_result = memory.import_exploration_files(
+                pages_path,
+                transitions_path,
+                persist=True,
+            )
+            self._log(
+                "  imported spatial graph: "
+                f"{self.last_import_result.pages_imported} pages, "
+                f"{self.last_import_result.transitions_imported} transitions"
+            )
+        finally:
+            if owns_graph_store and graph_store:
+                graph_store.close()
 

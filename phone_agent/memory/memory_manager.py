@@ -104,6 +104,8 @@ class MemoryManager:
         self._current_page_state = None
         self._pending_transition_source = None
         self._pending_transition_action: dict | None = None
+        self._pending_expected_postcondition: str | None = None
+        self._last_repair_decision = None
 
         # Track extracted info in current session to avoid duplicates
         self._session_contacts: set[str] = set()
@@ -124,6 +126,8 @@ class MemoryManager:
         self._current_page_state = None
         self._pending_transition_source = None
         self._pending_transition_action = None
+        self._pending_expected_postcondition = None
+        self._last_repair_decision = None
 
         # Reset session tracking
         self._session_contacts.clear()
@@ -224,7 +228,8 @@ class MemoryManager:
         screenshot_hash: str,
         semantic_layout: str,
         action: dict,
-        task: str
+        task: str,
+        expected_postcondition: str | None = None,
     ) -> str:
         """Cache source page/action and record the edge on next localization."""
         page_state = self.spatial_graph_memory.build_page_state(
@@ -234,6 +239,11 @@ class MemoryManager:
         )
         self._pending_transition_source = page_state
         self._pending_transition_action = action
+        self._pending_expected_postcondition = (
+            expected_postcondition
+            or action.get("_expected_postcondition")
+            or action.get("postcondition")
+        )
         self._current_page_state = page_state
         self._current_state_id = page_state.state_id
 
@@ -1360,29 +1370,39 @@ class MemoryManager:
         elif self.state.current_state_id != belief.current_state_id:
             self.state.update_state(belief.current_state_id)
 
+        pending_repair_hint = None
         if (
             self._pending_transition_source is not None
             and self._pending_transition_action is not None
             and current_page_state is not None
         ):
+            outcome = "success"
+            if self._pending_expected_postcondition:
+                pending_repair_hint = self.spatial_graph_memory.repair(
+                    belief,
+                    self._pending_expected_postcondition,
+                    None,
+                )
+                if pending_repair_hint.action != "retry":
+                    outcome = "failure"
+
             self.spatial_graph_memory.record_observation(
                 self._pending_transition_source,
                 self._pending_transition_action,
                 current_page_state,
-                outcome="success",
+                outcome=outcome,
             )
+            self._last_repair_decision = pending_repair_hint
             self._pending_transition_source = None
             self._pending_transition_action = None
+            self._pending_expected_postcondition = None
 
         goal_spec = self.spatial_graph_memory.infer_goal(
             task,
             app=current_page_state.app if current_page_state else semantic_layout,
         )
         route_plan = self.spatial_graph_memory.plan(belief, goal_spec)
-        repair_hint = None
-        if route_plan.mode == "navigate" and route_plan.steps:
-            expected = route_plan.steps[0].edge.postcondition or route_plan.steps[0].edge.target_id
-            repair_hint = self.spatial_graph_memory.repair(belief, expected, route_plan)
+        repair_hint = pending_repair_hint
 
         context_data["goal_spec"] = goal_spec.to_dict()
         context_data["route_plan"] = route_plan.to_dict()
