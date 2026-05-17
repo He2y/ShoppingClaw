@@ -437,6 +437,7 @@ class PhoneAgent:
         action: dict,
         thinking: str,
         current_app: str,
+        page_type: str | None = None,
     ) -> dict | None:
         """
         Code-level safety net: before purchase/confirm on a spec page,
@@ -444,6 +445,12 @@ class PhoneAgent:
         what's currently selected. Intercepts only when:
         - The user didn't specify exact SKU → must ask
         - The user's specified SKU doesn't match what's selected → must correct
+
+        Args:
+            action: The action to check
+            thinking: The model's reasoning
+            current_app: Current app name
+            page_type: Current page type (from PageClassifier). If None, spec guard is disabled.
         """
         if not any(app in (current_app or "") for app in self._shopping_config.apps):
             return None
@@ -458,6 +465,11 @@ class PhoneAgent:
             return None
         _action_name = (action.get("action") or "").lower()
         if _action_name in ("terminate", "answer"):
+            return None
+
+        # CRITICAL: Only trigger on spec-related pages
+        # Prevents false positives on search_result, home, etc.
+        if not page_type or page_type not in ("spec_selection", "product_detail", "checkout"):
             return None
 
         thinking_mentions_specs = any(
@@ -529,6 +541,10 @@ class PhoneAgent:
         mode = "explore"
         current_state_id = None
         context_data = {"mode": "explore", "semantic_context": "", "next_actions": [], "current_state_id": None}
+
+        # Initialize page_type for SpecGuard
+        page_type = None
+
         if self.memory_manager:
             import hashlib
             hasher = hashlib.md5()
@@ -945,7 +961,8 @@ class PhoneAgent:
             self._context[-1] = MessageBuilder.remove_images_from_message(self._context[-1])
 
             # SpecGuard: prevent model from skipping Interact on spec pages
-            guarded = self._spec_guard_check(action, thinking, current_app)
+            # Only triggers on spec-related pages (spec_selection, product_detail, checkout)
+            guarded = self._spec_guard_check(action, thinking, current_app, page_type)
             if guarded is not None:
                 action = guarded
 
