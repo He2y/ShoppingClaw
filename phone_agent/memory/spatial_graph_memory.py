@@ -569,12 +569,16 @@ class SpatialGraphMemory:
         start_id = belief.current_state_id
         if not goal_spec.target_page_types:
             route = RoutePlan(mode="explore", confidence=0.0, risk_summary="no goal page type", goal=goal_spec)
+            print(f"[Plan Debug] No goal page type, returning explore mode")
             self._last_route = route
             return route
 
         start_state = self._local_states.get(start_id)
         allowed_app = start_state.app if start_state else ""
+        print(f"[Plan Debug] start_id={start_id[:30]}, start_state={start_state is not None}, allowed_app={allowed_app}")
+
         graph_edges = self._load_edges(start_id, allowed_app=allowed_app)
+        print(f"[Plan Debug] Loaded {len(graph_edges)} edges from graph")
         if not graph_edges:
             route = RoutePlan(
                 mode="explore",
@@ -586,6 +590,7 @@ class SpatialGraphMemory:
             return route
 
         best_path = self._shortest_path(start_id, goal_spec.target_page_types, allowed_app=allowed_app)
+        print(f"[Plan Debug] Shortest path result: {len(best_path)} steps")
         if not best_path:
             route = RoutePlan(
                 mode="explore",
@@ -804,7 +809,54 @@ class SpatialGraphMemory:
                 graph_edges = []
             except Exception:
                 graph_edges = []
-        return local_edges + graph_edges
+
+        edges = local_edges + graph_edges
+
+        # Heuristic rule: Inject "加入购物车/立即购买" edges for product_detail pages
+        # when graph lacks proper spec_selection transitions
+        current_state = self._local_states.get(state_id)
+        if current_state and current_state.page_type == "product_detail":
+            # Check if any edge leads to spec_selection with correct action
+            has_spec_selection_edge = any(
+                edge.postcondition == "spec_selection" and
+                "购物车" in edge.action_target or "购买" in edge.action_target or
+                "cart" in edge.action_target.lower() or "buy" in edge.action_target.lower()
+                for edge in edges
+            )
+
+            if not has_spec_selection_edge:
+                # Inject heuristic edge: product_detail → spec_selection
+                # This compensates for missing knowledge in the graph
+                heuristic_edge = TransitionEdge(
+                    source_id=state_id,
+                    target_id=f"{state_id}_heuristic_spec",
+                    action_type="Tap",
+                    action_target="加入购物车按钮",
+                    action_params={},
+                    postcondition="spec_selection",
+                    success_count=10,  # High prior confidence
+                    fail_count=0,
+                    risk="normal",
+                    confidence=0.70,  # Below graph edges but above explore threshold
+                )
+                edges.append(heuristic_edge)
+
+                # Also inject "立即购买" option
+                heuristic_edge2 = TransitionEdge(
+                    source_id=state_id,
+                    target_id=f"{state_id}_heuristic_spec",
+                    action_type="Tap",
+                    action_target="立即购买按钮",
+                    action_params={},
+                    postcondition="spec_selection",
+                    success_count=10,
+                    fail_count=0,
+                    risk="normal",
+                    confidence=0.70,
+                )
+                edges.append(heuristic_edge2)
+
+        return edges
 
     def _shortest_path(self, start_id: str, target_page_types: tuple[str, ...], allowed_app: str = "") -> list[RouteStep]:
         counter = 0
@@ -823,8 +875,11 @@ class SpatialGraphMemory:
                 return [RouteStep(edge=edge) for edge in path]
 
             for edge in self._load_edges(state_id, allowed_app=allowed_app):
+                source_state = self._local_states.get(state_id)
                 target_state = self._local_states.get(edge.target_id)
                 if allowed_app and target_state and target_state.app != allowed_app:
+                    continue
+                if not self._is_plausible_transition(edge, source_state, target_state):
                     continue
                 if edge.postcondition in target_page_types:
                     return [RouteStep(edge=item) for item in path + [edge]]
@@ -836,6 +891,51 @@ class SpatialGraphMemory:
                 heapq.heappush(queue, (next_cost, counter, edge.target_id, path + [edge]))
 
         return []
+
+    @staticmethod
+    def _is_plausible_transition(
+        edge: TransitionEdge,
+        source_state: PageState | None,
+        target_state: PageState | None,
+    ) -> bool:
+        action_text = " ".join(
+            [
+                edge.action_type,
+                edge.action_target,
+            ]
+        ).lower()
+        target_page_type = target_state.page_type if target_state else edge.postcondition
+        source_page_type = source_state.page_type if source_state else ""
+
+        cart_tokens = ("cart", "add_to_cart", "add cart", "购物车", "加购", "加入购物车", "加到购物车")
+        spec_tokens = ("spec", "sku", "规格", "选择规格", "buy", "购买", "加购", "加入购物车", "add_to_cart", "商品", "item", "product")
+        checkout_tokens = ("checkout", "submit_order", "结算", "提交订单", "确认订单")
+        payment_tokens = ("pay", "payment", "支付", "付款")
+
+        # Context-aware filtering: allow reasonable transitions
+        if target_page_type == "cart":
+            # Allow from product_detail or spec_selection (reasonable add-to-cart flows)
+            if source_page_type in ("product_detail", "spec_selection"):
+                return True
+            # Other cases still need keyword validation
+            if not _contains_any(action_text, cart_tokens):
+                return False
+
+        if target_page_type == "spec_selection":
+            # Allow from product_detail or search_result (clicking product enters spec page)
+            if source_page_type in ("product_detail", "search_result"):
+                return True
+            # Other cases still need keyword validation
+            if not _contains_any(action_text, spec_tokens):
+                return False
+
+        if target_page_type == "checkout" and not _contains_any(action_text, checkout_tokens):
+            return False
+        if target_page_type == "payment" and not _contains_any(action_text, payment_tokens):
+            return False
+        if source_page_type == "search_result" and target_page_type in {"cart", "checkout", "payment"}:
+            return False
+        return True
 
     def _page_state_from_graph(self, data: dict[str, Any], fallback: PageState) -> PageState:
         slots = data.get("slots") or fallback.slots
