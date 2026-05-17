@@ -562,15 +562,13 @@ class PhoneAgent:
                 except Exception as e:
                     if self.agent_config.verbose:
                         print(f"⚠️ Page classification failed, using heuristic: {e}")
-                    # Fallback: Use simple app-based default
-                    # When VLM fails, use "home" as default for shopping apps
-                    # This is safer than keyword inference which can be misled by task description
-                    if current_app in ["淘宝", "京东", "盒马", "天猫"]:
-                        page_type = "home"  # Most shopping apps start at home
-                        summary = f"{current_app}APP首页"
-                    else:
-                        page_type = "unknown"
-                        summary = f"{current_app or 'unknown'}页面"
+                    # Fallback to keyword-based inference using only app name
+                    # Don't use task description as it may contain misleading keywords
+                    if self.memory_manager:
+                        page_type = self.memory_manager.spatial_graph_memory._infer_page_type(
+                            current_app or "unknown"
+                        )
+                        summary = f"{current_app}:{page_type}"
 
             # Build complete screen dict with semantics
             screen_dict = {
