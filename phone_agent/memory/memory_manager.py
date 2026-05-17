@@ -1332,11 +1332,24 @@ class MemoryManager:
 
         return context_data
 
-    def locate_and_get_context(self, ui_hash: str, semantic_layout: str, task: str) -> dict:
+    def locate_and_get_context(
+        self,
+        ui_hash: str,
+        semantic_layout: str,
+        task: str,
+        screen_dict: dict[str, Any] | None = None,
+    ) -> dict:
         """Locate current page, plan graph route, and build VLM context.
 
         This method keeps the legacy return fields while adding spatial graph
         fields: belief, goal_spec, route_plan, and repair_hint.
+
+        Args:
+            ui_hash: Hash of the UI screenshot
+            semantic_layout: Semantic layout string (app + page_type + landmarks)
+            task: Current task description
+            screen_dict: Complete screen info including page_type, summary, elements.
+                         If None, minimal dict is built from ui_hash and semantic_layout (backward compatible).
         """
         context_data = {
             "max_similarity": 0.0,
@@ -1351,9 +1364,14 @@ class MemoryManager:
             "repair_hint": None,
         }
 
-        screen = {"ui_hash": ui_hash, "semantic_layout": semantic_layout}
+        # Build screen dict (backward compatible)
+        if screen_dict is None:
+            screen_dict = {
+                "ui_hash": ui_hash,
+                "semantic_layout": semantic_layout
+            }
         belief = self.spatial_graph_memory.locate(
-            screen,
+            screen_dict,
             task,
             previous_action=self._pending_transition_action,
         )
@@ -1408,6 +1426,13 @@ class MemoryManager:
         context_data["route_plan"] = route_plan.to_dict()
         context_data["repair_hint"] = repair_hint.to_dict() if repair_hint else None
 
+        # Debug: log route planning result
+        print(f"[SpatialGraph Debug] route_plan.mode={route_plan.mode}, "
+              f"steps={len(route_plan.steps)}, next_action={route_plan.next_action is not None}")
+        if route_plan.next_action:
+            print(f"[SpatialGraph Debug] action type={route_plan.next_action.get('type')}, "
+                  f"confidence={route_plan.next_action.get('confidence', 0):.2f}")
+
         spatial_context = self.spatial_graph_memory.context_summary(
             belief,
             route_plan,
@@ -1421,6 +1446,10 @@ class MemoryManager:
         if route_plan.mode == "navigate" and route_plan.next_action:
             context_data["mode"] = "navigate"
             context_data["next_actions"] = [route_plan.next_action]
+            # Debug logging
+            print(f"[SpatialGraph] Navigate mode: action={route_plan.next_action.get('type')}, "
+                  f"confidence={route_plan.next_action.get('confidence', 0):.2f}, "
+                  f"target={route_plan.next_action.get('target', '')[:30]}")
             return context_data
 
         similar_tasks = self.graph_store.find_similar_tasks(task, top_k=3)

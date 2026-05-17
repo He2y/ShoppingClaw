@@ -23,6 +23,7 @@ from phone_agent.model import ModelClient, ModelConfig
 from phone_agent.model.adapters import ModelType, detect_model_type, get_adapter
 from phone_agent.model.client import MessageBuilder
 from phone_agent.memory.core import ProductStatus
+from phone_agent.memory.offline_explorer import PageClassifier, ShoppingPageType
 
 
 @dataclass
@@ -185,6 +186,20 @@ class PhoneAgent:
             except Exception as e:
                 if self.agent_config.verbose:
                     print(f"⚠️ 记忆系统初始化失败: {e}")
+
+        # Initialize PageClassifier for semantic extraction
+        self.page_classifier: PageClassifier | None = None
+        if self.agent_config.enable_memory:
+            import os
+            api_key = os.environ.get("OFFLINE_VLM_API_KEY") or os.environ.get("PHONE_AGENT_API_KEY")
+            if api_key:
+                try:
+                    self.page_classifier = PageClassifier(api_key=api_key)
+                    if self.agent_config.verbose:
+                        print("✅ PageClassifier initialized for semantic extraction")
+                except Exception as e:
+                    if self.agent_config.verbose:
+                        print(f"⚠️ PageClassifier initialization failed: {e}")
 
         # Initialize clarification sub-agent for shopping task ambiguity detection
         self.clarification_agent: ClarificationAgent | None = None
@@ -521,11 +536,50 @@ class PhoneAgent:
             ui_hash = hasher.hexdigest()
             self._last_state_hash = f"state_{ui_hash}"
 
-            # 轻量级启发式特征：使用当前 APP 名称作为语义标签
-            semantic_layout = current_app if current_app else "home_screen"
+            # Extract page semantics using PageClassifier
+            page_type = None
+            summary = ""
+            elements = None
 
-            # 基于 GraphRAG 进行匹配 (MD5 逻辑已移除)
-            context_data = self.memory_manager.locate_and_get_context(ui_hash, semantic_layout, user_prompt or self._current_task)
+            if self.page_classifier and not screenshot.is_sensitive:
+                try:
+                    pt, sm, el = self.page_classifier.classify(
+                        screenshot.base64_data,
+                        screenshot.width,
+                        screenshot.height
+                    )
+                    page_type = pt.value  # ShoppingPageType enum → str
+                    summary = sm
+                    elements = el
+                    if self.agent_config.verbose:
+                        print(f"📊 Page semantics: type={page_type}, summary={summary[:50]}...")
+                except Exception as e:
+                    if self.agent_config.verbose:
+                        print(f"⚠️ Page classification failed, using heuristic: {e}")
+                    # Fallback to keyword-based inference
+                    if self.memory_manager:
+                        page_type = self.memory_manager.spatial_graph_memory._infer_page_type(
+                            f"{current_app} {user_prompt or self._current_task}"
+                        )
+                        summary = f"{current_app}:{page_type}"
+
+            # Build complete screen dict with semantics
+            screen_dict = {
+                "ui_hash": ui_hash,
+                "semantic_layout": f"{current_app} {page_type}" if page_type else current_app,
+                "app": current_app,
+                "page_type": page_type,
+                "summary": summary,
+                "elements": elements,
+            }
+
+            # Pass to memory manager with complete semantics
+            context_data = self.memory_manager.locate_and_get_context(
+                ui_hash,
+                screen_dict["semantic_layout"],
+                user_prompt or self._current_task,
+                screen_dict=screen_dict,  # NEW: pass complete semantics
+            )
             mode = context_data.get("mode", "explore")
             current_state_id = context_data.get("current_state_id")
 
@@ -547,24 +601,33 @@ class PhoneAgent:
                     user_prompt = result.clarified_task
                     self._current_task = result.clarified_task  # lower threshold for better HITL trigger rate  # 提高阈��，更���易触发主��提问
                     # Re-evaluate memory with clarified task
-                    context_data = self.memory_manager.locate_and_get_context(ui_hash, semantic_layout, user_prompt)
+                    context_data = self.memory_manager.locate_and_get_context(
+                        ui_hash,
+                        screen_dict["semantic_layout"],
+                        user_prompt,
+                        screen_dict=screen_dict,
+                    )
                     mode = context_data.get("mode", "explore")
                     current_state_id = context_data.get("current_state_id")
 
             if (
                 mode == "navigate"
                 and context_data.get("next_actions")
-                and context_data["next_actions"][0].get("confidence", 1.0) >= 0.8
+                and context_data["next_actions"][0].get("confidence", 1.0) >= 0.7  # Lowered from 0.8 to allow graph navigation
             ):
+                # Debug: log graph navigation attempt
+                if self.agent_config.verbose:
+                    best_action = context_data["next_actions"][0]
+                    print(f"[Graph Nav] mode={mode}, confidence={best_action.get('confidence', 1.0):.2f}, action={best_action.get('type', 'unknown')}")
                 # Fast track: return the highest confidence action directly without VLM inference
                 best_action = context_data["next_actions"][0]
 
                 # Check confidence threshold before executing
                 action_confidence = best_action.get("confidence", 1.0)
-                if action_confidence < 0.8:
+                if action_confidence < 0.7:  # Lowered from 0.8 to allow graph navigation
                     # Confidence too low, fall back to explore mode
                     mode = "explore"
-                    print(f"[Navigate] Confidence {action_confidence:.2f} < 0.8, falling back to explore mode")
+                    print(f"[Navigate] Confidence {action_confidence:.2f} < 0.7, falling back to explore mode")
                 else:
                     action = {
                         "_metadata": "do",
