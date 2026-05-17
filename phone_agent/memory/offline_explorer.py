@@ -169,9 +169,14 @@ class PageClassifier:
     def __init__(
         self,
         api_key: str,
-        base_url: str = "https://dashscope.aliyuncs.com/apps/anthropic",
-        model: str = "qwen3-vl-flash",
+        base_url: str | None = None,
+        model: str | None = None,
     ):
+        # Use environment variables as defaults
+        import os
+        base_url = base_url or os.environ.get("OFFLINE_VLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+        model = model or os.environ.get("OFFLINE_VLM_MODEL", "qwen3-vl-flash")
+
         self.client = OpenAI(base_url=base_url, api_key=api_key)
         self.model = model
 
