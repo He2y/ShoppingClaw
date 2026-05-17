@@ -36,7 +36,7 @@ _SHOPPING_APPS = {
 }
 
 _HIGH_RISK_PAGE_TYPES = {"checkout", "payment", "address", "login", "confirm"}
-_MEDIUM_RISK_PAGE_TYPES = {"spec_selection", "cart"}
+_MEDIUM_RISK_PAGE_TYPES = {"spec_selection", "cart", "order_list", "refund"}
 
 _PAGE_TYPE_KEYWORDS = [
     ("spec_selection", ("spec", "sku", "规格", "型号", "颜色", "尺码", "数量", "确定")),
@@ -179,6 +179,8 @@ class TransitionEdge:
         )
         success_count = 0 if outcome == "failure" else 1
         fail_count = 1 if outcome == "failure" else 0
+        confidence_value = action.get("confidence")
+        confidence = float(confidence_value) if confidence_value is not None else (0.4 if outcome == "failure" else 1.0)
         return cls(
             source_id=source_id,
             target_id=target_id,
@@ -189,7 +191,7 @@ class TransitionEdge:
             success_count=success_count,
             fail_count=fail_count,
             risk=risk,
-            confidence=0.4 if outcome == "failure" else 1.0,
+            confidence=confidence,
         )
 
     @property
@@ -803,6 +805,26 @@ class SpatialGraphMemory:
         return ""
 
     def _infer_page_type(self, text: str) -> str:
+        extra_keywords = [
+            ("spec_selection", ("spec", "sku", "规格", "型号", "颜色", "尺码", "数量", "确定")),
+            ("checkout", ("checkout", "order", "提交订单", "确认订单", "结算", "收货地址")),
+            ("payment", ("pay", "payment", "付款", "支付", "收银台", "确认付款")),
+            ("cart", ("cart", "购物车", "加入购物车", "去结算", "结算按钮")),
+            ("product_detail", ("detail", "product_detail", "商品详情", "详情页", "价格", "立即购买")),
+            ("search_result", ("result", "search_result", "搜索结果", "商品列表", "筛选", "综合排序")),
+            ("search_input", ("search_input", "搜索页", "搜索框", "搜索输入", "历史搜索", "键盘")),
+            ("home", ("home", "首页", "推荐", "搜索栏", "底部导航栏")),
+            ("login", ("login", "登录", "验证码", "账号", "手机号")),
+            ("address", ("address", "地址", "收货人", "配送地址")),
+            ("refund", ("refund", "return", "退款", "退货", "售后", "申请退款")),
+            ("order_list", ("order list", "orders", "我的订单", "订单列表", "全部订单", "待付款", "待发货")),
+            ("my_account", ("my account", "profile", "我的", "我的淘宝", "个人中心", "用户信息")),
+            ("category", ("category", "类目", "分类", "品类", "分类页")),
+            ("store", ("store", "shop", "店铺", "旗舰店", "门店", "店首页")),
+        ]
+        for page_type, keywords in extra_keywords:
+            if _contains_any(text, keywords):
+                return page_type
         for page_type, keywords in _PAGE_TYPE_KEYWORDS:
             if _contains_any(text, keywords):
                 return page_type
@@ -826,6 +848,11 @@ class SpatialGraphMemory:
             "checkout": ("address", "order_items", "submit_order_button"),
             "login": ("phone_input", "verification_code"),
             "address": ("address_list", "confirm_button"),
+            "my_account": ("user_profile", "order_shortcuts", "bottom_tabs"),
+            "order_list": ("order_cards", "order_tabs", "search_or_filter"),
+            "refund": ("refund_reason", "refund_amount", "submit_button"),
+            "category": ("category_tabs", "category_grid", "product_cards"),
+            "store": ("store_header", "store_search", "product_sections"),
         }
         return mapping.get(page_type, ())
 
@@ -840,6 +867,11 @@ class SpatialGraphMemory:
             "checkout": ("review_order", "back", "ask_user"),
             "login": ("back", "ask_user"),
             "address": ("choose_address", "back", "ask_user"),
+            "my_account": ("open_orders", "open_profile_section", "back"),
+            "order_list": ("open_order", "filter_order", "back"),
+            "refund": ("choose_refund_reason", "submit_refund", "ask_user", "back"),
+            "category": ("open_category", "open_product", "scroll", "back"),
+            "store": ("store_search", "open_product", "scroll", "back"),
         }
         return mapping.get(page_type, ())
 

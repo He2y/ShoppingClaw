@@ -64,6 +64,50 @@ python -m phone_agent.memory.import_exploration --storage memory_db/exploration 
 python -m phone_agent.memory.run_explorer --app 淘宝 --queries "耳机,iPhone" --no-import-graph
 ```
 
+### 人工轨迹重建
+
+新增 `ManualTrajectoryImporter`，用于把 `MobiAgent/collect/manual/data` 下的人工录制数据导入 Spatial Page Graph。导入优先级：
+
+```text
+react.json > temp.json > actions.json
+```
+
+原因是 `react.json` 同时保留了页面 reasoning、函数名和语义目标元素，比旧的 `actions.json` 更接近可复用动作模板。人工轨迹中的动作只有语义目标，通常没有稳定坐标，因此导入时 confidence 设为 `0.75`，低于直接执行阈值；它用于给 VLM/grounding 提供空间路线和动作意图，而不是让 Agent 盲点。
+
+新增重建入口：
+
+```bash
+python -m phone_agent.memory.rebuild_spatial_graph \
+  --manual MobiAgent/collect/manual/data \
+  --exploration memory_db/exploration
+```
+
+默认是 dry-run，不写 Neo4j。当前 dry-run 结果：
+
+```text
+manual: 15 trajectories, 134 pages, 121 transitions
+exploration: 17 pages, 16 transitions
+total: 151 pages, 137 transitions, 15 tasks
+```
+
+写入新库：
+
+```bash
+python -m phone_agent.memory.rebuild_spatial_graph \
+  --database shopping_spatial_v1 \
+  --write
+```
+
+清空目标库并重建需要显式确认：
+
+```bash
+python -m phone_agent.memory.rebuild_spatial_graph \
+  --database shopping_spatial_v1 \
+  --write --reset --yes
+```
+
+默认建议先写入 `shopping_spatial_v1` 验证，不直接覆盖旧 `shopping`。
+
 ### Neo4j 图存储增强
 
 `GraphStore` 现在支持：

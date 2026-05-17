@@ -19,6 +19,7 @@ from .spatial_graph_memory import (
     SpatialGraphMemory,
     TransitionEdge,
 )
+from .manual_trajectory_importer import ManualTrajectoryImporter, ManualTrajectoryImportResult
 from .memory_manager import MemoryManager
 from .core import UnifiedSessionState, Product, ProductStatus, StepRecord
 from .retrieval_gateway import RetrievalGateway, RetrievalResult
@@ -45,6 +46,8 @@ __all__ = [
     "ExplorationImportResult",
     "RoutePlan",
     "RepairDecision",
+    "ManualTrajectoryImporter",
+    "ManualTrajectoryImportResult",
     "MemoryManager",
     # Unified state (new)
     "UnifiedSessionState",

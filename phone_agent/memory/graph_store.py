@@ -455,6 +455,71 @@ class GraphStore:
                 screenshot_hash=state_metadata.get("screenshot_hash"),
             )
 
+    def reset_spatial_graph(self) -> None:
+        """Delete all graph-memory nodes in the current database."""
+        if not self.driver:
+            return
+        query = "MATCH (n) DETACH DELETE n"
+        with self.driver.session(database=self.database) as session:
+            session.run(query)
+
+    def upsert_task_target(
+        self,
+        *,
+        target_id: str,
+        app: str,
+        task_type: str,
+        descriptions: list[str],
+        start_state_id: str | None,
+        end_state_id: str | None,
+        goal_spec: Optional[Dict[str, Any]] = None,
+        source_path: str = "",
+        source_type: str = "manual",
+    ) -> bool:
+        """Create/update a TaskTarget linked to its start/end PageState nodes."""
+        if not self.driver:
+            return False
+
+        start_state = self._normalize_state_id(start_state_id or "") if start_state_id else None
+        end_state = self._normalize_state_id(end_state_id or "") if end_state_id else None
+        description = descriptions[0] if descriptions else ""
+        query_parts = [
+            "MERGE (t:TaskTarget {target_id: $target_id})",
+            """
+            SET t.app = $app,
+                t.task_type = $task_type,
+                t.description = $description,
+                t.descriptions = $descriptions,
+                t.goal_spec = $goal_spec,
+                t.source_path = $source_path,
+                t.source_type = $source_type,
+                t.committed_at = timestamp(),
+                t.success = true
+            """,
+        ]
+        if start_state:
+            query_parts.append("MERGE (s_start:UIState {state_id: $start_state})")
+            query_parts.append("MERGE (t)-[:STARTS_AT]->(s_start)")
+        if end_state:
+            query_parts.append("MERGE (s_end:UIState {state_id: $end_state})")
+            query_parts.append("MERGE (t)-[:ENDS_AT {success: true}]->(s_end)")
+
+        with self.driver.session(database=self.database) as session:
+            session.run(
+                "\n".join(query_parts),
+                target_id=target_id,
+                app=app,
+                task_type=task_type,
+                description=description,
+                descriptions=descriptions,
+                goal_spec=json.dumps(goal_spec or {}, ensure_ascii=False),
+                source_path=source_path,
+                source_type=source_type,
+                start_state=start_state,
+                end_state=end_state,
+            )
+        return True
+
     def add_state_transition(
         self,
         source_state_hash: str,
@@ -476,6 +541,8 @@ class GraphStore:
         action_type = action_data.get("action_type") or action_data.get("action") or "unknown"
         success_delta = 0 if outcome == "failure" else 1
         fail_delta = 1 if outcome == "failure" else 0
+        confidence_value = action_data.get("confidence")
+        confidence = float(confidence_value) if confidence_value is not None else (0.4 if outcome == "failure" else 1.0)
         source_metadata = source_metadata or {}
         target_metadata = target_metadata or {}
 
@@ -507,6 +574,8 @@ class GraphStore:
             a.target_desc = $target,
             a.semantic_target = $semantic_target,
             a.reasoning = $reasoning,
+            a.source_type = coalesce($source_type, a.source_type),
+            a.source_path = coalesce($source_path, a.source_path),
             a.updated_at = timestamp()
         MERGE (s1)-[r1:NEXT_ACTION]->(a)
         ON CREATE SET r1.confidence = $confidence,
@@ -554,7 +623,9 @@ class GraphStore:
                 target=str(action_data),
                 semantic_target=str(action_data.get("semantic_target") or action_data.get("target") or action_data.get("element") or action_data.get("text") or ""),
                 reasoning=str(action_data.get("reasoning") or ""),
-                confidence=0.4 if outcome == "failure" else 1.0,
+                source_type=action_data.get("source_type"),
+                source_path=action_data.get("source_path"),
+                confidence=confidence,
                 success_delta=success_delta,
                 fail_delta=fail_delta,
                 task_id=task_id,

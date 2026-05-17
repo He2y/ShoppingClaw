@@ -1,7 +1,9 @@
 import json
 
+from phone_agent.memory.manual_trajectory_importer import ManualTrajectoryImporter
 from phone_agent.memory.memory_manager import MemoryManager
 from phone_agent.memory.offline_explorer import OfflineExplorer, PageInfo, ShoppingPageType, Trajectory
+from phone_agent.memory.rebuild_spatial_graph import rebuild_spatial_graph
 from phone_agent.memory.spatial_graph_memory import (
     PageBelief,
     PageBeliefCandidate,
@@ -294,3 +296,101 @@ def test_offline_explorer_save_results_auto_imports_spatial_graph(tmp_path):
     assert explorer.last_import_result is not None
     assert explorer.last_import_result.pages_imported == 2
     assert explorer.last_import_result.transitions_imported == 1
+
+
+def test_manual_trajectory_importer_prefers_react_json(tmp_path):
+    run_dir = tmp_path / "manual" / "淘宝" / "基础加购商品" / "1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "actions.json").write_text(
+        json.dumps(
+            {
+                "app_name": "淘宝",
+                "task_type": "基础加购商品",
+                "task_description": ["打开淘宝，把耳机加入购物车"],
+                "actions": [{"function": {"name": "click", "parameters": {"target_element": "WRONG"}}}],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "react.json").write_text(
+        json.dumps(
+            [
+                {
+                    "reasoning": "当前位于首页，需要点击搜索栏。",
+                    "function": {"name": "click", "parameters": {"target_element": "顶部搜索栏"}},
+                    "action_index": 1,
+                }
+            ],
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "1.txt").write_text("Taobao home page with top search bar and bottom tabs.", encoding="utf-8")
+    (run_dir / "2.txt").write_text("Taobao search_input page with active search box and keyboard.", encoding="utf-8")
+    (run_dir / "1.jpg").write_bytes(b"fake-home")
+    (run_dir / "2.jpg").write_bytes(b"fake-search")
+
+    importer = ManualTrajectoryImporter()
+    result = importer.import_directory(tmp_path / "manual", persist=False)
+    source = next(state for state in importer.memory._local_states.values() if state.page_type == "home")
+    edge = importer.memory._local_edges[source.state_id][0]
+
+    assert result.trajectories_imported == 1
+    assert result.pages_imported == 2
+    assert result.transitions_imported == 1
+    assert edge.action_type == "Tap"
+    assert edge.action_target == "顶部搜索栏"
+    assert edge.confidence == 0.75
+
+
+def test_rebuild_spatial_graph_dry_run_combines_manual_and_exploration(tmp_path):
+    manual_run = tmp_path / "manual" / "淘宝" / "基础加购商品" / "1"
+    manual_run.mkdir(parents=True)
+    (manual_run / "actions.json").write_text(
+        json.dumps({"app_name": "淘宝", "task_type": "基础加购商品", "task_description": "搜索耳机"}),
+        encoding="utf-8",
+    )
+    (manual_run / "react.json").write_text(
+        json.dumps([{"function": {"name": "click", "parameters": {"target_element": "顶部搜索栏"}}}]),
+        encoding="utf-8",
+    )
+    (manual_run / "1.txt").write_text("Taobao home page with search bar.", encoding="utf-8")
+    (manual_run / "2.txt").write_text("Taobao search_input page with active search box.", encoding="utf-8")
+
+    exploration = tmp_path / "exploration"
+    exploration.mkdir()
+    (exploration / "taobao_explore_1.json").write_text(
+        json.dumps(
+            {
+                "app": "淘宝",
+                "pages": [
+                    {
+                        "page_type": "home",
+                        "summary": "首页",
+                        "elements": {"search_bar": "tap to search"},
+                        "screenshot_hash": "homehash",
+                        "app": "淘宝",
+                    }
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (exploration / "taobao_explore_transitions_1.json").write_text(
+        json.dumps({"app": "淘宝", "transitions": []}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    report = rebuild_spatial_graph(
+        manual_root=tmp_path / "manual",
+        exploration_root=exploration,
+        write=False,
+    )
+
+    assert report["mode"] == "dry-run"
+    assert report["manual"]["trajectories_imported"] == 1
+    assert report["manual"]["transitions_imported"] == 1
+    assert report["exploration"]["pages_imported"] == 1
+    assert report["totals"]["pages"] == 3
