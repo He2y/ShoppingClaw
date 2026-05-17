@@ -39,6 +39,32 @@ def test_page_state_uses_page_level_signature():
     assert state.semantic_signature
 
 
+def test_semantic_page_state_id_ignores_screenshot_hash():
+    memory = SpatialGraphMemory()
+
+    first = memory.build_page_state(
+        ui_hash="hash_one",
+        semantic_layout="Taobao search_result product cards",
+        task="search shampoo",
+        app="Taobao",
+        page_type="search_result",
+        elements={"product_cards": "tap product card"},
+        state_id_strategy="semantic",
+    )
+    second = memory.build_page_state(
+        ui_hash="hash_two",
+        semantic_layout="Taobao search_result product cards",
+        task="search shampoo",
+        app="Taobao",
+        page_type="search_result",
+        elements={"product_cards": "tap product card"},
+        state_id_strategy="semantic",
+    )
+
+    assert first.state_id == second.state_id
+    assert first.screenshot_hash != second.screenshot_hash
+
+
 def test_page_state_from_exploration_page_extracts_elements():
     memory = SpatialGraphMemory()
 
@@ -338,6 +364,7 @@ def test_manual_trajectory_importer_prefers_react_json(tmp_path):
 
     assert result.trajectories_imported == 1
     assert result.pages_imported == 2
+    assert result.unique_pages == 2
     assert result.transitions_imported == 1
     assert edge.action_type == "Tap"
     assert edge.action_target == "顶部搜索栏"
@@ -394,3 +421,5 @@ def test_rebuild_spatial_graph_dry_run_combines_manual_and_exploration(tmp_path)
     assert report["manual"]["transitions_imported"] == 1
     assert report["exploration"]["pages_imported"] == 1
     assert report["totals"]["pages"] == 3
+    assert report["totals"]["unique_pages"] <= report["totals"]["pages"]
+    assert "dedupe_ratio" in report["totals"]

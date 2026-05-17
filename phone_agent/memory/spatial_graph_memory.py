@@ -8,6 +8,7 @@ deterministic so it can reuse existing GUI/VLM models without extra training.
 
 from __future__ import annotations
 
+import hashlib
 import heapq
 import json
 import re
@@ -349,6 +350,7 @@ class ExplorationImportResult:
     transitions_imported: int
     pages_path: str
     transitions_path: str = ""
+    unique_pages: int = 0
     persisted_to_graph: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -357,6 +359,7 @@ class ExplorationImportResult:
             "transitions_imported": self.transitions_imported,
             "pages_path": self.pages_path,
             "transitions_path": self.transitions_path,
+            "unique_pages": self.unique_pages,
             "persisted_to_graph": self.persisted_to_graph,
         }
 
@@ -381,6 +384,7 @@ class SpatialGraphMemory:
         page_type: str | None = None,
         summary: str = "",
         elements: dict[str, Any] | None = None,
+        state_id_strategy: str = "observation",
     ) -> PageState:
         app_name = app or self._infer_app(semantic_layout) or semantic_layout or "home_screen"
         visual_text = " ".join([semantic_layout, summary, self._elements_text(elements)])
@@ -396,8 +400,13 @@ class SpatialGraphMemory:
         slots = self.extract_slots_from_text(combined_text)
         risk_level = self._infer_risk_level(inferred_type, combined_text)
         signature = self._semantic_signature(app_name, inferred_type, landmarks, affordances, slots)
-        hash_suffix = (ui_hash or _safe_slug(signature, 16))[:8]
-        state_id = f"state_{_safe_slug(signature)}_{hash_suffix}"
+        signature_slug = _safe_slug(signature)
+        if state_id_strategy == "semantic":
+            canonical_suffix = hashlib.md5(signature.encode("utf-8")).hexdigest()[:12]
+            state_id = f"state_{signature_slug}_{canonical_suffix}"
+        else:
+            hash_suffix = (ui_hash or hashlib.md5(signature.encode("utf-8")).hexdigest())[:8]
+            state_id = f"state_{signature_slug}_{hash_suffix}"
         return PageState(
             state_id=state_id,
             app=app_name,
@@ -426,6 +435,7 @@ class SpatialGraphMemory:
             page_type=page_type if page_type else None,
             summary=summary,
             elements=elements,
+            state_id_strategy="semantic",
         )
 
     def import_exploration_files(
@@ -467,6 +477,7 @@ class SpatialGraphMemory:
             transitions_imported=transition_count,
             pages_path=str(pages_file),
             transitions_path=str(transitions_file) if transitions_file else "",
+            unique_pages=len(self._local_states),
             persisted_to_graph=bool(persist and self.graph_store and getattr(self.graph_store, "driver", None)),
         )
 
@@ -692,6 +703,7 @@ class SpatialGraphMemory:
             app=app or None,
             page_type=page_type or None,
             summary=summary,
+            state_id_strategy="semantic",
         )
         key_to_state[key] = state
         self._local_states[state.state_id] = state

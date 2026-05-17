@@ -102,9 +102,13 @@ python -m phone_agent.memory.rebuild_spatial_graph \
 
 ```bash
 python -m phone_agent.memory.rebuild_spatial_graph \
-  --database shopping_spatial_v1 \
+  --database shopping-spatial-v1 \
   --write --reset --yes
 ```
+
+Neo4j physical database names do not allow underscores. Use
+`shopping-spatial-v1` as the database name for the `shopping_spatial_v1`
+graph version.
 
 默认建议先写入 `shopping_spatial_v1` 验证，不直接覆盖旧 `shopping`。
 

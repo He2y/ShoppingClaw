@@ -20,9 +20,10 @@ def rebuild_spatial_graph(
     *,
     manual_root: str | Path,
     exploration_root: str | Path,
-    database: str = "shopping_spatial_v1",
+    database: str = "shopping-spatial-v1",
     write: bool = False,
     reset: bool = False,
+    create_database: bool = False,
     yes: bool = False,
     limit_manual: int | None = None,
 ) -> dict:
@@ -30,6 +31,8 @@ def rebuild_spatial_graph(
     try:
         if write and not graph_store.driver:
             raise RuntimeError(f"Neo4j is unavailable for database={database}")
+        if write and create_database:
+            graph_store.ensure_database(database)
         if reset:
             if not write:
                 raise ValueError("--reset requires --write")
@@ -51,6 +54,9 @@ def rebuild_spatial_graph(
 
         exploration_pages = sum(item.pages_imported for item in exploration_results)
         exploration_transitions = sum(item.transitions_imported for item in exploration_results)
+        exploration_unique_pages = len(exploration_memory._local_states)
+        raw_pages = manual_result.pages_imported + exploration_pages
+        unique_pages = manual_result.unique_pages + exploration_unique_pages
         return {
             "mode": "write" if write else "dry-run",
             "database": database,
@@ -58,10 +64,13 @@ def rebuild_spatial_graph(
             "exploration": {
                 "files": [item.to_dict() for item in exploration_results],
                 "pages_imported": exploration_pages,
+                "unique_pages": exploration_unique_pages,
                 "transitions_imported": exploration_transitions,
             },
             "totals": {
-                "pages": manual_result.pages_imported + exploration_pages,
+                "pages": raw_pages,
+                "unique_pages": unique_pages,
+                "dedupe_ratio": round(1 - (unique_pages / raw_pages), 4) if raw_pages else 0.0,
                 "transitions": manual_result.transitions_imported + exploration_transitions,
                 "tasks": manual_result.tasks_imported,
             },
@@ -75,8 +84,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Rebuild Spatial Page Graph from legacy data.")
     parser.add_argument("--manual", default="MobiAgent/collect/manual/data", help="Manual trajectory root")
     parser.add_argument("--exploration", default="memory_db/exploration", help="Offline exploration root")
-    parser.add_argument("--database", default="shopping_spatial_v1", help="Target Neo4j database")
+    parser.add_argument("--database", default="shopping-spatial-v1", help="Target Neo4j database")
     parser.add_argument("--write", action="store_true", help="Persist to Neo4j instead of dry-run")
+    parser.add_argument("--create-database", action="store_true", help="Create target Neo4j database if supported")
     parser.add_argument("--reset", action="store_true", help="Clear target database before writing")
     parser.add_argument("--yes", action="store_true", help="Confirm destructive reset")
     parser.add_argument("--limit-manual", type=int, default=None, help="Limit manual trajectories for smoke tests")
@@ -88,6 +98,7 @@ def main() -> int:
         database=args.database,
         write=args.write,
         reset=args.reset,
+        create_database=args.create_database,
         yes=args.yes,
         limit_manual=args.limit_manual,
     )

@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
 from .task_index import TaskIndex
@@ -61,6 +62,16 @@ class GraphStore:
     def close(self):
         if self.driver:
             self.driver.close()
+
+    def ensure_database(self, database: str | None = None) -> None:
+        """Create the target Neo4j database when the server supports multi-database."""
+        if not self.driver:
+            raise RuntimeError("Neo4j driver is unavailable")
+        name = database or self.database
+        if not re.match(r"^[A-Za-z0-9.-]+$", name):
+            raise ValueError(f"Invalid Neo4j database name: {name}. Use letters, numbers, dots, or dashes.")
+        with self.driver.session(database="system") as session:
+            session.run(f"CREATE DATABASE `{name}` IF NOT EXISTS WAIT").consume()
 
     def get_current_state(self, state_hash: str) -> Optional[Dict[str, Any]]:
         """Retrieve a specific UI state by its hash."""

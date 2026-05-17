@@ -24,6 +24,7 @@ from .spatial_graph_memory import GoalSpec, PageState, SpatialGraphMemory
 class ManualTrajectoryImportResult:
     trajectories_imported: int = 0
     pages_imported: int = 0
+    unique_pages: int = 0
     transitions_imported: int = 0
     tasks_imported: int = 0
     skipped: tuple[str, ...] = ()
@@ -35,6 +36,7 @@ class ManualTrajectoryImportResult:
         return {
             "trajectories_imported": self.trajectories_imported,
             "pages_imported": self.pages_imported,
+            "unique_pages": self.unique_pages,
             "transitions_imported": self.transitions_imported,
             "tasks_imported": self.tasks_imported,
             "skipped": list(self.skipped),
@@ -84,6 +86,7 @@ class ManualTrajectoryImporter:
         return ManualTrajectoryImportResult(
             trajectories_imported=trajectories,
             pages_imported=pages,
+            unique_pages=len(self.memory._local_states),
             transitions_imported=transitions,
             tasks_imported=tasks,
             skipped=tuple(skipped),
@@ -162,6 +165,7 @@ class ManualTrajectoryImporter:
                 task=task,
                 app=app,
                 summary=summary,
+                state_id_strategy="semantic",
             )
             pages.append(state)
         return pages
