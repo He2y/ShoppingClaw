@@ -553,6 +553,12 @@ class PhoneAgent:
                     elements = el
                     if self.agent_config.verbose:
                         print(f"📊 Page semantics: type={page_type}, summary={summary[:50]}...")
+
+                    # Check if classification failed (returned UNKNOWN)
+                    if pt == ShoppingPageType.UNKNOWN:
+                        if self.agent_config.verbose:
+                            print(f"⚠️ Page classification returned UNKNOWN, using heuristic fallback")
+                        raise ValueError("Classification returned UNKNOWN")
                 except Exception as e:
                     if self.agent_config.verbose:
                         print(f"⚠️ Page classification failed, using heuristic: {e}")
