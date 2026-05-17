@@ -579,6 +579,9 @@ class PhoneAgent:
                 "elements": elements,
             }
 
+            # Keep semantic_layout variable for backward compatibility
+            semantic_layout = screen_dict["semantic_layout"]
+
             # Pass to memory manager with complete semantics
             context_data = self.memory_manager.locate_and_get_context(
                 ui_hash,
