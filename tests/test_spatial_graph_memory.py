@@ -22,6 +22,22 @@ class FakeGraphStore:
         return {}
 
 
+class FakeSpatialGraphStore:
+    driver = object()
+
+    def __init__(self, state):
+        self.state = state
+
+    def get_state_by_semantic(self, semantic_layout, limit=1):
+        return None
+
+    def find_page_state_candidates(self, app="", page_type="", limit=10):
+        return [self.state] if self.state["app"] == app and self.state["page_type"] == page_type else []
+
+    def get_outgoing_transitions(self, state_id, limit=20):
+        return []
+
+
 def test_page_state_uses_page_level_signature():
     memory = SpatialGraphMemory()
 
@@ -63,6 +79,44 @@ def test_semantic_page_state_id_ignores_screenshot_hash():
 
     assert first.state_id == second.state_id
     assert first.screenshot_hash != second.screenshot_hash
+
+
+def test_locate_uses_graph_state_as_current_when_localized():
+    graph_state = {
+        "state_id": "state_taobao_home_graph",
+        "app": "Taobao",
+        "page_type": "home",
+        "summary": "Taobao home page",
+        "landmarks": ["search_bar", "bottom_tabs"],
+        "affordances": ["tap_search", "open_tab"],
+        "slots": "{}",
+        "risk_level": "normal",
+        "semantic_signature": "Taobao|home|search_bar,bottom_tabs|tap_search,open_tab|",
+    }
+    memory = SpatialGraphMemory(FakeSpatialGraphStore(graph_state))
+
+    belief = memory.locate(
+        {
+            "ui_hash": "new_runtime_hash",
+            "app": "Taobao",
+            "page_type": "home",
+            "semantic_layout": "Taobao home page",
+            "summary": "Taobao home page",
+            "elements": {"search_bar": "tap to search", "bottom_tabs": "home cart profile"},
+        },
+        task="add product to cart",
+    )
+
+    assert belief.current_state_id == "state_taobao_home_graph"
+    assert belief.is_novel is False
+    assert belief.candidates[0].reason == "semantic graph localization"
+
+
+def test_chinese_add_to_cart_task_targets_cart():
+    goal = SpatialGraphMemory().infer_goal("在淘宝搜索一个商品并加入购物车", app="淘宝")
+
+    assert goal.domain == "shopping"
+    assert goal.target_page_types == ("cart",)
 
 
 def test_page_state_from_exploration_page_extracts_elements():
@@ -122,6 +176,39 @@ def test_local_route_planning_prefers_recorded_success_edge():
     assert route.next_action is not None
     assert route.next_action["type"] == "Tap"
     assert route.steps[0].edge.target_id == search_result.state_id
+
+
+def test_route_planning_does_not_cross_app_boundary():
+    memory = SpatialGraphMemory()
+    taobao_home = memory.build_page_state(
+        ui_hash="taobao-home",
+        semantic_layout="Taobao home",
+        app="Taobao",
+        page_type="home",
+    )
+    jd_cart = memory.build_page_state(
+        ui_hash="jd-cart",
+        semantic_layout="JD cart",
+        app="JD",
+        page_type="cart",
+    )
+
+    memory.record_observation(
+        taobao_home,
+        {"_metadata": "do", "action": "Tap", "semantic_target": "cart"},
+        jd_cart,
+        outcome="success",
+    )
+
+    belief = PageBelief(
+        current_state_id=taobao_home.state_id,
+        candidates=(PageBeliefCandidate(taobao_home, 1.0, "test"),),
+        confidence=1.0,
+    )
+    route = memory.plan(belief, memory.infer_goal("add to cart", app="Taobao"))
+
+    assert route.mode == "explore"
+    assert route.risk_summary == "no graph route from current page"
 
 
 def test_import_exploration_files_builds_route(tmp_path):

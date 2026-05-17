@@ -102,6 +102,24 @@ class GraphStore:
             record = result.single()
             return dict(record["s"]) if record else None
 
+    def find_page_state_candidates(self, app: str = "", page_type: str = "", limit: int = 10) -> List[Dict[str, Any]]:
+        """Return page-level candidates for approximate runtime localization."""
+        if not self.driver or not page_type:
+            return []
+
+        query = """
+        MATCH (s:UIState)
+        WHERE s.page_type = $page_type
+          AND ($app = "" OR s.app = $app)
+        RETURN s
+        LIMIT $limit
+        """
+        candidates = []
+        with self.driver.session(database=self.database) as session:
+            for record in session.run(query, app=app or "", page_type=page_type, limit=limit):
+                candidates.append(dict(record["s"]))
+        return candidates
+
     def get_next_actions(self, state_hash: str, min_confidence: float = 0.5) -> List[Dict[str, Any]]:
         """Retrieve possible next actions from the current state."""
         if not self.driver:
@@ -642,7 +660,7 @@ class GraphStore:
                 task_id=task_id,
             )
 
-    def get_outgoing_transitions(self, state_id: str, limit: int = 20):
+    def get_outgoing_transitions(self, state_id: str, limit: int = 20, app: str = ""):
         """Return outgoing graph edges as TransitionEdge objects."""
         if not self.driver:
             return []
@@ -652,6 +670,8 @@ class GraphStore:
         normalized_state_id = self._normalize_state_id(state_id)
         query = """
         MATCH (s:UIState {state_id: $state_id})-[r:NEXT_ACTION]->(a:Action)-[p:PRODUCES]->(t:UIState)
+        WHERE coalesce(t.app, "") = coalesce(s.app, "")
+          AND ($app = "" OR s.app = $app)
         RETURN s.state_id AS source_id,
                t.state_id AS target_id,
                t.page_type AS target_page_type,
@@ -668,7 +688,7 @@ class GraphStore:
         """
         edges = []
         with self.driver.session(database=self.database) as session:
-            for record in session.run(query, state_id=normalized_state_id, limit=limit):
+            for record in session.run(query, state_id=normalized_state_id, limit=limit, app=app or ""):
                 target_page_type = record["target_page_type"] or ""
                 target_risk = record["target_risk"] or "normal"
                 edges.append(

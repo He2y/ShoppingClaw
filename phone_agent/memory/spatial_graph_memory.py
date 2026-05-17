@@ -53,6 +53,10 @@ _PAGE_TYPE_KEYWORDS = [
 ]
 
 _GOAL_PAGE_KEYWORDS = [
+    ("cart", ("购物车", "加入购物车", "加购", "加到购物车", "add cart", "cart")),
+    ("checkout", ("结算", "提交订单", "确认订单", "checkout")),
+    ("product_detail", ("商品详情", "详情", "product", "detail")),
+    ("search_result", ("搜索", "搜索结果", "search", "result")),
     ("cart", ("购物车", "加入购物车", "加购", "add cart", "cart")),
     ("checkout", ("结算", "提交订单", "确认订单", "checkout")),
     ("product_detail", ("详情", "商品", "product", "detail")),
@@ -277,6 +281,10 @@ class GoalSpec:
         for page_type, keywords in _GOAL_PAGE_KEYWORDS:
             if _contains_any(task, keywords):
                 target_page_types.append(page_type)
+        if "checkout" in target_page_types:
+            target_page_types = ["checkout"]
+        elif "cart" in target_page_types:
+            target_page_types = ["cart"]
         if not target_page_types:
             target_page_types = ["search_result", "product_detail", "cart"]
 
@@ -515,31 +523,42 @@ class SpatialGraphMemory:
         )
         self._local_states[page_state.state_id] = page_state
 
-        candidates = [
-            PageBeliefCandidate(
-                state=page_state,
-                score=1.0,
-                reason="current observation signature",
-            )
-        ]
-
         graph_candidate = self._load_graph_candidate(page_state)
-        if graph_candidate and graph_candidate.state_id != page_state.state_id:
-            candidates.append(
+        if graph_candidate:
+            self._local_states[graph_candidate.state_id] = graph_candidate
+            candidates = [
                 PageBeliefCandidate(
                     state=graph_candidate,
-                    score=0.78,
-                    reason="semantic graph match",
+                    score=0.92,
+                    reason="semantic graph localization",
+                ),
+                PageBeliefCandidate(
+                    state=page_state,
+                    score=0.82,
+                    reason="current observation signature",
+                ),
+            ]
+            current_state_id = graph_candidate.state_id
+            is_novel = False
+        else:
+            candidates = [
+                PageBeliefCandidate(
+                    state=page_state,
+                    score=1.0,
+                    reason="current observation signature",
                 )
-            )
+            ]
+            current_state_id = page_state.state_id
+            is_novel = True
 
         candidates_tuple = tuple(sorted(candidates, key=lambda item: item.score, reverse=True))
         belief = PageBelief(
-            current_state_id=page_state.state_id,
+            current_state_id=current_state_id,
             candidates=candidates_tuple,
             confidence=candidates_tuple[0].score,
-            is_novel=graph_candidate is None,
+            is_novel=is_novel,
         )
+
         self._last_belief = belief
         return belief
 
@@ -553,7 +572,9 @@ class SpatialGraphMemory:
             self._last_route = route
             return route
 
-        graph_edges = self._load_edges(start_id)
+        start_state = self._local_states.get(start_id)
+        allowed_app = start_state.app if start_state else ""
+        graph_edges = self._load_edges(start_id, allowed_app=allowed_app)
         if not graph_edges:
             route = RoutePlan(
                 mode="explore",
@@ -564,7 +585,7 @@ class SpatialGraphMemory:
             self._last_route = route
             return route
 
-        best_path = self._shortest_path(start_id, goal_spec.target_page_types)
+        best_path = self._shortest_path(start_id, goal_spec.target_page_types, allowed_app=allowed_app)
         if not best_path:
             route = RoutePlan(
                 mode="explore",
@@ -726,24 +747,66 @@ class SpatialGraphMemory:
         try:
             data = self.graph_store.get_state_by_semantic(page_state.semantic_signature)
         except Exception:
-            return None
-        if not data:
-            return None
-        return self._page_state_from_graph(data, fallback=page_state)
+            data = None
+        if data:
+            return self._page_state_from_graph(data, fallback=page_state)
 
-    def _load_edges(self, state_id: str) -> list[TransitionEdge]:
-        local_edges = list(self._local_edges.get(state_id, []))
+        try:
+            candidates = self.graph_store.find_page_state_candidates(
+                app=page_state.app,
+                page_type=page_state.page_type,
+                limit=20,
+            )
+        except AttributeError:
+            candidates = []
+        except Exception:
+            candidates = []
+
+        best_state: PageState | None = None
+        best_score = 0.0
+        for candidate in candidates:
+            candidate_state = self._page_state_from_graph(candidate, fallback=page_state)
+            score = self._page_similarity(page_state, candidate_state)
+            if score > best_score:
+                best_score = score
+                best_state = candidate_state
+        return best_state if best_score >= 0.65 else None
+
+    @staticmethod
+    def _page_similarity(observed: PageState, candidate: PageState) -> float:
+        score = 0.0
+        if observed.app and observed.app == candidate.app:
+            score += 0.35
+        if observed.page_type and observed.page_type == candidate.page_type:
+            score += 0.35
+        observed_landmarks = set(observed.landmarks)
+        candidate_landmarks = set(candidate.landmarks)
+        if observed_landmarks or candidate_landmarks:
+            score += 0.2 * (len(observed_landmarks & candidate_landmarks) / max(1, len(observed_landmarks | candidate_landmarks)))
+        observed_affordances = set(observed.affordances)
+        candidate_affordances = set(candidate.affordances)
+        if observed_affordances or candidate_affordances:
+            score += 0.1 * (len(observed_affordances & candidate_affordances) / max(1, len(observed_affordances | candidate_affordances)))
+        return score
+
+    def _load_edges(self, state_id: str, allowed_app: str = "") -> list[TransitionEdge]:
+        local_edges = []
+        for edge in self._local_edges.get(state_id, []):
+            target_state = self._local_states.get(edge.target_id)
+            if allowed_app and target_state and target_state.app != allowed_app:
+                continue
+            local_edges.append(edge)
         graph_edges: list[TransitionEdge] = []
         if self.graph_store and getattr(self.graph_store, "driver", None):
             try:
-                graph_edges = self.graph_store.get_outgoing_transitions(state_id)
+                graph_edges = self.graph_store.get_outgoing_transitions(state_id, app=allowed_app)
             except AttributeError:
                 graph_edges = []
             except Exception:
                 graph_edges = []
         return local_edges + graph_edges
 
-    def _shortest_path(self, start_id: str, target_page_types: tuple[str, ...]) -> list[RouteStep]:
+    def _shortest_path(self, start_id: str, target_page_types: tuple[str, ...], allowed_app: str = "") -> list[RouteStep]:
         counter = 0
         queue: list[tuple[float, int, str, list[TransitionEdge]]] = [(0.0, counter, start_id, [])]
         best_cost: dict[str, float] = {start_id: 0.0}
@@ -759,7 +822,10 @@ class SpatialGraphMemory:
             if state and state.page_type in target_page_types and path:
                 return [RouteStep(edge=edge) for edge in path]
 
-            for edge in self._load_edges(state_id):
+            for edge in self._load_edges(state_id, allowed_app=allowed_app):
+                target_state = self._local_states.get(edge.target_id)
+                if allowed_app and target_state and target_state.app != allowed_app:
+                    continue
                 if edge.postcondition in target_page_types:
                     return [RouteStep(edge=item) for item in path + [edge]]
                 next_cost = cost + edge.weighted_cost
