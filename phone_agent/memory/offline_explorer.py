@@ -212,7 +212,19 @@ class PageClassifier:
                 temperature=0.0,
             )
             raw = response.choices[0].message.content or ""
-            result = json.loads(raw.strip())
+            # Remove markdown code block wrappers if present
+            cleaned = raw.strip()
+            if cleaned.startswith("```"):
+                # Remove ```json or ``` at the start
+                first_newline = cleaned.find("\n")
+                if first_newline != -1:
+                    cleaned = cleaned[first_newline + 1:]
+                # Remove ``` at the end
+                if cleaned.endswith("```"):
+                    cleaned = cleaned[:-3]
+                cleaned = cleaned.strip()
+
+            result = json.loads(cleaned)
         except (json.JSONDecodeError, Exception) as e:
             return ShoppingPageType.UNKNOWN, f"API/parse error: {e}", {}
 
