@@ -1,3 +1,4 @@
+import ast
 import hashlib
 import json
 import os
@@ -449,6 +450,22 @@ class GraphStore:
             return "state_unknown"
         return state_id if state_id.startswith("state_") else f"state_{state_id}"
 
+    @staticmethod
+    def _decode_action_params(value: Any) -> Dict[str, Any]:
+        """Recover persisted action dictionaries for graph shortcut replay."""
+        if isinstance(value, dict):
+            return dict(value)
+        if not isinstance(value, str) or not value.strip():
+            return {}
+        for decoder in (ast.literal_eval, json.loads):
+            try:
+                decoded = decoder(value)
+            except (SyntaxError, ValueError, TypeError, json.JSONDecodeError):
+                continue
+            if isinstance(decoded, dict):
+                return dict(decoded)
+        return {"raw": value}
+
     def upsert_page_state(self, state_metadata: Dict[str, Any]) -> None:
         """Create or update a UIState node from a SpatialGraphMemory PageState."""
         if not self.driver:
@@ -697,7 +714,7 @@ class GraphStore:
                         target_id=record["target_id"],
                         action_type=record["action_type"] or "unknown",
                         action_target=record["action_target"] or "",
-                        action_params={"raw": record["action_params"] or ""},
+                        action_params=self._decode_action_params(record["action_params"] or ""),
                         postcondition=target_page_type,
                         success_count=record["success_count"] or 0,
                         fail_count=record["fail_count"] or 0,

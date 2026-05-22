@@ -1451,6 +1451,9 @@ class MemoryManager:
                   f"confidence={route_plan.next_action.get('confidence', 0):.2f}, "
                   f"target={route_plan.next_action.get('target', '')[:30]}")
             return context_data
+        if route_plan.mode == "goal_reached":
+            context_data["mode"] = "goal_reached"
+            return context_data
 
         similar_tasks = self.graph_store.find_similar_tasks(task, top_k=3)
         if similar_tasks:

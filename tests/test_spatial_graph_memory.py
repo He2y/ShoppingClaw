@@ -1,6 +1,7 @@
 import json
 
 from phone_agent.memory.manual_trajectory_importer import ManualTrajectoryImporter
+from phone_agent.memory.graph_store import GraphStore
 from phone_agent.memory.memory_manager import MemoryManager
 from phone_agent.memory.offline_explorer import OfflineExplorer, PageInfo, ShoppingPageType, Trajectory
 from phone_agent.memory.rebuild_spatial_graph import rebuild_spatial_graph
@@ -55,6 +56,17 @@ def test_page_state_uses_page_level_signature():
     assert state.semantic_signature
 
 
+def test_unknown_page_type_is_not_inferred_from_task_goal():
+    state = SpatialGraphMemory().build_page_state(
+        ui_hash="splash",
+        semantic_layout="Taobao launch splash",
+        task="不要结算，不要支付。",
+        app="Taobao",
+    )
+
+    assert state.page_type == "unknown"
+
+
 def test_semantic_page_state_id_ignores_screenshot_hash():
     memory = SpatialGraphMemory()
 
@@ -79,6 +91,13 @@ def test_semantic_page_state_id_ignores_screenshot_hash():
 
     assert first.state_id == second.state_id
     assert first.screenshot_hash != second.screenshot_hash
+
+
+def test_graph_store_decodes_persisted_action_params_for_replay():
+    params = GraphStore._decode_action_params("{'_metadata': 'do', 'action': 'Tap', 'element': [429, 114]}")
+
+    assert params["action"] == "Tap"
+    assert params["element"] == [429, 114]
 
 
 def test_locate_uses_graph_state_as_current_when_localized():
@@ -117,6 +136,15 @@ def test_chinese_add_to_cart_task_targets_cart():
 
     assert goal.domain == "shopping"
     assert goal.target_page_types == ("cart",)
+
+
+def test_negative_cart_clause_does_not_override_search_result_goal():
+    goal = SpatialGraphMemory().infer_goal(
+        "打开淘宝，搜索MacBook笔记本并停在搜索结果页。不要点击商品，不要加入购物车，不要结算，不要支付。",
+        app="淘宝",
+    )
+
+    assert goal.target_page_types == ("search_result",)
 
 
 def test_page_state_from_exploration_page_extracts_elements():
@@ -178,6 +206,27 @@ def test_local_route_planning_prefers_recorded_success_edge():
     assert route.steps[0].edge.target_id == search_result.state_id
 
 
+def test_route_planning_stops_when_current_page_satisfies_goal():
+    memory = SpatialGraphMemory()
+    search_result = memory.build_page_state(
+        ui_hash="taobao-result",
+        semantic_layout="Taobao search_result",
+        app="Taobao",
+        page_type="search_result",
+    )
+    memory._local_states[search_result.state_id] = search_result
+    belief = PageBelief(
+        current_state_id=search_result.state_id,
+        candidates=(PageBeliefCandidate(search_result, 1.0, "test"),),
+        confidence=1.0,
+    )
+
+    route = memory.plan(belief, memory.infer_goal("search MacBook", app="Taobao"))
+
+    assert route.mode == "goal_reached"
+    assert route.steps == ()
+
+
 def test_route_planning_does_not_cross_app_boundary():
     memory = SpatialGraphMemory()
     taobao_home = memory.build_page_state(
@@ -209,6 +258,107 @@ def test_route_planning_does_not_cross_app_boundary():
 
     assert route.mode == "explore"
     assert route.risk_summary == "no graph route from current page"
+
+
+def test_route_planning_rejects_implausible_search_result_to_cart_edge():
+    memory = SpatialGraphMemory()
+    search_result = memory.build_page_state(
+        ui_hash="taobao-result",
+        semantic_layout="Taobao search_result",
+        app="Taobao",
+        page_type="search_result",
+    )
+    cart = memory.build_page_state(
+        ui_hash="taobao-cart",
+        semantic_layout="Taobao cart",
+        app="Taobao",
+        page_type="cart",
+    )
+
+    memory.record_observation(
+        search_result,
+        {
+            "_metadata": "do",
+            "action": "Tap",
+            "semantic_target": "top product card",
+            "source_path": "MobiAgent/collect/manual/data/淘宝/基础加购商品/2",
+        },
+        cart,
+        outcome="success",
+    )
+
+    belief = PageBelief(
+        current_state_id=search_result.state_id,
+        candidates=(PageBeliefCandidate(search_result, 1.0, "test"),),
+        confidence=1.0,
+    )
+    route = memory.plan(belief, memory.infer_goal("add to cart", app="Taobao"))
+
+    assert route.mode == "explore"
+
+
+def test_route_planning_rejects_filter_as_spec_selection_edge():
+    memory = SpatialGraphMemory()
+    search_result = memory.build_page_state(
+        ui_hash="taobao-result",
+        semantic_layout="Taobao search_result",
+        app="Taobao",
+        page_type="search_result",
+    )
+    spec_selection = memory.build_page_state(
+        ui_hash="taobao-spec",
+        semantic_layout="Taobao spec selection",
+        app="Taobao",
+        page_type="spec_selection",
+    )
+
+    memory.record_observation(
+        search_result,
+        {"_metadata": "do", "action": "Tap", "semantic_target": "filter button"},
+        spec_selection,
+        outcome="success",
+    )
+
+    belief = PageBelief(
+        current_state_id=search_result.state_id,
+        candidates=(PageBeliefCandidate(search_result, 1.0, "test"),),
+        confidence=1.0,
+    )
+    route = memory.plan(belief, memory.infer_goal("add to cart", app="Taobao"))
+
+    assert route.mode == "explore"
+
+
+def test_route_planning_does_not_replay_historic_type_text():
+    memory = SpatialGraphMemory()
+    search_input = memory.build_page_state(
+        ui_hash="taobao-search-input",
+        semantic_layout="Taobao search_input",
+        app="Taobao",
+        page_type="search_input",
+    )
+    search_result = memory.build_page_state(
+        ui_hash="taobao-search-result",
+        semantic_layout="Taobao search_result",
+        app="Taobao",
+        page_type="search_result",
+    )
+
+    memory.record_observation(
+        search_input,
+        {"_metadata": "do", "action": "Type", "text": "historic query"},
+        search_result,
+        outcome="success",
+    )
+
+    belief = PageBelief(
+        current_state_id=search_input.state_id,
+        candidates=(PageBeliefCandidate(search_input, 1.0, "test"),),
+        confidence=1.0,
+    )
+    route = memory.plan(belief, memory.infer_goal("search MacBook", app="Taobao"))
+
+    assert route.mode == "explore"
 
 
 def test_import_exploration_files_builds_route(tmp_path):

@@ -278,9 +278,11 @@ class GoalSpec:
     @classmethod
     def from_task(cls, task: str, app: str = "") -> "GoalSpec":
         target_page_types: list[str] = []
-        for page_type, keywords in _GOAL_PAGE_KEYWORDS:
-            if _contains_any(task, keywords):
-                target_page_types.append(page_type)
+        positive_clauses = SpatialGraphMemory.positive_goal_clauses(task)
+        for clause in positive_clauses:
+            for page_type, keywords in _GOAL_PAGE_KEYWORDS:
+                if _contains_any(clause, keywords):
+                    target_page_types.append(page_type)
         if "checkout" in target_page_types:
             target_page_types = ["checkout"]
         elif "cart" in target_page_types:
@@ -398,8 +400,6 @@ class SpatialGraphMemory:
         visual_text = " ".join([semantic_layout, summary, self._elements_text(elements)])
         combined_text = " ".join([visual_text, task])
         inferred_type = page_type or self._infer_page_type(visual_text)
-        if inferred_type == "unknown":
-            inferred_type = self._infer_page_type(task)
 
         element_landmarks = self._extract_landmarks_from_elements(elements)
         element_affordances = self._extract_affordances_from_elements(elements)
@@ -506,6 +506,25 @@ class SpatialGraphMemory:
                     break
         return slots
 
+    @staticmethod
+    def positive_goal_clauses(task: str) -> tuple[str, ...]:
+        """Keep negative safety constraints from becoming route targets."""
+        negation_tokens = (
+            "不要",
+            "禁止",
+            "别",
+            "无需",
+            "不需要",
+            "不得",
+            "do not",
+            "don't",
+            "avoid",
+            "without",
+        )
+        clauses = re.split(r"[,，。.;；\n]+", task)
+        positive = [clause.strip() for clause in clauses if clause.strip() and not _contains_any(clause, negation_tokens)]
+        return tuple(positive or [task])
+
     def locate(
         self,
         screen: dict[str, Any],
@@ -576,6 +595,15 @@ class SpatialGraphMemory:
         start_state = self._local_states.get(start_id)
         allowed_app = start_state.app if start_state else ""
         print(f"[Plan Debug] start_id={start_id[:30]}, start_state={start_state is not None}, allowed_app={allowed_app}")
+        if start_state and start_state.page_type in goal_spec.target_page_types:
+            route = RoutePlan(
+                mode="goal_reached",
+                confidence=belief.confidence,
+                risk_summary="current page satisfies goal",
+                goal=goal_spec,
+            )
+            self._last_route = route
+            return route
 
         graph_edges = self._load_edges(start_id, allowed_app=allowed_app)
         print(f"[Plan Debug] Loaded {len(graph_edges)} edges from graph")
@@ -906,6 +934,10 @@ class SpatialGraphMemory:
         ).lower()
         target_page_type = target_state.page_type if target_state else edge.postcondition
         source_page_type = source_state.page_type if source_state else ""
+
+        if edge.action_type.lower() in {"type", "input"}:
+            # Historic typed text is a task slot value, not a reusable spatial shortcut.
+            return False
 
         cart_tokens = ("cart", "add_to_cart", "add cart", "购物车", "加购", "加入购物车", "加到购物车")
         spec_tokens = ("spec", "sku", "规格", "选择规格", "buy", "购买", "加购", "加入购物车", "add_to_cart", "商品", "item", "product")
