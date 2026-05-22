@@ -1,484 +1,363 @@
-# ClawGUI-Agent 系统架构详解
+# Phone Agent 架构说明
 
-> 本文档详细介绍 `phone_agent` 目录下的核心模块设计原理、任务执行流程、上下文管理机制以及不同模型输出格式的处理策略。
+本文档描述 `phone_agent` 当前实现。重点是两件事：
 
----
+1. Agent 如何在真实设备上执行 `截图 -> 状态检索 -> 决策 -> 动作 -> 写回` 的闭环。
+2. 空间图谱如何在不训练新 GUI/VLM 模型的前提下，为购物 Agent 提供页面定位、路线约束和纠错依据。
 
-## 1. 整体架构概述
+当前空间图谱不是一个独立替代 VLM 的导航器，也不是一份人工标注轨迹提示词。它位于 Agent 控制层：先把当前截图抽象成页面状态，再在 Neo4j 中定位页面、规划到目标页面的下一条边；有可信路线时直接驱动下一步动作，没有可信路线时让 VLM 继续基于截图探索。
 
-ClawGUI-Agent 是一个视觉-语言模型（VLM）驱动的手机自动化框架，通过"截图 → 推理 → 执行"的闭环控制流，让 AI 自主完成手机操作任务。
+## 1. 核心模块
 
-### 1.1 核心设计理念
-
-- **平台抽象**：通过 `DeviceFactory` 统一抽象 ADB（Android）、HDC（HarmonyOS）、XCTEST（iOS）三种设备后端
-- **模型适配器模式**：不同 VLM 的输出格式差异极大，通过适配器层隔离变化
-- **无状态 Agent**：Agent 本身不保存状态，状态（上下文、历史）由调用方或内部 `_context` 管理
-- **内存感知**：可选的个性化记忆系统在每次任务后自动学习用户偏好和联系人信息
-
-### 1.2 模块依赖关系
-
-```
-                    main.py / webui.py
-                           │
-                           ▼
-                     PhoneAgent
-                           │
-         ┌─────────────────┼─────────────────┐
-         │                 │                 │
-         ▼                 ▼                 ▼
-    ModelClient     ActionHandler      DeviceFactory
-    (模型调用)      (动作解析执行)     (设备抽象层)
-         │                 │                 │
-         ▼                 ▼          ┌──────┼──────┐
-    ModelAdapter       handlers/      │      │      │
-    (模型适配器)      handler_*.py    ▼      ▼      ▼
-         │               (专用)     ADB    HDC   XCTEST
-         ▼                            │      │      │
-    prompt templates              screenshot/input/device control
+```mermaid
+flowchart LR
+    CLI["main.py / webui.py"] --> Agent["PhoneAgent"]
+    Agent --> Device["DeviceFactory"]
+    Agent --> Model["ModelClient"]
+    Agent --> Adapter["ModelAdapter / ActionHandler"]
+    Agent --> Memory["MemoryManager"]
+    Memory --> Spatial["SpatialGraphMemory"]
+    Memory --> Store["MemoryStore"]
+    Spatial --> Graph["GraphStore / Neo4j"]
+    Agent --> Guard["SpecGuard / ClarificationAgent"]
+    Agent --> Trace["GUITracer"]
 ```
 
----
+| 模块 | 位置 | 当前职责 |
+| --- | --- | --- |
+| `PhoneAgent` | `phone_agent/agent.py` | 执行循环、截图、模型调用、动作执行、图谱 shortcut 分支 |
+| `PageClassifier` | `phone_agent/memory/offline_explorer.py` | 从截图提取购物页面类型、页面摘要和元素语义 |
+| `MemoryManager` | `phone_agent/memory/memory_manager.py` | 连接会话记忆与空间图谱，输出 `context_data` |
+| `SpatialGraphMemory` | `phone_agent/memory/spatial_graph_memory.py` | 页面抽象、页面定位、目标推断、路径规划、修复判断 |
+| `GraphStore` | `phone_agent/memory/graph_store.py` | Neo4j 适配器，读写 `UIState`、`Action`、`TaskTarget` |
+| `ModelAdapter` | `phone_agent/model/adapters.py` | 适配 AutoGLM、UI-TARS、Qwen-VL、MAI-UI、GUI-Owl 的消息与输出格式 |
+| `ActionHandler` | `phone_agent/actions/` | 解析动作并映射为 ADB、HDC、XCTest 操作 |
+| `SpecGuard` | `phone_agent/agent.py` | 在 SKU、商品详情、结算等关键场景约束高风险动作 |
 
-## 2. 核心执行流程（Agent Loop）
+## 2. 当前执行闭环
 
-`PhoneAgent.run(task)` 是整个系统的入口，其执行流程如下：
+`PhoneAgent.run(task)` 按步调用 `_execute_step()`。每一步都先观察，再决定图谱还是 VLM 接管动作。
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                    agent.run("打开微信发消息")              │
-├─────────────────────────────────────────────────────────┤
-│ 1. 初始化阶段                                            │
-│    _context = [], _step_count = 0                        │
-│    tracer.start_task()   ← 创建 episode 目录             │
-│    memory_manager.start_task() ← 从任务描述中提取联系人    │
-│    clear_history()       ← 清空 QwenVL/GUI-Owl 的历史   │
-├─────────────────────────────────────────────────────────┤
-│ 2. 执行循环 (_execute_step)                              │
-│                                                         │
-│  ┌─────────────── 截图 ───────────────┐               │
-│  │ DeviceFactory.get_screenshot()      │               │
-│  │ DeviceFactory.get_current_app()    │               │
-│  └────────────────────────────────────┘               │
-│                        │                               │
-│                        ▼                               │
-│  ┌─────────────── 构建消息 ─────────────┐              │
-│  │ Adapter.build_messages()             │              │
-│  │   ├─ AutoGLM: 追加式 append context  │              │
-│  │   ├─ UITARS:  追加式 + limit 5 图  │              │
-│  │   ├─ QwenVL:  重构建 system+user   │              │
-│  │   ├─ MAIUI:   多消息式 + limit 3 图│              │
-│  │   └─ GUI-Owl: 重构建 + limit 1 图  │              │
-│  └────────────────────────────────────┘              │
-│                        │                               │
-│                        ▼                               │
-│  ┌─────────────── 模型推理 ─────────────┐              │
-│  │ ModelClient.request()               │              │
-│  │   └─ 流式输出: thinking → action    │              │
-│  └────────────────────────────────────┘              │
-│                        │                               │
-│                        ▼                               │
-│  ┌─────────────── 解析响应 ─────────────┐              │
-│  │ Adapter.parse_response()             │              │
-│  │   └─ (thinking, action_str)         │              │
-│  │ SpecialHandler.parse_action()        │              │
-│  │   └─ ActionResult (结构化动作)       │              │
-│  └────────────────────────────────────┘              │
-│                        │                               │
-│                        ▼                               │
-│  ┌─────────────── 执行动作 ─────────────┐              │
-│  │ SpecialHandler.execute()             │              │
-│  │   └─ DeviceFactory.tap/swipe/type   │              │
-│  └────────────────────────────────────┘              │
-│                        │                               │
-│                        ▼                               │
-│  ┌─────────────── 记录追踪 ─────────────┐              │
-│  │ context.append(assistant_message)   │              │
-│  │ memory_manager.add_step()          │              │
-│  │ tracer.record_step()                │              │
-│  └────────────────────────────────────┘              │
-│                                                         │
-│  finished? ──否──→ 回到 "截图" 继续循环                  │
-│     │                                                   │
-│    是                                                   │
-│     ▼                                                   │
-│  end_task(): memory_manager.end_task() + tracer.end_task()│
-└─────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    Start["PhoneAgent._execute_step"] --> Shot["获取 screenshot 和 current_app"]
+    Shot --> Sem["PageClassifier 提取 page_type / summary / elements"]
+    Sem --> Screen["构造 screen_dict"]
+    Screen --> Locate["MemoryManager.locate_and_get_context"]
+    Locate --> Belief["SpatialGraphMemory.locate -> PageBelief"]
+    Belief --> Goal["infer_goal -> GoalSpec"]
+    Goal --> Plan["plan -> RoutePlan"]
+    Plan --> Nav{"mode=navigate 且 next_action 置信度 >= 0.7?"}
+    Nav -->|是| Shortcut["直接执行图谱下一条动作"]
+    Nav -->|否| Prompt["构造 VLM 消息和轻量记忆上下文"]
+    Prompt --> VLM["ModelClient.request"]
+    VLM --> Parse["解析模型动作"]
+    Parse --> Guard["SpecGuard 检查关键购物场景"]
+    Guard --> Exec["ActionHandler 执行动作"]
+    Shortcut --> Record["记录 step 和 pending transition"]
+    Exec --> Record
+    Record --> Next["下一轮截图后校验后置条件并写回边"]
 ```
 
----
+### 2.1 一步执行的顺序
 
-## 3. 模型适配器体系（Model Adapters）
-
-适配器是本框架最核心的设计。每个模型适配器负责：
-1. **生成系统提示词**（`get_system_prompt`）
-2. **解析模型输出**（`parse_response`）
-3. **构建 API 消息格式**（`build_messages`）
-4. **限制上下文图片数量**（`limit_context`，部分适配器需要）
-
-### 3.1 适配器总览
-
-| 适配器 | 模型 | 输出格式 | 消息构建策略 | 上下文图片数 |
-|--------|------|----------|-------------|-------------|
-| `AutoGLMAdapter` | AutoGLM, GLM-4V | `<answer>action</answer>` | 追加式（保留所有历史） | 无限制 |
-| `UITarsAdapter` | Doubao UI-TARS | `Thought:\nAction:` | 追加式 | 最多 5 张 |
-| `QwenVLAdapter` | Qwen2.5/3-VL | `Thought:\nAction:\n<tool_call>` | 重构建式 | 最多 8 张 |
-| `MAUIAdapter` | MAI-UI | `<thinking>...</thinking><tool_call>` | 多消息式 | 最多 3 张 |
-| `GUIOwlAdapter` | GUI-Owl | `Action:\n<tool_call>` | 重构建式 | 始终 1 张 |
-
-### 3.2 消息构建策略详解
-
-#### AutoGLM — 追加式（Append）
-
-```
-messages = context.copy()  # 保留所有历史消息
-if first_turn:
-    messages.append(system)
-    messages.append(user(task + screen_info + image))
-else:
-    messages.append(user(screen_info + image))
-```
-
-优点：天然保留完整对话历史，适合长任务。
-缺点：上下文随步数线性增长，可能超出模型上下文窗口。
-
-#### UI-TARS — 追加式 + 图片限制
-
-结构同 AutoGLM，但每轮 `build_messages` 后调用 `limit_context` 限制最多 5 张历史截图。早期截图从消息中移除（保留文本如 system prompt）。
-
-#### QwenVL / GUI-Owl — 重构建式（Rebuild）
-
-```
-messages = [
-    system_prompt,                        # 始终重置
-    user(user_query + 操作历史 + image)    # 始终重置
-]
-```
-
-关键设计：不向 context 中追加 assistant 消息，操作历史通过 `_action_history` 列表在 adapter 内部维护，每轮用 `build_qwenvl_user_query()` 将历史格式化为文本注入 user message。
-
-**为什么这样做？** QwenVL/GUI-Owl 的 system prompt 包含 `<tools>` XML 定义，若每轮追加 assistant 消息，system prompt 会被挤压到对话中间。两种模型都设计为单张截图 + 指令的"快照"模式，不依赖多轮历史积累。
-
-#### MAI-UI — 多消息追加式
-
-MAI-UI 的消息格式严格遵循官方规范：
-- 第一轮：`[system(纯文本), user(任务指令), user(截图)]`
-- 后续轮：`[...history..., assistant(纯文本), user(截图)]`
-
-`limit_context` 保留最近 3 张截图。
-
-### 3.3 模型检测机制
-
-`detect_model_type(model_name)` 通过正则匹配模型名称自动选择适配器：
+1. `DeviceFactory` 获取截图与当前 App。
+2. 如果启用了 memory，Agent 对截图计算 `ui_hash`。
+3. `PageClassifier` 尝试提取购物页面语义：
+   - `page_type`
+   - `summary`
+   - `elements`
+4. Agent 构造 `screen_dict`：
 
 ```python
-# 优先级从高到低（GUI-Owl > UI-TARS > Qwen-VL > MAI-UI > AutoGLM）
-gui-owl   → GUIOWL
-ui-tars   → UITARS
-qwen.*vl  → QWENVL
-mai[-_]ui → MAIUI
-autoglm   → AUTOGLM
-默认       → AUTOGLM
-```
-
----
-
-## 4. 动作处理体系（Action Handlers）
-
-模型输出 `action_str` 后，需要：
-1. **解析**为结构化动作（`parse_action` / `parse_response`）
-2. **坐标转换**（从模型坐标空间 → 设备绝对像素）
-3. **执行**（调用 `DeviceFactory`）
-
-### 4.1 默认处理器（AutoGLM — `handler.py`）
-
-`ActionHandler` 是默认处理器，通过 AST 解析 `do(action="Tap", element=[x, y])` 格式。
-
-**解析流程**：
-1. 预处理：去除 markdown 代码块、XML 标签、`\n` 转义
-2. 优先尝试 JSON dict 解析（应对 `<tool_call>{"name":"mobile_use",...}` 格式）
-3. 使用正则提取 `do(action=...)` 和 `finish(message=...)`
-4. AST 解析作为 fallback
-
-**坐标转换**（`_convert_relative_to_absolute`）：
-
-模型输出坐标可能是以下三种格式之一：
-```python
-[x, y]                    # 点坐标
-[x1, y1, x2, y2]         # 边界框
-[[x1, y1, x2, y2]]       # 嵌套边界框
-```
-统一转换为绝对像素：`x_px = int(x / 1000 * screen_width)`
-
-### 4.2 专用处理器对比
-
-| 处理器 | 源格式 | 关键处理 |
-|--------|--------|----------|
-| `handler_uitars.py` | `click(point='<point>x y</point>')` | 从 `<point>` XML 标签提取坐标 |
-| `handler_qwenvl.py` | `<tool_call>{"name":"mobile_use","arguments":{"action":"click","coordinate":[x,y]}}</tool_call>` | JSON 解析 + 0-999→绝对像素 |
-| `handler_maiui.py` | `<thinking>...</thinking><tool_call>{"action":"click",...}</tool_call>` | 处理换行标签缺失、`</think>`→`</thinking>` 修复 |
-| `handler_guiowl.py` | `Action: 描述\n<tool_call>{"name":"mobile_use",...}</tool_call>` | 坐标预处理（÷999 归一化） |
-| `handler_ios.py` | 同 AutoGLM | 坐标 ÷3 后用 W3C WebDriver Actions API |
-
-### 4.3 鲁棒性设计
-
-MAI-UI 处理器展示了典型的鲁棒性处理：
-- 自动修复缺失的 XML 闭合标签（`</think>` → `</thinking>`）
-- 处理嵌套的 `<think><tool_call>...` 结构（从 tool_call 内提取真正的 thinking）
-- 清理 `\n` 转义序列和格式噪声（````html` 等）
-- JSON 正则搜索作为终极 fallback
-
----
-
-## 5. 设备抽象层（Device Factory）
-
-`DeviceFactory` 是跨平台抽象的核心，提供了统一的设备操作接口：
-
-```python
-class DeviceFactory:
-    get_screenshot(device_id) → Screenshot
-    get_current_app(device_id) → str
-    tap(x, y, device_id)
-    double_tap(x, y, device_id)
-    long_press(x, y, duration_ms, device_id)
-    swipe(x1, y1, x2, y2, duration_ms, device_id)
-    back(device_id)
-    home(device_id)
-    launch_app(app_name, device_id)  # 通过 config/apps*.py 映射
-    type_text(text, device_id)
-    clear_text(device_id)
-```
-
-全局单例模式通过 `set_device_type()` 和 `get_device_factory()` 管理。
-
-### 5.1 Android (ADB)
-
-- **截图**：`screencap -p /sdcard/tmp.png` → pull 到本地 → PIL 解码
-- **输入**：ADB Keyboard（`am broadcast -a ADB_INPUT_B64`），通过 `detect_and_set_adb_keyboard()` 自动切换输入法
-- **应用启动**：`adb shell monkey -p {package} -c android.intent.category.LAUNCHER 1`
-- **当前应用**：`dumpsys window windows` 解析
-
-### 5.2 HarmonyOS (HDC)
-
-- **截图**：`snapshot_display`（新）或 `screenshot`（旧）→ pull → JPEG→PNG 转换
-- **输入**：`uitest uiInput text`（支持换行符特殊处理）
-- **应用启动**：`aa start -b {bundle} -a {ability}`，需要 `config/apps_harmonyos.py` 中的 bundle→ability 映射
-- **当前应用**：`hidumper -s WindowManagerService` 解析
-- **按键**：使用具名按键（`Back`/`Home`）而非数字 keycode
-
-### 5.3 iOS (XCTEST)
-
-- **截图**：WDA `GET /screenshot`（主要），`idevicescreenshot`（fallback）
-- **输入**：WDA `POST /wda/keys` + 剪贴板 `setPasteboard`（解决 WDA 无法直接输入中文的问题）
-- **应用启动**：`POST /wda/apps/launch` + bundleId
-- **当前应用**：WDA `GET /wda/activeAppInfo`
-- **手势**：W3C WebDriver 指针动作 API（`pointerMove/pointerDown/pointerUp`）
-- **缩放因子**：坐标需除以 3（iOS 屏幕逻辑分辨率 vs. 实际像素）
-
----
-
-## 6. 模型客户端（ModelClient）
-
-`ModelClient` 封装了对 VLM 推理服务的 HTTP 调用：
-
-```python
-class ModelClient:
-    def request(self, messages: list[dict]) → ModelResponse:
-        # 1. 构建 OpenAI-compatible 请求
-        # 2. 流式发送 streaming=True
-        # 3. 实时打印 thinking token
-        # 4. 缓冲 action 部分
-        # 5. 返回 ModelResponse(thinking, action_str, raw_content, metrics)
-
-class ModelResponse:
-    thinking: str       # 模型的思考过程
-    action_str: str     # 原始 action 字符串
-    raw_content: str    # 完整原始输出
-    metrics: dict       # 性能指标（首 token 延迟、推理时间等）
-```
-
-**流式打印设计**：thinking 部分实时打印到 stdout（用于 CLI 可观测性），action 部分在遇到 action 标记后停止打印、开始缓冲，直到流结束。
-
----
-
-## 7. 配置与提示词体系
-
-### 7.1 系统提示词
-
-每个适配器对应一套专用的提示词模板：
-
-| 模板文件 | 适配器 | Action Space |
-|----------|--------|-------------|
-| `prompts_zh.py` / `prompts_en.py` | AutoGLM | Launch, Tap, Type, Swipe, Back, Home, Wait, finish |
-| `prompts_uitars.py` | UI-TARS | click, long_press, type, scroll, open_app, drag, press_home, press_back, finished, wait |
-| `prompts_qwenvl.py` | QwenVL | click, long_press, swipe, type, open_app, wait, answer, terminate |
-| `prompts_maiui.py` | MAIUI | click, long_press, type, swipe, open, drag, system_button, wait, terminate, answer |
-| `prompts_guiowl.py` | GUI-Owl | click, long_press, swipe, type, system_button, open, wait, answer, terminate, key, interact |
-
-### 7.2 坐标系统差异
-
-| 模型 | 坐标空间 | 说明 |
-|------|----------|------|
-| AutoGLM | `[0, 1000]` 归一化 | 除以 1000 得比例 |
-| UI-TARS | 绝对像素（smart_resize 空间） | 直接使用，需知道缩放比 |
-| QwenVL | `[0, 999]` 归一化 | 除以 999 得比例 |
-| MAI-UI | `[0, 999]` 归一化 | 除以 999 得比例 |
-| GUI-Owl | `[0, 999]` 归一化 | 除以 999 得比例 |
-
-### 7.3 时间配置（Timing）
-
-所有操作延迟集中管理于 `config/timing.py`：
-- `keyboard_switch_delay`: 1.0s（切换输入法延迟）
-- `text_input_delay`: 1.0s（输入文本延迟）
-- `tap_delay` / `swipe_delay` / `back_delay` 等：各 1.0s
-
----
-
-## 8. 个性化记忆系统（Memory）
-
-### 8.1 架构
-
-```
-MemoryManager          MemoryStore
-    │                      │
-    ├─ add_step()         ├─ add() / search() / update() / delete()
-    ├─ end_task()         └─ memories.json（持久化，JSON 文件存储）
-    ├─ add_user_preference()
-    └─ get_relevant_context()
-```
-
-### 8.2 记忆类型
-
-| 类型 | 内容 | 重要性 |
-|------|------|--------|
-| `CONTACT` | 人名 | 0.7 |
-| `CONTACT_APP_BINDING` | 联系人→App 关联 | 0.8 |
-| `APP_USAGE` | 应用使用记录 | 0.5 |
-| `USER_PREFERENCE` | 用户偏好 | 0.6 |
-| `USER_CORRECTION` | 用户纠正（最高） | 1.0 |
-| `TASK_HISTORY` | 任务历史 | 0.4 |
-| `TASK_PATTERN` | 任务模式 | 0.6 |
-
-### 8.3 上下文注入
-
-`MemoryManager.get_relevant_context()` 在每次推理前被调用：
-1. 从任务描述中提取联系人姓名（正则匹配）
-2. 查找该联系人的 App 使用频率
-3. 生成频率推荐（"使用QQ 5次"）
-4. 追加用户偏好和历史任务提示
-5. 格式化后注入 system prompt 或 user message
-
-### 8.4 自动学习
-
-`add_step()` 在每步执行后提取信息：
-- 从任务描述中识别 App 名称 → 更新 `APP_USAGE`
-- 识别联系人 → 更新 `CONTACT` 和 `CONTACT_APP_BINDING`
-- 识别操作模式 → 更新 `TASK_PATTERN`
-
----
-
-## 9. 执行追踪系统（Tracer）
-
-`GUITracer` 记录完整任务执行轨迹，用于复现、调试和数据集构建：
-
-```
-<trace_dir>/
-└── <episode_id>/
-    ├── episode.json       # 任务元数据 + 每步记录
-    └── images/
-        ├── step0.png     # 每步的截图
-        ├── step1.png
-        └── ...
-```
-
-`episode.json` 格式：
-```json
 {
-  "task_name": "打开微信",
-  "timestamp": "2026-04-22T10:00:00",
-  "episode": [
-    {
-      "step": 0,
-      "model_output": "<think>...</think><answer>...",
-      "action": {"action": "Tap", "element": [500, 300]},
-      "finished": false
-    }
-  ]
+    "ui_hash": ui_hash,
+    "semantic_layout": f"{current_app} {page_type}",
+    "app": current_app,
+    "page_type": page_type,
+    "summary": summary,
+    "elements": elements,
 }
 ```
 
----
+5. `MemoryManager.locate_and_get_context()` 先调用空间图谱，再决定返回模式。
+6. 如果返回 `navigate` 且下一动作置信度达到阈值，Agent 不请求 VLM，直接执行图谱给出的下一动作。
+7. 否则进入普通 VLM 推理路径：
+   - 适配器构造消息
+   - 注入轻量进度、按需检索结果和关键场景提示
+   - 模型输出动作
+   - handler 解析并执行
+8. 动作执行后，Agent 记录 step、trace 和 transition 的源页面信息。
+9. 下一轮观察到新页面后，空间图谱把上一轮 `before -> action -> after` 写成边，并根据后置条件判断成功或失败。
 
-## 10. 关键设计决策总结
+### 2.2 当前三种空间模式
 
-### 10.1 适配器模式的选择
+| 模式 | 产生条件 | 对执行的影响 |
+| --- | --- | --- |
+| `navigate` | 图谱已定位当前页面，并找到到目标页面的可信路径 | `PhoneAgent` 取路径第一条边直接执行 |
+| `goal_reached` | 当前页面类型已经满足 `GoalSpec` | 停止继续规划空间边，避免从目标页被旧轨迹带走 |
+| `explore` | 当前页未知、无可用边、路线不可信，路线被过滤，且兼容轨迹回退未接管 | 回退到 VLM 基于截图探索 |
 
-不使用统一的"标准格式"，而是每个模型用专属适配器。原因是：
-- 不同模型的 system prompt 差异极大（工具定义格式、坐标系统）
-- 输出格式各不相同（XML标签、JSON结构、自由文本）
-- 消息格式也不同（有的追加、有的重构建）
-- 强制统一会导致 adapter 中出现大量 `if model == X` 分支，失去适配器的价值
+`navigate` 是当前最强的图谱接管方式。它只执行路径第一条边，不一次性重放整条轨迹。下一步执行后必须重新截图、重新定位、重新规划。
 
-### 10.2 坐标系统的处理
+`goal_reached` 的意义是空间停止条件。以任务“搜索商品并停在搜索结果页”为例，只要当前 `page_type=search_result` 已满足目标，规划器就不应继续沿历史边进入商品详情、SKU 或购物车。
 
-坐标转换统一在 Action Handler 层处理，而非 Adapter 层：
-- Handler 知道设备的实际屏幕分辨率
-- Adapter 只负责从模型输出中提取原始坐标值
-- 这样适配器保持"纯解析"职责，Handler 负责"纯执行"
+## 3. 空间图谱的数据模型
 
-### 10.3 内存系统的必要性
+### 3.1 页面节点 `PageState`
 
-记忆系统不是框架必需的，但对用户体验至关重要：
-- 手机场景中，用户经常说"发消息给张三"——Agent 需要知道"张三"是谁
-- 不同用户使用不同的 App 完成同一任务（有人用微信有人用 QQ）
-- 联系人与 App 的绑定关系是强个性化的
-- 通过 `contact_app_binding` + 频率统计实现这一点
+`SpatialGraphMemory` 不把一张截图 hash 直接当成页面。它先构造页面级抽象：
 
-### 10.4 流式输出 vs. 缓冲
+| 字段 | 含义 |
+| --- | --- |
+| `app` | App 名称，例如淘宝 |
+| `page_type` | 页面类型，例如 `home`、`search_input`、`search_result`、`product_detail` |
+| `summary` | 页面摘要 |
+| `landmarks` | 稳定地标，例如搜索栏、底部导航、商品卡片 |
+| `affordances` | 可操作能力，例如 `tap_search`、`open_product`、`choose_spec` |
+| `slots` | 与页面或任务有关的槽位，例如 query、product、price |
+| `risk_level` | 页面风险级别 |
+| `semantic_signature` | 页面语义签名，用于 canonical 定位和去重 |
 
-ModelClient 使用流式推理，但采用"打印 thinking + 缓冲 action"的策略：
-- thinking 实时打印：用户可见 AI 推理过程，提升信任度
-- action 缓冲：避免 action 部分被 thinking 打印打断，保证格式完整
-- 区分 `_parse_response`（适配器解析 thinking/action）和 `parse_action`（handler 解析结构化动作）
+当前语义签名由 `app + page_type + landmarks + affordances + slots` 组成。导入离线探索数据时使用 semantic state id，运行时观察默认仍保留 observation id，再尝试回落到 canonical 图节点。
 
----
+### 3.2 转移边 `TransitionEdge`
 
-## 11. 目录结构速查
+图谱边不只是 `A -> B`，还保存动作语义和执行统计：
 
+| 字段 | 含义 |
+| --- | --- |
+| `action_type` | `Tap`、`Swipe`、`Back` 等动作类型 |
+| `action_target` | 动作目标语义 |
+| `action_params` | 可回放的动作参数 |
+| `postcondition` | 预期目标页面类型 |
+| `success_count` / `fail_count` | 执行成功与失败统计 |
+| `risk` | 目标页面或动作风险 |
+| `confidence` | 当前边置信度 |
+| `rollback_action` | 偏航时可用的回退动作 |
+
+边的 `weighted_cost` 当前由基础成本、失败率、风险惩罚和置信度共同决定。购物场景里，失败多、高风险、低置信的边会在规划中变贵。
+
+### 3.3 Neo4j schema
+
+当前 `GraphStore` 主要维护以下结构：
+
+```mermaid
+flowchart LR
+    Task["TaskTarget"] -->|STARTS_AT| S1["UIState"]
+    S1 -->|NEXT_ACTION| A["Action"]
+    A -->|PRODUCES| S2["UIState"]
+    Task -->|ENDS_AT| S2
 ```
-phone_agent/
-├── agent.py              # PhoneAgent 主类，执行循环
-├── agent_ios.py          # iOS 专用 Agent
-├── device_factory.py     # 设备抽象工厂
-├── tracer.py             # 任务执行追踪器
-│
-├── model/
-│   ├── adapters.py       # 5 个模型适配器 + 检测逻辑
-│   └── client.py          # OpenAI-compatible HTTP 客户端
-│
-├── actions/
-│   ├── handler.py         # 默认 AutoGLM 动作处理器
-│   ├── handler_uitars.py  # UI-TARS 处理器
-│   ├── handler_qwenvl.py  # QwenVL 处理器
-│   ├── handler_maiui.py   # MAI-UI 处理器
-│   ├── handler_guiowl.py  # GUI-Owl 处理器
-│   └── handler_ios.py     # iOS 处理器
-│
-├── config/
-│   ├── prompts*.py        # 各模型专用提示词模板
-│   ├── apps*.py           # Android/HarmonyOS/iOS App 包名映射
-│   ├── timing.py          # 统一时间配置
-│   └── i18n.py            # 国际化字符串
-│
-├── adb/                   # Android ADB 后端
-│   ├── connection.py      # ADB 连接管理
-│   ├── device.py          # tap/swipe/type 实现
-│   ├── screenshot.py      # 截图获取
-│   └── input.py           # 输入法切换
-│
-├── hdc/                   # HarmonyOS HDC 后端（结构同 adb/）
-├── xctest/                # iOS XCTEST 后端（WebDriverAgent）
-│
-└── memory/
-    ├── memory_manager.py  # 记忆管理层（自动提取、上下文生成）
-    └── memory_store.py    # 记忆持久化存储（JSON）
+
+`UIState` 保存页面抽象。`Action` 保存动作描述和来源。`NEXT_ACTION`、`PRODUCES` 关系保存成功率、失败次数与置信度。
+
+路径规划时 `get_outgoing_transitions()` 只返回同 App 的转移，避免不同 App 页面之间被旧数据串成假路线。
+
+## 4. 图谱检索过程
+
+空间检索不是“相似任务拿第一步动作”。当前主链路是页面定位后再规划。
+
+### 4.1 从截图定位当前页面
+
+`SpatialGraphMemory.locate(screen, task, previous_action)` 做以下工作：
+
+1. 用当前 `screen_dict` 构造 runtime `PageState`。
+2. 先用 `semantic_signature` 在 Neo4j 查精确页面：
+   - `GraphStore.get_state_by_semantic()`
+3. 精确匹配失败时，按 `app` 和 `page_type` 查候选页面：
+   - `GraphStore.find_page_state_candidates()`
+4. 用页面相似度重排候选：
+   - App 一致性
+   - 页面类型一致性
+   - landmark 重叠
+   - affordance 重叠
+5. 相似度达到阈值时，把 canonical 图节点作为当前状态。
+6. 返回 `PageBelief`，而不是只返回 screenshot hash。
+
+当前 `PageBelief` 至少包含：
+
+```python
+{
+    "current_state_id": "...",
+    "confidence": 0.92,
+    "is_novel": False,
+    "candidates": [...]
+}
 ```
+
+这一步是空间感知的起点。Agent 不再只知道“当前截图看起来像什么”，还知道“当前观察更可能落在 App 图谱中的哪个页面节点”。
+
+### 4.2 从任务推断空间目标
+
+`GoalSpec.from_task()` 把自然语言任务转成页面目标。当前购物任务主要使用目标页面类型，例如：
+
+| 用户意图 | 可能目标 |
+| --- | --- |
+| 搜索商品 | `search_result` |
+| 查看详情 | `product_detail` |
+| 加入购物车 | `cart` |
+| 进入确认订单 | `checkout` |
+
+当前实现会先切分正向目标子句，过滤“不要加购”“不要支付”这类否定约束，避免安全限制反过来变成规划目标。
+
+### 4.3 在页面图上规划路线
+
+`SpatialGraphMemory.plan(belief, goal_spec)` 以当前 `PageBelief.current_state_id` 为起点：
+
+1. 如果当前页面类型已经满足目标，返回 `goal_reached`。
+2. 从当前节点加载本地边和 Neo4j 边。
+3. 限定路线在同一 App 内。
+4. 用加权最短路寻找到目标页面类型的路径。
+5. 每条候选边都经过 `_is_plausible_transition()` 过滤。
+
+当前过滤器会拒绝明显不适合当空间 shortcut 的旧轨迹噪声，例如：
+
+- 历史 `Type` 文本边。输入文本是任务槽位，不是可泛化的空间捷径。
+- 从搜索结果页直接到购物车、结算、支付的可疑边。
+- 动作语义与 SKU、购物车、结算、支付目标不匹配的边。
+
+规划器只把路径第一条边暴露为 `RoutePlan.next_action`。这比整条轨迹重放更稳，因为移动 App 页面会被弹窗、登录、推荐流和活动页扰动。
+
+### 4.4 兼容的任务轨迹回退
+
+`locate_and_get_context()` 仍保留旧任务图谱的兼容逻辑。空间路径没有返回 `navigate` 或 `goal_reached` 时，它还会查询 `TaskTarget`：
+
+1. `GraphStore.find_similar_tasks()` 优先通过 `TaskIndex` 做相似任务召回，失败时退回 n-gram 匹配。
+2. 相似度达到高阈值时，旧逻辑仍可能把历史轨迹第一步动作作为 `next_actions` 返回。
+3. 相似度处于参考区间时，历史轨迹会被压缩为文本上下文，而不是直接执行。
+
+这条链路是兼容层，不是空间图谱主链路。当前研究和工程优化重点应放在 `PageBelief -> GoalSpec -> RoutePlan`，逐步降低对“相似任务第一步复用”的依赖。
+
+## 5. 图谱如何赋予 Agent 空间感知
+
+### 5.1 空间感知不来自额外训练
+
+当前做法没有训练新模型。空间能力来自运行时结构化中间层：
+
+```text
+当前截图
+  -> 页面抽象 PageState
+  -> 页面定位 PageBelief
+  -> 任务目标 GoalSpec
+  -> 路线 RoutePlan
+  -> 下一步动作或探索回退
+```
+
+VLM 仍负责视觉理解和无路线时的探索。图谱负责回答三个空间问题：
+
+1. 我现在大概率在哪个页面？
+2. 这个任务应该去哪个页面类型？
+3. 当前图中是否存在一条可信、低风险的下一步边？
+
+### 5.2 当前传递通道
+
+| 通道 | 传递内容 | 当前消费者 | 作用 |
+| --- | --- | --- | --- |
+| `context_data["current_state_id"]` 和 `belief` | 当前页面定位结果 | `MemoryManager`、`PhoneAgent` | 建立当前空间坐标 |
+| `context_data["route_plan"]` | 目标、路线、风险、候选边 | `MemoryManager` | 保存规划证据 |
+| `context_data["next_actions"]` | 路径第一条动作及后置条件 | `PhoneAgent` | 在 `navigate` 模式直接执行 |
+| `semantic_context` 中的 `[SpatialGraph]` 摘要 | 当前页、路线、修复提示 | clarification 和上下文消费者 | 形成可读空间说明 |
+
+`RoutePlan.next_action` 是目前最直接的空间传递方式。它把图谱中的动作模板变成 Agent 可执行动作，并附带预期后置条件：
+
+```python
+{
+    "type": "Tap",
+    "target": "search bar",
+    "target_desc": "...",
+    "confidence": 0.91,
+    "postcondition": "search_input",
+}
+```
+
+`PhoneAgent` 在 `navigate` 分支把它转换为真实动作，执行后等待下一轮观察校验结果。也就是说，空间图谱不是给 VLM 一段长轨迹让它模仿，而是给执行器一条“此刻在哪、下一步往哪走”的受约束边。
+
+### 5.3 当前实现边界
+
+需要区分“图谱已经参与执行”与“VLM 已经完整读取空间地图”：
+
+- 当前高置信路线会被 Agent 直接执行，这是已打通的空间控制通道。
+- `SpatialGraphMemory.context_summary()` 已生成 `[SpatialGraph]`、`[SpatialGraph Route]`、`[SpatialGraph Repair]` 摘要，并放入 `context_data["semantic_context"]`。
+- 普通 explore 路径下，`_execute_step()` 的每轮 VLM prompt 主要仍注入截图、任务、轻量进度和关键场景提示；空间摘要还没有稳定成为每轮 VLM prompt 的显式地图段。
+
+因此当前系统更准确的定义是：**图谱先赋予 Agent 控制层空间认知，再在必要时让 VLM 继续视觉探索**。如果后续目标是让 VLM 在无 shortcut 时也显式利用地图，应继续打通空间摘要的 prompt 注入和基于图谱的反思提示。
+
+## 6. 执行后写回与纠错
+
+图谱写回是延迟一拍完成的。
+
+1. 当前动作执行后，`MemoryManager.update_state_and_transition()` 暂存：
+   - 动作前页面
+   - 当前动作
+   - 预期后置条件
+2. 下一轮截图定位到新页面后，`locate_and_get_context()` 比较实际页面与预期后置条件。
+3. `SpatialGraphMemory.repair()` 给出修复决策：
+   - `retry`
+   - `rollback`
+   - `replan`
+   - `ask_user`
+   - `fallback_to_vlm`
+4. `record_observation()` 把成功或失败边写回本地 edge cache 和 Neo4j。
+
+高风险页面会更保守。例如登录、地址、结算、支付相关页面一旦和预期不符，修复器优先返回 `ask_user`，而不是盲目继续推进。
+
+## 7. 离线数据和在线数据
+
+空间图谱目前有三类来源：
+
+| 来源 | 入口 | 价值 | 风险 |
+| --- | --- | --- | --- |
+| 人工轨迹 | `manual_trajectory_importer.py` | 动作更接近真实任务路线 | 旧 schema 可能把任务槽位和空间边混在一起 |
+| 自动探索 | `offline_explorer.py`、`import_exploration.py` | 覆盖页面和局部转移 | 弹窗、滚动、噪声页面容易扩张 |
+| 在线执行 | `record_observation()` | 能根据真实成功/失败更新边 | 需要控制页面合并和写入膨胀 |
+
+`rebuild_spatial_graph.py` 用于把人工轨迹与离线探索产物重建到新的空间图谱中。重建和在线写入都应优先合并页面抽象，避免把每一张推荐流截图都扩成永久节点。
+
+## 8. 设备、模型和动作边界
+
+### 8.1 设备抽象
+
+`DeviceFactory` 屏蔽设备差异：
+
+- Android 使用 ADB
+- HarmonyOS 使用 HDC
+- iOS 使用 XCTest / WebDriverAgent
+
+Agent 的上层循环只关心截图、当前 App、点击、滑动、输入、返回、启动 App 等操作。
+
+### 8.2 模型适配
+
+当前模型通过 adapter 和 handler 解耦：
+
+| 模型族 | 主要适配点 |
+| --- | --- |
+| AutoGLM | 通用 `do(...)` / `finish(...)` 解析 |
+| UI-TARS | Thought / Action 文本和专用坐标格式 |
+| Qwen-VL | tool call JSON 与重建式消息历史 |
+| MAI-UI | thinking 与 tool call 混合格式 |
+| GUI-Owl | 单图和专用 action 历史 |
+
+空间图谱不依赖某一个 VLM 的训练格式。它只要求 Agent 能把图谱动作恢复成当前 handler 可以执行的动作字典。
+
+## 9. 当前能力与下一步
+
+### 9.1 已具备
+
+- 页面级 `PageState` 抽象，不再只依赖截图 hash。
+- Neo4j 页面定位和同 App 路线加载。
+- `GoalSpec` 目标页面推断与否定约束过滤。
+- 风险感知加权最短路和边 plausibility 过滤。
+- 高置信路线第一步 direct navigation。
+- 当前页目标满足时 `goal_reached` 停止继续规划。
+- 执行后成功边、失败边和修复提示写回。
+
+### 9.2 仍需补强
+
+- 在线页面合并与图谱膨胀控制。
+- 人工轨迹、自动探索、在线执行边的来源质量分层。
+- 将空间摘要更稳定地注入 explore 路径的 VLM 推理上下文。
+- 把失败统计、回退边和重规划做成更完整的购物任务闭环。
+- 对搜索、商品详情、SKU、购物车、结算前确认等核心空间链路做持续真机评估。
+
+这套架构的目标不是让 Agent 记住某一次淘宝轨迹，而是让它在高干扰 App 中逐步形成可定位、可规划、可纠错的页面空间认知。
