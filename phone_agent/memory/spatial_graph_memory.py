@@ -668,6 +668,71 @@ class SpatialGraphMemory:
             canonical[key] = self._canonical_page_state(state, key)
         return {state.state_id: state for state in canonical.values()}
 
+    def canonicalize_state_graph(
+        self,
+        states: Iterable[PageState],
+        edges_by_source: dict[str, list[TransitionEdge]] | None = None,
+    ) -> tuple[dict[str, PageState], list[TransitionEdge], GraphQualityReport]:
+        """Canonicalize an in-memory graph, preserving promotable transitions."""
+        canonical_by_key: dict[str, PageState] = {}
+        source_to_canonical: dict[str, PageState] = {}
+        pages_seen = 0
+        transient = 0
+        for state in states:
+            pages_seen += 1
+            if state.page_type in _TRANSIENT_PAGE_TYPES:
+                transient += 1
+                continue
+            key = self._canonical_page_key(state)
+            if key in canonical_by_key:
+                canonical_by_key[key] = self._merge_page_states(canonical_by_key[key], state)
+            else:
+                canonical_by_key[key] = self._canonical_page_state(state, key)
+            source_to_canonical[state.state_id] = canonical_by_key[key]
+
+        canonical_states = {state.state_id: state for state in canonical_by_key.values()}
+        promoted_edges: list[TransitionEdge] = []
+        filtered_edges = 0
+        edges_seen = 0
+        for source_id, edges in (edges_by_source or {}).items():
+            source = source_to_canonical.get(source_id)
+            for edge in edges:
+                edges_seen += 1
+                target = source_to_canonical.get(edge.target_id)
+                if not source or not target:
+                    filtered_edges += 1
+                    continue
+                canonical_edge = TransitionEdge(
+                    source_id=source.state_id,
+                    target_id=target.state_id,
+                    action_type=edge.action_type,
+                    action_target=edge.action_target,
+                    action_params=edge.action_params,
+                    precondition=edge.precondition,
+                    postcondition=target.page_type,
+                    success_count=edge.success_count,
+                    fail_count=edge.fail_count,
+                    rollback_action=edge.rollback_action,
+                    cost=edge.cost,
+                    risk=target.risk_level,
+                    confidence=edge.confidence,
+                    evidence=edge.evidence,
+                )
+                if not self._is_promotable_edge(canonical_edge, source, target):
+                    filtered_edges += 1
+                    continue
+                promoted_edges.append(canonical_edge)
+
+        report = GraphQualityReport(
+            pages_seen=pages_seen,
+            canonical_pages=len(canonical_states),
+            transient_pages=transient,
+            transitions_seen=edges_seen,
+            transitions_promoted=len(promoted_edges),
+            transitions_filtered=filtered_edges,
+        )
+        return canonical_states, promoted_edges, report
+
     def promote_staging_to_canonical(
         self,
         canonical_states: dict[str, PageState],

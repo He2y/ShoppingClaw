@@ -109,6 +109,13 @@ class MemoryManager:
         self._runtime_dag: RuntimeDAG | None = None
         self._runtime_dag_task: str = ""
         self._coverage_gaps: list[str] = []
+        self._runtime_metrics: dict[str, int] = {
+            "page_classifier_calls": 0,
+            "page_classifier_skips": 0,
+            "runtime_dag_hits": 0,
+            "runtime_dag_misses": 0,
+            "coverage_gaps": 0,
+        }
 
         # Track extracted info in current session to avoid duplicates
         self._session_contacts: set[str] = set()
@@ -134,6 +141,13 @@ class MemoryManager:
         self._runtime_dag = None
         self._runtime_dag_task = task
         self._coverage_gaps = []
+        self._runtime_metrics = {
+            "page_classifier_calls": 0,
+            "page_classifier_skips": 0,
+            "runtime_dag_hits": 0,
+            "runtime_dag_misses": 0,
+            "coverage_gaps": 0,
+        }
 
         # Reset session tracking
         self._session_contacts.clear()
@@ -267,17 +281,32 @@ class MemoryManager:
     def should_use_page_classifier(self, step: int = 0, current_app: str = "") -> bool:
         """Return False when a usable RuntimeDAG can drive the next step cheaply."""
         if not self._runtime_dag or not self._runtime_dag.is_usable:
+            self._runtime_metrics["runtime_dag_misses"] += 1
             return True
         if self._pending_expected_postcondition in {"checkout", "payment", "address", "login"}:
+            self._runtime_metrics["runtime_dag_misses"] += 1
             return True
         next_edge = self._runtime_dag.next_edge()
         if not next_edge:
+            self._runtime_metrics["runtime_dag_hits"] += 1
             return False
         if next_edge.risk == "high" or next_edge.postcondition in {"checkout", "payment", "address", "login"}:
+            self._runtime_metrics["runtime_dag_misses"] += 1
             return True
         if current_app and self._runtime_dag.app and current_app != self._runtime_dag.app:
+            self._runtime_metrics["runtime_dag_misses"] += 1
             return True
+        self._runtime_metrics["runtime_dag_hits"] += 1
         return False
+
+    def record_page_classifier_decision(self, used: bool) -> None:
+        key = "page_classifier_calls" if used else "page_classifier_skips"
+        self._runtime_metrics[key] = self._runtime_metrics.get(key, 0) + 1
+
+    def get_runtime_metrics(self) -> dict[str, int]:
+        metrics = dict(self._runtime_metrics)
+        metrics["active_runtime_dag"] = 1 if self._runtime_dag and self._runtime_dag.is_usable else 0
+        return metrics
 
     def runtime_screen_hint(self, current_app: str = "") -> dict[str, Any]:
         """Provide a cheap page hint from the active RuntimeDAG."""
@@ -1433,6 +1462,7 @@ class MemoryManager:
             "goal_spec": None,
             "route_plan": None,
             "repair_hint": None,
+            "runtime_metrics": self.get_runtime_metrics(),
         }
 
         # Build screen dict (backward compatible)
@@ -1463,6 +1493,7 @@ class MemoryManager:
                 self._pending_expected_postcondition = None
             next_action = self.spatial_graph_memory.next_planned_action(self._runtime_dag)
             context_data["runtime_dag"] = self._runtime_dag.to_dict()
+            context_data["runtime_metrics"] = self.get_runtime_metrics()
             context_data["goal_spec"] = self._runtime_dag.goal_spec.to_dict()
             context_data["current_state_id"] = self._runtime_dag.current_node_id
             context_data["belief"] = {
@@ -1550,7 +1581,9 @@ class MemoryManager:
             context_data["runtime_dag"] = self._runtime_dag.to_dict()
         elif route_plan.mode == "explore" and route_plan.risk_summary:
             self._coverage_gaps.append(route_plan.risk_summary)
+            self._runtime_metrics["coverage_gaps"] += 1
             context_data["coverage_gap"] = route_plan.risk_summary
+        context_data["runtime_metrics"] = self.get_runtime_metrics()
 
         # Debug: log route planning result
         print(f"[SpatialGraph Debug] route_plan.mode={route_plan.mode}, "

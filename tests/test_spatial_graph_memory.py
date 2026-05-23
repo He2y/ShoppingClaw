@@ -684,6 +684,10 @@ def test_memory_manager_runtime_dag_fast_path_skips_relocalization(tmp_path):
     assert context["mode"] == "navigate"
     assert context["next_actions"][0]["_runtime_plan_id"] == "plan1"
     assert context["route_plan"]["mode"] == "runtime_dag"
+    manager.record_page_classifier_decision(False)
+    metrics = manager.get_runtime_metrics()
+    assert metrics["runtime_dag_hits"] >= 1
+    assert metrics["page_classifier_skips"] == 1
 
 
 def test_offline_explorer_save_results_auto_imports_spatial_graph(tmp_path):
@@ -859,3 +863,69 @@ def test_rebuild_spatial_graph_dry_run_combines_manual_and_exploration(tmp_path)
     assert report["totals"]["pages"] == 3
     assert report["totals"]["unique_pages"] <= report["totals"]["pages"]
     assert "dedupe_ratio" in report["totals"]
+
+
+def test_rebuild_spatial_graph_canonical_mode_reports_quality(tmp_path):
+    manual_run = tmp_path / "manual" / "淘宝" / "基础搜索商品" / "1"
+    manual_run.mkdir(parents=True)
+    (manual_run / "actions.json").write_text(
+        json.dumps({"app_name": "淘宝", "task_type": "基础搜索商品", "task_description": "搜索耳机"}),
+        encoding="utf-8",
+    )
+    (manual_run / "react.json").write_text(
+        json.dumps([{"function": {"name": "click", "parameters": {"target_element": "顶部搜索栏"}}}]),
+        encoding="utf-8",
+    )
+    (manual_run / "1.txt").write_text("Taobao home page with search bar.", encoding="utf-8")
+    (manual_run / "2.txt").write_text("Taobao search_input page with active search box.", encoding="utf-8")
+
+    exploration = tmp_path / "exploration"
+    exploration.mkdir()
+    (exploration / "taobao_explore_1.json").write_text(
+        json.dumps(
+            {
+                "app": "淘宝",
+                "pages": [
+                    {
+                        "page_type": "search_result",
+                        "summary": "耳机搜索结果",
+                        "elements": {"product_cards": "tap product card"},
+                        "screenshot_hash": "r1",
+                        "app": "淘宝",
+                    },
+                    {
+                        "page_type": "search_result",
+                        "summary": "MacBook搜索结果",
+                        "elements": {"product_cards": "tap product card"},
+                        "screenshot_hash": "r2",
+                        "app": "淘宝",
+                    },
+                    {
+                        "page_type": "unknown",
+                        "summary": "活动页",
+                        "elements": {},
+                        "screenshot_hash": "r3",
+                        "app": "淘宝",
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (exploration / "taobao_explore_transitions_1.json").write_text(
+        json.dumps({"app": "淘宝", "transitions": []}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+    report = rebuild_spatial_graph(
+        manual_root=tmp_path / "manual",
+        exploration_root=exploration,
+        write=False,
+        canonical=True,
+    )
+
+    assert report["canonical"] is True
+    assert report["manual_quality"]["canonical_pages"] <= report["manual"]["pages_imported"]
+    assert report["exploration"]["files"][0]["quality"]["transient_pages"] == 1
+    assert report["totals"]["unique_pages"] < report["totals"]["pages"]

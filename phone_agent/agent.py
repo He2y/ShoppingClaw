@@ -570,7 +570,11 @@ class PhoneAgent:
                     if self.agent_config.verbose:
                         print(f"⚡ RuntimeDAG hint: type={page_type}, skipping PageClassifier")
 
-            if use_page_classifier and self.page_classifier and not screenshot.is_sensitive:
+            used_page_classifier = bool(use_page_classifier and self.page_classifier and not screenshot.is_sensitive)
+            if self.memory_manager and hasattr(self.memory_manager, "record_page_classifier_decision"):
+                self.memory_manager.record_page_classifier_decision(used_page_classifier)
+
+            if used_page_classifier:
                 try:
                     pt, sm, el = self.page_classifier.classify(
                         screenshot.base64_data,
