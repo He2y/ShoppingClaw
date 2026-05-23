@@ -1,0 +1,63 @@
+{
+  "app": "淘宝",
+  "task": "多维筛选测试：从淘宝首页开始，点击搜索框，搜索蓝牙耳机，进入搜索结果页；打开筛选面板，设置价格区间500到1000元并应用筛选；在筛选后的结果页选择一个合适的普通商品进入详情页；点击立即购买或购买按钮，到达规格选择页即可停止。不要提交订单、不要支付、不要确认地址；遇到登录、支付、地址、订单确认、弹窗、直播、红包页面立即返回并结束；不要重复点击同一位置。",
+  "explored_at": "2026-05-23T22:55:19.681472",
+  "total_pages": 2,
+  "coverage": {
+    "covered_page_types": [
+      "search_input",
+      "spec_selection"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_result",
+      "product_detail",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "search_input",
+      "summary": "搜索输入页",
+      "elements": {},
+      "screenshot_hash": "e50e24ccf20d7e7c510c0626c16fde9b",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "spec_selection",
+      "summary": "商品规格选择",
+      "elements": {},
+      "screenshot_hash": "a9d1847190713752740f9367a8bb19d2",
+      "app": "淘宝"
+    }
+  ]
+}
