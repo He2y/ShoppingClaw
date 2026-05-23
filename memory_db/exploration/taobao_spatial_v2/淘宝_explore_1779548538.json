@@ -1,0 +1,64 @@
+{
+  "app": "淘宝",
+  "task": "重新采集多维筛选测试第二次：目标是补齐搜索结果页到筛选面板、价格筛选500到1000、筛选后结果页、商品详情、立即购买到规格选择页。若当前已经在淘宝搜索输入页，直接输入蓝牙耳机并点搜索；若当前已经在搜索结果页，直接继续打开筛选，不要返回首页。打开筛选面板后设置价格区间500到1000元并应用筛选；回到结果页后点击一个普通商品卡片进入详情；在详情页点击立即购买或购买按钮，到达规格选择页即可停止。不要提交订单、不要支付、不要确认地址；遇到登录、支付、地址、订单确认、弹窗、直播、红包页面立即返回并结束；不要重复点击同一位置。",
+  "explored_at": "2026-05-23T23:02:18.775550",
+  "total_pages": 2,
+  "coverage": {
+    "covered_page_types": [
+      "filter_panel",
+      "search_input"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_result",
+      "product_detail",
+      "spec_selection",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "search_input",
+      "summary": "搜索输入页",
+      "elements": {},
+      "screenshot_hash": "ae5dc9f07f4cdb025d25fbe1cb4b965d",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "filter_panel",
+      "summary": "商品筛选面板",
+      "elements": {},
+      "screenshot_hash": "5936e91ec314dffa167ce86aa8f2c2b3",
+      "app": "淘宝"
+    }
+  ]
+}

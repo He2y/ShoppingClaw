@@ -1171,6 +1171,8 @@ def test_offline_explorer_rejects_noisy_popup_or_drift_transition():
     assert recorded is False
     assert explorer.transitions == []
     assert explorer.rejected_transitions[0]["reason"] == "unexpected shopping flow transition"
+    assert OfflineExplorer._should_stop_after_rejected_transition("unexpected shopping flow transition") is False
+    assert OfflineExplorer._should_stop_after_rejected_transition("high-risk page boundary") is True
 
 
 def test_manual_trajectory_importer_prefers_react_json(tmp_path):

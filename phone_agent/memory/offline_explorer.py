@@ -967,7 +967,7 @@ class OfflineExplorer:
 
     @staticmethod
     def _should_stop_after_rejected_transition(reason: str) -> bool:
-        return reason in {"unexpected shopping flow transition", "high-risk page boundary"}
+        return reason == "high-risk page boundary"
 
     def _build_discovered_summary(self) -> str:
         """Build a summary of discovered pages for the VLM context."""
