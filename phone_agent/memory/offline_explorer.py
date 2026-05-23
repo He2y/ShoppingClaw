@@ -15,9 +15,11 @@ Architecture:
         └─ 产出: pages.json + transitions.json + trajectories.json
 """
 
+import argparse
 import base64
 import hashlib
 import json
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -31,8 +33,10 @@ from PIL import Image
 
 from phone_agent.actions.handler import ActionHandler, parse_action
 from phone_agent.config.apps import get_package_name
-from phone_agent.device_factory import DeviceFactory
-from phone_agent.model.client import MessageBuilder, ModelClient
+from dotenv import load_dotenv
+
+from phone_agent.device_factory import DeviceFactory, DeviceType, get_device_factory, set_device_type
+from phone_agent.model.client import MessageBuilder, ModelClient, ModelConfig
 
 
 # ── Enums & Data Classes ───────────────────────────────────────
@@ -243,6 +247,7 @@ class PageClassifier:
     ):
         # Use environment variables as defaults
         import os
+        api_key = api_key or os.environ.get("OFFLINE_VLM_API_KEY") or os.environ.get("PHONE_AGENT_API_KEY", "EMPTY")
         base_url = base_url or os.environ.get("OFFLINE_VLM_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
         model = model or os.environ.get("OFFLINE_VLM_MODEL", "qwen3-vl-flash")
 
@@ -407,11 +412,12 @@ class OfflineExplorer:
         max_steps: int = 15,
         task_description: str = "广度优先探索所有主要页面类型",
         classifier_api_key: str = "",
-        classifier_base_url: str = "https://dashscope.aliyuncs.com/apps/anthropic",
+        classifier_base_url: str | None = None,
         classifier_model: str = "qwen3-vl-flash",
         auto_import_graph: bool = False,
         graph_store: Any | None = None,
         coverage_targets: CoverageTarget | None = None,
+        device_id: str | None = None,
         verbose: bool = True,
     ):
         self.app_name = app_name
@@ -423,13 +429,14 @@ class OfflineExplorer:
         self.task_description = task_description
         self.auto_import_graph = auto_import_graph
         self.graph_store = graph_store
+        self.device_id = device_id
         self.coverage_targets = coverage_targets or CoverageTarget()
         self.coverage_report = CoverageReport((), self.coverage_targets.page_types, (), self.coverage_targets.transitions)
         self.last_import_result = None
         self.verbose = verbose
 
         # Action handler for executing VLM-decided actions
-        self.action_handler = ActionHandler()
+        self.action_handler = ActionHandler(device_id=device_id)
 
         # Page classifier using dedicated fast VLM with cropped screenshots
         self.classifier = PageClassifier(
@@ -463,7 +470,7 @@ class OfflineExplorer:
             self._log(f"  ERROR: Unknown app '{self.app_name}', not in APP_PACKAGES")
             return []
 
-        self.device.launch_app(self.app_name)
+        self.device.launch_app(self.app_name, self.device_id)
         time.sleep(4)  # Wait for app to fully load
 
         # Run the VLM-driven exploration loop
@@ -506,8 +513,8 @@ class OfflineExplorer:
 
         for step_idx in range(self.max_steps):
             # Capture current screen
-            screenshot = self.device.get_screenshot()
-            current_app = self.device.get_current_app()
+            screenshot = self.device.get_screenshot(self.device_id)
+            current_app = self.device.get_current_app(self.device_id)
 
             # ── Screen change detection ──
             cur_hash = screenshot.base64_data[:_SCREEN_CHANGE_HASH_LEN]
@@ -786,17 +793,97 @@ class OfflineExplorer:
             from .spatial_graph_memory import SpatialGraphMemory
 
             memory = SpatialGraphMemory(graph_store)
-            self.last_import_result = memory.import_exploration_files(
-                pages_path,
-                transitions_path,
-                persist=True,
-            )
+            states, edges, staging_report = memory.import_exploration_staging(pages_path, transitions_path)
+            promote_report = memory.promote_staging_to_canonical(states, edges, persist=True)
+            self.last_import_result = {
+                "staging": staging_report.to_dict(),
+                "promoted": promote_report.to_dict(),
+                "pages_imported": staging_report.canonical_pages,
+                "transitions_imported": staging_report.transitions_promoted,
+            }
             self._log(
                 "  imported spatial graph: "
-                f"{self.last_import_result.pages_imported} pages, "
-                f"{self.last_import_result.transitions_imported} transitions"
+                f"{self.last_import_result['pages_imported']} pages, "
+                f"{self.last_import_result['transitions_imported']} transitions"
             )
         finally:
             if owns_graph_store and graph_store:
                 graph_store.close()
+
+
+def _build_taobao_task() -> str:
+    return (
+        "覆盖淘宝购物核心空间骨架：home -> search_input -> search_result -> "
+        "product_detail -> spec_selection -> cart。"
+        "只执行安全探索动作，不提交订单、不支付、不确认地址。"
+        "如果进入登录、支付、地址或订单确认页，立刻返回。"
+    )
+
+
+def main() -> int:
+    load_dotenv()
+    parser = argparse.ArgumentParser(description="Coverage-guided offline explorer for shopping apps.")
+    parser.add_argument("--app", default="淘宝", help="Target shopping app name.")
+    parser.add_argument("--task", default=None, help="Natural-language exploration task.")
+    parser.add_argument("--storage-dir", default="memory_db/exploration/taobao_spatial_v2", help="Output directory.")
+    parser.add_argument("--max-steps", type=int, default=int(os.getenv("OFFLINE_EXPLORER_MAX_STEPS", "24")))
+    parser.add_argument("--device-type", choices=["adb", "hdc"], default=os.getenv("PHONE_AGENT_DEVICE_TYPE", "adb"))
+    parser.add_argument("--device-id", default=os.getenv("PHONE_AGENT_DEVICE_ID"))
+    parser.add_argument("--base-url", default=os.getenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1"))
+    parser.add_argument("--model", default=os.getenv("PHONE_AGENT_MODEL", "autoglm-phone-9b"))
+    parser.add_argument("--apikey", default=os.getenv("PHONE_AGENT_API_KEY", "EMPTY"))
+    parser.add_argument("--classifier-base-url", default=os.getenv("OFFLINE_VLM_BASE_URL"))
+    parser.add_argument("--classifier-model", default=os.getenv("OFFLINE_VLM_MODEL", "qwen3-vl-flash"))
+    parser.add_argument("--classifier-apikey", default=os.getenv("OFFLINE_VLM_API_KEY", os.getenv("PHONE_AGENT_API_KEY", "EMPTY")))
+    parser.add_argument("--auto-import-graph", action="store_true", help="Promote collected staging graph into Neo4j.")
+    parser.add_argument("--database", default="shopping-spatial-v2", help="Neo4j database for --auto-import-graph.")
+    parser.add_argument("--quiet", action="store_true")
+    args = parser.parse_args()
+
+    set_device_type(DeviceType(args.device_type))
+    graph_store = None
+    try:
+        if args.auto_import_graph:
+            from .graph_store import GraphStore
+
+            graph_store = GraphStore(database=args.database)
+        explorer = OfflineExplorer(
+            app_name=args.app,
+            device_factory=get_device_factory(),
+            model_client=ModelClient(
+                ModelConfig(
+                    base_url=args.base_url,
+                    api_key=args.apikey,
+                    model_name=args.model,
+                    lang=os.getenv("PHONE_AGENT_LANG", "cn"),
+                )
+            ),
+            storage_dir=args.storage_dir,
+            max_steps=args.max_steps,
+            task_description=args.task or _build_taobao_task(),
+            classifier_api_key=args.classifier_apikey,
+            classifier_base_url=args.classifier_base_url,
+            classifier_model=args.classifier_model,
+            auto_import_graph=args.auto_import_graph,
+            graph_store=graph_store,
+            device_id=args.device_id,
+            verbose=not args.quiet,
+        )
+        trajectories = explorer.explore()
+        report = {
+            "app": args.app,
+            "storage_dir": str(explorer.storage_dir),
+            "trajectories": len(trajectories),
+            "coverage": explorer.coverage_report.to_dict(),
+            "auto_import": explorer.last_import_result,
+        }
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0
+    finally:
+        if graph_store:
+            graph_store.close()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
 

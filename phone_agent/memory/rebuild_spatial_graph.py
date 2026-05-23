@@ -12,7 +12,7 @@ from pathlib import Path
 
 from .graph_store import GraphStore
 from .import_exploration import find_page_files
-from .manual_trajectory_importer import ManualTrajectoryImporter
+from .manual_trajectory_importer import ManualTrajectoryImporter, ManualTrajectoryImportResult
 from .spatial_graph_memory import SpatialGraphMemory
 
 _SAFE_CORE_FLOW = (
@@ -81,9 +81,25 @@ def _quality_gate(memory: SpatialGraphMemory, *, app: str = "淘宝") -> dict:
     }
 
 
+def _read_artifact_app(path: Path) -> str:
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    return str(data.get("app") or "")
+
+
+def _app_matches_filter(app: str, app_filter: str | None) -> bool:
+    if not app_filter:
+        return True
+    if not app:
+        return False
+    return app.strip().lower() == app_filter.strip().lower()
+
+
 def rebuild_spatial_graph(
     *,
-    manual_root: str | Path,
+    manual_root: str | Path | None,
     exploration_root: str | Path,
     database: str = "shopping-spatial-v1",
     write: bool = False,
@@ -93,6 +109,8 @@ def rebuild_spatial_graph(
     limit_manual: int | None = None,
     canonical: bool = False,
     quality_app: str = "淘宝",
+    include_manual: bool = True,
+    app_filter: str | None = None,
 ) -> dict:
     graph_store = GraphStore(database=database) if write else None
     try:
@@ -108,11 +126,14 @@ def rebuild_spatial_graph(
             graph_store.reset_spatial_graph()
 
         manual_importer = ManualTrajectoryImporter(graph_store if write and not canonical else None)
-        manual_result = manual_importer.import_directory(
-            manual_root,
-            persist=write and not canonical,
-            limit=limit_manual,
-        )
+        if include_manual and manual_root:
+            manual_result = manual_importer.import_directory(
+                manual_root,
+                persist=write and not canonical,
+                limit=limit_manual,
+            )
+        else:
+            manual_result = ManualTrajectoryImportResult()
 
         exploration_results = []
         exploration_memory = SpatialGraphMemory(graph_store if write and not canonical else None)
@@ -127,7 +148,12 @@ def rebuild_spatial_graph(
             )
             canonical_memory.promote_staging_to_canonical(manual_states, manual_edges, persist=write)
 
+        skipped_exploration_files = []
         for pages_path in find_page_files(exploration_root):
+            artifact_app = _read_artifact_app(pages_path)
+            if not _app_matches_filter(artifact_app, app_filter):
+                skipped_exploration_files.append({"pages_path": str(pages_path), "app": artifact_app})
+                continue
             if canonical:
                 states, edges, quality = exploration_memory.import_exploration_staging(pages_path)
                 promote_report = canonical_memory.promote_staging_to_canonical(states, edges, persist=write)
@@ -169,6 +195,11 @@ def rebuild_spatial_graph(
             "mode": "write" if write else "dry-run",
             "database": database,
             "canonical": canonical,
+            "source_policy": {
+                "include_manual": include_manual,
+                "app_filter": app_filter,
+                "skipped_exploration_files": skipped_exploration_files,
+            },
             "quality_gate": quality_gate,
             "manual": manual_result.to_dict(),
             "manual_quality": manual_quality.to_dict() if manual_quality else None,
@@ -204,6 +235,16 @@ def main() -> int:
     parser.add_argument("--yes", action="store_true", help="Confirm destructive reset")
     parser.add_argument("--limit-manual", type=int, default=None, help="Limit manual trajectories for smoke tests")
     parser.add_argument("--quality-app", default="淘宝", help="App name used for canonical graph quality gate")
+    parser.add_argument(
+        "--exploration-only",
+        action="store_true",
+        help="Ignore manual trajectory history and rebuild only from OfflineExplorer artifacts.",
+    )
+    parser.add_argument(
+        "--app-filter",
+        default=None,
+        help="Only import exploration artifacts whose top-level app matches this value.",
+    )
     args = parser.parse_args()
 
     report = rebuild_spatial_graph(
@@ -217,6 +258,8 @@ def main() -> int:
         limit_manual=args.limit_manual,
         canonical=not args.legacy,
         quality_app=args.quality_app,
+        include_manual=not args.exploration_only,
+        app_filter=args.app_filter,
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0

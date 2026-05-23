@@ -1503,10 +1503,12 @@ class SpatialGraphMemory:
         return "unknown"
 
     def _infer_risk_level(self, page_type: str, task: str) -> str:
-        if page_type in _HIGH_RISK_PAGE_TYPES or _contains_any(task, ("付款", "支付", "提交订单", "confirm order")):
+        if page_type in _HIGH_RISK_PAGE_TYPES:
             return "high"
         if page_type in _MEDIUM_RISK_PAGE_TYPES:
             return "medium"
+        if _contains_any(task, ("付款", "支付", "提交订单", "confirm order")):
+            return "high"
         return "normal"
 
     def _infer_landmarks(self, page_type: str) -> tuple[str, ...]:

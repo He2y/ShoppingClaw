@@ -174,6 +174,20 @@ def test_page_state_from_exploration_page_extracts_elements():
     assert "filter" in state.affordances
 
 
+def test_spec_selection_payment_text_stays_medium_risk():
+    state = SpatialGraphMemory().build_page_state(
+        ui_hash="sku",
+        semantic_layout="Taobao spec_selection",
+        app="Taobao",
+        page_type="spec_selection",
+        summary="Choose product spec",
+        elements={"payment_options": "installment payment options", "confirm_button": "confirm spec"},
+        state_id_strategy="semantic",
+    )
+
+    assert state.risk_level == "medium"
+
+
 def test_local_route_planning_prefers_recorded_success_edge():
     memory = SpatialGraphMemory()
     home = memory.build_page_state(
@@ -754,8 +768,8 @@ def test_offline_explorer_save_results_auto_imports_spatial_graph(tmp_path):
     explorer._save_results(trajectory)
 
     assert explorer.last_import_result is not None
-    assert explorer.last_import_result.pages_imported == 2
-    assert explorer.last_import_result.transitions_imported == 1
+    assert explorer.last_import_result["pages_imported"] == 2
+    assert explorer.last_import_result["transitions_imported"] == 1
 
 
 def test_offline_explorer_reports_coverage_gaps():
@@ -958,3 +972,70 @@ def test_rebuild_spatial_graph_canonical_mode_reports_quality(tmp_path):
     assert report["manual_quality"]["canonical_pages"] <= report["manual"]["pages_imported"]
     assert report["exploration"]["files"][0]["quality"]["transient_pages"] == 1
     assert report["totals"]["unique_pages"] < report["totals"]["pages"]
+
+
+def test_rebuild_spatial_graph_exploration_only_filters_app(tmp_path):
+    manual_run = tmp_path / "manual" / "Taobao" / "manual_task" / "1"
+    manual_run.mkdir(parents=True)
+    (manual_run / "actions.json").write_text(
+        json.dumps({"app_name": "Taobao", "task_type": "manual_task", "task_description": "manual"}),
+        encoding="utf-8",
+    )
+    (manual_run / "1.txt").write_text("Taobao home page with search bar.", encoding="utf-8")
+
+    exploration = tmp_path / "exploration"
+    exploration.mkdir()
+    (exploration / "taobao_explore_1.json").write_text(
+        json.dumps(
+            {
+                "app": "Taobao",
+                "pages": [
+                    {
+                        "page_type": "home",
+                        "summary": "Home",
+                        "elements": {"search_bar": "tap to search"},
+                        "screenshot_hash": "homehash",
+                        "app": "Taobao",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (exploration / "taobao_explore_transitions_1.json").write_text(
+        json.dumps({"app": "Taobao", "transitions": []}),
+        encoding="utf-8",
+    )
+    (exploration / "jd_explore_1.json").write_text(
+        json.dumps(
+            {
+                "app": "JD",
+                "pages": [
+                    {
+                        "page_type": "home",
+                        "summary": "JD home",
+                        "elements": {"search_bar": "tap to search"},
+                        "screenshot_hash": "jdhome",
+                        "app": "JD",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    report = rebuild_spatial_graph(
+        manual_root=tmp_path / "manual",
+        exploration_root=exploration,
+        write=False,
+        canonical=True,
+        quality_app="Taobao",
+        include_manual=False,
+        app_filter="Taobao",
+    )
+
+    assert report["source_policy"]["include_manual"] is False
+    assert report["manual"]["pages_imported"] == 0
+    assert report["exploration"]["pages_imported"] == 1
+    assert report["totals"]["pages"] == 1
+    assert report["source_policy"]["skipped_exploration_files"][0]["app"] == "JD"
