@@ -194,6 +194,8 @@ class GraphStore:
                a.type AS action_type,
                a.semantic_target AS action_target,
                a.target_desc AS action_params,
+               a.summary AS action_summary,
+               a.reasoning AS action_reasoning,
                r.confidence AS confidence,
                r.frequency AS success_count,
                coalesce(r.fail_count, 0) AS fail_count,
@@ -224,6 +226,7 @@ class GraphStore:
                         "action_type": record["action_type"] or "unknown",
                         "action_target": record["action_target"] or "",
                         "action_params": self._decode_action_params(record["action_params"] or ""),
+                        "evidence": record["action_summary"] or record["action_reasoning"] or "",
                         "confidence": record["confidence"] or record["success_rate"] or 0.0,
                         "success_count": record["success_count"] or 0,
                         "fail_count": record["fail_count"] or 0,
@@ -578,6 +581,89 @@ class GraphStore:
                 return dict(decoded)
         return {"raw": value}
 
+    @classmethod
+    def _enrich_action_metadata(
+        cls,
+        action_data: Dict[str, Any],
+        source_metadata: Optional[Dict[str, Any]] = None,
+        target_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Attach deterministic route semantics to persisted Action nodes."""
+        enriched = dict(action_data)
+        summary = str(enriched.get("summary") or "").strip()
+        reasoning = str(enriched.get("reasoning") or "").strip()
+        if not summary:
+            summary = cls._build_action_summary(enriched, source_metadata or {}, target_metadata or {})
+            enriched["summary"] = summary
+        if not reasoning:
+            enriched["reasoning"] = cls._build_action_reasoning(
+                enriched,
+                source_metadata or {},
+                target_metadata or {},
+                summary,
+            )
+        return enriched
+
+    @classmethod
+    def _build_action_summary(
+        cls,
+        action_data: Dict[str, Any],
+        source_metadata: Dict[str, Any],
+        target_metadata: Dict[str, Any],
+    ) -> str:
+        source_type = str(source_metadata.get("page_type") or "unknown")
+        target_type = str(target_metadata.get("page_type") or "unknown")
+        action_type = str(action_data.get("action_type") or action_data.get("action") or "unknown")
+        target_text = cls._action_target_text(action_data)
+        action_phrase = f"{action_type} {target_text}".strip()
+        return f"{source_type}->{target_type}: {action_phrase}"
+
+    @classmethod
+    def _build_action_reasoning(
+        cls,
+        action_data: Dict[str, Any],
+        source_metadata: Dict[str, Any],
+        target_metadata: Dict[str, Any],
+        summary: str,
+    ) -> str:
+        source_type = str(source_metadata.get("page_type") or "unknown")
+        target_type = str(target_metadata.get("page_type") or "unknown")
+        source_summary = str(source_metadata.get("summary") or source_type)
+        target_summary = str(target_metadata.get("summary") or target_type)
+        action_type = str(action_data.get("action_type") or action_data.get("action") or "unknown")
+        target_text = cls._action_target_text(action_data)
+        action_phrase = f"{action_type} {target_text}".strip()
+        return (
+            f"{summary}. On {source_type} ({source_summary}), perform {action_phrase} "
+            f"to reach {target_type} ({target_summary})."
+        )
+
+    @classmethod
+    def _action_target_text(cls, action_data: Dict[str, Any]) -> str:
+        value = (
+            action_data.get("semantic_target")
+            or action_data.get("target")
+            or action_data.get("element")
+            or action_data.get("text")
+            or ""
+        )
+        if value:
+            return cls._stringify_action_value(value)
+        actions = action_data.get("actions")
+        if isinstance(actions, list):
+            labels = [cls._action_target_text(item) for item in actions if isinstance(item, dict)]
+            labels = [label for label in labels if label]
+            return " -> ".join(labels)
+        return ""
+
+    @staticmethod
+    def _stringify_action_value(value: Any) -> str:
+        if isinstance(value, (list, tuple)):
+            return "[" + ", ".join(GraphStore._stringify_action_value(item) for item in value) + "]"
+        if isinstance(value, dict):
+            return json.dumps(value, ensure_ascii=False, sort_keys=True)
+        return str(value)
+
     def upsert_page_state(self, state_metadata: Dict[str, Any]) -> None:
         """Create or update a UIState node from a SpatialGraphMemory PageState."""
         if not self.driver:
@@ -695,6 +781,7 @@ class GraphStore:
         source_state_id = self._normalize_state_id(source_state_hash)
         target_state_id = self._normalize_state_id(target_state_hash)
         action_hash = hashlib.md5(str(action_data).encode("utf-8")).hexdigest()[:8]
+        action_data = self._enrich_action_metadata(action_data, source_metadata, target_metadata)
         action_id = f"act_{source_state_id}_{target_state_id}_{action_hash}"
         action_type = action_data.get("action_type") or action_data.get("action") or "unknown"
         success_delta = 0 if outcome == "failure" else 1
@@ -731,6 +818,7 @@ class GraphStore:
         SET a.type = $type,
             a.target_desc = $target,
             a.semantic_target = $semantic_target,
+            a.summary = $summary,
             a.reasoning = $reasoning,
             a.source_type = coalesce($source_type, a.source_type),
             a.source_path = coalesce($source_path, a.source_path),
@@ -780,6 +868,7 @@ class GraphStore:
                 type=action_type,
                 target=str(action_data),
                 semantic_target=str(action_data.get("semantic_target") or action_data.get("target") or action_data.get("element") or action_data.get("text") or ""),
+                summary=str(action_data.get("summary") or ""),
                 reasoning=str(action_data.get("reasoning") or ""),
                 source_type=action_data.get("source_type"),
                 source_path=action_data.get("source_path"),
@@ -808,6 +897,8 @@ class GraphStore:
                a.type AS action_type,
                a.semantic_target AS action_target,
                a.target_desc AS action_params,
+               a.summary AS action_summary,
+               a.reasoning AS action_reasoning,
                r.confidence AS confidence,
                r.frequency AS success_count,
                coalesce(r.fail_count, 0) AS fail_count,
@@ -832,6 +923,7 @@ class GraphStore:
                         fail_count=record["fail_count"] or 0,
                         risk=target_risk,
                         confidence=record["confidence"] or record["success_rate"] or 0.0,
+                        evidence=record["action_summary"] or record["action_reasoning"] or "",
                     )
                 )
         return edges

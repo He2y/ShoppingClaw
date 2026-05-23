@@ -140,6 +140,18 @@ def test_graph_store_decodes_persisted_action_params_for_replay():
     assert params["element"] == [429, 114]
 
 
+def test_graph_store_enriches_action_metadata_for_spatial_edges():
+    action = GraphStore._enrich_action_metadata(
+        {"_metadata": "do", "action": "Tap", "element": [429, 114]},
+        {"page_type": "home", "summary": "Taobao home"},
+        {"page_type": "search_input", "summary": "Search input page"},
+    )
+
+    assert action["summary"] == "home->search_input: Tap [429, 114]"
+    assert "perform Tap [429, 114]" in action["reasoning"]
+    assert "Search input page" in action["reasoning"]
+
+
 def test_locate_uses_graph_state_as_current_when_localized():
     graph_state = {
         "state_id": "state_taobao_home_graph",

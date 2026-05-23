@@ -211,6 +211,7 @@ class TransitionEdge:
         fail_count = 1 if outcome == "failure" else 0
         confidence_value = action.get("confidence")
         confidence = float(confidence_value) if confidence_value is not None else (0.4 if outcome == "failure" else 1.0)
+        evidence = str(action.get("summary") or action.get("reasoning") or "")
         return cls(
             source_id=source_id,
             target_id=target_id,
@@ -222,6 +223,7 @@ class TransitionEdge:
             fail_count=fail_count,
             risk=risk,
             confidence=confidence,
+            evidence=evidence,
         )
 
     @property
@@ -242,6 +244,7 @@ class TransitionEdge:
             "target_state_id": self.target_id,
             "postcondition": self.postcondition,
             "risk": self.risk,
+            "reasoning": self.evidence,
         }
 
     def to_dict(self) -> dict[str, Any]:
@@ -1254,6 +1257,8 @@ class SpatialGraphMemory:
                 f"{next_edge.source_id} --{next_edge.action_type}:{next_edge.action_target}--> "
                 f"{next_edge.target_id}; cost={route_plan.total_cost:.2f}; risk={route_plan.risk_summary}"
             )
+            if next_edge.evidence:
+                parts.append(f"[SpatialGraph Why] {next_edge.evidence}")
         elif route_plan.risk_summary:
             parts.append(f"[SpatialGraph Route] explore: {route_plan.risk_summary}")
         if repair_hint:
