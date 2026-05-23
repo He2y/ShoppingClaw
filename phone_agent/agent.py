@@ -556,8 +556,21 @@ class PhoneAgent:
             page_type = None
             summary = ""
             elements = None
+            use_page_classifier = True
+            if self.memory_manager and hasattr(self.memory_manager, "should_use_page_classifier"):
+                use_page_classifier = self.memory_manager.should_use_page_classifier(
+                    step=self._step_count,
+                    current_app=current_app or "",
+                )
+                if not use_page_classifier:
+                    hint = self.memory_manager.runtime_screen_hint(current_app or "")
+                    page_type = hint.get("page_type")
+                    summary = hint.get("summary", "")
+                    elements = hint.get("elements")
+                    if self.agent_config.verbose:
+                        print(f"⚡ RuntimeDAG hint: type={page_type}, skipping PageClassifier")
 
-            if self.page_classifier and not screenshot.is_sensitive:
+            if use_page_classifier and self.page_classifier and not screenshot.is_sensitive:
                 try:
                     pt, sm, el = self.page_classifier.classify(
                         screenshot.base64_data,
@@ -594,6 +607,7 @@ class PhoneAgent:
                 "page_type": page_type,
                 "summary": summary,
                 "elements": elements,
+                "_runtime_hint": not use_page_classifier,
             }
 
             # Keep semantic_layout variable for backward compatibility
@@ -690,6 +704,8 @@ class PhoneAgent:
                 finished = action.get("_metadata") == "finish" or result.should_finish
                 self._last_thinking = "[Graph Shortcut Navigated]"
                 if self.memory_manager:
+                    if hasattr(self.memory_manager, "mark_planned_action_executed"):
+                        self.memory_manager.mark_planned_action_executed(action, success=result.success)
                     self.memory_manager.add_step(
                         thinking="[Graph Shortcut Navigated]",
                         action=action,

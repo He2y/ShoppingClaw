@@ -121,6 +121,115 @@ class GraphStore:
                 candidates.append(dict(record["s"]))
         return candidates
 
+    def get_page_type_coverage(self, app: str = "") -> Dict[str, int]:
+        """Return canonical page coverage counts grouped by page_type."""
+        if not self.driver:
+            return {}
+        query = """
+        MATCH (s:UIState)
+        WHERE ($app = "" OR s.app = $app)
+        RETURN coalesce(s.page_type, "unknown") AS page_type, count(s) AS count
+        ORDER BY count DESC
+        """
+        coverage: Dict[str, int] = {}
+        with self.driver.session(database=self.database) as session:
+            for record in session.run(query, app=app or ""):
+                coverage[str(record["page_type"])] = int(record["count"] or 0)
+        return coverage
+
+    def get_transition_coverage(self, app: str = "") -> Dict[str, int]:
+        """Return transition coverage counts grouped by source/target page type."""
+        if not self.driver:
+            return {}
+        query = """
+        MATCH (s:UIState)-[:NEXT_ACTION]->(:Action)-[:PRODUCES]->(t:UIState)
+        WHERE coalesce(s.app, "") = coalesce(t.app, "")
+          AND ($app = "" OR s.app = $app)
+        RETURN coalesce(s.page_type, "unknown") AS source_type,
+               coalesce(t.page_type, "unknown") AS target_type,
+               count(*) AS count
+        ORDER BY count DESC
+        """
+        coverage: Dict[str, int] = {}
+        with self.driver.session(database=self.database) as session:
+            for record in session.run(query, app=app or ""):
+                key = f"{record['source_type']}->{record['target_type']}"
+                coverage[key] = int(record["count"] or 0)
+        return coverage
+
+    def get_missing_edges(self, app: str, target_flow: List[str]) -> List[Dict[str, str]]:
+        """Return missing adjacent page-type transitions for a target flow."""
+        transition_coverage = self.get_transition_coverage(app)
+        missing: List[Dict[str, str]] = []
+        for source, target in zip(target_flow, target_flow[1:]):
+            key = f"{source}->{target}"
+            if transition_coverage.get(key, 0) <= 0:
+                missing.append({"source": source, "target": target, "edge": key})
+        return missing
+
+    def load_spatial_subgraph(
+        self,
+        app: str,
+        goal_spec: Dict[str, Any],
+        start_candidates: List[str] | None = None,
+        max_nodes: int = 64,
+    ) -> Dict[str, Any]:
+        """Load a bounded task-relevant subgraph for runtime DAG compilation."""
+        if not self.driver:
+            return {"nodes": [], "edges": []}
+        target_page_types = list(goal_spec.get("target_page_types") or [])
+        start_candidates = start_candidates or []
+        query = """
+        MATCH (s:UIState)-[r:NEXT_ACTION]->(a:Action)-[p:PRODUCES]->(t:UIState)
+        WHERE coalesce(s.app, "") = coalesce(t.app, "")
+          AND ($app = "" OR s.app = $app)
+          AND (
+            size($starts) = 0 OR s.state_id IN $starts OR
+            size($targets) = 0 OR t.page_type IN $targets OR s.page_type IN $targets
+          )
+        RETURN s, t,
+               a.type AS action_type,
+               a.semantic_target AS action_target,
+               a.target_desc AS action_params,
+               r.confidence AS confidence,
+               r.frequency AS success_count,
+               coalesce(r.fail_count, 0) AS fail_count,
+               coalesce(p.success_rate, 1.0) AS success_rate
+        ORDER BY confidence DESC, success_count DESC
+        LIMIT $limit
+        """
+        nodes: Dict[str, Dict[str, Any]] = {}
+        edges: List[Dict[str, Any]] = []
+        with self.driver.session(database=self.database) as session:
+            for record in session.run(
+                query,
+                app=app or "",
+                targets=target_page_types,
+                starts=start_candidates,
+                limit=max_nodes,
+            ):
+                source = dict(record["s"])
+                target = dict(record["t"])
+                if source.get("state_id"):
+                    nodes[source["state_id"]] = source
+                if target.get("state_id"):
+                    nodes[target["state_id"]] = target
+                edges.append(
+                    {
+                        "source_id": source.get("state_id", ""),
+                        "target_id": target.get("state_id", ""),
+                        "action_type": record["action_type"] or "unknown",
+                        "action_target": record["action_target"] or "",
+                        "action_params": self._decode_action_params(record["action_params"] or ""),
+                        "confidence": record["confidence"] or record["success_rate"] or 0.0,
+                        "success_count": record["success_count"] or 0,
+                        "fail_count": record["fail_count"] or 0,
+                        "postcondition": target.get("page_type", ""),
+                        "risk": target.get("risk_level", "normal"),
+                    }
+                )
+        return {"nodes": list(nodes.values()), "edges": edges}
+
     def get_next_actions(self, state_hash: str, min_confidence: float = 0.5) -> List[Dict[str, Any]]:
         """Retrieve possible next actions from the current state."""
         if not self.driver:

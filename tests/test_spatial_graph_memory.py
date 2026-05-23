@@ -3,11 +3,12 @@ import json
 from phone_agent.memory.manual_trajectory_importer import ManualTrajectoryImporter
 from phone_agent.memory.graph_store import GraphStore
 from phone_agent.memory.memory_manager import MemoryManager
-from phone_agent.memory.offline_explorer import OfflineExplorer, PageInfo, ShoppingPageType, Trajectory
+from phone_agent.memory.offline_explorer import CoverageTarget, OfflineExplorer, PageInfo, ShoppingPageType, Trajectory
 from phone_agent.memory.rebuild_spatial_graph import rebuild_spatial_graph
 from phone_agent.memory.spatial_graph_memory import (
     PageBelief,
     PageBeliefCandidate,
+    RuntimeDAG,
     SpatialGraphMemory,
     TransitionEdge,
 )
@@ -437,6 +438,125 @@ def test_import_exploration_files_builds_route(tmp_path):
     assert route.next_action["type"] == "Tap"
 
 
+def test_staging_import_canonicalizes_query_variants_and_filters_unknown(tmp_path):
+    pages_path = tmp_path / "taobao_explore_1.json"
+    transitions_path = tmp_path / "taobao_explore_transitions_1.json"
+    pages_path.write_text(
+        json.dumps(
+            {
+                "app": "淘宝",
+                "pages": [
+                    {
+                        "page_type": "search_result",
+                        "summary": "耳机搜索结果",
+                        "elements": {"product_cards": "tap product card", "search_bar": "query=耳机"},
+                        "screenshot_hash": "hash1",
+                        "app": "淘宝",
+                    },
+                    {
+                        "page_type": "search_result",
+                        "summary": "MacBook搜索结果",
+                        "elements": {"product_cards": "tap product card", "search_bar": "query=MacBook"},
+                        "screenshot_hash": "hash2",
+                        "app": "淘宝",
+                    },
+                    {
+                        "page_type": "unknown",
+                        "summary": "618活动页",
+                        "elements": {},
+                        "screenshot_hash": "hash3",
+                        "app": "淘宝",
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    transitions_path.write_text(
+        json.dumps(
+            {
+                "app": "淘宝",
+                "transitions": [
+                    {
+                        "from": "search_result:耳机搜索结果",
+                        "action": {"action": "Tap", "semantic_target": "product card"},
+                        "to": "search_result:MacBook搜索结果",
+                    },
+                    {
+                        "from": "search_result:MacBook搜索结果",
+                        "action": {"action": "Tap", "semantic_target": "popup"},
+                        "to": "unknown:618活动页",
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    states, edges, report = SpatialGraphMemory().import_exploration_staging(pages_path, transitions_path)
+
+    assert report.pages_seen == 3
+    assert report.canonical_pages == 1
+    assert report.transient_pages == 1
+    assert report.transitions_promoted == 1
+    assert report.transitions_filtered == 1
+    assert len(states) == 1
+    assert next(iter(states.values())).page_type == "search_result"
+
+
+def test_runtime_dag_exposes_next_action_and_blocks_high_risk():
+    memory = SpatialGraphMemory()
+    home = memory.build_page_state(
+        ui_hash="home",
+        semantic_layout="淘宝 home",
+        app="淘宝",
+        page_type="home",
+    )
+    search = memory.build_page_state(
+        ui_hash="search",
+        semantic_layout="淘宝 search_input",
+        app="淘宝",
+        page_type="search_input",
+    )
+    dag = RuntimeDAG(
+        plan_id="plan1",
+        app="淘宝",
+        goal_spec=memory.infer_goal("搜索耳机", app="淘宝"),
+        nodes={home.state_id: home, search.state_id: search},
+        route=[
+            TransitionEdge(
+                source_id=home.state_id,
+                target_id=search.state_id,
+                action_type="Tap",
+                action_target="search bar",
+                postcondition="search_input",
+                confidence=0.9,
+            )
+        ],
+    )
+
+    action = memory.next_planned_action(dag)
+
+    assert action["type"] == "Tap"
+    assert action["postcondition"] == "search_input"
+
+    payment = TransitionEdge(
+        source_id=search.state_id,
+        target_id="payment",
+        action_type="Tap",
+        action_target="pay",
+        postcondition="payment",
+        risk="high",
+    )
+    dag.route = [payment]
+    dag.current_index = 0
+
+    assert memory.next_planned_action(dag) is None
+    assert dag.coverage_gaps
+
+
 def test_failed_edge_has_higher_weighted_cost():
     success = TransitionEdge(
         source_id="state_a",
@@ -520,6 +640,52 @@ def test_memory_manager_marks_pending_transition_failure_on_postcondition_mismat
     assert "SpatialGraph Repair" in context["semantic_context"]
 
 
+def test_memory_manager_runtime_dag_fast_path_skips_relocalization(tmp_path):
+    manager = MemoryManager(storage_dir=str(tmp_path), user_id="tester")
+    manager.graph_store = FakeGraphStore()
+    manager.spatial_graph_memory = SpatialGraphMemory(manager.graph_store)
+    home = manager.spatial_graph_memory.build_page_state(
+        ui_hash="home",
+        semantic_layout="淘宝 home",
+        app="淘宝",
+        page_type="home",
+    )
+    search_input = manager.spatial_graph_memory.build_page_state(
+        ui_hash="search",
+        semantic_layout="淘宝 search_input",
+        app="淘宝",
+        page_type="search_input",
+    )
+    edge = TransitionEdge(
+        source_id=home.state_id,
+        target_id=search_input.state_id,
+        action_type="Tap",
+        action_target="search bar",
+        postcondition="search_input",
+        confidence=0.9,
+    )
+    manager._runtime_dag = RuntimeDAG(
+        plan_id="plan1",
+        app="淘宝",
+        goal_spec=manager.spatial_graph_memory.infer_goal("搜索耳机", app="淘宝"),
+        nodes={home.state_id: home, search_input.state_id: search_input},
+        route=[edge],
+    )
+
+    assert manager.should_use_page_classifier(step=2, current_app="淘宝") is False
+
+    context = manager.locate_and_get_context(
+        ui_hash="runtimehash",
+        semantic_layout="淘宝 home",
+        task="搜索耳机",
+        screen_dict={"ui_hash": "runtimehash", "app": "淘宝", "_runtime_hint": True},
+    )
+
+    assert context["mode"] == "navigate"
+    assert context["next_actions"][0]["_runtime_plan_id"] == "plan1"
+    assert context["route_plan"]["mode"] == "runtime_dag"
+
+
 def test_offline_explorer_save_results_auto_imports_spatial_graph(tmp_path):
     explorer = object.__new__(OfflineExplorer)
     explorer.app_name = "淘宝"
@@ -559,6 +725,39 @@ def test_offline_explorer_save_results_auto_imports_spatial_graph(tmp_path):
     assert explorer.last_import_result is not None
     assert explorer.last_import_result.pages_imported == 2
     assert explorer.last_import_result.transitions_imported == 1
+
+
+def test_offline_explorer_reports_coverage_gaps():
+    explorer = object.__new__(OfflineExplorer)
+    explorer.coverage_targets = CoverageTarget(
+        page_types=("home", "search_input", "search_result"),
+        transitions=(("home", "search_input"), ("search_input", "search_result")),
+    )
+    home = PageInfo(
+        page_type=ShoppingPageType.HOME,
+        semantic_summary="首页",
+        elements={"search_bar": "tap to search"},
+        screenshot_hash="homehash",
+        app="淘宝",
+    )
+    search_input = PageInfo(
+        page_type=ShoppingPageType.SEARCH_INPUT,
+        semantic_summary="搜索输入",
+        elements={"search_bar": "active"},
+        screenshot_hash="inputhash",
+        app="淘宝",
+    )
+    explorer.discovered_pages = {home.state_key(): home, search_input.state_key(): search_input}
+    explorer.transitions = [
+        {"from": home.state_key(), "action": {"action": "Tap"}, "to": search_input.state_key()}
+    ]
+
+    report = explorer._update_coverage_report()
+
+    assert report.covered_page_types == ("home", "search_input")
+    assert report.missing_page_types == ("search_result",)
+    assert report.covered_transitions == (("home", "search_input"),)
+    assert report.missing_transitions == (("search_input", "search_result"),)
 
 
 def test_manual_trajectory_importer_prefers_react_json(tmp_path):

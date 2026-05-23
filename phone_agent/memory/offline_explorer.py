@@ -46,6 +46,8 @@ class ShoppingPageType(Enum):
     SPEC_SELECTION = "spec_selection"
     CART = "cart"
     CHECKOUT = "checkout"
+    PAYMENT = "payment"
+    ADDRESS = "address"
     CATEGORY = "category"
     MY_ACCOUNT = "my_account"
     STORE = "store"
@@ -96,6 +98,52 @@ class Trajectory:
         ))
 
 
+@dataclass(frozen=True)
+class CoverageTarget:
+    """Coverage contract for task-directed offline exploration."""
+
+    page_types: tuple[str, ...] = (
+        "home",
+        "search_input",
+        "search_result",
+        "product_detail",
+        "spec_selection",
+        "cart",
+        "checkout",
+    )
+    transitions: tuple[tuple[str, str], ...] = (
+        ("home", "search_input"),
+        ("search_input", "search_result"),
+        ("search_result", "product_detail"),
+        ("product_detail", "spec_selection"),
+        ("spec_selection", "cart"),
+        ("cart", "checkout"),
+    )
+
+
+@dataclass(frozen=True)
+class CoverageReport:
+    """Current coverage of page types and transitions."""
+
+    covered_page_types: tuple[str, ...]
+    missing_page_types: tuple[str, ...]
+    covered_transitions: tuple[tuple[str, str], ...]
+    missing_transitions: tuple[tuple[str, str], ...]
+
+    @property
+    def complete(self) -> bool:
+        return not self.missing_page_types and not self.missing_transitions
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "covered_page_types": list(self.covered_page_types),
+            "missing_page_types": list(self.missing_page_types),
+            "covered_transitions": [list(edge) for edge in self.covered_transitions],
+            "missing_transitions": [list(edge) for edge in self.missing_transitions],
+            "complete": self.complete,
+        }
+
+
 # ── Page Classifier ─────────────────────────────────────────────
 
 # Crop ratios for removing persistent UI chrome before classification.
@@ -118,12 +166,33 @@ _PAGE_TYPE_MAP: Dict[str, ShoppingPageType] = {
     "spec_selection": ShoppingPageType.SPEC_SELECTION,
     "cart": ShoppingPageType.CART,
     "checkout": ShoppingPageType.CHECKOUT,
+    "payment": ShoppingPageType.PAYMENT,
+    "address": ShoppingPageType.ADDRESS,
     "category": ShoppingPageType.CATEGORY,
     "my_account": ShoppingPageType.MY_ACCOUNT,
     "store": ShoppingPageType.STORE,
     "login": ShoppingPageType.LOGIN,
     "unknown": ShoppingPageType.UNKNOWN,
 }
+
+_HIGH_RISK_PAGE_TYPES = {
+    ShoppingPageType.CHECKOUT,
+    ShoppingPageType.PAYMENT,
+    ShoppingPageType.ADDRESS,
+    ShoppingPageType.LOGIN,
+}
+
+_UNSAFE_ACTION_TOKENS = (
+    "支付",
+    "付款",
+    "提交订单",
+    "确认订单",
+    "下单",
+    "pay",
+    "payment",
+    "submit",
+    "checkout",
+)
 
 _CLASSIFIER_SYSTEM_PROMPT = (
     "你是一个移动应用页面分类器。识别购物App当前显示的页面类型，并列出页面中的关键交互元素。\n\n"
@@ -342,6 +411,7 @@ class OfflineExplorer:
         classifier_model: str = "qwen3-vl-flash",
         auto_import_graph: bool = False,
         graph_store: Any | None = None,
+        coverage_targets: CoverageTarget | None = None,
         verbose: bool = True,
     ):
         self.app_name = app_name
@@ -353,6 +423,8 @@ class OfflineExplorer:
         self.task_description = task_description
         self.auto_import_graph = auto_import_graph
         self.graph_store = graph_store
+        self.coverage_targets = coverage_targets or CoverageTarget()
+        self.coverage_report = CoverageReport((), self.coverage_targets.page_types, (), self.coverage_targets.transitions)
         self.last_import_result = None
         self.verbose = verbose
 
@@ -500,6 +572,7 @@ class OfflineExplorer:
             # ── Record transition from previous step ──
             if prev_page_key is not None and prev_action is not None:
                 self._record_transition(prev_page_key, prev_action, page_info.state_key())
+            self._update_coverage_report()
 
             # Check if exploration is complete
             if action.get("_metadata") == "finish":
@@ -510,6 +583,10 @@ class OfflineExplorer:
             # Record step (current page + action about to execute)
             traj.add_step(page_info, action, response.thinking)
 
+            if self.coverage_report.complete:
+                self._log("  Coverage target reached; stopping exploration.")
+                break
+
             # Update context
             context[-1] = MessageBuilder.remove_images_from_message(context[-1])
             assistant_content = (
@@ -518,6 +595,11 @@ class OfflineExplorer:
             context.append(MessageBuilder.create_assistant_message(assistant_content))
 
             # Execute the action
+            if not self._is_safe_action(page_info, action):
+                self._log("  Unsafe exploration action blocked; recording page only.")
+                prev_page_key = None
+                prev_action = None
+                continue
             try:
                 result = self.action_handler.execute(
                     action, screenshot.width, screenshot.height
@@ -561,11 +643,43 @@ class OfflineExplorer:
             "action": action,
             "to": to_key,
         })
+        self._update_coverage_report()
+
+    def _update_coverage_report(self) -> CoverageReport:
+        if not hasattr(self, "coverage_targets"):
+            self.coverage_targets = CoverageTarget()
+        covered_pages = tuple(sorted({page.page_type.value for page in self.discovered_pages.values()}))
+        missing_pages = tuple(page_type for page_type in self.coverage_targets.page_types if page_type not in covered_pages)
+
+        covered_edges_set: set[tuple[str, str]] = set()
+        for item in self.transitions:
+            source_type = str(item.get("from") or "").partition(":")[0]
+            target_type = str(item.get("to") or "").partition(":")[0]
+            if source_type and target_type:
+                covered_edges_set.add((source_type, target_type))
+        covered_edges = tuple(sorted(covered_edges_set))
+        missing_edges = tuple(edge for edge in self.coverage_targets.transitions if edge not in covered_edges_set)
+        self.coverage_report = CoverageReport(
+            covered_page_types=covered_pages,
+            missing_page_types=missing_pages,
+            covered_transitions=covered_edges,
+            missing_transitions=missing_edges,
+        )
+        return self.coverage_report
+
+    def _is_safe_action(self, page_info: PageInfo, action: Dict[str, Any]) -> bool:
+        if page_info.page_type in _HIGH_RISK_PAGE_TYPES:
+            return False
+        if action.get("_metadata") == "finish":
+            return True
+        action_text = json.dumps(action, ensure_ascii=False).lower()
+        return not any(token.lower() in action_text for token in _UNSAFE_ACTION_TOKENS)
 
     def _build_discovered_summary(self) -> str:
         """Build a summary of discovered pages for the VLM context."""
         if not self.discovered_pages:
-            return "尚未发现任何页面。请继续探索。"
+            missing = ", ".join(self.coverage_targets.page_types)
+            return f"尚未发现任何页面。请优先覆盖这些页面类型: {missing}"
 
         by_type: Dict[str, int] = {}
         for p in self.discovered_pages.values():
@@ -573,7 +687,15 @@ class OfflineExplorer:
             by_type[t] = by_type.get(t, 0) + 1
 
         type_lines = "\n".join(f"  - {t}: {c}个" for t, c in sorted(by_type.items()))
-        return f"已发现 {len(self.discovered_pages)} 个页面:\n{type_lines}"
+        coverage = self._update_coverage_report()
+        missing_pages = ", ".join(coverage.missing_page_types) or "无"
+        missing_edges = ", ".join(f"{a}->{b}" for a, b in coverage.missing_transitions) or "无"
+        return (
+            f"已发现 {len(self.discovered_pages)} 个页面:\n{type_lines}\n"
+            f"缺失页面类型: {missing_pages}\n"
+            f"缺失转移: {missing_edges}\n"
+            "请优先选择能补齐缺失页面或缺失转移的安全动作，避免支付、提交订单和地址确认。"
+        )
 
     def _log(self, msg: str):
         if self.verbose:
@@ -591,6 +713,7 @@ class OfflineExplorer:
             "task": self.task_description,
             "explored_at": datetime.now().isoformat(),
             "total_pages": len(self.discovered_pages),
+            "coverage": self._update_coverage_report().to_dict(),
             "pages": [
                 {
                     "page_type": p.page_type.value,
@@ -639,6 +762,7 @@ class OfflineExplorer:
                 "app": self.app_name,
                 "task": self.task_description,
                 "total_transitions": len(self.transitions),
+                "coverage": self._update_coverage_report().to_dict(),
                 "transitions": self.transitions,
             }
             trans_path = self.storage_dir / f"{self.app_name}_explore_transitions_{timestamp}.json"

@@ -13,7 +13,7 @@ from typing import Any
 from .memory_store import MemoryStore, Memory, MemoryType
 from .core import UnifiedSessionState, Product, ProductStatus
 from .retrieval_gateway import RetrievalGateway, RetrievalResult
-from .spatial_graph_memory import SpatialGraphMemory
+from .spatial_graph_memory import PageBelief, RuntimeDAG, SpatialGraphMemory
 
 
 # Patterns for extracting user preferences (non-shopping: contacts, apps)
@@ -106,6 +106,9 @@ class MemoryManager:
         self._pending_transition_action: dict | None = None
         self._pending_expected_postcondition: str | None = None
         self._last_repair_decision = None
+        self._runtime_dag: RuntimeDAG | None = None
+        self._runtime_dag_task: str = ""
+        self._coverage_gaps: list[str] = []
 
         # Track extracted info in current session to avoid duplicates
         self._session_contacts: set[str] = set()
@@ -128,6 +131,9 @@ class MemoryManager:
         self._pending_transition_action = None
         self._pending_expected_postcondition = None
         self._last_repair_decision = None
+        self._runtime_dag = None
+        self._runtime_dag_task = task
+        self._coverage_gaps = []
 
         # Reset session tracking
         self._session_contacts.clear()
@@ -257,6 +263,71 @@ class MemoryManager:
     def get_current_state_id(self) -> str | None:
         """获取当��状态ID"""
         return self.state.current_state_id
+
+    def should_use_page_classifier(self, step: int = 0, current_app: str = "") -> bool:
+        """Return False when a usable RuntimeDAG can drive the next step cheaply."""
+        if not self._runtime_dag or not self._runtime_dag.is_usable:
+            return True
+        if self._pending_expected_postcondition in {"checkout", "payment", "address", "login"}:
+            return True
+        next_edge = self._runtime_dag.next_edge()
+        if not next_edge:
+            return False
+        if next_edge.risk == "high" or next_edge.postcondition in {"checkout", "payment", "address", "login"}:
+            return True
+        if current_app and self._runtime_dag.app and current_app != self._runtime_dag.app:
+            return True
+        return False
+
+    def runtime_screen_hint(self, current_app: str = "") -> dict[str, Any]:
+        """Provide a cheap page hint from the active RuntimeDAG."""
+        if not self._runtime_dag:
+            return {}
+        node = self._runtime_dag.nodes.get(self._runtime_dag.current_node_id)
+        if not node:
+            return {}
+        return {
+            "app": current_app or node.app,
+            "page_type": node.page_type,
+            "summary": node.summary,
+            "semantic_layout": f"{current_app or node.app} {node.page_type}",
+            "elements": None,
+        }
+
+    def mark_planned_action_executed(self, action: dict[str, Any], success: bool = True) -> None:
+        """Advance RuntimeDAG after a graph-planned action succeeds."""
+        if not success or not self._runtime_dag:
+            return
+        if action.get("_runtime_plan_id") != self._runtime_dag.plan_id:
+            return
+        self._runtime_dag.advance()
+        node = self._runtime_dag.nodes.get(self._runtime_dag.current_node_id)
+        if node:
+            self._current_page_state = node
+            self._current_state_id = node.state_id
+
+    def _runtime_dag_from_route(self, belief: PageBelief, goal_spec: Any, route_plan: Any) -> RuntimeDAG:
+        app = belief.candidates[0].state.app if belief.candidates else ""
+        seed = f"{self.current_task}|{belief.current_state_id}|{len(route_plan.steps)}"
+        import hashlib
+        dag = RuntimeDAG(
+            plan_id=hashlib.md5(seed.encode("utf-8")).hexdigest()[:12],
+            app=app,
+            goal_spec=goal_spec,
+        )
+        for candidate in belief.candidates:
+            dag.nodes[candidate.state.state_id] = candidate.state
+        for step in route_plan.steps:
+            edge = step.edge
+            source = self.spatial_graph_memory._local_states.get(edge.source_id)
+            target = self.spatial_graph_memory._local_states.get(edge.target_id)
+            if source:
+                dag.nodes[source.state_id] = source
+            if target:
+                dag.nodes[target.state_id] = target
+            dag.edges.setdefault(edge.source_id, []).append(edge)
+            dag.route.append(edge)
+        return dag
 
     def _save_pending_trajectory(self, task: str, success: bool, result: str,
                                  steps: list, apps: list, start_state: str | None,
@@ -1370,6 +1441,55 @@ class MemoryManager:
                 "ui_hash": ui_hash,
                 "semantic_layout": semantic_layout
             }
+        if (
+            self._runtime_dag
+            and self._runtime_dag.is_usable
+            and screen_dict.get("_runtime_hint")
+        ):
+            current_node = self._runtime_dag.nodes.get(self._runtime_dag.current_node_id)
+            if (
+                self._pending_transition_source is not None
+                and self._pending_transition_action is not None
+                and current_node is not None
+            ):
+                self.spatial_graph_memory.record_observation(
+                    self._pending_transition_source,
+                    self._pending_transition_action,
+                    current_node,
+                    outcome="success",
+                )
+                self._pending_transition_source = None
+                self._pending_transition_action = None
+                self._pending_expected_postcondition = None
+            next_action = self.spatial_graph_memory.next_planned_action(self._runtime_dag)
+            context_data["runtime_dag"] = self._runtime_dag.to_dict()
+            context_data["goal_spec"] = self._runtime_dag.goal_spec.to_dict()
+            context_data["current_state_id"] = self._runtime_dag.current_node_id
+            context_data["belief"] = {
+                "current_state_id": self._runtime_dag.current_node_id,
+                "confidence": 1.0,
+                "is_novel": False,
+                "candidates": [current_node.to_dict()] if current_node else [],
+            }
+            if next_action:
+                next_action["_runtime_plan_id"] = self._runtime_dag.plan_id
+                context_data["mode"] = "navigate"
+                context_data["next_actions"] = [next_action]
+                context_data["route_plan"] = {
+                    "mode": "runtime_dag",
+                    "confidence": next_action.get("confidence", 0.0),
+                    "coverage_gaps": [],
+                }
+                context_data["semantic_context"] = (
+                    f"[RuntimeDAG] plan={self._runtime_dag.plan_id} "
+                    f"step={self._runtime_dag.current_index + 1}/{len(self._runtime_dag.route)} "
+                    f"next={next_action.get('type')}:{next_action.get('target')}\n"
+                    f"{context_data.get('semantic_context', '')}"
+                ).strip()
+                return context_data
+            context_data["mode"] = "goal_reached"
+            context_data["route_plan"] = {"mode": "goal_reached", "source": "runtime_dag"}
+            return context_data
         belief = self.spatial_graph_memory.locate(
             screen_dict,
             task,
@@ -1425,6 +1545,12 @@ class MemoryManager:
         context_data["goal_spec"] = goal_spec.to_dict()
         context_data["route_plan"] = route_plan.to_dict()
         context_data["repair_hint"] = repair_hint.to_dict() if repair_hint else None
+        if route_plan.mode == "navigate" and route_plan.steps:
+            self._runtime_dag = self._runtime_dag_from_route(belief, goal_spec, route_plan)
+            context_data["runtime_dag"] = self._runtime_dag.to_dict()
+        elif route_plan.mode == "explore" and route_plan.risk_summary:
+            self._coverage_gaps.append(route_plan.risk_summary)
+            context_data["coverage_gap"] = route_plan.risk_summary
 
         # Debug: log route planning result
         print(f"[SpatialGraph Debug] route_plan.mode={route_plan.mode}, "
@@ -1445,7 +1571,10 @@ class MemoryManager:
 
         if route_plan.mode == "navigate" and route_plan.next_action:
             context_data["mode"] = "navigate"
-            context_data["next_actions"] = [route_plan.next_action]
+            next_action = dict(route_plan.next_action)
+            if self._runtime_dag:
+                next_action["_runtime_plan_id"] = self._runtime_dag.plan_id
+            context_data["next_actions"] = [next_action]
             # Debug logging
             print(f"[SpatialGraph] Navigate mode: action={route_plan.next_action.get('type')}, "
                   f"confidence={route_plan.next_action.get('confidence', 0):.2f}, "

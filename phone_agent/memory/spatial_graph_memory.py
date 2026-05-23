@@ -38,6 +38,18 @@ _SHOPPING_APPS = {
 
 _HIGH_RISK_PAGE_TYPES = {"checkout", "payment", "address", "login", "confirm"}
 _MEDIUM_RISK_PAGE_TYPES = {"spec_selection", "cart", "order_list", "refund"}
+_TRANSIENT_PAGE_TYPES = {"unknown"}
+_TASK_DAG_PAGE_LIMIT = 64
+
+_CORE_SHOPPING_FLOW = (
+    "home",
+    "search_input",
+    "search_result",
+    "product_detail",
+    "spec_selection",
+    "cart",
+    "checkout",
+)
 
 _PAGE_TYPE_KEYWORDS = [
     ("spec_selection", ("spec", "sku", "规格", "型号", "颜色", "尺码", "数量", "确定")),
@@ -374,6 +386,87 @@ class ExplorationImportResult:
         }
 
 
+@dataclass(frozen=True)
+class GraphQualityReport:
+    pages_seen: int = 0
+    canonical_pages: int = 0
+    transient_pages: int = 0
+    transitions_seen: int = 0
+    transitions_promoted: int = 0
+    transitions_filtered: int = 0
+    missing_edges: tuple[tuple[str, str], ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "pages_seen": self.pages_seen,
+            "canonical_pages": self.canonical_pages,
+            "transient_pages": self.transient_pages,
+            "transitions_seen": self.transitions_seen,
+            "transitions_promoted": self.transitions_promoted,
+            "transitions_filtered": self.transitions_filtered,
+            "missing_edges": [list(edge) for edge in self.missing_edges],
+        }
+
+
+@dataclass(frozen=True)
+class VerificationResult:
+    ok: bool
+    reason: str = ""
+    action: str = "continue"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"ok": self.ok, "reason": self.reason, "action": self.action}
+
+
+@dataclass
+class RuntimeDAG:
+    plan_id: str
+    app: str
+    goal_spec: GoalSpec
+    nodes: dict[str, PageState] = field(default_factory=dict)
+    edges: dict[str, list[TransitionEdge]] = field(default_factory=dict)
+    route: list[TransitionEdge] = field(default_factory=list)
+    current_index: int = 0
+    coverage_gaps: list[str] = field(default_factory=list)
+    risk_boundaries: tuple[str, ...] = tuple(sorted(_HIGH_RISK_PAGE_TYPES))
+
+    @property
+    def is_usable(self) -> bool:
+        return bool(self.route) and not self.coverage_gaps
+
+    @property
+    def current_node_id(self) -> str:
+        if not self.route:
+            return ""
+        if self.current_index <= 0:
+            return self.route[0].source_id
+        if self.current_index - 1 < len(self.route):
+            return self.route[self.current_index - 1].target_id
+        return self.route[-1].target_id
+
+    def next_edge(self) -> TransitionEdge | None:
+        if self.current_index >= len(self.route):
+            return None
+        return self.route[self.current_index]
+
+    def advance(self) -> None:
+        if self.current_index < len(self.route):
+            self.current_index += 1
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "plan_id": self.plan_id,
+            "app": self.app,
+            "goal_spec": self.goal_spec.to_dict(),
+            "current_node_id": self.current_node_id,
+            "current_index": self.current_index,
+            "coverage_gaps": list(self.coverage_gaps),
+            "risk_boundaries": list(self.risk_boundaries),
+            "nodes": [node.to_dict() for node in self.nodes.values()],
+            "route": [edge.to_dict() for edge in self.route],
+        }
+
+
 class SpatialGraphMemory:
     """Deep graph-memory module for page localization and route planning."""
 
@@ -488,6 +581,194 @@ class SpatialGraphMemory:
             unique_pages=len(self._local_states),
             persisted_to_graph=bool(persist and self.graph_store and getattr(self.graph_store, "driver", None)),
         )
+
+    def import_exploration_staging(
+        self,
+        pages_path: str | Path,
+        transitions_path: str | Path | None = None,
+    ) -> tuple[dict[str, PageState], list[TransitionEdge], GraphQualityReport]:
+        """Load exploration artifacts into a canonical staging graph.
+
+        Staging is intentionally side-effect free. It canonicalizes pages,
+        drops transient pages from the main graph, and filters unsafe/noisy
+        transitions before anything is promoted to Neo4j.
+        """
+        pages_file = Path(pages_path)
+        transitions_file = Path(transitions_path) if transitions_path else self.match_transitions_path(pages_file)
+        pages_data = self._read_json(pages_file)
+        transitions_data = self._read_json(transitions_file) if transitions_file and transitions_file.exists() else {}
+        app = str(pages_data.get("app") or transitions_data.get("app") or "")
+
+        raw_key_to_state: dict[str, PageState | None] = {}
+        canonical_states = self.canonicalize_pages(pages_data.get("pages", []), fallback_app=app)
+        canonical_by_key = {self._canonical_page_key(state): state for state in canonical_states.values()}
+        for page in pages_data.get("pages", []):
+            if not isinstance(page, dict):
+                continue
+            raw_state = self.page_state_from_exploration_page(page, fallback_app=app)
+            raw_key = self._transition_key(raw_state.page_type, raw_state.summary)
+            raw_key_to_state[raw_key] = canonical_by_key.get(self._canonical_page_key(raw_state))
+
+        promoted_edges: list[TransitionEdge] = []
+        filtered = 0
+        for item in transitions_data.get("transitions", []):
+            if not isinstance(item, dict):
+                continue
+            source = raw_key_to_state.get(str(item.get("from") or ""))
+            target = raw_key_to_state.get(str(item.get("to") or ""))
+            action = item.get("action") if isinstance(item.get("action"), dict) else {"action": "unknown"}
+            if not source or not target:
+                filtered += 1
+                continue
+            edge = TransitionEdge.from_action(
+                source.state_id,
+                target.state_id,
+                action,
+                risk=target.risk_level,
+                postcondition=target.page_type,
+                outcome=str(item.get("outcome") or "success"),
+            )
+            if not self._is_promotable_edge(edge, source, target):
+                filtered += 1
+                continue
+            promoted_edges.append(edge)
+
+        covered = {(canonical_states[edge.source_id].page_type if edge.source_id in canonical_states else "", edge.postcondition) for edge in promoted_edges}
+        target_edges = tuple(zip(_CORE_SHOPPING_FLOW, _CORE_SHOPPING_FLOW[1:]))
+        missing = tuple(edge for edge in target_edges if edge not in covered)
+        report = GraphQualityReport(
+            pages_seen=len([p for p in pages_data.get("pages", []) if isinstance(p, dict)]),
+            canonical_pages=len(canonical_states),
+            transient_pages=len(raw_key_to_state) - len([state for state in raw_key_to_state.values() if state]),
+            transitions_seen=len([t for t in transitions_data.get("transitions", []) if isinstance(t, dict)]),
+            transitions_promoted=len(promoted_edges),
+            transitions_filtered=filtered,
+            missing_edges=missing,
+        )
+        return canonical_states, promoted_edges, report
+
+    def canonicalize_pages(
+        self,
+        pages: Iterable[dict[str, Any]],
+        *,
+        fallback_app: str = "",
+    ) -> dict[str, PageState]:
+        """Collapse page variants into stable canonical PageState nodes."""
+        canonical: dict[str, PageState] = {}
+        for page in pages:
+            if not isinstance(page, dict):
+                continue
+            state = self.page_state_from_exploration_page(page, fallback_app=fallback_app)
+            if state.page_type in _TRANSIENT_PAGE_TYPES:
+                continue
+            key = self._canonical_page_key(state)
+            if key in canonical:
+                canonical[key] = self._merge_page_states(canonical[key], state)
+                continue
+            canonical[key] = self._canonical_page_state(state, key)
+        return {state.state_id: state for state in canonical.values()}
+
+    def promote_staging_to_canonical(
+        self,
+        canonical_states: dict[str, PageState],
+        edges: Iterable[TransitionEdge],
+        *,
+        persist: bool = True,
+    ) -> GraphQualityReport:
+        """Promote a validated staging graph into local memory and Neo4j."""
+        promoted_edges = 0
+        filtered_edges = 0
+        for state in canonical_states.values():
+            self._local_states[state.state_id] = state
+            if persist:
+                self._persist_page_state(state)
+        for edge in edges:
+            source = canonical_states.get(edge.source_id)
+            target = canonical_states.get(edge.target_id)
+            if not source or not target or not self._is_promotable_edge(edge, source, target):
+                filtered_edges += 1
+                continue
+            self._local_edges.setdefault(edge.source_id, []).append(edge)
+            promoted_edges += 1
+            if persist and self.graph_store and getattr(self.graph_store, "driver", None):
+                self.graph_store.add_state_transition(
+                    edge.source_id,
+                    edge.target_id,
+                    edge.action_params,
+                    outcome="success" if edge.success_count >= edge.fail_count else "failure",
+                    source_metadata=source.to_dict(),
+                    target_metadata=target.to_dict(),
+                )
+        return GraphQualityReport(
+            pages_seen=len(canonical_states),
+            canonical_pages=len(canonical_states),
+            transitions_seen=promoted_edges + filtered_edges,
+            transitions_promoted=promoted_edges,
+            transitions_filtered=filtered_edges,
+        )
+
+    def compile_task_dag(
+        self,
+        screen: dict[str, Any],
+        task: str,
+        *,
+        policy: str = "optimistic",
+    ) -> RuntimeDAG:
+        """Compile a task-local in-memory DAG from the canonical graph."""
+        belief = self.locate(screen, task)
+        goal = self.infer_goal(task, app=screen.get("app") or screen.get("semantic_layout", ""))
+        route = self.plan(belief, goal)
+        app = ""
+        if belief.candidates:
+            app = belief.candidates[0].state.app
+        plan_id = hashlib.md5(f"{task}|{belief.current_state_id}|{policy}".encode("utf-8")).hexdigest()[:12]
+        dag = RuntimeDAG(plan_id=plan_id, app=app, goal_spec=goal)
+        for candidate in belief.candidates:
+            dag.nodes[candidate.state.state_id] = candidate.state
+
+        if route.mode == "goal_reached":
+            return dag
+        if route.mode != "navigate" or not route.steps:
+            dag.coverage_gaps.append(route.risk_summary or "no graph route")
+            return dag
+
+        for step in route.steps[:_TASK_DAG_PAGE_LIMIT]:
+            edge = step.edge
+            source = self._local_states.get(edge.source_id)
+            target = self._local_states.get(edge.target_id)
+            if source:
+                dag.nodes[source.state_id] = source
+            if target:
+                dag.nodes[target.state_id] = target
+            dag.edges.setdefault(edge.source_id, []).append(edge)
+            dag.route.append(edge)
+        return dag
+
+    def next_planned_action(self, runtime_dag: RuntimeDAG) -> dict[str, Any] | None:
+        edge = runtime_dag.next_edge()
+        if not edge:
+            return None
+        if edge.risk == "high" or edge.postcondition in _HIGH_RISK_PAGE_TYPES:
+            runtime_dag.coverage_gaps.append(f"high-risk boundary: {edge.postcondition}")
+            return None
+        return edge.to_next_action()
+
+    def verify_planned_step(
+        self,
+        action_result: Any,
+        screenshot: dict[str, Any] | None,
+        expected_edge: TransitionEdge,
+    ) -> VerificationResult:
+        """Cheap runtime check for optimistic DAG execution."""
+        if action_result is not None and getattr(action_result, "success", True) is False:
+            return VerificationResult(False, getattr(action_result, "message", "action failed"), "replan")
+        if expected_edge.risk == "high" or expected_edge.postcondition in _HIGH_RISK_PAGE_TYPES:
+            return VerificationResult(False, f"high-risk boundary: {expected_edge.postcondition}", "ask_user")
+        if screenshot and screenshot.get("app") and expected_edge.action_params.get("app"):
+            expected_app = str(expected_edge.action_params.get("app"))
+            if expected_app and expected_app != screenshot.get("app"):
+                return VerificationResult(False, "app mismatch after planned action", "replan")
+        return VerificationResult(True, "optimistic check passed", "continue")
 
     @staticmethod
     def match_transitions_path(pages_path: str | Path) -> Path:
@@ -767,6 +1048,83 @@ class SpatialGraphMemory:
     @staticmethod
     def _transition_key(page_type: str, summary: str) -> str:
         return f"{page_type}:{summary}"
+
+    @staticmethod
+    def _canonical_page_key(state: PageState) -> str:
+        landmarks = ",".join(sorted(state.landmarks))
+        affordances = ",".join(sorted(state.affordances))
+        return "|".join([state.app, state.page_type, landmarks, affordances, state.risk_level])
+
+    def _canonical_page_state(self, state: PageState, canonical_key: str) -> PageState:
+        state_id = f"state_{_safe_slug(canonical_key)}_{hashlib.md5(canonical_key.encode('utf-8')).hexdigest()[:12]}"
+        semantic_signature = self._semantic_signature(
+            state.app,
+            state.page_type,
+            state.landmarks,
+            state.affordances,
+            {},
+        )
+        return PageState(
+            state_id=state_id,
+            app=state.app,
+            page_type=state.page_type,
+            summary=state.summary,
+            landmarks=state.landmarks,
+            affordances=state.affordances,
+            slots={},
+            risk_level=state.risk_level,
+            screenshot_hash=state.screenshot_hash,
+            semantic_signature=semantic_signature,
+        )
+
+    def _merge_page_states(self, first: PageState, second: PageState) -> PageState:
+        merged_landmarks = _dedupe((*first.landmarks, *second.landmarks), limit=12)
+        merged_affordances = _dedupe((*first.affordances, *second.affordances), limit=12)
+        summary = first.summary if len(first.summary) <= len(second.summary) else second.summary
+        canonical_key = self._canonical_page_key(
+            PageState(
+                state_id=first.state_id,
+                app=first.app,
+                page_type=first.page_type,
+                summary=summary,
+                landmarks=merged_landmarks,
+                affordances=merged_affordances,
+                risk_level=first.risk_level,
+            )
+        )
+        state_id = f"state_{_safe_slug(canonical_key)}_{hashlib.md5(canonical_key.encode('utf-8')).hexdigest()[:12]}"
+        return PageState(
+            state_id=state_id,
+            app=first.app,
+            page_type=first.page_type,
+            summary=summary,
+            landmarks=merged_landmarks,
+            affordances=merged_affordances,
+            slots={},
+            risk_level=first.risk_level,
+            screenshot_hash=first.screenshot_hash or second.screenshot_hash,
+            semantic_signature=self._semantic_signature(first.app, first.page_type, merged_landmarks, merged_affordances, {}),
+        )
+
+    def _is_promotable_edge(
+        self,
+        edge: TransitionEdge,
+        source_state: PageState | None,
+        target_state: PageState | None,
+    ) -> bool:
+        if not source_state or not target_state:
+            return False
+        if source_state.app != target_state.app:
+            return False
+        if source_state.page_type in _TRANSIENT_PAGE_TYPES or target_state.page_type in _TRANSIENT_PAGE_TYPES:
+            return False
+        if edge.confidence < 0.3:
+            return False
+        if edge.risk == "high" or target_state.page_type in _HIGH_RISK_PAGE_TYPES:
+            # High-risk pages can be represented as nodes, but their incoming
+            # actions are not promoted as executable shortcut edges.
+            return False
+        return self._is_plausible_transition(edge, source_state, target_state)
 
     @staticmethod
     def _read_json(path: Path) -> dict[str, Any]:

@@ -12,18 +12,21 @@ from .graph_store import GraphStore
 from .spatial_graph_memory import (
     GoalSpec,
     ExplorationImportResult,
+    GraphQualityReport,
     PageBelief,
     PageState,
     RepairDecision,
     RoutePlan,
+    RuntimeDAG,
     SpatialGraphMemory,
     TransitionEdge,
+    VerificationResult,
 )
 from .manual_trajectory_importer import ManualTrajectoryImporter, ManualTrajectoryImportResult
 from .memory_manager import MemoryManager
 from .core import UnifiedSessionState, Product, ProductStatus, StepRecord
 from .retrieval_gateway import RetrievalGateway, RetrievalResult
-from .offline_explorer import OfflineExplorer, ShoppingPageType, Trajectory, PageInfo, PageClassifier
+from .offline_explorer import CoverageReport, CoverageTarget, OfflineExplorer, ShoppingPageType, Trajectory, PageInfo, PageClassifier
 
 # Backward-compatible data type aliases
 ProductInfo = Product
@@ -44,8 +47,11 @@ __all__ = [
     "PageBelief",
     "GoalSpec",
     "ExplorationImportResult",
+    "GraphQualityReport",
     "RoutePlan",
+    "RuntimeDAG",
     "RepairDecision",
+    "VerificationResult",
     "ManualTrajectoryImporter",
     "ManualTrajectoryImportResult",
     "MemoryManager",
@@ -59,6 +65,8 @@ __all__ = [
     "RetrievalResult",
     # Offline explorer
     "OfflineExplorer",
+    "CoverageTarget",
+    "CoverageReport",
     "ShoppingPageType",
     "Trajectory",
     "PageInfo",
