@@ -1,0 +1,95 @@
+{
+  "app": "淘宝",
+  "task": "任务1-简单搜索：打开淘宝，点击搜索框，输入蓝牙耳机并进入搜索结果页。只探索搜索相关页面；不要登录、不要下单、不要支付、不要确认地址。到达搜索结果页后可以结束。",
+  "total_transitions": 3,
+  "coverage": {
+    "covered_page_types": [
+      "cart",
+      "filter_panel",
+      "search_input"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_result",
+      "product_detail",
+      "spec_selection",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "cart",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "cart"
+      ],
+      [
+        "search_input",
+        "filter_panel"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [
+    {
+      "from": "search_input:搜索输入页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          389,
+          114
+        ]
+      },
+      "to": "cart:购物车列表"
+    },
+    {
+      "from": "cart:购物车列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Type",
+        "text": "蓝牙耳机"
+      },
+      "to": "search_input:搜索输入页"
+    },
+    {
+      "from": "search_input:搜索输入页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          893,
+          71
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    }
+  ]
+}

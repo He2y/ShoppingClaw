@@ -1,0 +1,88 @@
+{
+  "app": "淘宝",
+  "task": "任务3-价格筛选：在淘宝搜索运动鞋，进入搜索结果页，打开筛选面板，设置价格区间100到300并应用筛选。只采集搜索结果、筛选面板、应用筛选后的结果页；不要登录、不要下单、不要支付、不要确认地址。完成筛选后结束。",
+  "explored_at": "2026-05-23T22:36:45.097921",
+  "total_pages": 3,
+  "coverage": {
+    "covered_page_types": [
+      "filter_panel",
+      "search_result",
+      "spec_selection"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "product_detail",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "filter_panel",
+        "filter_panel"
+      ],
+      [
+        "filter_panel",
+        "search_result"
+      ],
+      [
+        "spec_selection",
+        "filter_panel"
+      ],
+      [
+        "spec_selection",
+        "spec_selection"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "filter_panel",
+      "summary": "商品筛选面板",
+      "elements": {},
+      "screenshot_hash": "1cfd0bdfdec93f4f12df2a9c3e1c345a",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_result",
+      "summary": "商品搜索结果",
+      "elements": {},
+      "screenshot_hash": "b71173b7ed1a854116e6c949cf7fc0be",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "spec_selection",
+      "summary": "商品规格选择",
+      "elements": {},
+      "screenshot_hash": "f9eac16672c9a1b95cb7d675a325357b",
+      "app": "淘宝"
+    }
+  ]
+}

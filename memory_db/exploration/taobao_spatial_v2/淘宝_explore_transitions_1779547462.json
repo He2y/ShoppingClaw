@@ -1,0 +1,152 @@
+{
+  "app": "淘宝",
+  "task": "任务4-规格选择：在淘宝搜索保温杯，进入一个商品详情页，点击加入购物车或选择规格按钮，打开规格选择面板即可结束。遇到广告、直播、红包、登录、支付、地址、下单页面立即返回并结束；不要重复点击同一商品卡。",
+  "total_transitions": 0,
+  "coverage": {
+    "covered_page_types": [
+      "filter_panel",
+      "product_detail",
+      "search_input",
+      "search_result",
+      "unknown"
+    ],
+    "missing_page_types": [
+      "home",
+      "spec_selection",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [],
+  "rejected_transitions": [
+    {
+      "from": "search_input:搜索输入页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          429,
+          114
+        ]
+      },
+      "to": "search_input:搜索输入页",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "search_input:搜索输入页",
+      "action": {
+        "_metadata": "do",
+        "action": "Type",
+        "text": "保温杯"
+      },
+      "to": "search_result:商品搜索结果",
+      "reason": "non-navigation action"
+    },
+    {
+      "from": "search_result:商品搜索结果",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          893,
+          71
+        ]
+      },
+      "to": "filter_panel:商品筛选面板",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          253,
+          467
+        ]
+      },
+      "to": "unknown:无法解析页面",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "unknown:无法解析页面",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          916,
+          81
+        ]
+      },
+      "to": "filter_panel:商品筛选面板",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          744,
+          467
+        ]
+      },
+      "to": "product_detail:商品详情页",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          916,
+          81
+        ]
+      },
+      "to": "filter_panel:商品筛选面板",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          253,
+          467
+        ]
+      },
+      "to": "product_detail:商品详情页",
+      "reason": "unexpected shopping flow transition"
+    }
+  ]
+}

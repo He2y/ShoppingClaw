@@ -3,7 +3,14 @@ import json
 from phone_agent.memory.manual_trajectory_importer import ManualTrajectoryImporter
 from phone_agent.memory.graph_store import GraphStore
 from phone_agent.memory.memory_manager import MemoryManager
-from phone_agent.memory.offline_explorer import CoverageTarget, OfflineExplorer, PageInfo, ShoppingPageType, Trajectory
+from phone_agent.memory.offline_explorer import (
+    CoverageTarget,
+    OfflineExplorer,
+    PageClassifier,
+    PageInfo,
+    ShoppingPageType,
+    Trajectory,
+)
 from phone_agent.memory.rebuild_spatial_graph import rebuild_spatial_graph
 from phone_agent.memory.spatial_graph_memory import (
     PageBelief,
@@ -1041,6 +1048,7 @@ def test_offline_explorer_save_results_auto_imports_spatial_graph(tmp_path):
     explorer.storage_dir = tmp_path
     explorer.discovered_pages = {}
     explorer.transitions = []
+    explorer.rejected_transitions = []
     explorer.auto_import_graph = True
     explorer.graph_store = FakeGraphStore()
     explorer.last_import_result = None
@@ -1075,6 +1083,30 @@ def test_offline_explorer_save_results_auto_imports_spatial_graph(tmp_path):
     assert explorer.last_import_result["transitions_imported"] == 1
 
 
+def test_page_classifier_defaults_to_phone_agent_model(monkeypatch):
+    monkeypatch.delenv("OFFLINE_VLM_MODEL", raising=False)
+    monkeypatch.delenv("OFFLINE_VLM_BASE_URL", raising=False)
+    monkeypatch.setenv("PHONE_AGENT_MODEL", "autoglm-phone")
+    monkeypatch.setenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1")
+
+    classifier = PageClassifier(api_key="EMPTY", mode="off")
+    page_type, summary, elements = classifier.classify("unused", 100, 100)
+
+    assert classifier.model == "autoglm-phone"
+    assert classifier.mode == "off"
+    assert page_type == ShoppingPageType.UNKNOWN
+    assert summary == "classifier disabled"
+    assert elements == {}
+
+
+def test_page_classifier_text_fallback_detects_filter_panel():
+    result = PageClassifier._infer_result_from_text(
+        "当前页面显示全部筛选弹窗，包含价格区间、自定最低价、自定最高价和热门品牌。"
+    )
+
+    assert result["page_type"] == "filter_panel"
+
+
 def test_offline_explorer_reports_coverage_gaps():
     explorer = object.__new__(OfflineExplorer)
     explorer.coverage_targets = CoverageTarget(
@@ -1106,6 +1138,39 @@ def test_offline_explorer_reports_coverage_gaps():
     assert report.missing_page_types == ("search_result",)
     assert report.covered_transitions == (("home", "search_input"),)
     assert report.missing_transitions == (("search_input", "search_result"),)
+
+
+def test_offline_explorer_rejects_noisy_popup_or_drift_transition():
+    explorer = object.__new__(OfflineExplorer)
+    explorer.verbose = False
+    explorer.transitions = []
+    explorer.rejected_transitions = []
+
+    search_result = PageInfo(
+        page_type=ShoppingPageType.SEARCH_RESULT,
+        semantic_summary="搜索结果",
+        elements={},
+        screenshot_hash="result",
+        app="淘宝",
+    )
+    cart = PageInfo(
+        page_type=ShoppingPageType.CART,
+        semantic_summary="购物车",
+        elements={},
+        screenshot_hash="cart",
+        app="淘宝",
+    )
+    explorer.discovered_pages = {search_result.state_key(): search_result, cart.state_key(): cart}
+
+    recorded = explorer._record_transition(
+        search_result.state_key(),
+        {"action": "Tap", "element": [893, 71]},
+        cart.state_key(),
+    )
+
+    assert recorded is False
+    assert explorer.transitions == []
+    assert explorer.rejected_transitions[0]["reason"] == "unexpected shopping flow transition"
 
 
 def test_manual_trajectory_importer_prefers_react_json(tmp_path):

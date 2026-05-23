@@ -1,0 +1,132 @@
+{
+  "app": "淘宝",
+  "task": "任务2-进入详情：打开淘宝，搜索充电宝，进入搜索结果后点击一个普通商品卡片进入商品详情页。不要登录、不要下单、不要支付、不要确认地址；到达商品详情页后结束。",
+  "explored_at": "2026-05-23T22:31:10.801575",
+  "total_pages": 7,
+  "coverage": {
+    "covered_page_types": [
+      "cart",
+      "filter_panel",
+      "home",
+      "product_detail",
+      "search_input",
+      "search_result",
+      "spec_selection"
+    ],
+    "missing_page_types": [
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "cart",
+        "cart"
+      ],
+      [
+        "cart",
+        "filter_panel"
+      ],
+      [
+        "filter_panel",
+        "home"
+      ],
+      [
+        "filter_panel",
+        "product_detail"
+      ],
+      [
+        "filter_panel",
+        "search_input"
+      ],
+      [
+        "filter_panel",
+        "spec_selection"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "filter_panel"
+      ],
+      [
+        "spec_selection",
+        "filter_panel"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "filter_panel",
+      "summary": "商品筛选面板",
+      "elements": {},
+      "screenshot_hash": "0fe1cbccdd07b827341aedabf198416b",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_input",
+      "summary": "搜索输入页",
+      "elements": {},
+      "screenshot_hash": "1a26b8cb9ea4af07d2e4a590213cda72",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_result",
+      "summary": "商品搜索结果",
+      "elements": {},
+      "screenshot_hash": "74863b4b4924bef0af679da5c64af077",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "home",
+      "summary": "电商首页",
+      "elements": {},
+      "screenshot_hash": "53721591e1e660f5b57a7a4ee33e56d7",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "spec_selection",
+      "summary": "商品规格选择",
+      "elements": {},
+      "screenshot_hash": "e345b783a39e676f08023556e2461d98",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "cart",
+      "summary": "购物车列表",
+      "elements": {},
+      "screenshot_hash": "7d8fa1ce80f8b2dcd537cb8eb17428da",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "商品详情页",
+      "elements": {},
+      "screenshot_hash": "a995046fbe50ee8fad39775dfaa6404d",
+      "app": "淘宝"
+    }
+  ]
+}
