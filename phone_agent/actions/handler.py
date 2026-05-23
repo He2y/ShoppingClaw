@@ -100,6 +100,7 @@ class ActionHandler:
             "Double Tap": self._handle_double_tap,
             "Long Press": self._handle_long_press,
             "Wait": self._handle_wait,
+            "Compound": self._handle_compound,
             "Take_over": self._handle_takeover,
             "Note": self._handle_note,
             "Call_API": self._handle_call_api,
@@ -264,6 +265,31 @@ class ActionHandler:
             duration = 1.0
 
         time.sleep(duration)
+        return ActionResult(True, False)
+
+    def _handle_compound(self, action: dict, width: int, height: int) -> ActionResult:
+        """Execute a prevalidated same-page action macro."""
+        actions = action.get("actions")
+        if not isinstance(actions, list) or not actions:
+            return ActionResult(False, False, "Compound action has no steps")
+
+        for index, sub_action in enumerate(actions, start=1):
+            if not isinstance(sub_action, dict):
+                return ActionResult(False, False, f"Invalid compound step {index}")
+            step = dict(sub_action)
+            step.setdefault("_metadata", "do")
+            step_name = step.get("action")
+            if step_name == "Compound":
+                return ActionResult(False, False, "Nested compound actions are not supported")
+            if isinstance(step.get("text"), str) and step["text"].startswith("<") and step["text"].endswith(">"):
+                return ActionResult(False, False, f"Compound step {index} requires runtime input: {step['text']}")
+            handler_method = self._get_handler(step_name)
+            if handler_method is None:
+                return ActionResult(False, False, f"Unknown compound step action: {step_name}")
+            result = handler_method(step, width, height)
+            if not result.success or result.should_finish:
+                return result
+            time.sleep(0.2)
         return ActionResult(True, False)
 
     def _handle_takeover(self, action: dict, width: int, height: int) -> ActionResult:

@@ -37,11 +37,12 @@ _SHOPPING_APPS = {
 }
 
 _APP_ALIASES = {
-    "淘宝": {"淘宝", "天猫", "taobao", "tmall"},
-    "天猫": {"淘宝", "天猫", "taobao", "tmall"},
-    "京东": {"京东", "jd", "jingdong"},
-    "美团": {"美团", "meituan"},
-    "饿了么": {"饿了么", "eleme"},
+    "淘宝": {"淘宝", "天猫", "娣樺疂", "澶╃尗", "taobao", "tmall"},
+    "天猫": {"淘宝", "天猫", "娣樺疂", "澶╃尗", "taobao", "tmall"},
+    "京东": {"京东", "浜笢", "jd", "jingdong"},
+    "拼多多": {"拼多多", "鎷煎澶?", "pinduoduo"},
+    "美团": {"美团", "缇庡洟", "meituan"},
+    "饿了么": {"饿了么", "楗夸簡涔?", "eleme"},
     "叮咚买菜": {"叮咚买菜"},
     "盒马": {"盒马"},
     "瑞幸": {"瑞幸", "luckin"},
@@ -406,6 +407,8 @@ class GraphQualityReport:
     transitions_seen: int = 0
     transitions_promoted: int = 0
     transitions_filtered: int = 0
+    transitions_compacted: int = 0
+    compound_edges: int = 0
     app_mismatch_pages: int = 0
     missing_edges: tuple[tuple[str, str], ...] = ()
 
@@ -417,9 +420,20 @@ class GraphQualityReport:
             "transitions_seen": self.transitions_seen,
             "transitions_promoted": self.transitions_promoted,
             "transitions_filtered": self.transitions_filtered,
+            "transitions_compacted": self.transitions_compacted,
+            "compound_edges": self.compound_edges,
             "app_mismatch_pages": self.app_mismatch_pages,
             "missing_edges": [list(edge) for edge in self.missing_edges],
         }
+
+
+@dataclass(frozen=True)
+class _StagingTransition:
+    source: PageState
+    target: PageState
+    action: dict[str, Any]
+    outcome: str = "success"
+    raw_count: int = 1
 
 
 @dataclass(frozen=True)
@@ -560,36 +574,15 @@ class SpatialGraphMemory:
         *,
         persist: bool = True,
     ) -> ExplorationImportResult:
-        """Import OfflineExplorer pages/transitions into local memory and Neo4j when available."""
+        """Import OfflineExplorer pages/transitions through the canonical staging graph."""
         pages_file = Path(pages_path)
         transitions_file = Path(transitions_path) if transitions_path else self.match_transitions_path(pages_file)
-        pages_data = self._read_json(pages_file)
-        transitions_data = self._read_json(transitions_file) if transitions_file and transitions_file.exists() else {}
-        app = str(pages_data.get("app") or transitions_data.get("app") or "")
-
-        key_to_state: dict[str, PageState] = {}
-        for page in pages_data.get("pages", []):
-            if not isinstance(page, dict):
-                continue
-            state = self.page_state_from_exploration_page(page, fallback_app=app)
-            self._local_states[state.state_id] = state
-            key_to_state[self._transition_key(state.page_type, state.summary)] = state
-            if persist:
-                self._persist_page_state(state)
-
-        transition_count = 0
-        for item in transitions_data.get("transitions", []):
-            if not isinstance(item, dict):
-                continue
-            source = self._state_for_transition_key(str(item.get("from") or ""), key_to_state, app)
-            target = self._state_for_transition_key(str(item.get("to") or ""), key_to_state, app)
-            action = item.get("action") if isinstance(item.get("action"), dict) else {"action": "unknown"}
-            self.record_observation(source, action, target, outcome=str(item.get("outcome") or "success"))
-            transition_count += 1
+        states, edges, quality = self.import_exploration_staging(pages_file, transitions_file)
+        promote_report = self.promote_staging_to_canonical(states, edges, persist=persist)
 
         return ExplorationImportResult(
-            pages_imported=len(key_to_state),
-            transitions_imported=transition_count,
+            pages_imported=quality.pages_seen,
+            transitions_imported=promote_report.transitions_promoted,
             pages_path=str(pages_file),
             transitions_path=str(transitions_file) if transitions_file else "",
             unique_pages=len(self._local_states),
@@ -628,7 +621,7 @@ class SpatialGraphMemory:
                 continue
             raw_key_to_state[raw_key] = canonical_by_key.get(self._canonical_page_key(raw_state))
 
-        promoted_edges: list[TransitionEdge] = []
+        raw_steps: list[_StagingTransition] = []
         filtered = 0
         for item in transitions_data.get("transitions", []):
             if not isinstance(item, dict):
@@ -639,17 +632,34 @@ class SpatialGraphMemory:
             if not source or not target:
                 filtered += 1
                 continue
-            edge = TransitionEdge.from_action(
-                source.state_id,
-                target.state_id,
-                action,
-                risk=target.risk_level,
-                postcondition=target.page_type,
-                outcome=str(item.get("outcome") or "success"),
+            raw_steps.append(
+                _StagingTransition(
+                    source=source,
+                    target=target,
+                    action=dict(action),
+                    outcome=str(item.get("outcome") or "success"),
+                )
             )
-            if not self._is_promotable_edge(edge, source, target):
-                filtered += 1
+
+        compacted_steps, compacted_raw_count, dropped_self_loops = self._compact_consecutive_page_actions(raw_steps)
+        filtered += dropped_self_loops
+
+        promoted_edges: list[TransitionEdge] = []
+        compound_edges = 0
+        for step in compacted_steps:
+            edge = TransitionEdge.from_action(
+                step.source.state_id,
+                step.target.state_id,
+                step.action,
+                risk=step.target.risk_level,
+                postcondition=step.target.page_type,
+                outcome=step.outcome,
+            )
+            if not self._is_promotable_edge(edge, step.source, step.target):
+                filtered += step.raw_count
                 continue
+            if edge.action_type == "Compound":
+                compound_edges += 1
             promoted_edges.append(edge)
 
         covered = {(canonical_states[edge.source_id].page_type if edge.source_id in canonical_states else "", edge.postcondition) for edge in promoted_edges}
@@ -662,6 +672,8 @@ class SpatialGraphMemory:
             transitions_seen=len([t for t in transitions_data.get("transitions", []) if isinstance(t, dict)]),
             transitions_promoted=len(promoted_edges),
             transitions_filtered=filtered,
+            transitions_compacted=compacted_raw_count,
+            compound_edges=compound_edges,
             app_mismatch_pages=app_mismatch_pages,
             missing_edges=missing,
         )
@@ -760,6 +772,118 @@ class SpatialGraphMemory:
         )
         return canonical_states, promoted_edges, report
 
+    def _compact_consecutive_page_actions(
+        self,
+        steps: Iterable[_StagingTransition],
+    ) -> tuple[list[_StagingTransition], int, int]:
+        """Fold same-page action runs into one edge that exits the page."""
+        compacted: list[_StagingTransition] = []
+        pending_source: PageState | None = None
+        pending_actions: list[dict[str, Any]] = []
+        pending_outcomes: list[str] = []
+        compacted_raw_count = 0
+        dropped_self_loops = 0
+
+        for step in steps:
+            is_self_loop = step.source.state_id == step.target.state_id
+            if is_self_loop:
+                if pending_source and pending_source.state_id != step.source.state_id:
+                    dropped_self_loops += len(pending_actions)
+                    pending_actions = []
+                    pending_outcomes = []
+                pending_source = step.source
+                pending_actions.append(dict(step.action))
+                pending_outcomes.append(step.outcome)
+                continue
+
+            if pending_source and pending_source.state_id == step.source.state_id:
+                actions = [*pending_actions, dict(step.action)]
+                outcomes = [*pending_outcomes, step.outcome]
+                compound_action = self._make_compound_action(actions, page_type=step.source.page_type)
+                compacted.append(
+                    _StagingTransition(
+                        source=pending_source,
+                        target=step.target,
+                        action=compound_action,
+                        outcome="failure" if any(outcome == "failure" for outcome in outcomes) else "success",
+                        raw_count=len(actions),
+                    )
+                )
+                compacted_raw_count += len(actions) - 1
+                pending_source = None
+                pending_actions = []
+                pending_outcomes = []
+                continue
+
+            if pending_actions:
+                dropped_self_loops += len(pending_actions)
+                pending_source = None
+                pending_actions = []
+                pending_outcomes = []
+            compacted.append(step)
+
+        if pending_actions:
+            dropped_self_loops += len(pending_actions)
+        return compacted, compacted_raw_count, dropped_self_loops
+
+    def _make_compound_action(self, actions: list[dict[str, Any]], *, page_type: str) -> dict[str, Any]:
+        normalized_actions: list[dict[str, Any]] = []
+        runtime_slots: list[str] = []
+        type_index = 0
+        for action in actions:
+            normalized = dict(action)
+            normalized.setdefault("_metadata", "do")
+            action_name = str(normalized.get("action_type") or normalized.get("action") or "")
+            if action_name.lower() in {"type", "type_name", "input"}:
+                slot = self._compound_input_slot(page_type, type_index)
+                type_index += 1
+                original_text = str(normalized.get("text") or "")
+                normalized["text"] = f"<{slot}>"
+                if original_text:
+                    normalized["example_text"] = original_text
+                runtime_slots.append(slot)
+            normalized_actions.append(normalized)
+
+        labels = [self._action_label(action) for action in normalized_actions]
+        return {
+            "_metadata": "do",
+            "action": "Compound",
+            "actions": normalized_actions,
+            "semantic_target": " -> ".join(labels),
+            "compound": True,
+            "action_count": len(normalized_actions),
+            "requires_runtime_input": bool(runtime_slots),
+            "runtime_slots": list(_dedupe(runtime_slots)),
+            # Slot-bearing macros are route templates. Keep them below the
+            # direct-execution threshold so the VLM can fill task-specific text.
+            "confidence": 0.65 if runtime_slots else 1.0,
+        }
+
+    @staticmethod
+    def _compound_input_slot(page_type: str, type_index: int) -> str:
+        if page_type == "search_input":
+            return "query"
+        if page_type == "filter_panel":
+            if type_index == 0:
+                return "min_price"
+            if type_index == 1:
+                return "max_price"
+            return f"filter_input_{type_index + 1}"
+        return "input_text" if type_index == 0 else f"input_text_{type_index + 1}"
+
+    @staticmethod
+    def _action_label(action: dict[str, Any]) -> str:
+        action_name = str(action.get("action_type") or action.get("action") or "unknown")
+        if action.get("semantic_target"):
+            return f"{action_name}:{action['semantic_target']}"
+        if action_name.lower() in {"type", "type_name", "input"}:
+            return f"{action_name}:{action.get('text', '')}"
+        if action.get("element") is not None:
+            return f"{action_name}:{action['element']}"
+        if action.get("start") is not None and action.get("end") is not None:
+            return f"{action_name}:{action['start']}->{action['end']}"
+        return action_name
+
     def promote_staging_to_canonical(
         self,
         canonical_states: dict[str, PageState],
@@ -770,33 +894,64 @@ class SpatialGraphMemory:
         """Promote a validated staging graph into local memory and Neo4j."""
         promoted_edges = 0
         filtered_edges = 0
+        compound_edges = 0
+        state_id_map: dict[str, str] = {}
+        resolved_states: dict[str, PageState] = {}
         for state in canonical_states.values():
-            self._local_states[state.state_id] = state
+            resolved = state
             if persist:
-                self._persist_page_state(state)
+                existing = self._load_page_type_graph_candidate(state)
+                if existing:
+                    resolved = self._merge_into_existing_page_state(existing, state)
+            state_id_map[state.state_id] = resolved.state_id
+            resolved_states[resolved.state_id] = resolved
+            self._local_states[resolved.state_id] = resolved
+            if persist:
+                self._persist_page_state(resolved)
         for edge in edges:
-            source = canonical_states.get(edge.source_id)
-            target = canonical_states.get(edge.target_id)
+            source_id = state_id_map.get(edge.source_id, edge.source_id)
+            target_id = state_id_map.get(edge.target_id, edge.target_id)
+            source = resolved_states.get(source_id)
+            target = resolved_states.get(target_id)
             if not source or not target or not self._is_promotable_edge(edge, source, target):
                 filtered_edges += 1
                 continue
-            self._local_edges.setdefault(edge.source_id, []).append(edge)
+            resolved_edge = TransitionEdge(
+                source_id=source.state_id,
+                target_id=target.state_id,
+                action_type=edge.action_type,
+                action_target=edge.action_target,
+                action_params=edge.action_params,
+                precondition=edge.precondition,
+                postcondition=target.page_type,
+                success_count=edge.success_count,
+                fail_count=edge.fail_count,
+                rollback_action=edge.rollback_action,
+                cost=edge.cost,
+                risk=target.risk_level,
+                confidence=edge.confidence,
+                evidence=edge.evidence,
+            )
+            self._local_edges.setdefault(resolved_edge.source_id, []).append(resolved_edge)
             promoted_edges += 1
+            if resolved_edge.action_type == "Compound":
+                compound_edges += 1
             if persist and self.graph_store and getattr(self.graph_store, "driver", None):
                 self.graph_store.add_state_transition(
-                    edge.source_id,
-                    edge.target_id,
-                    edge.action_params,
-                    outcome="success" if edge.success_count >= edge.fail_count else "failure",
+                    resolved_edge.source_id,
+                    resolved_edge.target_id,
+                    resolved_edge.action_params,
+                    outcome="success" if resolved_edge.success_count >= resolved_edge.fail_count else "failure",
                     source_metadata=source.to_dict(),
                     target_metadata=target.to_dict(),
                 )
         return GraphQualityReport(
             pages_seen=len(canonical_states),
-            canonical_pages=len(canonical_states),
+            canonical_pages=len(resolved_states),
             transitions_seen=promoted_edges + filtered_edges,
             transitions_promoted=promoted_edges,
             transitions_filtered=filtered_edges,
+            compound_edges=compound_edges,
         )
 
     def compile_task_dag(
@@ -1113,6 +1268,52 @@ class SpatialGraphMemory:
         except AttributeError:
             return
 
+    def _load_page_type_graph_candidate(self, state: PageState) -> PageState | None:
+        if not self.graph_store or not getattr(self.graph_store, "driver", None):
+            return None
+        try:
+            candidates = self.graph_store.find_page_state_candidates(
+                app=state.app,
+                page_type=state.page_type,
+                limit=20,
+            )
+        except AttributeError:
+            return None
+        except Exception:
+            return None
+        if not candidates:
+            return None
+
+        for candidate in candidates:
+            candidate_state = self._page_state_from_graph(candidate, fallback=state)
+            if candidate_state.app == state.app and candidate_state.page_type == state.page_type:
+                return candidate_state
+        return None
+
+    def _merge_into_existing_page_state(self, existing: PageState, incoming: PageState) -> PageState:
+        merged_landmarks = _dedupe((*existing.landmarks, *incoming.landmarks), limit=12)
+        merged_affordances = _dedupe((*existing.affordances, *incoming.affordances), limit=12)
+        summary = existing.summary if len(existing.summary) <= len(incoming.summary) else incoming.summary
+        merged_slots = {**incoming.slots, **existing.slots}
+        return PageState(
+            state_id=existing.state_id,
+            app=existing.app or incoming.app,
+            page_type=existing.page_type or incoming.page_type,
+            summary=summary,
+            landmarks=merged_landmarks,
+            affordances=merged_affordances,
+            slots=merged_slots,
+            risk_level=existing.risk_level or incoming.risk_level,
+            screenshot_hash=existing.screenshot_hash or incoming.screenshot_hash,
+            semantic_signature=self._semantic_signature(
+                existing.app or incoming.app,
+                existing.page_type or incoming.page_type,
+                merged_landmarks,
+                merged_affordances,
+                merged_slots,
+            ),
+        )
+
     def _state_for_transition_key(
         self,
         key: str,
@@ -1143,9 +1344,11 @@ class SpatialGraphMemory:
 
     @staticmethod
     def _canonical_page_key(state: PageState) -> str:
-        landmarks = ",".join(sorted(state.landmarks))
-        affordances = ",".join(sorted(state.affordances))
-        return "|".join([state.app, state.page_type, landmarks, affordances, state.risk_level])
+        # Offline exploration can see the same logical page with very different
+        # extracted element detail. The routing graph wants one reusable node per
+        # app/page_type/risk bucket; landmarks and affordances are merged into
+        # the node metadata instead of splitting identity.
+        return "|".join([state.app, state.page_type, state.risk_level])
 
     def _canonical_page_state(self, state: PageState, canonical_key: str) -> PageState:
         state_id = f"state_{_safe_slug(canonical_key)}_{hashlib.md5(canonical_key.encode('utf-8')).hexdigest()[:12]}"
@@ -1416,8 +1619,15 @@ class SpatialGraphMemory:
                 return False
 
         if target_page_type == "spec_selection":
-            # Allow from product_detail or search_result (clicking product enters spec page)
-            if source_page_type in ("product_detail", "search_result"):
+            # Product detail buy/cart buttons commonly open specs. Search
+            # result pages may also do that from product cards, but top-bar or
+            # filter taps should not become reusable spec shortcuts.
+            if source_page_type == "product_detail":
+                return True
+            if source_page_type == "search_result" and (
+                _contains_any(action_text, spec_tokens)
+                or SpatialGraphMemory._looks_like_product_card_tap(edge.action_params)
+            ):
                 return True
             # Other cases still need keyword validation
             if not _contains_any(action_text, spec_tokens):
@@ -1430,6 +1640,24 @@ class SpatialGraphMemory:
         if source_page_type == "search_result" and target_page_type in {"cart", "checkout", "payment"}:
             return False
         return True
+
+    @staticmethod
+    def _looks_like_product_card_tap(action_params: dict[str, Any]) -> bool:
+        element = action_params.get("element")
+        if not isinstance(element, list):
+            return False
+        if len(element) == 1 and isinstance(element[0], list):
+            element = element[0]
+        try:
+            if len(element) >= 4:
+                y = (float(element[1]) + float(element[3])) / 2
+            elif len(element) >= 2:
+                y = float(element[1])
+            else:
+                return False
+        except (TypeError, ValueError):
+            return False
+        return y >= 250
 
     def _page_state_from_graph(self, data: dict[str, Any], fallback: PageState) -> PageState:
         slots = data.get("slots") or fallback.slots

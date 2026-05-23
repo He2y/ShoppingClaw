@@ -112,7 +112,10 @@ class GraphStore:
         MATCH (s:UIState)
         WHERE s.page_type = $page_type
           AND ($app = "" OR s.app = $app)
+        OPTIONAL MATCH (s)-[rel]-()
+        WITH s, count(rel) AS degree
         RETURN s
+        ORDER BY degree DESC, coalesce(s.updated_at, 0) DESC
         LIMIT $limit
         """
         candidates = []

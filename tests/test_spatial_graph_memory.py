@@ -40,6 +40,45 @@ class FakeSpatialGraphStore:
         return []
 
 
+class FakeMergeGraphStore:
+    driver = object()
+
+    def __init__(self, candidates):
+        self.candidates = candidates
+        self.upserted = []
+        self.transitions = []
+
+    def find_page_state_candidates(self, app="", page_type="", limit=10):
+        return [
+            state
+            for state in self.candidates
+            if state["app"] == app and state["page_type"] == page_type
+        ][:limit]
+
+    def upsert_page_state(self, state_metadata):
+        self.upserted.append(state_metadata)
+
+    def add_state_transition(
+        self,
+        source_state_hash,
+        target_state_hash,
+        action_data,
+        task_id=None,
+        outcome="success",
+        source_metadata=None,
+        target_metadata=None,
+    ):
+        self.transitions.append(
+            {
+                "source": source_state_hash,
+                "target": target_state_hash,
+                "action": action_data,
+                "source_metadata": source_metadata,
+                "target_metadata": target_metadata,
+            }
+        )
+
+
 def test_page_state_uses_page_level_signature():
     memory = SpatialGraphMemory()
 
@@ -344,6 +383,40 @@ def test_route_planning_rejects_filter_as_spec_selection_edge():
     assert route.mode == "explore"
 
 
+def test_promotable_edge_rejects_top_bar_tap_as_spec_selection():
+    memory = SpatialGraphMemory()
+    search_result = memory.build_page_state(
+        ui_hash="taobao-result",
+        semantic_layout="Taobao search_result",
+        app="Taobao",
+        page_type="search_result",
+    )
+    spec_selection = memory.build_page_state(
+        ui_hash="taobao-spec",
+        semantic_layout="Taobao spec selection",
+        app="Taobao",
+        page_type="spec_selection",
+    )
+
+    top_bar_edge = TransitionEdge.from_action(
+        search_result.state_id,
+        spec_selection.state_id,
+        {"action": "Tap", "element": [429, 114]},
+        risk=spec_selection.risk_level,
+        postcondition=spec_selection.page_type,
+    )
+    product_card_edge = TransitionEdge.from_action(
+        search_result.state_id,
+        spec_selection.state_id,
+        {"action": "Tap", "element": [499, 383]},
+        risk=spec_selection.risk_level,
+        postcondition=spec_selection.page_type,
+    )
+
+    assert memory._is_promotable_edge(top_bar_edge, search_result, spec_selection) is False
+    assert memory._is_promotable_edge(product_card_edge, search_result, spec_selection) is True
+
+
 def test_route_planning_does_not_replay_historic_type_text():
     memory = SpatialGraphMemory()
     search_input = memory.build_page_state(
@@ -514,10 +587,228 @@ def test_staging_import_canonicalizes_query_variants_and_filters_unknown(tmp_pat
     assert report.pages_seen == 3
     assert report.canonical_pages == 1
     assert report.transient_pages == 1
-    assert report.transitions_promoted == 1
-    assert report.transitions_filtered == 1
+    assert report.transitions_promoted == 0
+    assert report.transitions_filtered == 2
     assert len(states) == 1
     assert next(iter(states.values())).page_type == "search_result"
+
+
+def test_canonical_pages_merge_by_page_type_and_preserve_semantics():
+    memory = SpatialGraphMemory()
+
+    states = memory.canonicalize_pages(
+        [
+            {
+                "page_type": "home",
+                "summary": "Taobao home with search and promos",
+                "elements": {"search_bar": "tap to search", "promo_banner": "sales entry"},
+                "screenshot_hash": "home-a",
+                "app": "Taobao",
+            },
+            {
+                "page_type": "home",
+                "summary": "Taobao home with product feed",
+                "elements": {"product_grid": "recommended products", "bottom_tabs": "home cart profile"},
+                "screenshot_hash": "home-b",
+                "app": "Taobao",
+            },
+        ],
+        fallback_app="Taobao",
+    )
+
+    assert len(states) == 1
+    state = next(iter(states.values()))
+    assert state.page_type == "home"
+    assert "search_bar" in state.landmarks
+    assert "product_grid" in state.landmarks
+    assert "tap_search" in state.affordances
+
+
+def test_staging_compacts_search_input_type_and_submit(tmp_path):
+    pages_path = tmp_path / "taobao_explore_1.json"
+    transitions_path = tmp_path / "taobao_explore_transitions_1.json"
+    pages_path.write_text(
+        json.dumps(
+            {
+                "app": "Taobao",
+                "pages": [
+                    {
+                        "page_type": "search_input",
+                        "summary": "Search input",
+                        "elements": {"search_bar": "active input"},
+                        "screenshot_hash": "input",
+                        "app": "Taobao",
+                    },
+                    {
+                        "page_type": "search_result",
+                        "summary": "Search results",
+                        "elements": {"product_cards": "tap product card"},
+                        "screenshot_hash": "result",
+                        "app": "Taobao",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    transitions_path.write_text(
+        json.dumps(
+            {
+                "app": "Taobao",
+                "transitions": [
+                    {
+                        "from": "search_input:Search input",
+                        "action": {"action": "Type", "text": "headphones"},
+                        "to": "search_input:Search input",
+                    },
+                    {
+                        "from": "search_input:Search input",
+                        "action": {"action": "Tap", "element": [893, 71]},
+                        "to": "search_result:Search results",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    states, edges, report = SpatialGraphMemory().import_exploration_staging(pages_path, transitions_path)
+
+    assert len(states) == 2
+    assert report.transitions_seen == 2
+    assert report.transitions_promoted == 1
+    assert report.transitions_compacted == 1
+    assert report.compound_edges == 1
+    edge = edges[0]
+    assert edge.action_type == "Compound"
+    assert edge.confidence == 0.65
+    assert edge.action_params["requires_runtime_input"] is True
+    assert edge.action_params["runtime_slots"] == ["query"]
+    assert edge.action_params["actions"][0]["text"] == "<query>"
+    assert edge.postcondition == "search_result"
+
+
+def test_staging_compacts_filter_panel_multi_step_flow(tmp_path):
+    pages_path = tmp_path / "taobao_explore_1.json"
+    transitions_path = tmp_path / "taobao_explore_transitions_1.json"
+    pages_path.write_text(
+        json.dumps(
+            {
+                "app": "Taobao",
+                "pages": [
+                    {
+                        "page_type": "filter_panel",
+                        "summary": "Filter panel",
+                        "elements": {"price_range": "custom price inputs", "confirm_button": "apply filters"},
+                        "screenshot_hash": "filter",
+                        "app": "Taobao",
+                    },
+                    {
+                        "page_type": "search_result",
+                        "summary": "Filtered results",
+                        "elements": {"product_cards": "tap product card"},
+                        "screenshot_hash": "result",
+                        "app": "Taobao",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    transitions_path.write_text(
+        json.dumps(
+            {
+                "app": "Taobao",
+                "transitions": [
+                    {
+                        "from": "filter_panel:Filter panel",
+                        "action": {"action": "Tap", "element": [408, 485]},
+                        "to": "filter_panel:Filter panel",
+                    },
+                    {
+                        "from": "filter_panel:Filter panel",
+                        "action": {"action": "Type", "text": "500"},
+                        "to": "filter_panel:Filter panel",
+                    },
+                    {
+                        "from": "filter_panel:Filter panel",
+                        "action": {"action": "Tap", "element": [795, 485]},
+                        "to": "filter_panel:Filter panel",
+                    },
+                    {
+                        "from": "filter_panel:Filter panel",
+                        "action": {"action": "Type", "text": "1000"},
+                        "to": "filter_panel:Filter panel",
+                    },
+                    {
+                        "from": "filter_panel:Filter panel",
+                        "action": {"action": "Tap", "element": [739, 922]},
+                        "to": "search_result:Filtered results",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _, edges, report = SpatialGraphMemory().import_exploration_staging(pages_path, transitions_path)
+
+    assert report.transitions_seen == 5
+    assert report.transitions_promoted == 1
+    assert report.transitions_compacted == 4
+    assert report.compound_edges == 1
+    assert edges[0].action_params["runtime_slots"] == ["min_price", "max_price"]
+    assert edges[0].action_params["actions"][1]["text"] == "<min_price>"
+    assert edges[0].action_params["actions"][3]["text"] == "<max_price>"
+
+
+def test_promote_reuses_existing_graph_page_type_nodes():
+    existing_home = {
+        "state_id": "state_existing_home",
+        "app": "Taobao",
+        "page_type": "home",
+        "summary": "Existing home",
+        "landmarks": ["search_bar"],
+        "affordances": ["tap_search"],
+        "slots": "{}",
+        "risk_level": "normal",
+        "semantic_signature": "Taobao|home|search_bar|tap_search|",
+    }
+    store = FakeMergeGraphStore([existing_home])
+    memory = SpatialGraphMemory(store)
+    home = memory.build_page_state(
+        ui_hash="new-home",
+        semantic_layout="Taobao home",
+        app="Taobao",
+        page_type="home",
+        elements={"bottom_tabs": "home cart profile"},
+        state_id_strategy="semantic",
+    )
+    search_input = memory.build_page_state(
+        ui_hash="search-input",
+        semantic_layout="Taobao search_input",
+        app="Taobao",
+        page_type="search_input",
+        state_id_strategy="semantic",
+    )
+    edge = TransitionEdge.from_action(
+        home.state_id,
+        search_input.state_id,
+        {"action": "Tap", "element": [429, 114]},
+        postcondition="search_input",
+    )
+
+    report = memory.promote_staging_to_canonical(
+        {home.state_id: home, search_input.state_id: search_input},
+        [edge],
+        persist=True,
+    )
+
+    assert report.transitions_promoted == 1
+    assert "state_existing_home" in memory._local_states
+    assert memory._local_states["state_existing_home"].landmarks == ("search_bar", "bottom_tabs")
+    assert store.transitions[0]["source"] == "state_existing_home"
+    assert store.transitions[0]["source_metadata"]["state_id"] == "state_existing_home"
 
 
 def test_canonicalize_filters_app_mismatch_pages():
