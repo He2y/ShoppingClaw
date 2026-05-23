@@ -506,6 +506,33 @@ def test_staging_import_canonicalizes_query_variants_and_filters_unknown(tmp_pat
     assert next(iter(states.values())).page_type == "search_result"
 
 
+def test_canonicalize_filters_app_mismatch_pages():
+    memory = SpatialGraphMemory()
+    states, edges, report = memory.canonicalize_state_graph(
+        [
+            memory.build_page_state(
+                ui_hash="taobao-home",
+                semantic_layout="淘宝 首页",
+                app="淘宝",
+                page_type="home",
+                summary="淘宝APP首页",
+            ),
+            memory.build_page_state(
+                ui_hash="taobao-polluted",
+                semantic_layout="淘宝 搜索结果",
+                app="淘宝",
+                page_type="search_result",
+                summary="京东APP搜索结果页",
+            ),
+        ],
+        {},
+    )
+
+    assert len(states) == 1
+    assert edges == []
+    assert report.app_mismatch_pages == 1
+
+
 def test_runtime_dag_exposes_next_action_and_blocks_high_risk():
     memory = SpatialGraphMemory()
     home = memory.build_page_state(
@@ -926,6 +953,8 @@ def test_rebuild_spatial_graph_canonical_mode_reports_quality(tmp_path):
     )
 
     assert report["canonical"] is True
+    assert report["quality_gate"]["app"] == "淘宝"
+    assert "missing_safe_core_edges" in report["quality_gate"]
     assert report["manual_quality"]["canonical_pages"] <= report["manual"]["pages_imported"]
     assert report["exploration"]["files"][0]["quality"]["transient_pages"] == 1
     assert report["totals"]["unique_pages"] < report["totals"]["pages"]

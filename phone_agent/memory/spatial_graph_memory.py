@@ -36,6 +36,18 @@ _SHOPPING_APPS = {
     "å¨£æ¨ºç–‚",
 }
 
+_APP_ALIASES = {
+    "淘宝": {"淘宝", "天猫", "taobao", "tmall"},
+    "天猫": {"淘宝", "天猫", "taobao", "tmall"},
+    "京东": {"京东", "jd", "jingdong"},
+    "美团": {"美团", "meituan"},
+    "饿了么": {"饿了么", "eleme"},
+    "叮咚买菜": {"叮咚买菜"},
+    "盒马": {"盒马"},
+    "瑞幸": {"瑞幸", "luckin"},
+}
+_APP_MENTION_TOKENS = tuple(sorted({token for tokens in _APP_ALIASES.values() for token in tokens}, key=len, reverse=True))
+
 _HIGH_RISK_PAGE_TYPES = {"checkout", "payment", "address", "login", "confirm"}
 _MEDIUM_RISK_PAGE_TYPES = {"spec_selection", "cart", "order_list", "refund"}
 _TRANSIENT_PAGE_TYPES = {"unknown"}
@@ -394,6 +406,7 @@ class GraphQualityReport:
     transitions_seen: int = 0
     transitions_promoted: int = 0
     transitions_filtered: int = 0
+    app_mismatch_pages: int = 0
     missing_edges: tuple[tuple[str, str], ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
@@ -404,6 +417,7 @@ class GraphQualityReport:
             "transitions_seen": self.transitions_seen,
             "transitions_promoted": self.transitions_promoted,
             "transitions_filtered": self.transitions_filtered,
+            "app_mismatch_pages": self.app_mismatch_pages,
             "missing_edges": [list(edge) for edge in self.missing_edges],
         }
 
@@ -602,11 +616,16 @@ class SpatialGraphMemory:
         raw_key_to_state: dict[str, PageState | None] = {}
         canonical_states = self.canonicalize_pages(pages_data.get("pages", []), fallback_app=app)
         canonical_by_key = {self._canonical_page_key(state): state for state in canonical_states.values()}
+        app_mismatch_pages = 0
         for page in pages_data.get("pages", []):
             if not isinstance(page, dict):
                 continue
             raw_state = self.page_state_from_exploration_page(page, fallback_app=app)
             raw_key = self._transition_key(raw_state.page_type, raw_state.summary)
+            if not self._is_app_consistent(raw_state):
+                app_mismatch_pages += 1
+                raw_key_to_state[raw_key] = None
+                continue
             raw_key_to_state[raw_key] = canonical_by_key.get(self._canonical_page_key(raw_state))
 
         promoted_edges: list[TransitionEdge] = []
@@ -643,6 +662,7 @@ class SpatialGraphMemory:
             transitions_seen=len([t for t in transitions_data.get("transitions", []) if isinstance(t, dict)]),
             transitions_promoted=len(promoted_edges),
             transitions_filtered=filtered,
+            app_mismatch_pages=app_mismatch_pages,
             missing_edges=missing,
         )
         return canonical_states, promoted_edges, report
@@ -661,6 +681,8 @@ class SpatialGraphMemory:
             state = self.page_state_from_exploration_page(page, fallback_app=fallback_app)
             if state.page_type in _TRANSIENT_PAGE_TYPES:
                 continue
+            if not self._is_app_consistent(state):
+                continue
             key = self._canonical_page_key(state)
             if key in canonical:
                 canonical[key] = self._merge_page_states(canonical[key], state)
@@ -678,10 +700,14 @@ class SpatialGraphMemory:
         source_to_canonical: dict[str, PageState] = {}
         pages_seen = 0
         transient = 0
+        app_mismatch = 0
         for state in states:
             pages_seen += 1
             if state.page_type in _TRANSIENT_PAGE_TYPES:
                 transient += 1
+                continue
+            if not self._is_app_consistent(state):
+                app_mismatch += 1
                 continue
             key = self._canonical_page_key(state)
             if key in canonical_by_key:
@@ -730,6 +756,7 @@ class SpatialGraphMemory:
             transitions_seen=edges_seen,
             transitions_promoted=len(promoted_edges),
             transitions_filtered=filtered_edges,
+            app_mismatch_pages=app_mismatch,
         )
         return canonical_states, promoted_edges, report
 
@@ -1190,6 +1217,18 @@ class SpatialGraphMemory:
             # actions are not promoted as executable shortcut edges.
             return False
         return self._is_plausible_transition(edge, source_state, target_state)
+
+    @staticmethod
+    def _is_app_consistent(state: PageState) -> bool:
+        app = state.app.strip()
+        if not app:
+            return True
+        allowed = _APP_ALIASES.get(app, {app.lower()})
+        text = f"{state.summary} {state.semantic_signature}".lower()
+        mentioned = {token for token in _APP_MENTION_TOKENS if token.lower() in text}
+        if not mentioned:
+            return True
+        return all(token.lower() in {item.lower() for item in allowed} for token in mentioned)
 
     @staticmethod
     def _read_json(path: Path) -> dict[str, Any]:

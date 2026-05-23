@@ -15,6 +15,71 @@ from .import_exploration import find_page_files
 from .manual_trajectory_importer import ManualTrajectoryImporter
 from .spatial_graph_memory import SpatialGraphMemory
 
+_SAFE_CORE_FLOW = (
+    "home",
+    "search_input",
+    "search_result",
+    "product_detail",
+    "spec_selection",
+    "cart",
+)
+
+
+def _quality_gate(memory: SpatialGraphMemory, *, app: str = "淘宝") -> dict:
+    states = list(memory._local_states.values())
+    edges = [edge for edges in memory._local_edges.values() for edge in edges]
+    page_types = sorted({state.page_type for state in states if not app or state.app == app})
+    edge_pairs = {
+        (
+            memory._local_states.get(edge.source_id).page_type if memory._local_states.get(edge.source_id) else "",
+            memory._local_states.get(edge.target_id).page_type if memory._local_states.get(edge.target_id) else edge.postcondition,
+        )
+        for edge in edges
+        if not app or (memory._local_states.get(edge.source_id) and memory._local_states.get(edge.source_id).app == app)
+    }
+    missing_safe_edges = [
+        {"source": source, "target": target, "edge": f"{source}->{target}"}
+        for source, target in zip(_SAFE_CORE_FLOW, _SAFE_CORE_FLOW[1:])
+        if (source, target) not in edge_pairs
+    ]
+    cross_app_edges = 0
+    high_risk_edges = 0
+    for edge in edges:
+        source = memory._local_states.get(edge.source_id)
+        target = memory._local_states.get(edge.target_id)
+        if source and target and source.app != target.app:
+            cross_app_edges += 1
+        if edge.risk == "high" or edge.postcondition in {"checkout", "payment", "address", "login"}:
+            high_risk_edges += 1
+
+    transient_nodes = sum(1 for state in states if state.page_type == "unknown")
+    app_mismatch_nodes = sum(1 for state in states if not memory._is_app_consistent(state))
+    reasons = []
+    if cross_app_edges:
+        reasons.append(f"cross-app edges: {cross_app_edges}")
+    if high_risk_edges:
+        reasons.append(f"high-risk executable edges: {high_risk_edges}")
+    if transient_nodes:
+        reasons.append(f"transient unknown nodes: {transient_nodes}")
+    if app_mismatch_nodes:
+        reasons.append(f"app-mismatch nodes: {app_mismatch_nodes}")
+    if missing_safe_edges:
+        reasons.append("missing safe core edges: " + ", ".join(item["edge"] for item in missing_safe_edges))
+
+    return {
+        "app": app,
+        "passed": not reasons,
+        "reasons": reasons,
+        "nodes": len(states),
+        "edges": len(edges),
+        "page_types": page_types,
+        "missing_safe_core_edges": missing_safe_edges,
+        "cross_app_edges": cross_app_edges,
+        "high_risk_executable_edges": high_risk_edges,
+        "transient_nodes": transient_nodes,
+        "app_mismatch_nodes": app_mismatch_nodes,
+    }
+
 
 def rebuild_spatial_graph(
     *,
@@ -27,6 +92,7 @@ def rebuild_spatial_graph(
     yes: bool = False,
     limit_manual: int | None = None,
     canonical: bool = False,
+    quality_app: str = "淘宝",
 ) -> dict:
     graph_store = GraphStore(database=database) if write else None
     try:
@@ -98,10 +164,12 @@ def rebuild_spatial_graph(
             unique_pages = manual_result.unique_pages + exploration_unique_pages
         raw_pages = manual_result.pages_imported + exploration_pages
         raw_transitions = manual_result.transitions_imported + exploration_transitions
+        quality_gate = _quality_gate(canonical_memory if canonical else exploration_memory, app=quality_app)
         return {
             "mode": "write" if write else "dry-run",
             "database": database,
             "canonical": canonical,
+            "quality_gate": quality_gate,
             "manual": manual_result.to_dict(),
             "manual_quality": manual_quality.to_dict() if manual_quality else None,
             "exploration": {
@@ -135,6 +203,7 @@ def main() -> int:
     parser.add_argument("--reset", action="store_true", help="Clear target database before writing")
     parser.add_argument("--yes", action="store_true", help="Confirm destructive reset")
     parser.add_argument("--limit-manual", type=int, default=None, help="Limit manual trajectories for smoke tests")
+    parser.add_argument("--quality-app", default="淘宝", help="App name used for canonical graph quality gate")
     args = parser.parse_args()
 
     report = rebuild_spatial_graph(
@@ -147,6 +216,7 @@ def main() -> int:
         yes=args.yes,
         limit_manual=args.limit_manual,
         canonical=not args.legacy,
+        quality_app=args.quality_app,
     )
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
