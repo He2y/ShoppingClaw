@@ -14,6 +14,7 @@ from .graph_store import GraphStore
 from .import_exploration import find_page_files
 from .manual_trajectory_importer import ManualTrajectoryImporter, ManualTrajectoryImportResult
 from .spatial_graph_memory import SpatialGraphMemory
+from phone_agent.spatial.schema_registry import SchemaRegistry
 
 _SAFE_CORE_FLOW = (
     "home",
@@ -26,16 +27,31 @@ _SAFE_CORE_FLOW = (
 
 
 def _quality_gate(memory: SpatialGraphMemory, *, app: str = "淘宝") -> dict:
+    registry = SchemaRegistry()
+    schema = registry.merged("shopping")
     states = list(memory._local_states.values())
     edges = [edge for edges in memory._local_edges.values() for edge in edges]
-    page_types = sorted({state.page_type for state in states if not app or state.app == app})
+    page_types = sorted({state.page_type for state in states if not app or registry.app_matches(state.app, app)})
+    safe_schema_page_types = sorted(
+        page_type
+        for page_type, spec in schema.page_types.items()
+        if spec.risk != "high" and page_type != "unknown"
+    )
+    missing_schema_page_types = [page_type for page_type in safe_schema_page_types if page_type not in page_types]
+    schema_coverage = round(
+        (len(safe_schema_page_types) - len(missing_schema_page_types)) / len(safe_schema_page_types),
+        4,
+    ) if safe_schema_page_types else 0.0
     edge_pairs = {
         (
             memory._local_states.get(edge.source_id).page_type if memory._local_states.get(edge.source_id) else "",
             memory._local_states.get(edge.target_id).page_type if memory._local_states.get(edge.target_id) else edge.postcondition,
         )
         for edge in edges
-        if not app or (memory._local_states.get(edge.source_id) and memory._local_states.get(edge.source_id).app == app)
+        if not app or (
+            memory._local_states.get(edge.source_id)
+            and registry.app_matches(memory._local_states.get(edge.source_id).app, app)
+        )
     }
     missing_safe_edges = [
         {"source": source, "target": target, "edge": f"{source}->{target}"}
@@ -73,6 +89,8 @@ def _quality_gate(memory: SpatialGraphMemory, *, app: str = "淘宝") -> dict:
         "nodes": len(states),
         "edges": len(edges),
         "page_types": page_types,
+        "schema_coverage": schema_coverage,
+        "missing_schema_page_types": missing_schema_page_types,
         "missing_safe_core_edges": missing_safe_edges,
         "cross_app_edges": cross_app_edges,
         "high_risk_executable_edges": high_risk_edges,
@@ -94,7 +112,10 @@ def _app_matches_filter(app: str, app_filter: str | None) -> bool:
         return True
     if not app:
         return False
-    return app.strip().lower() == app_filter.strip().lower()
+    try:
+        return SchemaRegistry().app_matches(app, app_filter)
+    except Exception:
+        return app.strip().lower() == app_filter.strip().lower()
 
 
 def rebuild_spatial_graph(

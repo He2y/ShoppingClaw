@@ -1,0 +1,71 @@
+{
+  "name": "shopping",
+  "extends": "common_mobile",
+  "page_types": {
+    "search_input": {
+      "risk": "normal",
+      "aliases": ["search"],
+      "landmarks": ["search_bar", "history_tags", "suggestions"],
+      "affordances": ["submit_search", "type_query"]
+    },
+    "search_result": {
+      "risk": "normal",
+      "aliases": ["list"],
+      "landmarks": ["search_bar", "product_cards", "filter_buttons"],
+      "affordances": ["open_product", "open_filter", "sort", "scroll"]
+    },
+    "product_detail": {
+      "risk": "normal",
+      "aliases": ["detail"],
+      "landmarks": ["product_media", "product_title", "price", "buy_buttons"],
+      "affordances": ["open_spec", "add_to_cart", "buy_now", "go_cart"]
+    },
+    "spec_selection": {
+      "risk": "medium",
+      "aliases": ["dialog", "form"],
+      "landmarks": ["spec_options", "quantity_selector", "confirm_button"],
+      "affordances": ["choose_spec", "confirm_spec", "close_dialog"]
+    },
+    "cart": {
+      "risk": "medium",
+      "aliases": ["list"],
+      "landmarks": ["cart_items", "checkboxes", "checkout_button"],
+      "affordances": ["select_item", "checkout", "go_back"]
+    },
+    "checkout": {
+      "risk": "high",
+      "aliases": ["confirmation"],
+      "landmarks": ["address", "order_items", "submit_order"],
+      "affordances": ["ask_user", "go_back"]
+    },
+    "filter_panel": {
+      "risk": "normal",
+      "aliases": ["dialog", "form"],
+      "landmarks": ["filter_options", "price_fields", "apply_button"],
+      "affordances": ["set_filter", "apply_filter", "close_dialog"]
+    }
+  },
+  "transitions": [
+    {"source": "home", "target": "search_input", "intent": "open_search", "affordance": "open_search"},
+    {"source": "search_input", "target": "search_result", "intent": "submit_search", "affordance": "submit_search"},
+    {"source": "search_result", "target": "product_detail", "intent": "open_product", "affordance": "open_product"},
+    {"source": "search_result", "target": "filter_panel", "intent": "open_filter", "affordance": "open_filter"},
+    {"source": "filter_panel", "target": "search_result", "intent": "apply_filter", "affordance": "apply_filter"},
+    {"source": "product_detail", "target": "spec_selection", "intent": "open_spec", "affordance": "open_spec"},
+    {"source": "spec_selection", "target": "cart", "intent": "confirm_spec", "affordance": "confirm_spec"},
+    {"source": "cart", "target": "checkout", "intent": "checkout", "affordance": "checkout", "risk": "high"}
+  ],
+  "app_aliases": {
+    "taobao": ["tmall", "淘宝", "天猫", "娣樺疂", "澶╃尗"],
+    "jd": ["jingdong", "京东", "浜笢"],
+    "pinduoduo": ["拼多多", "鎷煎澶?"],
+    "meituan": ["美团", "缇庡洟"],
+    "eleme": ["饿了么", "楗夸簡涔?"]
+  },
+  "intents": {
+    "open_product": {"action_family": "click"},
+    "open_spec": {"action_family": "click"},
+    "confirm_spec": {"action_family": "click"},
+    "checkout": {"action_family": "click", "risk": "high"}
+  }
+}

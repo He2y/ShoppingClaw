@@ -526,6 +526,27 @@ class PhoneAgent:
             "message": question,
         }
 
+    def _compile_spatial_shortcut_action(
+        self,
+        best_action: dict,
+        *,
+        screen_width: int,
+        screen_height: int,
+    ):
+        """Compile a graph shortcut through the AMSG model-agnostic bridge."""
+        from phone_agent.spatial.model_bridge import SpatialModelBridge
+
+        semantic_action = SpatialModelBridge.semantic_action_from_next_action(best_action)
+        action = SpatialModelBridge.compile_to_autoglm_action(
+            semantic_action,
+            screen_width=screen_width,
+            screen_height=screen_height,
+            source_model=self._model_type,
+        )
+        if action is None:
+            return None, SpatialModelBridge.grounding_instruction(semantic_action)
+        return action, ""
+
     def _execute_step(
         self, user_prompt: str | None = None, is_first: bool = False
     ) -> StepResult:
@@ -654,10 +675,26 @@ class PhoneAgent:
                     mode = context_data.get("mode", "explore")
                     current_state_id = context_data.get("current_state_id")
 
+            if mode == "navigate" and context_data.get("next_actions"):
+                _, grounding_hint = self._compile_spatial_shortcut_action(
+                    context_data["next_actions"][0],
+                    screen_width=screenshot.width,
+                    screen_height=screenshot.height,
+                )
+                if grounding_hint:
+                    context_data["semantic_context"] = "\n\n".join(
+                        part for part in (context_data.get("semantic_context", ""), grounding_hint) if part
+                    )
+
             if (
                 mode == "navigate"
                 and context_data.get("next_actions")
                 and context_data["next_actions"][0].get("confidence", 1.0) >= 0.7  # Lowered from 0.8 to allow graph navigation
+                and self._compile_spatial_shortcut_action(
+                    context_data["next_actions"][0],
+                    screen_width=screenshot.width,
+                    screen_height=screenshot.height,
+                )[0] is not None
             ):
                 # Debug: log graph navigation attempt
                 if self.agent_config.verbose:
@@ -689,6 +726,13 @@ class PhoneAgent:
                         action.update(params)
                     except:
                         pass
+                    compiled_action, _ = self._compile_spatial_shortcut_action(
+                        best_action,
+                        screen_width=screenshot.width,
+                        screen_height=screenshot.height,
+                    )
+                    if compiled_action is not None:
+                        action = compiled_action
 
                 print(f"🚀 Navigation Mode Triggered: Found Graph Shortcut: {best_action['type']}")
 
@@ -812,6 +856,8 @@ class PhoneAgent:
         # Detailed observations live in KnowledgeBase, not in VLM context.
         # =============================================
         extra_context_parts: list[str] = []
+        if context_data.get("semantic_context"):
+            extra_context_parts.append(str(context_data["semantic_context"]))
 
         if self.memory_manager and current_app:
             # Core: lightweight progress + on-demand retrieval

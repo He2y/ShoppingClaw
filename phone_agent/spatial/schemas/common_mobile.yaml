@@ -1,0 +1,81 @@
+{
+  "name": "common_mobile",
+  "page_types": {
+    "home": {
+      "risk": "normal",
+      "landmarks": ["entry_points", "navigation"],
+      "affordances": ["open_search", "open_list", "open_settings"]
+    },
+    "search": {
+      "risk": "normal",
+      "landmarks": ["search_bar", "keyboard_or_suggestions"],
+      "affordances": ["submit_query", "clear_query"]
+    },
+    "list": {
+      "risk": "normal",
+      "landmarks": ["item_list"],
+      "affordances": ["open_detail", "filter", "sort", "scroll"]
+    },
+    "detail": {
+      "risk": "normal",
+      "landmarks": ["detail_content"],
+      "affordances": ["go_back", "open_form", "open_dialog"]
+    },
+    "form": {
+      "risk": "medium",
+      "landmarks": ["input_fields", "submit_button"],
+      "affordances": ["type_text", "submit_form"]
+    },
+    "dialog": {
+      "risk": "medium",
+      "landmarks": ["modal_panel", "close_button"],
+      "affordances": ["close_dialog", "confirm_dialog"]
+    },
+    "permission": {
+      "risk": "high",
+      "landmarks": ["permission_prompt"],
+      "affordances": ["allow_permission", "deny_permission"]
+    },
+    "login": {
+      "risk": "high",
+      "landmarks": ["credential_fields"],
+      "affordances": ["ask_user", "go_back"]
+    },
+    "payment": {
+      "risk": "high",
+      "landmarks": ["payment_method", "pay_button"],
+      "affordances": ["ask_user", "go_back"]
+    },
+    "settings": {
+      "risk": "medium",
+      "landmarks": ["setting_list"],
+      "affordances": ["open_detail", "toggle_setting", "go_back"]
+    },
+    "confirmation": {
+      "risk": "high",
+      "landmarks": ["confirm_button", "cancel_button"],
+      "affordances": ["ask_user", "cancel"]
+    },
+    "unknown": {
+      "risk": "medium",
+      "landmarks": [],
+      "affordances": ["wait", "go_back"]
+    }
+  },
+  "transitions": [
+    {"source": "home", "target": "search", "intent": "open_search", "affordance": "open_search"},
+    {"source": "search", "target": "list", "intent": "submit_query", "affordance": "submit_query"},
+    {"source": "list", "target": "detail", "intent": "open_detail", "affordance": "open_detail"},
+    {"source": "detail", "target": "form", "intent": "open_form", "affordance": "open_form"},
+    {"source": "detail", "target": "dialog", "intent": "open_dialog", "affordance": "open_dialog"},
+    {"source": "dialog", "target": "detail", "intent": "close_dialog", "affordance": "close_dialog"}
+  ],
+  "app_aliases": {},
+  "intents": {
+    "open_search": {"action_family": "click"},
+    "submit_query": {"action_family": "type_or_click"},
+    "open_detail": {"action_family": "click"},
+    "go_back": {"action_family": "system_button"},
+    "wait": {"action_family": "wait"}
+  }
+}

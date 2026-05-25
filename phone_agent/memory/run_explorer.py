@@ -32,6 +32,7 @@ def main() -> int:
     parser.add_argument("--storage", type=str, default="memory_db/exploration", help="Storage directory")
     parser.add_argument("--max-steps", type=int, default=15, help="Max exploration steps")
     parser.add_argument("--no-import-graph", action="store_true", help="Skip SpatialGraphMemory import after saving JSON")
+    parser.add_argument("--active-exploration", action="store_true", help="Use AMSG frontier scoring hints during exploration")
     parser.add_argument("--list-apps", action="store_true", help="List common shopping apps only")
     args = parser.parse_args()
 
@@ -68,6 +69,7 @@ def main() -> int:
         max_steps=args.max_steps,
         task_description=f"Explore {args.app} shopping flows for queries: {args.queries}",
         auto_import_graph=not args.no_import_graph,
+        active_exploration=args.active_exploration,
     )
     trajectories = explorer.explore()
 

@@ -37,6 +37,9 @@ from dotenv import load_dotenv
 
 from phone_agent.device_factory import DeviceFactory, DeviceType, get_device_factory, set_device_type
 from phone_agent.model.client import MessageBuilder, ModelClient, ModelConfig
+from phone_agent.spatial.active_builder import ActiveGraphBuilder
+from phone_agent.spatial.hypothesis import EdgeHypothesisGenerator
+from phone_agent.spatial.semantics import ScreenSemanticsExtractor
 
 
 # ── Enums & Data Classes ───────────────────────────────────────
@@ -496,6 +499,7 @@ class OfflineExplorer:
         classifier_timing: str = "after_action",
         classifier_timeout: float = 8.0,
         classifier_max_image_width: int = 720,
+        active_exploration: bool = False,
         verbose: bool = True,
     ):
         self.app_name = app_name
@@ -513,6 +517,10 @@ class OfflineExplorer:
         self.coverage_report = CoverageReport((), self.coverage_targets.page_types, (), self.coverage_targets.transitions)
         self.last_import_result = None
         self.verbose = verbose
+        self.active_exploration = active_exploration
+        self.semantics_extractor = ScreenSemanticsExtractor(schema_name="shopping")
+        self.edge_hypothesis_generator = EdgeHypothesisGenerator(schema_name="shopping")
+        self.active_builder = ActiveGraphBuilder()
 
         # Action handler for executing VLM-decided actions
         self.action_handler = ActionHandler(device_id=device_id)
@@ -736,6 +744,7 @@ class OfflineExplorer:
 
             screen_info = MessageBuilder.build_screen_info(current_app)
             discovered_summary = self._build_discovered_summary()
+            active_frontier_hint = self._build_active_frontier_hint(current_page)
             if step_idx == 0:
                 task_text = (
                     f"【本次任务】{task_desc}\n"
@@ -750,6 +759,8 @@ class OfflineExplorer:
                     f"{discovered_summary}\n\n"
                     f"{screen_info}"
                 )
+            if active_frontier_hint:
+                task_text = f"{task_text}\n\n{active_frontier_hint}"
             context.append(MessageBuilder.create_user_message(text=task_text, image_base64=screenshot.base64_data))
 
             try:
@@ -991,6 +1002,38 @@ class OfflineExplorer:
             "请优先选择能补齐缺失页面或缺失转移的安全动作，避免支付、提交订单和地址确认。"
         )
 
+    def _build_active_frontier_hint(self, page_info: PageInfo | None) -> str:
+        """Return a compact AMSG frontier hint for active exploration."""
+        if not self.active_exploration or page_info is None:
+            return ""
+        node = self.semantics_extractor.node_from_exploration_page(
+            {
+                "app": page_info.app,
+                "page_type": page_info.page_type.value,
+                "summary": page_info.semantic_summary,
+                "elements": page_info.elements,
+                "screenshot_hash": page_info.screenshot_hash,
+            },
+            fallback_app=self.app_name,
+        )
+        goal_page_types = set(self._update_coverage_report().missing_page_types)
+        hypotheses = self.edge_hypothesis_generator.generate(node, goal_page_types=goal_page_types)
+        ranked = self.active_builder.rank(hypotheses)[:3]
+        if not ranked:
+            return ""
+        lines = [
+            "[AMSG Active Exploration]",
+            "Prefer validating one safe edge hypothesis that improves graph coverage:",
+        ]
+        for item in ranked:
+            hyp = item.hypothesis
+            lines.append(
+                f"- {hyp.source_page_type} --{hyp.intent}/{hyp.semantic_target}--> "
+                f"{hyp.expected_page_type}; score={item.score:.2f}; risk={hyp.risk}"
+            )
+        lines.append("After action, stop before payment, order submission, login, or address confirmation.")
+        return "\n".join(lines)
+
     def _log(self, msg: str):
         if self.verbose:
             print(msg)
@@ -1129,6 +1172,7 @@ def main() -> int:
     parser.add_argument("--classifier-max-image-width", type=int, default=int(os.getenv("OFFLINE_CLASSIFIER_MAX_IMAGE_WIDTH", "720")))
     parser.add_argument("--auto-import-graph", action="store_true", help="Promote collected staging graph into Neo4j.")
     parser.add_argument("--database", default="shopping-spatial-v2", help="Neo4j database for --auto-import-graph.")
+    parser.add_argument("--active-exploration", action="store_true", help="Use AMSG frontier scoring hints during exploration.")
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args()
 
@@ -1163,6 +1207,7 @@ def main() -> int:
             auto_import_graph=args.auto_import_graph,
             graph_store=graph_store,
             device_id=args.device_id,
+            active_exploration=args.active_exploration,
             verbose=not args.quiet,
         )
         trajectories = explorer.explore()
