@@ -60,6 +60,8 @@ class ShoppingPageType(Enum):
     MY_ACCOUNT = "my_account"
     STORE = "store"
     LOGIN = "login"
+    DIALOG = "dialog"
+    PERMISSION = "permission"
     UNKNOWN = "unknown"
 
 
@@ -181,7 +183,29 @@ _PAGE_TYPE_MAP: Dict[str, ShoppingPageType] = {
     "my_account": ShoppingPageType.MY_ACCOUNT,
     "store": ShoppingPageType.STORE,
     "login": ShoppingPageType.LOGIN,
+    "dialog": ShoppingPageType.DIALOG,
+    "permission": ShoppingPageType.PERMISSION,
     "unknown": ShoppingPageType.UNKNOWN,
+}
+
+_PAGE_TYPE_SUMMARY: Dict[ShoppingPageType, str] = {
+    ShoppingPageType.HOME: "首页",
+    ShoppingPageType.SEARCH_INPUT: "搜索输入页",
+    ShoppingPageType.SEARCH_RESULT: "商品搜索结果",
+    ShoppingPageType.PRODUCT_DETAIL: "商品详情页",
+    ShoppingPageType.SPEC_SELECTION: "规格选择弹窗",
+    ShoppingPageType.CART: "购物车列表",
+    ShoppingPageType.CHECKOUT: "订单确认页",
+    ShoppingPageType.PAYMENT: "支付页",
+    ShoppingPageType.ADDRESS: "地址页",
+    ShoppingPageType.FILTER_PANEL: "筛选面板",
+    ShoppingPageType.CATEGORY: "分类页",
+    ShoppingPageType.MY_ACCOUNT: "个人中心",
+    ShoppingPageType.STORE: "店铺页",
+    ShoppingPageType.LOGIN: "登录页",
+    ShoppingPageType.DIALOG: "干扰弹窗",
+    ShoppingPageType.PERMISSION: "权限弹窗",
+    ShoppingPageType.UNKNOWN: "未知页面",
 }
 
 _HIGH_RISK_PAGE_TYPES = {
@@ -189,24 +213,40 @@ _HIGH_RISK_PAGE_TYPES = {
     ShoppingPageType.PAYMENT,
     ShoppingPageType.ADDRESS,
     ShoppingPageType.LOGIN,
+    ShoppingPageType.PERMISSION,
 }
 
 _UNSAFE_ACTION_TOKENS = (
     "支付",
     "付款",
+    "立即支付",
     "提交订单",
     "确认订单",
     "下单",
+    "立即购买",
+    "领券购买",
+    "去购买",
+    "购买按钮",
+    "买贵必赔",
+    "结算",
+    "去结算",
     "pay",
     "payment",
     "submit",
     "checkout",
+    "buy now",
 )
 
 _CLASSIFIER_SYSTEM_PROMPT = (
     "你是一个移动应用页面分类器。识别购物App当前显示的页面类型，并列出页面中的关键交互元素。\n\n"
     "**重要**: 截图已经裁剪掉了顶部状态栏和底部导航栏（首页/购物车/我的等Tab）。\n"
     "你只能看到页面的主内容区域。请仅根据主内容区域判断页面类型，不要猜测被裁剪掉的部分。\n\n"
+    "=== 判别优先级 ===\n"
+    "1. 若有优惠券、广告、活动、权限等遮挡主页面的弹窗，优先判为 dialog 或 permission。\n"
+    "2. home 允许出现顶部搜索框；只有搜索框已激活、键盘/搜索历史/搜索建议出现时才判为 search_input。\n"
+    "3. search_input 必须是输入态或建议态；如果已经出现商品卡片、价格、店铺/销量等结果信息，判为 search_result。\n"
+    "4. search_result 可以包含筛选/排序按钮；只有展开了筛选条件面板、价格区间、品牌/属性选项或确认筛选按钮时才判为 filter_panel。\n"
+    "5. product_detail 是完整商品详情页；只有规格选项以弹窗/半屏面板出现时才判为 spec_selection。\n\n"
     "=== 页面类型定义 ===\n"
     "- home: 首页 — Banner轮播图、推荐商品网格、搜索框入口、活动入口图标\n"
     "- search_input: 搜索输入页 — 搜索框已激活(有光标)、键盘已弹出、显示搜索历史或热门搜索词\n"
@@ -219,6 +259,8 @@ _CLASSIFIER_SYSTEM_PROMPT = (
     "- my_account: 个人中心 — 用户头像区域、订单入口(待付款/待发货/待收货)、优惠券/收藏/足迹等入口\n"
     "- store: 店铺主页 — 店铺Logo和名称、店铺评分、店铺内商品列表、关注按钮\n"
     "- login: 登录页 — 手机号输入框、密码输入框、登录按钮、验证码、第三方登录图标\n"
+    "- dialog: 遮挡主页面的弹窗/广告/优惠券/活动面板 — 有关闭按钮、确认按钮或半屏遮罩；优先识别为dialog而不是底层页面\n"
+    "- permission: 系统权限弹窗 — 请求相机、位置、通知、相册等权限\n"
     "- unknown: 以上都不匹配或无法判断\n\n"
     "=== elements 字段说明 ===\n"
     "列出页面中可见的关键交互元素，用简短中文命名。只列功能性组件（按钮、输入框、列表、选择器等），\n"
@@ -235,7 +277,11 @@ _CLASSIFIER_SYSTEM_PROMPT = (
 _CLASSIFIER_FAST_SYSTEM_PROMPT = (
     "你是移动购物App页面快速分类器。只判断当前页面类型和一句功能摘要，不要抽取元素。\n"
     "page_type 必须是以下之一: home, search_input, search_result, product_detail, "
-    "spec_selection, cart, checkout, payment, address, filter_panel, category, my_account, store, login, unknown。\n"
+    "spec_selection, cart, checkout, payment, address, filter_panel, category, my_account, store, login, dialog, permission, unknown。\n"
+    "如果有优惠券、广告、活动、权限等遮挡主页面的弹窗，优先输出 dialog 或 permission，不要输出底层页面类型。\n"
+    "home 可以有未激活搜索框；search_input 需要键盘、光标、搜索历史或搜索建议；search_result 需要商品卡片/价格/结果列表。\n"
+    "普通搜索结果页上出现筛选按钮仍是 search_result；只有筛选条件面板展开时才是 filter_panel。\n"
+    "完整商品页是 product_detail；只有规格弹窗/半屏规格选择才是 spec_selection。\n"
     "严格输出 JSON，不要加额外文字: "
     '{"page_type": "<类型>", "summary": "<≤15字功能概括>"}'
 )
@@ -372,10 +418,10 @@ class PageClassifier:
             return {}
         rules: tuple[tuple[str, tuple[str, ...], str], ...] = (
             ("filter_panel", ("全部筛选", "价格区间", "筛选选项", "自定最低价", "自定最高价", "filter"), "商品筛选面板"),
-            ("spec_selection", ("规格", "sku", "数量选择", "加入购物车", "确认选择"), "商品规格选择"),
+            ("spec_selection", ("规格", "sku", "数量选择", "颜色分类", "机身颜色", "版本", "确认选择"), "商品规格选择"),
             ("checkout", ("订单确认", "提交订单", "收货地址", "配送方式"), "订单确认页"),
             ("cart", ("购物车", "全选", "结算", "商品列表"), "购物车列表"),
-            ("product_detail", ("商品详情", "商品主图", "价格", "店铺", "立即购买"), "商品详情页"),
+            ("product_detail", ("商品详情", "商品主图", "价格", "店铺", "加入购物车", "立即购买"), "商品详情页"),
             ("search_result", ("搜索结果", "综合", "销量", "筛选", "商品卡片"), "商品搜索结果"),
             ("search_input", ("历史搜索", "猜你想搜", "搜索框", "键盘"), "搜索输入页"),
             ("home", ("首页", "推荐", "频道导航", "搜索栏"), "电商首页"),
@@ -723,9 +769,11 @@ class OfflineExplorer:
         """Run exploration with action execution before post-action classification."""
         task_desc = self.task_description
         traj = Trajectory(task=task_desc, app=self.app_name)
-        context: List[Dict[str, Any]] = [MessageBuilder.create_system_message(_build_exploration_system_prompt(task_desc))]
+        system_message = MessageBuilder.create_system_message(_build_exploration_system_prompt(task_desc))
         current_page: Optional[PageInfo] = None
         prev_screenshot_hash = ""
+        last_step_note = "No action has been verified yet."
+        pending_transition: Optional[Dict[str, Any]] = None
 
         for step_idx in range(self.max_steps):
             screenshot = self.device.get_screenshot(self.device_id)
@@ -737,34 +785,39 @@ class OfflineExplorer:
 
             if current_page is None or current_page.screenshot_hash != hashlib.md5(screenshot.base64_data.encode()).hexdigest():
                 current_page = self._classify_page_info(screenshot, current_app or self.app_name, step_idx + 1)
-                self._record_page(current_page)
             if step_idx > 0 and self.coverage_report.complete:
                 self._log("  Coverage target reached; stopping exploration.")
                 break
 
             screen_info = MessageBuilder.build_screen_info(current_app)
             discovered_summary = self._build_discovered_summary()
+            current_state_note = self._build_current_state_note(current_page, last_step_note)
             active_frontier_hint = self._build_active_frontier_hint(current_page)
             if step_idx == 0:
                 task_text = (
                     f"【本次任务】{task_desc}\n"
                     f"开始探索{self.app_name}。你已经在该App中。\n"
                     f"请聚焦任务描述中的方向，不要跳到无关板块。\n\n"
+                    f"{current_state_note}\n\n"
                     f"{discovered_summary}\n\n"
                     f"{screen_info}"
                 )
             else:
                 task_text = (
                     f"继续探索{self.app_name}。记住：聚焦\"{task_desc}\"方向。\n"
+                    f"{current_state_note}\n\n"
                     f"{discovered_summary}\n\n"
                     f"{screen_info}"
                 )
             if active_frontier_hint:
                 task_text = f"{task_text}\n\n{active_frontier_hint}"
-            context.append(MessageBuilder.create_user_message(text=task_text, image_base64=screenshot.base64_data))
+            request_context = [
+                system_message,
+                MessageBuilder.create_user_message(text=task_text, image_base64=screenshot.base64_data),
+            ]
 
             try:
-                response = self.vlm.request(context)
+                response = self.vlm.request(request_context)
             except Exception as e:
                 self._log(f"  VLM error: {e}")
                 break
@@ -774,6 +827,25 @@ class OfflineExplorer:
             except ValueError as e:
                 self._log(f"  Parse error: {e}")
                 action = {"_metadata": "finish", "message": str(e)}
+
+            inferred_page_type = self._infer_page_type_from_reasoning(response.thinking)
+            if inferred_page_type and inferred_page_type != current_page.page_type:
+                self._log(
+                    f"  belief repair: classifier={current_page.page_type.value} "
+                    f"reasoning={inferred_page_type.value}"
+                )
+                current_page = self._relabel_page_info(current_page, inferred_page_type)
+            self._record_page(current_page)
+
+            if pending_transition:
+                recorded, last_step_note = self._finalize_pending_transition(
+                    pending_transition,
+                    current_page,
+                )
+                pending_transition = None
+                if not recorded and self._should_stop_after_rejected_transition(self.last_rejection_reason):
+                    self._log(f"  stop exploration after rejected transition: {self.last_rejection_reason}")
+                    break
 
             traj.add_step(current_page, action, response.thinking)
             self._log(f"  [{step_idx+1}] {current_page.page_type.value}: {current_page.semantic_summary[:60]}")
@@ -786,12 +858,12 @@ class OfflineExplorer:
                 self._log("  Coverage target reached; stopping exploration.")
                 break
 
-            context[-1] = MessageBuilder.remove_images_from_message(context[-1])
-            assistant_content = f" thinking{response.thinking} response<answer>{response.action}</answer>"
-            context.append(MessageBuilder.create_assistant_message(assistant_content))
-
-            if not self._is_safe_action(current_page, action):
+            if not self._is_safe_action(current_page, action, response.thinking):
                 self._log("  Unsafe exploration action blocked; recording page only.")
+                last_step_note = (
+                    f"Last action was blocked as unsafe on {current_page.page_type.value}. "
+                    "Choose a rollback, close, or safe navigation action from the current screenshot."
+                )
                 current_page = None
                 continue
 
@@ -801,27 +873,35 @@ class OfflineExplorer:
                     self._log(f"  Action result: {result.message}")
             except Exception as e:
                 self._log(f"  Execute error: {e}")
+                last_step_note = f"Last action execution failed: {e}. Do not repeat the same action blindly."
                 current_page = None
                 continue
 
             time.sleep(2)
             if not result.success:
+                last_step_note = f"Last action failed: {result.message}. Do not repeat the same action blindly."
                 continue
 
             next_screenshot = self.device.get_screenshot(self.device_id)
             next_app = self.device.get_current_app(self.device_id) or self.app_name
             next_page = self._classify_page_info(next_screenshot, next_app, step_idx + 1, prefix="post-action")
-            self._record_page(next_page)
-            recorded = self._record_transition(current_page.state_key(), action, next_page.state_key())
-            self._update_coverage_report()
-            if not recorded and self._should_stop_after_rejected_transition(self.last_rejection_reason):
-                self._log(f"  stop exploration after rejected transition: {self.last_rejection_reason}")
-                break
+            pending_transition = {
+                "from_key": current_page.state_key(),
+                "action": action,
+            }
+            last_step_note = (
+                f"Last action executed from {current_page.state_key()}; raw post-action "
+                f"classifier saw {next_page.page_type.value}:{next_page.semantic_summary}. "
+                "The next step must verify the actual landing page before planning."
+            )
             current_page = next_page
 
         else:
             self._log(f"  Max steps ({self.max_steps}) reached")
             traj.success = True
+
+        if pending_transition and current_page is not None:
+            _, last_step_note = self._finalize_pending_transition(pending_transition, current_page)
 
         return traj
 
@@ -857,6 +937,121 @@ class OfflineExplorer:
             self.discovered_pages[key] = page_info
             if self.verbose:
                 self._log(f"    NEW: {page_info.page_type.value}")
+
+    @staticmethod
+    def _build_current_state_note(page_info: PageInfo | None, last_step_note: str) -> str:
+        if page_info is None:
+            return (
+                "Classifier hypothesis (may be wrong): unknown.\n"
+                f"Verifier note: {last_step_note}\n"
+                "Use the screenshot as ground truth; explicitly state what the current screen appears to be."
+            )
+        return (
+            f"Classifier hypothesis (may be wrong): {page_info.page_type.value} - {page_info.semantic_summary}.\n"
+            f"Verifier note: {last_step_note}\n"
+            "Use the screenshot as ground truth; if the screenshot conflicts with the hypothesis, correct it."
+        )
+
+    @staticmethod
+    def _infer_page_type_from_reasoning(text: str) -> ShoppingPageType | None:
+        """Infer a weak page belief from the action model's current-screen reasoning."""
+        if not text:
+            return None
+        excluded_markers = (
+            "classifier hypothesis",
+            "verifier note",
+            "raw post-action",
+            "核心空间骨架",
+            "用户要求",
+            "任务要求",
+            "system-reminder",
+        )
+        visual_markers = (
+            "当前截图",
+            "从截图",
+            "截图显示",
+            "屏幕显示",
+            "我可以看到",
+            "看起来",
+            "当前界面显示",
+            "现在看到",
+            "显示的是",
+        )
+        lines = []
+        for raw_line in text.splitlines():
+            line = raw_line.strip().lower()
+            if not line or any(marker in line for marker in excluded_markers):
+                continue
+            if any(marker in line for marker in visual_markers):
+                lines.append(line)
+        if not lines:
+            return None
+
+        for scoped in lines[:8]:
+            if "权限" in scoped or "permission" in scoped:
+                return ShoppingPageType.PERMISSION
+            if any(token in scoped for token in ("弹窗", "优惠券", "广告", "活动面板", "dialog")):
+                return ShoppingPageType.DIALOG
+            if any(token in scoped for token in ("支付", "付款", "payment")):
+                return ShoppingPageType.PAYMENT
+            if any(token in scoped for token in ("地址", "address")):
+                return ShoppingPageType.ADDRESS
+            if any(token in scoped for token in ("登录", "login")):
+                return ShoppingPageType.LOGIN
+            if any(token in scoped for token in ("订单确认", "确认订单", "checkout")):
+                return ShoppingPageType.CHECKOUT
+            if any(token in scoped for token in ("搜索输入", "搜索建议", "历史搜索", "猜你想搜", "键盘", "search_input")):
+                return ShoppingPageType.SEARCH_INPUT
+            if any(token in scoped for token in ("搜索结果", "结果页面", "商品列表", "search_result")):
+                return ShoppingPageType.SEARCH_RESULT
+            if any(token in scoped for token in ("商品详情", "详情页", "product_detail")):
+                return ShoppingPageType.PRODUCT_DETAIL
+            if any(token in scoped for token in ("规格", "spec_selection")) and any(
+                token in scoped for token in ("弹窗", "半屏", "选择", "选项")
+            ):
+                return ShoppingPageType.SPEC_SELECTION
+            if any(token in scoped for token in ("筛选面板", "筛选条件", "filter_panel")):
+                return ShoppingPageType.FILTER_PANEL
+            if any(token in scoped for token in ("购物车", "cart")):
+                return ShoppingPageType.CART
+            if any(token in scoped for token in ("首页", "home")):
+                return ShoppingPageType.HOME
+        return None
+
+    @staticmethod
+    def _relabel_page_info(page_info: PageInfo, page_type: ShoppingPageType) -> PageInfo:
+        summary = _PAGE_TYPE_SUMMARY.get(page_type, page_info.semantic_summary)
+        return PageInfo(
+            page_type=page_type,
+            semantic_summary=summary,
+            elements=page_info.elements,
+            screenshot_hash=page_info.screenshot_hash,
+            app=page_info.app,
+            screenshot_base64=page_info.screenshot_base64,
+            width=page_info.width,
+            height=page_info.height,
+        )
+
+    def _finalize_pending_transition(
+        self,
+        pending_transition: Dict[str, Any],
+        current_page: PageInfo,
+    ) -> tuple[bool, str]:
+        self._record_page(current_page)
+        from_key = str(pending_transition.get("from_key") or "")
+        action = pending_transition.get("action") or {}
+        to_key = current_page.state_key()
+        recorded = self._record_transition(from_key, action, to_key)
+        self._update_coverage_report()
+        if recorded:
+            note = f"Last verified transition accepted: {from_key} -> {to_key}."
+        else:
+            note = (
+                f"Last transition rejected: {from_key} -> {to_key}; "
+                f"reason={self.last_rejection_reason}. Re-localize from the current screenshot "
+                "and avoid repeating the same coordinate."
+            )
+        return recorded, note
 
     def _record_transition(self, from_key: str, action: Dict[str, Any], to_key: str) -> bool:
         """Record a page transition: from_page → action → to_page."""
@@ -904,13 +1099,31 @@ class OfflineExplorer:
         )
         return self.coverage_report
 
-    def _is_safe_action(self, page_info: PageInfo, action: Dict[str, Any]) -> bool:
+    def _is_safe_action(self, page_info: PageInfo, action: Dict[str, Any], reasoning: str = "") -> bool:
         if page_info.page_type in _HIGH_RISK_PAGE_TYPES:
             return False
         if action.get("_metadata") == "finish":
             return True
         action_text = json.dumps(action, ensure_ascii=False).lower()
-        return not any(token.lower() in action_text for token in _UNSAFE_ACTION_TOKENS)
+        if any(token.lower() in action_text for token in _UNSAFE_ACTION_TOKENS):
+            return False
+        return not OfflineExplorer._unsafe_intent_mentioned(reasoning or "")
+
+    @staticmethod
+    def _unsafe_intent_mentioned(reasoning: str) -> bool:
+        action_markers = ("点击", "tap", "按", "选择", "准备", "我将", "我要", "下一步")
+        negation_markers = ("不要", "不能", "禁止", "避免", "不应该", "不会", "不点击", "不要点击")
+        for raw_line in reasoning.splitlines():
+            line = raw_line.strip().lower()
+            if not line:
+                continue
+            if any(marker in line for marker in negation_markers):
+                continue
+            if not any(marker in line for marker in action_markers):
+                continue
+            if any(token.lower() in line for token in _UNSAFE_ACTION_TOKENS):
+                return True
+        return False
 
     def _transition_rejection_reason(
         self,
@@ -927,6 +1140,8 @@ class OfflineExplorer:
             return "high-risk page boundary"
         if source_type == target_type:
             return "self-loop or unchanged screen"
+        if source_type == "dialog":
+            return ""
         action_type = str(action.get("action") or action.get("action_type") or "").lower()
         if action_type in {"type", "wait"}:
             return "non-navigation action"
@@ -1030,6 +1245,16 @@ class OfflineExplorer:
             lines.append(
                 f"- {hyp.source_page_type} --{hyp.intent}/{hyp.semantic_target}--> "
                 f"{hyp.expected_page_type}; score={item.score:.2f}; risk={hyp.risk}"
+            )
+        if page_info.page_type == ShoppingPageType.PRODUCT_DETAIL:
+            lines.append(
+                "For product_detail -> spec_selection, tap a safe '加入购物车', '选择规格', "
+                "'颜色/版本' entry; never tap '立即购买' or '领券购买'."
+            )
+        if page_info.page_type == ShoppingPageType.SPEC_SELECTION:
+            lines.append(
+                "For spec_selection -> cart, only confirm safe required options and tap '加入购物车'; "
+                "do not tap payment, checkout, submit order, or buy-now actions."
             )
         lines.append("After action, stop before payment, order submission, login, or address confirmation.")
         return "\n".join(lines)

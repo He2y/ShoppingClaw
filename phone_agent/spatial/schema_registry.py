@@ -55,6 +55,24 @@ class MobileSchema:
                 return page_type
         return normalized or "unknown"
 
+    def page_type_matches(self, expected: str, observed: str) -> bool:
+        expected = (expected or "").strip().lower()
+        observed = (observed or "").strip().lower()
+        if not expected or not observed:
+            return False
+        if expected == observed:
+            return True
+        expected_spec = self.page_spec(expected)
+        observed_spec = self.page_spec(observed)
+        if expected_spec and observed in {alias.lower() for alias in expected_spec.aliases}:
+            return True
+        if observed_spec and expected in {alias.lower() for alias in observed_spec.aliases}:
+            return True
+        return False
+
+    def page_type_covered(self, expected: str, observed_page_types: set[str] | list[str] | tuple[str, ...]) -> bool:
+        return any(self.page_type_matches(expected, observed) for observed in observed_page_types)
+
 
 class SchemaRegistry:
     """Loads and merges AMSG schemas.

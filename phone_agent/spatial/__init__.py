@@ -12,6 +12,7 @@ from .core import (
 )
 from .hypothesis import EdgeHypothesis, EdgeHypothesisGenerator
 from .planner import SpatialPlanner, SpatialRoutePlan
+from .reporting import build_amsg_dry_run_report, format_amsg_markdown
 from .schema_registry import MobileSchema, SchemaRegistry, get_default_registry
 from .semantics import ScreenSemanticsExtractor
 from .verifier import NegativeEdgeMemory, PostconditionVerifier
@@ -36,5 +37,7 @@ __all__ = [
     "SpatialPlanner",
     "SpatialRoutePlan",
     "VerificationResult",
+    "build_amsg_dry_run_report",
+    "format_amsg_markdown",
     "get_default_registry",
 ]

@@ -1,0 +1,105 @@
+{
+  "app": "淘宝",
+  "task": "覆盖淘宝购物核心空间骨架：home -> search_input -> search_result -> product_detail -> spec_selection -> cart。只执行安全探索动作，不提交订单、不支付、不确认地址。如果进入登录、支付、地址或订单确认页，立刻返回。",
+  "total_transitions": 0,
+  "coverage": {
+    "covered_page_types": [
+      "cart",
+      "checkout",
+      "product_detail",
+      "search_result"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "spec_selection"
+    ],
+    "covered_transitions": [],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [],
+  "rejected_transitions": [
+    {
+      "from": "search_result:商品搜索结果",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          494,
+          323
+        ]
+      },
+      "to": "cart:购物车列表",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "cart:购物车列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Swipe",
+        "start": [
+          499,
+          790
+        ],
+        "end": [
+          499,
+          350
+        ]
+      },
+      "to": "product_detail:商品详情页",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          922,
+          257
+        ]
+      },
+      "to": "cart:购物车列表",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "cart:购物车列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          518,
+          959
+        ]
+      },
+      "to": "checkout:订单确认页",
+      "reason": "high-risk page boundary"
+    }
+  ]
+}

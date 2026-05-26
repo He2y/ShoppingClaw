@@ -283,7 +283,7 @@ class MemoryManager:
         if not self._runtime_dag or not self._runtime_dag.is_usable:
             self._runtime_metrics["runtime_dag_misses"] += 1
             return True
-        if self._pending_expected_postcondition in {"checkout", "payment", "address", "login"}:
+        if self._pending_expected_postcondition:
             self._runtime_metrics["runtime_dag_misses"] += 1
             return True
         next_edge = self._runtime_dag.next_edge()
@@ -324,16 +324,14 @@ class MemoryManager:
         }
 
     def mark_planned_action_executed(self, action: dict[str, Any], success: bool = True) -> None:
-        """Advance RuntimeDAG after a graph-planned action succeeds."""
-        if not success or not self._runtime_dag:
+        """Keep RuntimeDAG pending until the next screen verifies postcondition."""
+        if not self._runtime_dag:
+            return
+        if not success:
+            self._runtime_dag.coverage_gaps.append("planned action execution failed")
             return
         if action.get("_runtime_plan_id") != self._runtime_dag.plan_id:
             return
-        self._runtime_dag.advance()
-        node = self._runtime_dag.nodes.get(self._runtime_dag.current_node_id)
-        if node:
-            self._current_page_state = node
-            self._current_state_id = node.state_id
 
     def _runtime_dag_from_route(self, belief: PageBelief, goal_spec: Any, route_plan: Any) -> RuntimeDAG:
         app = belief.candidates[0].state.app if belief.candidates else ""
@@ -1554,6 +1552,16 @@ class MemoryManager:
                 )
                 if pending_repair_hint.action != "retry":
                     outcome = "failure"
+                elif (
+                    self._runtime_dag
+                    and self._pending_transition_action
+                    and self._pending_transition_action.get("_runtime_plan_id") == self._runtime_dag.plan_id
+                ):
+                    self._runtime_dag.advance()
+                    node = self._runtime_dag.nodes.get(self._runtime_dag.current_node_id)
+                    if node:
+                        self._current_page_state = node
+                        self._current_state_id = node.state_id
 
             self.spatial_graph_memory.record_observation(
                 self._pending_transition_source,

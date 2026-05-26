@@ -65,6 +65,36 @@ def _scale_coord(coord: Coordinate, source_space: str, target_space: str, screen
     return (max(0.0, min(nx, 1.0)) * 1000, max(0.0, min(ny, 1.0)) * 1000)
 
 
+def _swipe_from_direction(
+    direction: Any,
+    screen_size: ScreenSize | None,
+    *,
+    center: Coordinate | None = None,
+    source_space: str = "absolute",
+) -> tuple[Coordinate, Coordinate, str]:
+    width, height = screen_size or (1000, 1000)
+    width = max(1, int(width))
+    height = max(1, int(height))
+    if center is None:
+        cx, cy = width * 0.5, height * 0.5
+    elif source_space == "absolute":
+        cx, cy = center
+    else:
+        cx, cy = _scale_coord(center, source_space, "absolute", screen_size)
+    span_x = width * 0.35
+    span_y = height * 0.35
+    direction_text = str(direction or "down").lower()
+    if direction_text in {"up", "scroll_up"}:
+        return (cx, cy + span_y), (cx, cy - span_y), "absolute"
+    if direction_text in {"down", "scroll_down"}:
+        return (cx, cy - span_y), (cx, cy + span_y), "absolute"
+    if direction_text in {"left", "scroll_left"}:
+        return (cx + span_x, cy), (cx - span_x, cy), "absolute"
+    if direction_text in {"right", "scroll_right"}:
+        return (cx - span_x, cy), (cx + span_x, cy), "absolute"
+    return (cx, cy + span_y), (cx, cy - span_y), "absolute"
+
+
 class ModelProtocolBridge:
     """Normalize model-native actions and compile canonical device actions."""
 
@@ -209,7 +239,11 @@ class ModelProtocolBridge:
                 source_model=model,
             )
         if action_type == "scroll":
-            return DeviceActionIR(action_type="swipe", coordinate_space="absolute", screen_size=screen_size, source_model=model)
+            center = ModelProtocolBridge._parse_uitars_point(params.get("point") or params.get("start_box") or params.get("bbox"))
+            if center and screen_size:
+                center = ModelProtocolBridge._uitars_to_absolute(center, screen_size)
+            start, end, space = _swipe_from_direction(params.get("direction"), screen_size, center=center, source_space="absolute")
+            return DeviceActionIR(action_type="swipe", coordinate=start, coordinate2=end, coordinate_space=space, screen_size=screen_size, source_model=model)
         if action_type == "type":
             return DeviceActionIR(action_type="type", text=str(params.get("content") or ""), screen_size=screen_size, source_model=model)
         if action_type == "open_app":
@@ -227,13 +261,18 @@ class ModelProtocolBridge:
         if "arguments" in action and isinstance(action["arguments"], dict):
             action = dict(action["arguments"])
         action_type = str(action.get("action") or action.get("action_type") or "").lower()
-        coord = _center_from_element(action.get("coordinate"))
-        coord2 = _center_from_element(action.get("coordinate2"))
+        coord = _center_from_element(action.get("coordinate") or action.get("start_coordinate"))
+        coord2 = _center_from_element(action.get("coordinate2") or action.get("end_coordinate"))
         if action_type in {"click", "tap"}:
             return DeviceActionIR(action_type="click", coordinate=coord, coordinate_space=default_space, screen_size=screen_size, source_model=model)
         if action_type == "long_press":
             return DeviceActionIR(action_type="long_press", coordinate=coord, duration=ModelProtocolBridge._duration_to_seconds(action.get("time")), coordinate_space=default_space, screen_size=screen_size, source_model=model)
         if action_type == "swipe":
+            if coord2 is None and action.get("direction"):
+                start, end, space = _swipe_from_direction(action.get("direction"), screen_size, center=coord, source_space=default_space)
+                return DeviceActionIR(action_type="swipe", coordinate=start, coordinate2=end, coordinate_space=space, screen_size=screen_size, source_model=model)
+            return DeviceActionIR(action_type="swipe", coordinate=coord, coordinate2=coord2, coordinate_space=default_space, screen_size=screen_size, source_model=model)
+        if action_type == "drag":
             return DeviceActionIR(action_type="swipe", coordinate=coord, coordinate2=coord2, coordinate_space=default_space, screen_size=screen_size, source_model=model)
         if action_type in {"type", "type_name"}:
             return DeviceActionIR(action_type="type", text=str(action.get("text") or ""), screen_size=screen_size, source_model=model)
@@ -316,10 +355,24 @@ class ModelProtocolBridge:
             name = fn_match.group(1)
             args = fn_match.group(2)
             payload: dict[str, Any] = {"action_type": name, "action": name}
-            for key in ("point", "start_box", "bbox", "content", "text", "app_name"):
+            for key in (
+                "point",
+                "start_box",
+                "bbox",
+                "start_point",
+                "end_point",
+                "direction",
+                "content",
+                "text",
+                "app_name",
+            ):
                 value = ModelProtocolBridge._extract_kwarg(args, key)
                 if value is not None:
                     payload[key] = value
+            if "start_point" in payload and "point" not in payload:
+                payload["coordinate"] = payload["start_point"]
+            if "end_point" in payload:
+                payload["coordinate2"] = payload["end_point"]
             if name.lower() in {"tap", "click", "long_press", "double_tap"} and "coordinate" not in payload and "point" not in payload:
                 numbers = re.findall(r"-?\d+(?:\.\d+)?", args)
                 if len(numbers) >= 2:

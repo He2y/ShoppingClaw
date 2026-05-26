@@ -547,6 +547,26 @@ class PhoneAgent:
             return None, SpatialModelBridge.grounding_instruction(semantic_action)
         return action, ""
 
+    def _canonical_action_from_model_output(
+        self,
+        parsed_action,
+        *,
+        screen_width: int,
+        screen_height: int,
+    ) -> dict:
+        """Normalize model-native actions for graph/memory recording."""
+        from phone_agent.model.protocol_bridge import ModelProtocolBridge
+
+        device_action = ModelProtocolBridge.normalize_action(
+            parsed_action,
+            model_type=self._model_type,
+            screen_size=(screen_width, screen_height),
+        )
+        action = ModelProtocolBridge.to_autoglm_action(device_action)
+        action["_device_action_ir"] = device_action.to_dict()
+        action["_source_model_protocol"] = getattr(self._model_type, "value", str(self._model_type))
+        return action
+
     def _execute_step(
         self, user_prompt: str | None = None, is_first: bool = False
     ) -> StepResult:
@@ -979,19 +999,11 @@ class PhoneAgent:
                         if hasattr(self._adapter, '_action_history'):
                             self._adapter._action_history = list(self._specialized_handler.action_history)
                     
-                    # Convert MAI-UI action to AutoGLM format for memory tracking
-                    if self._model_type == ModelType.MAIUI:
-                        from phone_agent.actions.handler_maiui import convert_maiui_to_autoglm
-                        action = convert_maiui_to_autoglm(parsed_action, screenshot.width, screenshot.height)
-                    else:
-                        # Build action dict for other specialized handlers (QwenVL, UI-TARS, etc.)
-                        action = {
-                            "_metadata": "finish" if parsed_action.action_type in ("terminate", "finished", "finish", "answer") else "do",
-                            "action_type": parsed_action.action_type,
-                            **parsed_action.params,
-                        }
-                        if parsed_action.action_type in ("terminate", "finished", "finish", "answer"):
-                            action["message"] = parsed_action.params.get("content") or parsed_action.params.get("message", "Task completed")
+                    action = self._canonical_action_from_model_output(
+                        parsed_action,
+                        screen_width=screenshot.width,
+                        screen_height=screenshot.height,
+                    )
                 else:
                     # Fallback to AutoGLM handler
                     action_str = response.action if hasattr(response, 'action') else ""

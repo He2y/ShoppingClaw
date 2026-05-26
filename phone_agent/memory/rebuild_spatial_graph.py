@@ -14,6 +14,7 @@ from .graph_store import GraphStore
 from .import_exploration import find_page_files
 from .manual_trajectory_importer import ManualTrajectoryImporter, ManualTrajectoryImportResult
 from .spatial_graph_memory import SpatialGraphMemory
+from phone_agent.spatial.reporting import build_amsg_dry_run_report, format_amsg_markdown
 from phone_agent.spatial.schema_registry import SchemaRegistry
 
 _SAFE_CORE_FLOW = (
@@ -37,7 +38,11 @@ def _quality_gate(memory: SpatialGraphMemory, *, app: str = "淘宝") -> dict:
         for page_type, spec in schema.page_types.items()
         if spec.risk != "high" and page_type != "unknown"
     )
-    missing_schema_page_types = [page_type for page_type in safe_schema_page_types if page_type not in page_types]
+    missing_schema_page_types = [
+        page_type
+        for page_type in safe_schema_page_types
+        if not schema.page_type_covered(page_type, page_types)
+    ]
     schema_coverage = round(
         (len(safe_schema_page_types) - len(missing_schema_page_types)) / len(safe_schema_page_types),
         4,
@@ -266,6 +271,11 @@ def main() -> int:
         default=None,
         help="Only import exploration artifacts whose top-level app matches this value.",
     )
+    parser.add_argument(
+        "--amsg-report",
+        default=None,
+        help="Optional path for a research-oriented AMSG dry-run report (.md or .json).",
+    )
     args = parser.parse_args()
 
     report = rebuild_spatial_graph(
@@ -282,6 +292,19 @@ def main() -> int:
         include_manual=not args.exploration_only,
         app_filter=args.app_filter,
     )
+    if args.amsg_report:
+        amsg_report = build_amsg_dry_run_report(
+            exploration_root=args.exploration,
+            rebuild_report=report,
+            app_filter=args.app_filter or args.quality_app,
+        )
+        report_path = Path(args.amsg_report)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        if report_path.suffix.lower() == ".json":
+            report_path.write_text(json.dumps(amsg_report, ensure_ascii=False, indent=2), encoding="utf-8")
+        else:
+            report_path.write_text(format_amsg_markdown(amsg_report), encoding="utf-8")
+        report["amsg_report_path"] = str(report_path)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 
