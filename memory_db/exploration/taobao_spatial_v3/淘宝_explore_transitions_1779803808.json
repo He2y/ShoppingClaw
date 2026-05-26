@@ -1,0 +1,94 @@
+{
+  "app": "淘宝",
+  "task": "当前已经在普通商品详情页。优先点击底部加购类 CTA（购物车加号/加入购物车/加购入口）以触发规格选择弹窗，不要点击右侧直接购买 CTA。进入规格选择后，选择必填规格；然后点击二次确认的加入购物车/加购类按钮，目标是进入购物车或出现加入成功状态。不要提交订单，不要支付，不要确认地址。",
+  "total_transitions": 1,
+  "coverage": {
+    "covered_page_types": [
+      "dialog",
+      "product_detail"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "search_result",
+      "spec_selection",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "dialog",
+        "product_detail"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [
+    {
+      "from": "dialog:干扰弹窗",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          953
+        ]
+      },
+      "to": "product_detail:商品详情页"
+    }
+  ],
+  "rejected_transitions": [
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          438,
+          956
+        ]
+      },
+      "to": "dialog:干扰弹窗",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          448,
+          956
+        ]
+      },
+      "to": "dialog:干扰弹窗",
+      "reason": "unexpected shopping flow transition"
+    }
+  ]
+}

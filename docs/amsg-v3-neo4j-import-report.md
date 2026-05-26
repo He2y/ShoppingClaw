@@ -4,16 +4,16 @@
 
 - Domain: `shopping`
 - App filter: `淘宝`
-- Artifacts: `8`
-- Screenshots/pages: `28`
-- Candidate edge hypotheses: `40`
-- Promoted edges: `6` / transitions seen `6`
+- Artifacts: `17`
+- Screenshots/pages: `54`
+- Candidate edge hypotheses: `90`
+- Promoted edges: `12` / transitions seen `12`
 - Valid edge ratio: `1.0`
 - Safe schema coverage: `0.9231`
 
 ## Schema Coverage
 
-- Observed: cart, checkout, filter_panel, home, product_detail, search_input, search_result, spec_selection
+- Observed: cart, checkout, dialog, filter_panel, home, payment, product_detail, search_input, search_result, spec_selection
 - Missing safe page types: settings
 
 ## Active Frontier Samples
@@ -40,6 +40,7 @@
 - `filter_panel` -> `detail` via `close_dialog` / `close_dialog`, score `2.1`, risk `normal`
 
 ### spec_selection: 商品规格选择
+- `spec_selection` -> `product_detail` via `confirm_add_to_cart` / `confirm_spec`, score `2.1`, risk `normal`
 - `spec_selection` -> `cart` via `confirm_spec` / `confirm_spec`, score `2.1`, risk `normal`
 - `spec_selection` -> `detail` via `close_dialog` / `close_dialog`, score `2.1`, risk `normal`
 

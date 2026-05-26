@@ -26,6 +26,13 @@ def test_schema_registry_merges_common_and_shopping_aliases():
     assert SchemaRegistry().app_matches("\u6dd8\u5b9d", "\u5a23\u6a3a\u7582")
     assert schema.page_type_covered("list", {"search_result"})
     assert schema.page_type_covered("detail", {"product_detail"})
+    transitions = {(item.source, item.target, item.intent) for item in schema.transitions}
+    assert ("spec_selection", "product_detail", "confirm_add_to_cart") in transitions
+    assert ("product_detail", "cart", "go_cart") in transitions
+    go_cart = next(item for item in schema.transitions if item.intent == "go_cart")
+    open_spec = next(item for item in schema.transitions if item.intent == "open_spec")
+    assert go_cart.target_locator["region"] == "top_right"
+    assert open_spec.target_locator["region"] == "bottom_cta"
 
 
 def test_semantics_extractor_builds_schema_instance_node():
@@ -229,6 +236,39 @@ def test_offline_explorer_treats_interference_dialog_as_schema_page():
     assert reason == ""
 
 
+def test_offline_explorer_requires_top_cart_entry_for_detail_to_cart():
+    source = PageInfo(
+        page_type=ShoppingPageType.PRODUCT_DETAIL,
+        semantic_summary="detail",
+        elements={},
+        screenshot_hash="a",
+        app="Taobao",
+    )
+    target = PageInfo(
+        page_type=ShoppingPageType.CART,
+        semantic_summary="cart",
+        elements={},
+        screenshot_hash="b",
+        app="Taobao",
+    )
+
+    top_reason = OfflineExplorer._transition_rejection_reason(
+        None,
+        source,
+        {"action": "Tap", "element": [844, 71]},
+        target,
+    )
+    bottom_reason = OfflineExplorer._transition_rejection_reason(
+        None,
+        source,
+        {"action": "Tap", "element": [518, 959]},
+        target,
+    )
+
+    assert top_reason == ""
+    assert bottom_reason == "product_detail->cart must use top cart entry, not bottom add-to-cart CTA"
+
+
 def test_offline_explorer_repairs_page_belief_from_action_reasoning():
     reasoning = (
         "当前界面显示的是淘宝首页，我可以看到顶部有搜索框和推荐商品。"
@@ -257,7 +297,51 @@ def test_offline_explorer_prefers_search_input_visual_evidence():
     assert OfflineExplorer._infer_page_type_from_reasoning(reasoning) == ShoppingPageType.SEARCH_INPUT
 
 
-def test_offline_explorer_blocks_purchase_intent_before_execution():
+def test_offline_explorer_repairs_search_input_from_current_status_line():
+    reasoning = (
+        "当前状态：我看到淘宝的搜索界面，搜索框中已经输入了手机壳，"
+        "并且显示了搜索建议列表。ADB Keyboard {ON}显示在底部。"
+    )
+
+    assert OfflineExplorer._infer_page_type_from_reasoning(reasoning) == ShoppingPageType.SEARCH_INPUT
+
+
+def test_offline_explorer_does_not_treat_pay_button_as_payment_page():
+    reasoning = (
+        "当前屏幕显示的是商品规格选择页面，有颜色和型号选项，"
+        "底部有立即支付按钮。"
+    )
+
+    assert OfflineExplorer._infer_page_type_from_reasoning(reasoning) == ShoppingPageType.SPEC_SELECTION
+
+
+def test_offline_explorer_prefers_spec_selection_over_generic_dialog():
+    reasoning = (
+        "当前已经在淘宝的商品详情页，并且出现了一个规格选择弹窗。"
+        "弹窗中有适用手机型号、颜色分类和加入购物车按钮。"
+    )
+
+    assert OfflineExplorer._infer_page_type_from_reasoning(reasoning) == ShoppingPageType.SPEC_SELECTION
+
+
+def test_offline_explorer_does_not_treat_detail_cart_icon_as_cart_page():
+    reasoning = (
+        "当前截图显示的是淘宝商品详情页，顶部右侧有购物车图标并显示数量40，"
+        "底部有加入购物车和立即购买按钮。"
+    )
+
+    assert OfflineExplorer._infer_page_type_from_reasoning(reasoning) == ShoppingPageType.PRODUCT_DETAIL
+
+
+def test_offline_explorer_recognizes_cart_page_from_page_controls():
+    reasoning = (
+        "当前截图显示的是购物车页面，商品列表每项有圆形复选框，底部有全选和去结算按钮。"
+    )
+
+    assert OfflineExplorer._infer_page_type_from_reasoning(reasoning) == ShoppingPageType.CART
+
+
+def test_offline_explorer_allows_purchase_cta_as_spec_trigger_on_detail():
     page = PageInfo(
         page_type=ShoppingPageType.PRODUCT_DETAIL,
         semantic_summary="detail",
@@ -266,18 +350,52 @@ def test_offline_explorer_blocks_purchase_intent_before_execution():
         app="Taobao",
     )
 
-    assert not OfflineExplorer._is_safe_action(
+    assert OfflineExplorer._is_safe_action(
         None,
         page,
         {"action": "Tap", "element": [818, 959]},
         "我将点击领券购买按钮，这应该会进入规格选择页面。",
     )
 
-    assert not OfflineExplorer._is_safe_action(
+    assert OfflineExplorer._is_safe_action(
         None,
         page,
         {"action": "Tap", "element": [672, 959]},
         "我将尝试点击橙色购买按钮，看看是否能找到加入购物车入口。",
+    )
+
+
+def test_offline_explorer_blocks_final_risk_actions():
+    page = PageInfo(
+        page_type=ShoppingPageType.SPEC_SELECTION,
+        semantic_summary="spec",
+        elements={},
+        screenshot_hash="a",
+        app="Taobao",
+    )
+
+    assert not OfflineExplorer._is_safe_action(
+        None,
+        page,
+        {"action": "Tap", "element": [672, 959]},
+        "我将点击立即支付按钮。",
+    )
+
+
+def test_offline_explorer_blocks_purchase_cta_outside_spec_flow():
+    page = PageInfo(
+        page_type=ShoppingPageType.HOME,
+        semantic_summary="home",
+        elements={},
+        screenshot_hash="a",
+        app="Taobao",
+    )
+
+    assert not OfflineExplorer._is_safe_action(
+        None,
+        page,
+        {"action": "Tap", "element": [672, 959]},
+        "我将点击去购买按钮。",
     )
 
 
@@ -295,6 +413,23 @@ def test_offline_explorer_does_not_block_safety_constraints_as_intent():
         page,
         {"action": "Tap", "element": [499, 331]},
         "不要点击立即购买、领券购买、结算、支付。\n我将点击第一个商品进入商品详情页。",
+    )
+
+
+def test_offline_explorer_does_not_block_task_flow_lists_as_intent():
+    page = PageInfo(
+        page_type=ShoppingPageType.HOME,
+        semantic_summary="home",
+        elements={},
+        screenshot_hash="a",
+        app="Taobao",
+    )
+
+    assert OfflineExplorer._is_safe_action(
+        None,
+        page,
+        {"action": "Tap", "element": [429, 114]},
+        "用户要求我执行任务流程：点击搜索框，输入手机壳，点击底部加购/购买类 CTA。",
     )
 
 

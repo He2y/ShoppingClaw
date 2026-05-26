@@ -36,6 +36,7 @@ class EdgeHypothesis:
             expected_page_type=transition.target,
             intent=transition.intent,
             semantic_target=transition.affordance or transition.intent,
+            target_locator=dict(transition.target_locator),
             risk=transition.risk or node.risk_level,
             goal_relevance=target_relevance,
         )

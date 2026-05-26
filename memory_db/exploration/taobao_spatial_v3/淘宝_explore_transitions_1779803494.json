@@ -1,0 +1,161 @@
+{
+  "app": "淘宝",
+  "task": "从淘宝首页开始，验证正常商品链路：点击搜索框，输入 手机壳，点击搜索，选择普通商品卡片进入商品页。进入商品页后，点击底部加购/购买类 CTA 以触发规格选择弹窗；按钮文案可能是加入购物车、立即购买、领券购买、去购买或活动文案，不要按文案硬判断风险，关键是验证落点是否为规格选择。进入规格弹窗后，选择必填规格，然后优先点击二次确认的加入购物车/加购类按钮以进入购物车；如果二次确认只能进入确认订单页，进入后立刻返回并停止。全程不要提交订单、不要支付、不要确认地址。",
+  "total_transitions": 0,
+  "coverage": {
+    "covered_page_types": [
+      "filter_panel",
+      "home",
+      "product_detail",
+      "search_input",
+      "search_result"
+    ],
+    "missing_page_types": [
+      "spec_selection",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [],
+  "rejected_transitions": [
+    {
+      "from": "home:首页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          429,
+          114
+        ]
+      },
+      "to": "home:首页",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "home:首页",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "search_result:商品搜索结果",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "search_result:商品搜索结果",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          448,
+          71
+        ]
+      },
+      "to": "home:首页",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "home:首页",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "search_result:商品搜索结果",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "search_result:商品搜索结果",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "search_result:商品搜索结果",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "search_result:商品搜索结果",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          429,
+          114
+        ]
+      },
+      "to": "search_input:搜索输入页",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "search_input:搜索输入页",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "product_detail:商品详情页",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          429,
+          71
+        ]
+      },
+      "to": "search_input:搜索输入页",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "search_input:搜索输入页",
+      "action": {
+        "_metadata": "do",
+        "action": "Type",
+        "text": "手机壳"
+      },
+      "to": "search_result:商品搜索结果",
+      "reason": "non-navigation action"
+    },
+    {
+      "from": "search_result:商品搜索结果",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          893,
+          71
+        ]
+      },
+      "to": "filter_panel:商品筛选面板",
+      "reason": "unexpected shopping flow transition"
+    }
+  ]
+}

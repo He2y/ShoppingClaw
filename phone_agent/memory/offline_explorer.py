@@ -126,7 +126,8 @@ class CoverageTarget:
         ("search_input", "search_result"),
         ("search_result", "product_detail"),
         ("product_detail", "spec_selection"),
-        ("spec_selection", "cart"),
+        ("spec_selection", "product_detail"),
+        ("product_detail", "cart"),
         ("cart", "checkout"),
     )
 
@@ -223,11 +224,6 @@ _UNSAFE_ACTION_TOKENS = (
     "提交订单",
     "确认订单",
     "下单",
-    "立即购买",
-    "领券购买",
-    "去购买",
-    "购买按钮",
-    "买贵必赔",
     "结算",
     "去结算",
     "pay",
@@ -235,6 +231,19 @@ _UNSAFE_ACTION_TOKENS = (
     "submit",
     "checkout",
     "buy now",
+)
+
+_SPEC_TRIGGER_TOKENS = (
+    "加入购物车",
+    "立即购买",
+    "领券购买",
+    "去购买",
+    "购买按钮",
+    "买贵必赔",
+    "购买",
+    "规格",
+    "颜色",
+    "版本",
 )
 
 _CLASSIFIER_SYSTEM_PROMPT = (
@@ -251,7 +260,7 @@ _CLASSIFIER_SYSTEM_PROMPT = (
     "- home: 首页 — Banner轮播图、推荐商品网格、搜索框入口、活动入口图标\n"
     "- search_input: 搜索输入页 — 搜索框已激活(有光标)、键盘已弹出、显示搜索历史或热门搜索词\n"
     "- search_result: 搜索结果页 — 商品卡片列表、顶部有搜索框(未激活)、筛选/排序按钮(价格/销量/综合)\n"
-    "- product_detail: 商品详情页 — 单个商品大图、价格(¥符号)、商品名称、加入购物车/立即购买按钮\n"
+    "- product_detail: 商品详情页 — 单个商品大图、价格(¥符号)、商品名称、顶部购物车入口、底部加入购物车/立即购买按钮\n"
     "- spec_selection: 规格选择 — 弹窗或半屏面板、颜色/尺寸/容量等选项按钮、数量选择器、显示价格\n"
     "- cart: 购物车 — 商品列表每项带圆形复选框、有全选按钮、有结算/去结算按钮、有编辑/管理按钮\n"
     "- checkout: 结算/订单确认 — 收货地址、支付方式选择、商品清单、提交订单按钮\n"
@@ -281,7 +290,7 @@ _CLASSIFIER_FAST_SYSTEM_PROMPT = (
     "如果有优惠券、广告、活动、权限等遮挡主页面的弹窗，优先输出 dialog 或 permission，不要输出底层页面类型。\n"
     "home 可以有未激活搜索框；search_input 需要键盘、光标、搜索历史或搜索建议；search_result 需要商品卡片/价格/结果列表。\n"
     "普通搜索结果页上出现筛选按钮仍是 search_result；只有筛选条件面板展开时才是 filter_panel。\n"
-    "完整商品页是 product_detail；只有规格弹窗/半屏规格选择才是 spec_selection。\n"
+    "完整商品页是 product_detail；顶部购物车图标只是入口，不能因此判为 cart；只有规格弹窗/半屏规格选择才是 spec_selection。\n"
     "严格输出 JSON，不要加额外文字: "
     '{"page_type": "<类型>", "summary": "<≤15字功能概括>"}'
 )
@@ -709,6 +718,7 @@ class OfflineExplorer:
             if prev_page_key is not None and prev_action is not None:
                 recorded = self._record_transition(prev_page_key, prev_action, page_info.state_key())
                 if not recorded and self._should_stop_after_rejected_transition(self.last_rejection_reason):
+                    self._rollback_from_risky_page(screenshot.width, screenshot.height)
                     self._log(f"  stop exploration after rejected transition: {self.last_rejection_reason}")
                     break
             self._update_coverage_report()
@@ -860,6 +870,8 @@ class OfflineExplorer:
 
             if not self._is_safe_action(current_page, action, response.thinking):
                 self._log("  Unsafe exploration action blocked; recording page only.")
+                if current_page.page_type in _HIGH_RISK_PAGE_TYPES:
+                    self._rollback_from_risky_page(screenshot.width, screenshot.height)
                 last_step_note = (
                     f"Last action was blocked as unsafe on {current_page.page_type.value}. "
                     "Choose a rollback, close, or safe navigation action from the current screenshot."
@@ -968,10 +980,13 @@ class OfflineExplorer:
         )
         visual_markers = (
             "当前截图",
+            "当前状态",
+            "当前已经",
             "从截图",
             "截图显示",
             "屏幕显示",
             "我可以看到",
+            "我看到",
             "看起来",
             "当前界面显示",
             "现在看到",
@@ -990,9 +1005,7 @@ class OfflineExplorer:
         for scoped in lines[:8]:
             if "权限" in scoped or "permission" in scoped:
                 return ShoppingPageType.PERMISSION
-            if any(token in scoped for token in ("弹窗", "优惠券", "广告", "活动面板", "dialog")):
-                return ShoppingPageType.DIALOG
-            if any(token in scoped for token in ("支付", "付款", "payment")):
+            if any(token in scoped for token in ("支付页", "付款页面", "收银台", "支付密码", "付款方式", "payment page")):
                 return ShoppingPageType.PAYMENT
             if any(token in scoped for token in ("地址", "address")):
                 return ShoppingPageType.ADDRESS
@@ -1000,10 +1013,15 @@ class OfflineExplorer:
                 return ShoppingPageType.LOGIN
             if any(token in scoped for token in ("订单确认", "确认订单", "checkout")):
                 return ShoppingPageType.CHECKOUT
+            if any(
+                token in scoped
+                for token in ("规格选择", "规格弹窗", "适用手机型号", "颜色分类", "型号选项", "sku")
+            ):
+                return ShoppingPageType.SPEC_SELECTION
+            if any(token in scoped for token in ("弹窗", "优惠券", "广告", "活动面板", "dialog")):
+                return ShoppingPageType.DIALOG
             if any(token in scoped for token in ("搜索输入", "搜索建议", "历史搜索", "猜你想搜", "键盘", "search_input")):
                 return ShoppingPageType.SEARCH_INPUT
-            if any(token in scoped for token in ("搜索结果", "结果页面", "商品列表", "search_result")):
-                return ShoppingPageType.SEARCH_RESULT
             if any(token in scoped for token in ("商品详情", "详情页", "product_detail")):
                 return ShoppingPageType.PRODUCT_DETAIL
             if any(token in scoped for token in ("规格", "spec_selection")) and any(
@@ -1012,11 +1030,44 @@ class OfflineExplorer:
                 return ShoppingPageType.SPEC_SELECTION
             if any(token in scoped for token in ("筛选面板", "筛选条件", "filter_panel")):
                 return ShoppingPageType.FILTER_PANEL
-            if any(token in scoped for token in ("购物车", "cart")):
+            if OfflineExplorer._is_cart_page_evidence(scoped):
                 return ShoppingPageType.CART
+            if any(token in scoped for token in ("搜索结果", "结果页面", "商品列表", "search_result")):
+                return ShoppingPageType.SEARCH_RESULT
             if any(token in scoped for token in ("首页", "home")):
                 return ShoppingPageType.HOME
         return None
+
+    @staticmethod
+    def _is_cart_page_evidence(text: str) -> bool:
+        """Return true only when the line describes the cart page itself.
+
+        Product detail pages often expose a top-right cart entry with a badge.
+        That should remain product_detail; cart requires page-level evidence
+        such as item checkboxes, all-select, or checkout controls.
+        """
+        cart_page_tokens = (
+            "购物车页面",
+            "购物车页",
+            "购物车列表",
+            "我的购物车",
+            "购物车中",
+            "cart page",
+            "cart list",
+        )
+        cart_control_tokens = (
+            "全选",
+            "去结算",
+            "结算按钮",
+            "编辑/管理",
+            "管理按钮",
+            "商品复选框",
+            "checkbox",
+            "checkout button",
+        )
+        return any(token in text for token in cart_page_tokens) or (
+            "购物车" in text and any(token in text for token in cart_control_tokens)
+        )
 
     @staticmethod
     def _relabel_page_info(page_info: PageInfo, page_type: ShoppingPageType) -> PageInfo:
@@ -1105,17 +1156,31 @@ class OfflineExplorer:
         if action.get("_metadata") == "finish":
             return True
         action_text = json.dumps(action, ensure_ascii=False).lower()
-        if any(token.lower() in action_text for token in _UNSAFE_ACTION_TOKENS):
+        if OfflineExplorer._action_text_has_unsafe_token(action_text, page_info):
             return False
-        return not OfflineExplorer._unsafe_intent_mentioned(reasoning or "")
+        return not OfflineExplorer._unsafe_intent_mentioned(reasoning or "", page_info)
 
     @staticmethod
-    def _unsafe_intent_mentioned(reasoning: str) -> bool:
-        action_markers = ("点击", "tap", "按", "选择", "准备", "我将", "我要", "下一步")
+    def _action_text_has_unsafe_token(text: str, page_info: PageInfo) -> bool:
+        if any(token.lower() in text for token in _UNSAFE_ACTION_TOKENS):
+            return True
+        if page_info.page_type in {ShoppingPageType.PRODUCT_DETAIL, ShoppingPageType.SPEC_SELECTION}:
+            return False
+        return any(token.lower() in text for token in _SPEC_TRIGGER_TOKENS)
+
+    @staticmethod
+    def _unsafe_intent_mentioned(reasoning: str, page_info: PageInfo | None = None) -> bool:
+        action_markers = ("我将", "我要", "准备", "下一步", "接下来", "现在", "让我", "tap")
         negation_markers = ("不要", "不能", "禁止", "避免", "不应该", "不会", "不点击", "不要点击")
+        task_markers = ("用户要求", "任务流程", "具体步骤", "根据任务", "给出了", "包括：", "需要：")
+        page_type = page_info.page_type if page_info else None
         for raw_line in reasoning.splitlines():
             line = raw_line.strip().lower()
             if not line:
+                continue
+            if any(marker in line for marker in task_markers):
+                continue
+            if line[:2].rstrip(".、").isdigit():
                 continue
             if any(marker in line for marker in negation_markers):
                 continue
@@ -1123,7 +1188,18 @@ class OfflineExplorer:
                 continue
             if any(token.lower() in line for token in _UNSAFE_ACTION_TOKENS):
                 return True
+            if page_type not in {ShoppingPageType.PRODUCT_DETAIL, ShoppingPageType.SPEC_SELECTION}:
+                if any(token.lower() in line for token in _SPEC_TRIGGER_TOKENS):
+                    return True
         return False
+
+    def _rollback_from_risky_page(self, screen_width: int, screen_height: int) -> None:
+        try:
+            self.action_handler.execute({"_metadata": "do", "action": "Back"}, screen_width, screen_height)
+            time.sleep(1)
+            self._log("  repair: backed out from risky page")
+        except Exception as exc:
+            self._log(f"  repair failed: {exc}")
 
     def _transition_rejection_reason(
         self,
@@ -1156,6 +1232,10 @@ class OfflineExplorer:
             ("spec_selection", "product_detail"),
         }:
             return ""
+        if pair == ("product_detail", "cart"):
+            if OfflineExplorer._looks_like_top_cart_entry_tap(action):
+                return ""
+            return "product_detail->cart must use top cart entry, not bottom add-to-cart CTA"
         if pair == ("search_result", "product_detail") and self._looks_like_product_card_tap(action):
             return ""
         if pair == ("search_result", "filter_panel") and self._looks_like_filter_button_tap(action):
@@ -1190,6 +1270,20 @@ class OfflineExplorer:
         except (TypeError, ValueError, IndexError):
             return False
         return x >= 800 and 150 <= y <= 420
+
+    @staticmethod
+    def _looks_like_top_cart_entry_tap(action: Dict[str, Any]) -> bool:
+        element = action.get("element")
+        if not isinstance(element, list):
+            return False
+        if len(element) == 1 and isinstance(element[0], list):
+            element = element[0]
+        try:
+            x = float(element[0])
+            y = float(element[1])
+        except (TypeError, ValueError, IndexError):
+            return False
+        return x >= 650 and y <= 220
 
     @staticmethod
     def _should_stop_after_rejected_transition(reason: str) -> bool:
@@ -1248,13 +1342,19 @@ class OfflineExplorer:
             )
         if page_info.page_type == ShoppingPageType.PRODUCT_DETAIL:
             lines.append(
-                "For product_detail -> spec_selection, tap a safe '加入购物车', '选择规格', "
-                "'颜色/版本' entry; never tap '立即购买' or '领券购买'."
+                "For product_detail -> spec_selection, Taobao usually opens the spec sheet only after "
+                "tapping a bottom CTA such as '加入购物车', '立即购买', '领券购买', or a campaign-specific "
+                "buy CTA. Do not hard-code the label; tap the CTA only to verify that the postcondition "
+                "is spec_selection, and roll back if it lands on checkout/payment/address."
+            )
+            lines.append(
+                "For product_detail -> cart, use only the top-right cart entry/icon. Do not use the bottom "
+                "加入购物车/立即购买 CTA for this edge, because that CTA opens spec_selection."
             )
         if page_info.page_type == ShoppingPageType.SPEC_SELECTION:
             lines.append(
-                "For spec_selection -> cart, only confirm safe required options and tap '加入购物车'; "
-                "do not tap payment, checkout, submit order, or buy-now actions."
+                "For spec_selection -> cart/checkout, choose required specs first, then tap the second-stage "
+                "confirm CTA. Do not submit order, pay, or confirm address after landing."
             )
         lines.append("After action, stop before payment, order submission, login, or address confirmation.")
         return "\n".join(lines)

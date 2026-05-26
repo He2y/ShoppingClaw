@@ -17,13 +17,16 @@ from .spatial_graph_memory import SpatialGraphMemory
 from phone_agent.spatial.reporting import build_amsg_dry_run_report, format_amsg_markdown
 from phone_agent.spatial.schema_registry import SchemaRegistry
 
-_SAFE_CORE_FLOW = (
-    "home",
-    "search_input",
-    "search_result",
-    "product_detail",
-    "spec_selection",
-    "cart",
+_REQUIRED_SAFE_EDGES = (
+    ("home", "search_input"),
+    ("search_input", "search_result"),
+    ("search_result", "product_detail"),
+    ("product_detail", "spec_selection"),
+)
+
+_ADD_TO_CART_COMPLETION = (
+    ("spec_selection", "product_detail"),
+    ("product_detail", "cart"),
 )
 
 
@@ -60,9 +63,18 @@ def _quality_gate(memory: SpatialGraphMemory, *, app: str = "淘宝") -> dict:
     }
     missing_safe_edges = [
         {"source": source, "target": target, "edge": f"{source}->{target}"}
-        for source, target in zip(_SAFE_CORE_FLOW, _SAFE_CORE_FLOW[1:])
+        for source, target in _REQUIRED_SAFE_EDGES
         if (source, target) not in edge_pairs
     ]
+    has_direct_cart_completion = ("spec_selection", "cart") in edge_pairs
+    missing_add_to_cart_completion = [
+        edge for edge in _ADD_TO_CART_COMPLETION if edge not in edge_pairs
+    ]
+    if not has_direct_cart_completion and missing_add_to_cart_completion:
+        missing_safe_edges.extend(
+            {"source": source, "target": target, "edge": f"{source}->{target}"}
+            for source, target in missing_add_to_cart_completion
+        )
     cross_app_edges = 0
     high_risk_edges = 0
     for edge in edges:

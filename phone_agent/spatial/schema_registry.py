@@ -26,6 +26,7 @@ class TransitionSpec:
     target: str
     intent: str
     affordance: str = ""
+    target_locator: dict[str, Any] = field(default_factory=dict)
     risk: str = "normal"
     rollback_action: str = "Back"
 
@@ -162,6 +163,7 @@ class SchemaRegistry:
                 target=str(item.get("target") or ""),
                 intent=str(item.get("intent") or ""),
                 affordance=str(item.get("affordance") or ""),
+                target_locator=dict(item.get("target_locator") or {}),
                 risk=str(item.get("risk") or "normal"),
                 rollback_action=str(item.get("rollback_action") or "Back"),
             )

@@ -51,7 +51,9 @@
     {"source": "search_result", "target": "product_detail", "intent": "open_product", "affordance": "open_product"},
     {"source": "search_result", "target": "filter_panel", "intent": "open_filter", "affordance": "open_filter"},
     {"source": "filter_panel", "target": "search_result", "intent": "apply_filter", "affordance": "apply_filter"},
-    {"source": "product_detail", "target": "spec_selection", "intent": "open_spec", "affordance": "open_spec"},
+    {"source": "product_detail", "target": "spec_selection", "intent": "open_spec", "affordance": "open_spec", "target_locator": {"region": "bottom_cta", "role": "buy_or_add_to_cart_cta"}},
+    {"source": "spec_selection", "target": "product_detail", "intent": "confirm_add_to_cart", "affordance": "confirm_spec"},
+    {"source": "product_detail", "target": "cart", "intent": "go_cart", "affordance": "go_cart", "target_locator": {"region": "top_right", "role": "cart_entry_icon"}},
     {"source": "spec_selection", "target": "cart", "intent": "confirm_spec", "affordance": "confirm_spec"},
     {"source": "cart", "target": "checkout", "intent": "checkout", "affordance": "checkout", "risk": "high"}
   ],
@@ -65,6 +67,8 @@
   "intents": {
     "open_product": {"action_family": "click"},
     "open_spec": {"action_family": "click"},
+    "confirm_add_to_cart": {"action_family": "click"},
+    "go_cart": {"action_family": "click"},
     "confirm_spec": {"action_family": "click"},
     "checkout": {"action_family": "click", "risk": "high"}
   }
