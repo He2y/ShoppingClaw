@@ -1646,6 +1646,7 @@ class MemoryManager:
                 self._pending_transition_source = None
                 self._pending_transition_action = None
                 self._pending_expected_postcondition = None
+                self._runtime_dag.advance()
             next_action = self.spatial_graph_memory.next_planned_action(self._runtime_dag)
             context_data["runtime_dag"] = self._runtime_dag.to_dict()
             context_data["runtime_metrics"] = self.get_runtime_metrics()

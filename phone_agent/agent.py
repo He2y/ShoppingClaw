@@ -652,7 +652,11 @@ class PhoneAgent:
                 "page_type": page_type,
                 "summary": summary,
                 "elements": elements,
-                "_runtime_hint": not use_page_classifier,
+                "_runtime_hint": (
+                    self.memory_manager is not None
+                    and self.memory_manager._runtime_dag is not None
+                    and self.memory_manager._runtime_dag.is_usable
+                ),
             }
 
             # Keep semantic_layout variable for backward compatibility
