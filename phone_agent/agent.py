@@ -190,16 +190,17 @@ class PhoneAgent:
         # Initialize PageClassifier for semantic extraction
         self.page_classifier: PageClassifier | None = None
         if self.agent_config.enable_memory:
-            import os
-            api_key = os.environ.get("OFFLINE_VLM_API_KEY") or os.environ.get("PHONE_AGENT_API_KEY")
-            if api_key:
-                try:
-                    self.page_classifier = PageClassifier(api_key=api_key)
-                    if self.agent_config.verbose:
-                        print("✅ PageClassifier initialized for semantic extraction")
-                except Exception as e:
-                    if self.agent_config.verbose:
-                        print(f"⚠️ PageClassifier initialization failed: {e}")
+            try:
+                self.page_classifier = PageClassifier()
+                if self.agent_config.verbose:
+                    print(
+                        "PageClassifier initialized for semantic extraction "
+                        f"| source={self.page_classifier.source} "
+                        f"| model={self.page_classifier.model}"
+                    )
+            except Exception as e:
+                if self.agent_config.verbose:
+                    print(f"PageClassifier initialization failed: {e}")
 
         # Initialize clarification sub-agent for shopping task ambiguity detection
         self.clarification_agent: ClarificationAgent | None = None
@@ -803,7 +804,14 @@ class PhoneAgent:
                     summary = sm
                     elements = el
                     if self.agent_config.verbose:
-                        print(f"📊 Page semantics: type={page_type}, summary={summary[:50]}...")
+                        diagnostics = getattr(self.page_classifier, "last_diagnostics", {}) or {}
+                        print(
+                            f"Page semantics: type={page_type}, summary={summary[:50]}... "
+                            f"| source={diagnostics.get('classifier_source', '')} "
+                            f"| model={diagnostics.get('classifier_model', '')} "
+                            f"| fallback={diagnostics.get('fallback_used', False)} "
+                            f"| max_tokens={diagnostics.get('max_tokens', '')}"
+                        )
 
                     # Check if classification failed (returned UNKNOWN)
                     if pt == ShoppingPageType.UNKNOWN:
@@ -812,7 +820,11 @@ class PhoneAgent:
                         raise ValueError("Classification returned UNKNOWN")
                 except Exception as e:
                     if self.agent_config.verbose:
-                        print(f"⚠️ Page classification failed, using heuristic: {e}")
+                        diagnostics = getattr(self.page_classifier, "last_diagnostics", {}) or {}
+                        print(
+                            f"Page classification failed, using heuristic: {e} "
+                            f"| raw_error={diagnostics.get('raw_error', '')}"
+                        )
                     # Fallback to keyword-based inference using only app name
                     # Don't use task description as it may contain misleading keywords
                     if self.memory_manager:
@@ -893,7 +905,7 @@ class PhoneAgent:
             # graph only provides a spatial suggestion — the VLM must verify
             # the screenshot matches the user's task before acting.
             if (
-                mode == "navigate"
+                mode in {"navigate", "verify_with_vlm"}
                 and _next_action
                 and _next_action.get("confidence", 1.0) >= 0.7
                 and not _next_action.get("_requires_vlm_verification")
@@ -990,7 +1002,7 @@ class PhoneAgent:
                     message=result.message or action.get("message"),
                 )
             elif (
-                mode == "navigate"
+                mode in {"navigate", "verify_with_vlm"}
                 and _next_action
                 and _next_action.get("_requires_vlm_verification")
             ):

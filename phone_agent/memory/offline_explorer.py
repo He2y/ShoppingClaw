@@ -308,6 +308,16 @@ _CLASSIFIER_FAST_SYSTEM_PROMPT = (
 )
 
 
+@dataclass(frozen=True)
+class _ClassifierProvider:
+    source: str
+    api_key: str
+    base_url: str
+    model: str
+    max_tokens_fast: int = 512
+    max_tokens_full: int = 1024
+
+
 class PageClassifier:
     """Dedicated page classifier using a fast VLM with cropped screenshots.
 
@@ -330,12 +340,17 @@ class PageClassifier:
         max_image_width: int = 720,
     ):
         explicit_override = bool(api_key and base_url and model)
-        source = "explicit" if explicit_override else "phone_agent"
+        providers: list[_ClassifierProvider] = []
         if explicit_override:
             # All three explicitly provided — use as-is
-            api_key = api_key or "EMPTY"
-            base_url = base_url or "http://localhost:8000/v1"
-            model = model or "autoglm-phone-9b"
+            providers.append(
+                _ClassifierProvider(
+                    source="explicit",
+                    api_key=api_key or "EMPTY",
+                    base_url=base_url or "http://localhost:8000/v1",
+                    model=model or "autoglm-phone-9b",
+                )
+            )
         else:
             load_dotenv()
             configured_providers = (
@@ -360,21 +375,52 @@ class PageClassifier:
             )
             for candidate_source, candidate_key, candidate_base, candidate_model in configured_providers:
                 if candidate_key and candidate_base and candidate_model:
-                    api_key = api_key or candidate_key
-                    base_url = base_url or candidate_base
-                    model = model or candidate_model
-                    source = candidate_source
-                    break
+                    providers.append(
+                        _ClassifierProvider(
+                            source=candidate_source,
+                            api_key=candidate_key,
+                            base_url=candidate_base,
+                            model=candidate_model,
+                        )
+                    )
+        if not providers:
+            providers.append(
+                _ClassifierProvider(
+                    source="phone_agent",
+                    api_key="EMPTY",
+                    base_url="http://localhost:8000/v1",
+                    model="autoglm-phone-9b",
+                )
+            )
 
-        self.client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
-        self.model = model
-        self.base_url = base_url
-        self.source = source
-        self.mode = mode
+        self.providers = providers
+        self._clients: dict[str, Any] = {}
         self.timeout = timeout
+        first_provider = self.providers[0]
+        self.client = self._client_for_provider(first_provider)
+        self.model = first_provider.model
+        self.base_url = first_provider.base_url
+        self.source = first_provider.source
+        self.mode = mode
         self.max_image_width = max_image_width
+        self.max_tokens_fast = 512
+        self.max_tokens_full = 1024
         self.last_duration = 0.0
-        self._cache: dict[tuple[str, str, str, int], tuple[ShoppingPageType, str, Dict[str, str]]] = {}
+        self.last_diagnostics: dict[str, Any] = {}
+        self._cache: dict[
+            tuple[str, str, tuple[tuple[str, str], ...], int],
+            tuple[tuple[ShoppingPageType, str, Dict[str, str]], dict[str, Any]],
+        ] = {}
+
+    def _client_for_provider(self, provider: _ClassifierProvider) -> Any:
+        cache_key = f"{provider.source}|{provider.base_url}|{provider.model}"
+        if cache_key not in self._clients:
+            self._clients[cache_key] = OpenAI(
+                base_url=provider.base_url,
+                api_key=provider.api_key,
+                timeout=self.timeout,
+            )
+        return self._clients[cache_key]
 
     def classify(self, screenshot_base64: str, width: int, height: int) -> tuple[ShoppingPageType, str, Dict[str, str]]:
         """Classify page type and extract elements from a cropped screenshot.
@@ -391,62 +437,121 @@ class PageClassifier:
         start_time = time.time()
         if self.mode == "off":
             self.last_duration = 0.0
+            self.last_diagnostics = {
+                "classifier_source": self.source,
+                "classifier_model": self.model,
+                "fallback_used": False,
+                "raw_error": "",
+            }
             return ShoppingPageType.UNKNOWN, "classifier disabled", {}
         screenshot_key = hashlib.md5(screenshot_base64.encode()).hexdigest()
-        cache_key = (screenshot_key, self.mode, self.model, self.max_image_width)
+        provider_signature = tuple((provider.source, provider.model) for provider in self.providers)
+        cache_key = (screenshot_key, self.mode, provider_signature, self.max_image_width)
         if cache_key in self._cache:
             self.last_duration = 0.0
-            return self._cache[cache_key]
+            cached_result, cached_diagnostics = self._cache[cache_key]
+            self.last_diagnostics = dict(cached_diagnostics)
+            return cached_result
 
         try:
             cropped_b64 = self._crop_screenshot(screenshot_base64, width, height, self.max_image_width)
         except Exception as e:
             self.last_duration = time.time() - start_time
+            self.last_diagnostics = {
+                "classifier_source": self.source,
+                "classifier_model": self.model,
+                "fallback_used": False,
+                "raw_error": f"crop error: {e}",
+            }
             return ShoppingPageType.UNKNOWN, f"crop error: {e}", {}
 
         prompt = _CLASSIFIER_FAST_SYSTEM_PROMPT if self.mode == "fast" else _CLASSIFIER_SYSTEM_PROMPT
-        max_tokens = 160 if self.mode == "fast" else 500
-        raw = ""
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": prompt},
-                    {
-                        "role": "user",
-                        "content": [
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/png;base64,{cropped_b64}"},
-                            },
-                            {"type": "text", "text": "请分类这个页面"},
-                        ],
-                    },
-                ],
-                max_tokens=max_tokens,
-                temperature=0.0,
-            )
-            raw = response.choices[0].message.content or ""
-            result = self._parse_json_object(raw)
-        except (json.JSONDecodeError, Exception) as e:
-            result = self._infer_result_from_text(raw)
-            if result:
-                page_type = _PAGE_TYPE_MAP.get(result.get("page_type", "").strip(), ShoppingPageType.UNKNOWN)
-                summary = result.get("summary", "").strip() or f"未命名-{page_type.value}"
-                self.last_duration = time.time() - start_time
-                return page_type, summary, {}
-            self.last_duration = time.time() - start_time
-            return ShoppingPageType.UNKNOWN, f"API/parse error: {e}", {}
+        errors: list[str] = []
+        for provider_index, provider in enumerate(self.providers):
+            max_tokens = provider.max_tokens_fast if self.mode == "fast" else provider.max_tokens_full
+            raw = ""
+            try:
+                client = self._client_for_provider(provider)
+                response = client.chat.completions.create(
+                    model=provider.model,
+                    messages=[
+                        {"role": "system", "content": prompt},
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image_url",
+                                    "image_url": {"url": f"data:image/png;base64,{cropped_b64}"},
+                                },
+                                {"type": "text", "text": "Classify this page as JSON."},
+                            ],
+                        },
+                    ],
+                    max_tokens=max_tokens,
+                    temperature=0.0,
+                )
+                message = response.choices[0].message
+                raw = getattr(message, "content", None) or ""
+                reasoning = (
+                    getattr(message, "reasoning_content", None)
+                    or getattr(message, "reasoning", None)
+                    or ""
+                )
+                if not raw.strip():
+                    reason = "empty content"
+                    if reasoning:
+                        reason += ", reasoning-only"
+                    raise ValueError(reason)
+                try:
+                    result = self._parse_json_object(raw)
+                except Exception as parse_error:
+                    inferred = self._infer_result_from_text(raw)
+                    if not inferred:
+                        raise ValueError(f"non-json classifier output: {parse_error}") from parse_error
+                    result = inferred
+                if not result:
+                    raise ValueError("empty classifier result")
 
-        page_type = _PAGE_TYPE_MAP.get(result.get("page_type", "").strip(), ShoppingPageType.UNKNOWN)
-        summary = result.get("summary", "").strip() or f"未命名-{page_type.value}"
-        elements = {} if self.mode == "fast" else result.get("elements", {})
-        if not isinstance(elements, dict):
-            elements = {}
+                page_type = _PAGE_TYPE_MAP.get(
+                    str(result.get("page_type", "")).strip(),
+                    ShoppingPageType.UNKNOWN,
+                )
+                summary = str(result.get("summary", "")).strip() or f"unnamed-{page_type.value}"
+                elements = {} if self.mode == "fast" else result.get("elements", {})
+                if not isinstance(elements, dict):
+                    elements = {}
+
+                self.client = client
+                self.model = provider.model
+                self.base_url = provider.base_url
+                self.source = provider.source
+                self.last_duration = time.time() - start_time
+                diagnostics = {
+                    "classifier_source": provider.source,
+                    "classifier_model": provider.model,
+                    "fallback_used": provider_index > 0,
+                    "raw_error": "",
+                    "raw_content": raw[:500],
+                    "max_tokens": max_tokens,
+                }
+                self.last_diagnostics = diagnostics
+                result_tuple = (page_type, summary, elements)
+                self._cache[cache_key] = (result_tuple, diagnostics)
+                return result_tuple
+            except Exception as e:
+                errors.append(f"{provider.source}/{provider.model}: {e}")
+                continue
+
         self.last_duration = time.time() - start_time
-        result_tuple = (page_type, summary, elements)
-        self._cache[cache_key] = result_tuple
-        return result_tuple
+        raw_error = " | ".join(errors) if errors else "no classifier provider configured"
+        self.last_diagnostics = {
+            "classifier_source": self.source,
+            "classifier_model": self.model,
+            "fallback_used": len(self.providers) > 1,
+            "raw_error": raw_error,
+        }
+        return ShoppingPageType.UNKNOWN, f"API/parse error: {raw_error}", {}
+
 
     @staticmethod
     def _parse_json_object(raw: str) -> dict[str, Any]:
@@ -1656,4 +1761,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

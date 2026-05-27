@@ -6,6 +6,7 @@ context enrichment, and integration with the agent loop.
 """
 
 import json
+import os
 import re
 from datetime import datetime
 from typing import Any
@@ -92,8 +93,14 @@ class MemoryManager:
 
         # Initialize GraphStore (Spatial Memory)
         from .graph_store import GraphStore
-        self.graph_store = GraphStore()
-        self.spatial_graph_memory = SpatialGraphMemory(self.graph_store)
+        from phone_agent.spatial.runtime_controller import runtime_graph_database
+
+        self.graph_store = GraphStore(enable_task_index=False)
+        runtime_database = os.getenv("AMSG_RUNTIME_GRAPH_DATABASE") or runtime_graph_database()
+        self.runtime_graph_store = GraphStore(database=runtime_database, enable_task_index=False)
+        self.spatial_graph_memory = SpatialGraphMemory(self.runtime_graph_store)
+        self._graph_runtime_controller = None
+        self._verbose = True
 
         # Initialize UnifiedSessionState — single source of truth
         # (replaces StateManager + SessionMemory + KnowledgeBase)
@@ -175,6 +182,34 @@ class MemoryManager:
 
         if self.enable_auto_extract:
             self._extract_from_task(task)
+
+    def _ensure_graph_runtime_controller(self):
+        """Return the active AMSG v4 runtime controller.
+
+        Tests may replace graph_store/spatial_graph_memory after construction,
+        so the controller is rebuilt when its dependencies change.
+        """
+        from phone_agent.spatial.runtime_controller import GraphRuntimeController
+
+        runtime_store = (
+            getattr(self.spatial_graph_memory, "graph_store", None)
+            or getattr(self, "runtime_graph_store", None)
+            or self.graph_store
+        )
+        controller = getattr(self, "_graph_runtime_controller", None)
+        if (
+            controller is None
+            or controller.graph_store is not runtime_store
+            or controller.spatial_graph_memory is not self.spatial_graph_memory
+        ):
+            self._graph_runtime_controller = GraphRuntimeController(
+                manager=self,
+                graph_store=runtime_store,
+                spatial_graph_memory=self.spatial_graph_memory,
+                verbose=getattr(self, "_verbose", True),
+                legacy_fallback=False,
+            )
+        return self._graph_runtime_controller
 
     def set_vlm_plan(self, plan: dict[str, Any]) -> None:
         """Store VLM-generated task plan for use during route planning.
@@ -333,28 +368,10 @@ class MemoryManager:
 
     def should_use_page_classifier(self, step: int = 0, current_app: str = "") -> bool:
         """Return False when a usable RuntimeDAG can drive the next step cheaply."""
-        if not self._runtime_dag or not self._runtime_dag.is_usable:
-            self._runtime_metrics["runtime_dag_misses"] += 1
-            return True
-        if self._pending_expected_postcondition:
-            self._runtime_metrics["runtime_dag_misses"] += 1
-            return True
-        next_edge = self._runtime_dag.next_edge()
-        if not next_edge:
-            self._runtime_metrics["runtime_dag_hits"] += 1
-            return False
-        if next_edge.risk == "high" or next_edge.postcondition in {"checkout", "payment", "address", "login"}:
-            self._runtime_metrics["runtime_dag_misses"] += 1
-            return True
-        if current_app and self._runtime_dag.app and current_app != self._runtime_dag.app:
-            self._runtime_metrics["runtime_dag_misses"] += 1
-            return True
-        self._runtime_metrics["runtime_dag_hits"] += 1
-        return False
+        return self._ensure_graph_runtime_controller().should_use_page_classifier(step, current_app)
 
     def record_page_classifier_decision(self, used: bool) -> None:
-        key = "page_classifier_calls" if used else "page_classifier_skips"
-        self._runtime_metrics[key] = self._runtime_metrics.get(key, 0) + 1
+        self._ensure_graph_runtime_controller().record_page_classifier_decision(used)
 
     def get_runtime_metrics(self) -> dict[str, int]:
         metrics = dict(self._runtime_metrics)
@@ -363,28 +380,11 @@ class MemoryManager:
 
     def runtime_screen_hint(self, current_app: str = "") -> dict[str, Any]:
         """Provide a cheap page hint from the active RuntimeDAG."""
-        if not self._runtime_dag:
-            return {}
-        node = self._runtime_dag.nodes.get(self._runtime_dag.current_node_id)
-        if not node:
-            return {}
-        return {
-            "app": current_app or node.app,
-            "page_type": node.page_type,
-            "summary": node.summary,
-            "semantic_layout": f"{current_app or node.app} {node.page_type}",
-            "elements": None,
-        }
+        return self._ensure_graph_runtime_controller().runtime_screen_hint(current_app)
 
     def mark_planned_action_executed(self, action: dict[str, Any], success: bool = True) -> None:
         """Keep RuntimeDAG pending until the next screen verifies postcondition."""
-        if not self._runtime_dag:
-            return
-        if not success:
-            self._runtime_dag.coverage_gaps.append("planned action execution failed")
-            return
-        if action.get("_runtime_plan_id") != self._runtime_dag.plan_id:
-            return
+        self._ensure_graph_runtime_controller().mark_planned_action_executed(action, success=success)
 
     def _runtime_dag_from_route(self, belief: PageBelief, goal_spec: Any, route_plan: Any) -> RuntimeDAG:
         app = belief.candidates[0].state.app if belief.candidates else ""
@@ -1668,6 +1668,13 @@ class MemoryManager:
             screen_dict: Complete screen info including page_type, summary, elements.
                          If None, minimal dict is built from ui_hash and semantic_layout (backward compatible).
         """
+        return self._ensure_graph_runtime_controller().locate_and_get_context(
+            ui_hash=ui_hash,
+            semantic_layout=semantic_layout,
+            task=task,
+            screen_dict=screen_dict,
+        )
+
         context_data = {
             "max_similarity": 0.0,
             "mode": "explore",

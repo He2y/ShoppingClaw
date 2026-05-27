@@ -18,7 +18,14 @@ class GraphStore:
     Spatial Memory Store using Neo4j Graph Database.
     Handles UI state graphs, transitions, and shortcut retrieval.
     """
-    def __init__(self, uri: str = None, user: str = None, password: str = None, database: str = None):
+    def __init__(
+        self,
+        uri: str = None,
+        user: str = None,
+        password: str = None,
+        database: str = None,
+        enable_task_index: bool = True,
+    ):
         # Ensure .env is loaded to get the correct Neo4j credentials
         load_dotenv()
         self.uri = uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
@@ -27,6 +34,7 @@ class GraphStore:
         self.database = database or os.getenv("NEO4J_DATABASE", "shopping")
         self.driver = None
         self.task_index = None
+        self.enable_task_index = enable_task_index
 
         if HAS_NEO4J:
             try:
@@ -34,11 +42,13 @@ class GraphStore:
                 # Test connection
                 self.driver.verify_connectivity()
 
-                # Initialize FAISS TaskIndex
-                self.task_index = TaskIndex()
-                if not self.task_index.load():
-                    print("FAISS cache empty, triggering rebuild from Neo4j...")
-                    self._rebuild_task_index()
+                # Legacy task replay index is optional. AMSG v4 runtime graphs
+                # intentionally do not require TaskTarget/STARTS_AT.
+                if self.enable_task_index:
+                    self.task_index = TaskIndex()
+                    if not self.task_index.load():
+                        print("FAISS cache empty, triggering rebuild from Neo4j...")
+                        self._rebuild_task_index()
             except Exception as e:
                 print(f"⚠️ Neo4j 不可用（{e}），空间记忆图功能已降级")
                 self.driver = None
@@ -123,6 +133,235 @@ class GraphStore:
             for record in session.run(query, app=app or "", page_type=page_type, limit=limit):
                 candidates.append(dict(record["s"]))
         return candidates
+
+    def find_v4_page_candidates(
+        self,
+        app: str = "",
+        page_type: str = "",
+        semantic_signature: str = "",
+        limit: int = 10,
+    ) -> List[Dict[str, Any]]:
+        """Find UIState candidates using only the AMSG v4 runtime schema."""
+        if not self.driver:
+            return []
+        if not page_type and not semantic_signature:
+            return []
+
+        query = """
+        MATCH (s:UIState)
+        WHERE ($page_type = "" OR s.page_type = $page_type)
+          AND (
+            size($app_aliases) = 0
+            OR s.app IN $app_aliases
+            OR any(alias IN $app_aliases
+                   WHERE toLower(coalesce(s.app, "")) CONTAINS toLower(alias)
+                      OR toLower(alias) CONTAINS toLower(coalesce(s.app, "")))
+          )
+          AND (
+            $semantic_signature = ""
+            OR s.semantic_signature = $semantic_signature
+            OR s.semantic_layout = $semantic_signature
+          )
+        OPTIONAL MATCH (s)-[:NEXT_ACTION]->(:Action)
+        WITH s, count(*) AS outgoing_degree
+        OPTIONAL MATCH (:Action)-[:PRODUCES]->(s)
+        WITH s, outgoing_degree, count(*) AS incoming_degree
+        RETURN s
+        ORDER BY
+          CASE
+            WHEN $semantic_signature <> "" AND s.semantic_signature = $semantic_signature THEN 0
+            WHEN $semantic_signature <> "" AND s.semantic_layout = $semantic_signature THEN 1
+            ELSE 2
+          END,
+          (outgoing_degree + incoming_degree) DESC,
+          coalesce(s.updated_at, 0) DESC
+        LIMIT $limit
+        """
+        candidates: List[Dict[str, Any]] = []
+        with self.driver.session(database=self.database) as session:
+            for record in session.run(
+                query,
+                app_aliases=self._runtime_app_aliases(app),
+                page_type=page_type or "",
+                semantic_signature=semantic_signature or "",
+                limit=limit,
+            ):
+                candidates.append(dict(record["s"]))
+        return candidates
+
+    def get_v4_outgoing_edges(self, state_id: str, app: str = "", limit: int = 20):
+        """Return outgoing AMSG v4 edges from UIState->Action->UIState."""
+        return self.get_outgoing_transitions(state_id=state_id, limit=limit, app=app)
+
+    def get_v4_functionality_context(
+        self,
+        page_type: str,
+        app: str = "",
+        state_id: str | None = None,
+    ) -> Dict[str, Any]:
+        """Read FunctionalityItem/Cluster context without legacy TaskTarget fallback."""
+        result: Dict[str, Any] = {
+            "available_roles": [],
+            "data_items": [],
+            "verified_clusters": [],
+            "implemented_actions": [],
+            "semantic_hint": "",
+        }
+        if not self.driver or not page_type:
+            return result
+
+        with self.driver.session(database=self.database) as session:
+            roles_query = """
+            MATCH (s:UIState)
+            WHERE ($state_id = "" OR s.state_id = $state_id)
+              AND s.page_type = $page_type
+              AND (
+                size($app_aliases) = 0
+                OR s.app IN $app_aliases
+                OR any(alias IN $app_aliases
+                       WHERE toLower(coalesce(s.app, "")) CONTAINS toLower(alias)
+                          OR toLower(alias) CONTAINS toLower(coalesce(s.app, "")))
+              )
+            MATCH (s)-[:EXPOSES_FUNCTION]->(i:FunctionalityItem)
+            WHERE i.type = 'functionality'
+              AND coalesce(i.is_promotable, true) = true
+            RETURN DISTINCT i.canonical_role AS role, count(*) AS cnt
+            ORDER BY cnt DESC
+            """
+            result["available_roles"] = [
+                dict(record)
+                for record in session.run(
+                    roles_query,
+                    state_id=state_id or "",
+                    page_type=page_type,
+                    app_aliases=self._runtime_app_aliases(app),
+                )
+            ]
+
+            data_query = """
+            MATCH (s:UIState)
+            WHERE ($state_id = "" OR s.state_id = $state_id)
+              AND s.page_type = $page_type
+              AND (
+                size($app_aliases) = 0
+                OR s.app IN $app_aliases
+                OR any(alias IN $app_aliases
+                       WHERE toLower(coalesce(s.app, "")) CONTAINS toLower(alias)
+                          OR toLower(alias) CONTAINS toLower(coalesce(s.app, "")))
+              )
+            MATCH (s)-[:EXPOSES_FUNCTION]->(i:FunctionalityItem)
+            WHERE i.type = 'data'
+              AND coalesce(i.canonical_role, '') <> ''
+            RETURN DISTINCT i.canonical_role AS role,
+                   i.description AS sample,
+                   i.confidence AS conf
+            ORDER BY conf DESC
+            LIMIT 12
+            """
+            result["data_items"] = [
+                dict(record)
+                for record in session.run(
+                    data_query,
+                    state_id=state_id or "",
+                    page_type=page_type,
+                    app_aliases=self._runtime_app_aliases(app),
+                )
+            ]
+
+            cluster_query = """
+            MATCH (c:FunctionalityCluster)
+            WHERE coalesce(c.success_count, 0) > 0
+              AND $page_type IN coalesce(c.page_types, [])
+            RETURN c.canonical_name AS name,
+                   c.canonical_description AS description,
+                   c.success_count AS verified,
+                   size(coalesce(c.member_functionality_ids, [])) AS members,
+                   c.risk_level AS risk
+            ORDER BY verified DESC
+            """
+            result["verified_clusters"] = [
+                dict(record)
+                for record in session.run(cluster_query, page_type=page_type)
+            ]
+
+            impl_query = """
+            MATCH (a:Action)-[:IMPLEMENTS_FUNCTION]->(i)
+            WHERE (i:FunctionalityItem OR i:FunctionalityCluster)
+              AND (
+                coalesce(i.page_type, '') = $page_type
+                OR $page_type IN coalesce(i.page_types, [])
+              )
+              AND (
+                size($app_aliases) = 0
+                OR coalesce(i.app, '') = ''
+                OR i.app IN $app_aliases
+                OR any(alias IN $app_aliases
+                       WHERE toLower(coalesce(i.app, "")) CONTAINS toLower(alias)
+                          OR toLower(alias) CONTAINS toLower(coalesce(i.app, "")))
+              )
+            RETURN a.type AS action_type,
+                   a.semantic_target AS target,
+                   coalesce(i.canonical_role, i.canonical_name) AS role,
+                   a.region AS region
+            LIMIT 20
+            """
+            result["implemented_actions"] = [
+                dict(record)
+                for record in session.run(
+                    impl_query,
+                    page_type=page_type,
+                    app_aliases=self._runtime_app_aliases(app),
+                )
+            ]
+
+        hint_parts: list[str] = []
+        if result["available_roles"]:
+            role_names = [record.get("role", "") for record in result["available_roles"][:8]]
+            role_names = [role for role in role_names if role]
+            if role_names:
+                hint_parts.append(f"[Available actions on {page_type}]: {', '.join(role_names)}")
+        if result["verified_clusters"]:
+            cluster_names = [record.get("name", "") for record in result["verified_clusters"][:5]]
+            cluster_names = [name for name in cluster_names if name]
+            if cluster_names:
+                hint_parts.append(f"[Verified navigation paths]: {', '.join(cluster_names)}")
+        if result["data_items"]:
+            data_roles = [record.get("role", "") for record in result["data_items"][:6]]
+            data_roles = [role for role in data_roles if role]
+            if data_roles:
+                hint_parts.append(f"[Observable data fields]: {', '.join(data_roles)}")
+        result["semantic_hint"] = " | ".join(hint_parts)
+        return result
+
+    def load_v4_runtime_subgraph(
+        self,
+        app: str,
+        start_state_ids: List[str] | None = None,
+        target_page_types: List[str] | None = None,
+        limit: int = 64,
+    ) -> Dict[str, Any]:
+        """Load a bounded UIState/Action subgraph for V4 runtime planning."""
+        return self.load_spatial_subgraph(
+            app=app or "",
+            goal_spec={"target_page_types": list(target_page_types or [])},
+            start_candidates=list(start_state_ids or []),
+            max_nodes=limit,
+        )
+
+    @staticmethod
+    def _runtime_app_aliases(app: str = "") -> List[str]:
+        normalized = str(app or "").strip()
+        if not normalized:
+            return []
+        aliases = {normalized}
+        lowered = normalized.lower()
+        if "taobao" in lowered or "淘宝" in normalized:
+            aliases.update({"taobao", "Taobao", "淘宝", "com.taobao.taobao"})
+        if "tmall" in lowered or "天猫" in normalized:
+            aliases.update({"tmall", "Tmall", "天猫"})
+        if "jd" in lowered or "jingdong" in lowered or "京东" in normalized:
+            aliases.update({"jd", "jingdong", "JD", "京东"})
+        return sorted(aliases)
 
     def get_page_type_coverage(self, app: str = "") -> Dict[str, int]:
         """Return canonical page coverage counts grouped by page_type."""

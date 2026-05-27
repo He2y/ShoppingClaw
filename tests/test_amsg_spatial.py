@@ -1,6 +1,11 @@
+import base64
 import json
+from io import BytesIO
 from types import SimpleNamespace
 
+from PIL import Image
+
+from phone_agent.memory import offline_explorer
 from phone_agent.memory.offline_explorer import (
     OfflineExplorer,
     PageClassifier,
@@ -480,6 +485,77 @@ def test_page_classifier_defaults_to_configured_strong_vlm(monkeypatch):
     assert classifier.source == "amsg_strong_vlm"
 
 
+def test_page_classifier_falls_back_between_providers_and_uses_runtime_budget(monkeypatch):
+    _disable_real_vlm_env(monkeypatch)
+    monkeypatch.setenv("AMSG_STRONG_VLM_BASE_URL", "https://strong.example/v1")
+    monkeypatch.setenv("AMSG_STRONG_VLM_MODEL", "strong-vlm")
+    monkeypatch.setenv("AMSG_STRONG_VLM_API_KEY", "secret")
+    monkeypatch.setenv("OFFLINE_VLM_BASE_URL", "https://offline.example/v1")
+    monkeypatch.setenv("OFFLINE_VLM_MODEL", "offline-vlm")
+    monkeypatch.setenv("OFFLINE_VLM_API_KEY", "offline-secret")
+    monkeypatch.setattr(offline_explorer, "load_dotenv", lambda: None)
+
+    calls: list[dict] = []
+    responses = {
+        "https://strong.example/v1": [SimpleNamespace(content="")],
+        "https://offline.example/v1": [
+            SimpleNamespace(content='{"page_type":"search_result","summary":"results"}')
+        ],
+    }
+
+    class FakeCompletions:
+        def __init__(self, base_url):
+            self.base_url = base_url
+
+        def create(self, **kwargs):
+            calls.append({"base_url": self.base_url, **kwargs})
+            message = responses[self.base_url].pop(0)
+            return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+    class FakeOpenAI:
+        def __init__(self, base_url, api_key, timeout):
+            self.chat = SimpleNamespace(completions=FakeCompletions(base_url))
+
+    monkeypatch.setattr(offline_explorer, "OpenAI", FakeOpenAI)
+
+    classifier = PageClassifier(mode="fast")
+    page_type, summary, elements = classifier.classify(_tiny_png_b64(), 120, 120)
+
+    assert page_type == ShoppingPageType.SEARCH_RESULT
+    assert summary == "results"
+    assert elements == {}
+    assert classifier.source == "offline_vlm"
+    assert classifier.last_diagnostics["fallback_used"] is True
+    assert calls[0]["max_tokens"] == 512
+    assert calls[1]["max_tokens"] == 512
+
+
+def test_page_classifier_returns_unknown_with_diagnostics_when_all_providers_fail(monkeypatch):
+    _disable_real_vlm_env(monkeypatch)
+    monkeypatch.setenv("AMSG_STRONG_VLM_BASE_URL", "https://strong.example/v1")
+    monkeypatch.setenv("AMSG_STRONG_VLM_MODEL", "strong-vlm")
+    monkeypatch.setenv("AMSG_STRONG_VLM_API_KEY", "secret")
+    monkeypatch.setattr(offline_explorer, "load_dotenv", lambda: None)
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=""))])
+
+    class FakeOpenAI:
+        def __init__(self, base_url, api_key, timeout):
+            self.chat = SimpleNamespace(completions=FakeCompletions())
+
+    monkeypatch.setattr(offline_explorer, "OpenAI", FakeOpenAI)
+
+    classifier = PageClassifier(mode="full")
+    page_type, summary, elements = classifier.classify(_tiny_png_b64(), 120, 120)
+
+    assert page_type == ShoppingPageType.UNKNOWN
+    assert elements == {}
+    assert "empty content" in summary
+    assert "empty content" in classifier.last_diagnostics["raw_error"]
+
+
 def test_offline_explorer_recognizes_settings_page_as_common_mobile_state():
     reasoning = (
         "当前屏幕显示的是淘宝设置页面，包含账号与安全、隐私设置、通用设置、消息通知和支付设置。"
@@ -506,3 +582,9 @@ def _disable_real_vlm_env(monkeypatch):
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr(task_synthesis, "load_dotenv", lambda: None)
     task_synthesis._ENV_LOADED = False
+
+
+def _tiny_png_b64() -> str:
+    buffer = BytesIO()
+    Image.new("RGB", (120, 120), color="white").save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode("ascii")

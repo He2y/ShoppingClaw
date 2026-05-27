@@ -1854,11 +1854,19 @@ class SpatialGraphMemory:
             return self._page_state_from_graph(data, fallback=page_state)
 
         try:
-            candidates = self.graph_store.find_page_state_candidates(
-                app=page_state.app,
-                page_type=page_state.page_type,
-                limit=20,
-            )
+            if hasattr(self.graph_store, "find_v4_page_candidates"):
+                candidates = self.graph_store.find_v4_page_candidates(
+                    app=page_state.app,
+                    page_type=page_state.page_type,
+                    semantic_signature=page_state.semantic_signature,
+                    limit=20,
+                )
+            else:
+                candidates = self.graph_store.find_page_state_candidates(
+                    app=page_state.app,
+                    page_type=page_state.page_type,
+                    limit=20,
+                )
         except AttributeError:
             candidates = []
         except Exception:
@@ -1901,7 +1909,10 @@ class SpatialGraphMemory:
         graph_edges: list[TransitionEdge] = []
         if self.graph_store and getattr(self.graph_store, "driver", None):
             try:
-                graph_edges = self.graph_store.get_outgoing_transitions(state_id, app=allowed_app)
+                if hasattr(self.graph_store, "get_v4_outgoing_edges"):
+                    graph_edges = self.graph_store.get_v4_outgoing_edges(state_id, app=allowed_app)
+                else:
+                    graph_edges = self.graph_store.get_outgoing_transitions(state_id, app=allowed_app)
             except AttributeError:
                 graph_edges = []
             except Exception:

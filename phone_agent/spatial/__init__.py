@@ -23,6 +23,7 @@ from .reporting import (
     format_amsg_markdown,
     format_amsg_v4_markdown,
 )
+from .runtime_controller import GraphRuntimeController, RuntimeObservation, runtime_graph_database
 from .schema_registry import MobileSchema, SchemaRegistry, get_default_registry
 from .screen_cluster import ScreenCluster, ScreenClusterer
 from .semantics import ScreenSemanticsExtractor
@@ -47,6 +48,7 @@ __all__ = [
     "StrongVLMFunctionalityExtractor",
     "FunctionalityQualityGate",
     "FunctionalityQualityResult",
+    "GraphRuntimeController",
     "MobileSchema",
     "NegativeEdgeMemory",
     "PageNode",
@@ -56,6 +58,7 @@ __all__ = [
     "ScreenCluster",
     "ScreenClusterer",
     "ScreenSemanticsExtractor",
+    "RuntimeObservation",
     "SemanticActionIR",
     "SpatialPlanner",
     "SpatialRoutePlan",
@@ -69,5 +72,6 @@ __all__ = [
     "format_amsg_v4_markdown",
     "get_default_registry",
     "resolve_embedding_config",
+    "runtime_graph_database",
     "resolve_strong_vlm_config",
 ]
