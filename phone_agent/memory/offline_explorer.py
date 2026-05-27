@@ -40,7 +40,7 @@ from phone_agent.model.client import MessageBuilder, ModelClient, ModelConfig
 from phone_agent.spatial.active_builder import ActiveGraphBuilder
 from phone_agent.spatial.hypothesis import EdgeHypothesisGenerator
 from phone_agent.spatial.semantics import ScreenSemanticsExtractor
-from phone_agent.spatial.task_synthesis import resolve_strong_vlm_config
+
 
 
 # ── Enums & Data Classes ───────────────────────────────────────
@@ -329,16 +329,26 @@ class PageClassifier:
         timeout: float = 8.0,
         max_image_width: int = 720,
     ):
-        explicit_override = bool(api_key or base_url or model)
-        config = resolve_strong_vlm_config()
-        api_key = api_key or config.api_key or "EMPTY"
-        base_url = base_url or config.base_url or "http://localhost:8000/v1"
-        model = model or config.model or "autoglm-phone-9b"
+        explicit_override = bool(api_key and base_url and model)
+        if explicit_override:
+            # All three explicitly provided — use as-is
+            api_key = api_key or "EMPTY"
+            base_url = base_url or "http://localhost:8000/v1"
+            model = model or "autoglm-phone-9b"
+        else:
+            # Use operational VLM for page classification (lightweight task).
+            # The strong VLM (AMSG_STRONG_VLM_MODEL=glm-5v-turbo) is a reasoning
+            # model whose reasoning_tokens consume the max_tokens budget, leaving
+            # empty content and causing all classifications to return UNKNOWN.
+            load_dotenv()
+            api_key = api_key or os.environ.get("PHONE_AGENT_API_KEY", "EMPTY")
+            base_url = base_url or os.environ.get("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1")
+            model = model or os.environ.get("PHONE_AGENT_MODEL", "autoglm-phone-9b")
 
         self.client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
         self.model = model
         self.base_url = base_url
-        self.source = "explicit" if explicit_override else (config.source or "explicit")
+        self.source = "explicit" if explicit_override else "phone_agent"
         self.mode = mode
         self.timeout = timeout
         self.max_image_width = max_image_width
