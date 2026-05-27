@@ -1872,9 +1872,27 @@ class SpatialGraphMemory:
 
         edges = local_edges + graph_edges
 
+        # Semantic fallback: when exact state_id match finds nothing OR
+        # only self-loop edges (unknown → unknown coordination steps),
+        # match graph states by (app, page_type) so the agent can still
+        # navigate through the known page graph.
+        current_state = self._local_states.get(state_id)
+        edges_are_all_self_loops = (
+            edges
+            and current_state
+            and current_state.page_type == "unknown"
+            and all(
+                e.postcondition == current_state.page_type
+                for e in edges
+            )
+        )
+        if (not edges or edges_are_all_self_loops) and current_state and current_state.page_type:
+            edges = self._load_edges_by_page_type(
+                current_state.page_type, current_state.app, allowed_app, state_id
+            )
+
         # Heuristic rule: Inject "加入购物车/立即购买" edges for product_detail pages
         # when graph lacks proper spec_selection transitions
-        current_state = self._local_states.get(state_id)
         if current_state and current_state.page_type == "product_detail":
             # Check if any edge leads to spec_selection with correct action
             has_spec_selection_edge = any(
@@ -1916,6 +1934,98 @@ class SpatialGraphMemory:
                 )
                 edges.append(heuristic_edge2)
 
+        return edges
+
+    def _load_edges_by_page_type(
+        self, page_type: str, app: str, allowed_app: str, source_state_id: str,
+    ) -> list[TransitionEdge]:
+        """Fallback: find graph edges from states with matching (app, page_type).
+
+        When the runtime state_id doesn't match any graph state (different
+        screenshot hash), this method finds graph states with the same semantic
+        identity and returns their outgoing edges with remapped source IDs.
+
+        If page_type is "unknown" (classifier failed), query ALL page_types
+        for this app so the BFS has a chance to find a route.
+        """
+        edges: list[TransitionEdge] = []
+        if not self.graph_store or not getattr(self.graph_store, "driver", None):
+            return edges
+
+        try:
+            with self.graph_store.driver.session(database=self.graph_store.database) as s:
+                if page_type == "unknown":
+                    # Classifier failed — load edges from likely starting page types
+                    # for this app.  Prefer "home" (launch → app home), then
+                    # "unknown" (exploration startup), then "search_input" (common entry).
+                    # Excludes deep states like "product_detail", "cart", etc. to avoid
+                    # unrealistic shortcuts (e.g. "product_detail → cart" from home).
+                    result = s.run(
+                        """
+                        MATCH (src:UIState)-[:NEXT_ACTION]->(a:Action)-[:PRODUCES]->(tgt:UIState)
+                        WHERE ($app = '' OR src.app CONTAINS $app OR src.app = '')
+                          AND src.page_type IN ['home', 'unknown']
+                        RETURN src.state_id AS src_id, src.page_type AS src_pt,
+                               a.type AS action_type, a.semantic_target AS action_target,
+                               a.region AS region,
+                               tgt.page_type AS postcondition, tgt.state_id AS tgt_id,
+                               coalesce(a.confidence, 0.8) AS confidence,
+                               coalesce(a.frequency, 1) AS freq
+                        ORDER BY freq DESC, confidence DESC
+                        LIMIT 12
+                        """,
+                        app=app,
+                    )
+                else:
+                    result = s.run(
+                        """
+                        MATCH (src:UIState)-[:NEXT_ACTION]->(a:Action)-[:PRODUCES]->(tgt:UIState)
+                        WHERE src.page_type = $page_type
+                          AND ($app = '' OR src.app CONTAINS $app OR src.app = '')
+                        RETURN src.state_id AS src_id, a.type AS action_type,
+                               a.semantic_target AS action_target, a.region AS region,
+                               tgt.page_type AS postcondition, tgt.state_id AS tgt_id,
+                               coalesce(a.confidence, 0.8) AS confidence,
+                               coalesce(a.frequency, 1) AS freq
+                        ORDER BY freq DESC, confidence DESC
+                        LIMIT 8
+                        """,
+                        page_type=page_type,
+                        app=app,
+                    )
+                for rec in result:
+                    r = dict(rec)
+                    src_pt = r.get("src_pt", page_type)
+                    # Semantic fallback edges: use higher base confidence for
+                    # structurally-correct transitions from known page types.
+                    if src_pt == "home":
+                        graph_conf = 1.0  # home is the most likely start
+                    elif src_pt and src_pt != "unknown":
+                        graph_conf = 0.9  # other known page types
+                    else:
+                        graph_conf = 0.75  # unknown source (coordination steps)
+                    # Penalize confidence when source page_type differs from
+                    # the runtime state's page_type (classifier mismatch).
+                    if src_pt != page_type:
+                        graph_conf *= 0.85  # 15% penalty for type mismatch
+                    edge = TransitionEdge(
+                        source_id=source_state_id,  # remap to runtime state
+                        target_id=r.get("tgt_id", ""),
+                        action_type=r.get("action_type", "Tap"),
+                        action_target=r.get("action_target", ""),
+                        action_params={
+                            "region": r.get("region", ""),
+                            "app": app,
+                        },
+                        postcondition=r.get("postcondition", ""),
+                        success_count=int(r.get("freq", 1)),
+                        fail_count=0,
+                        risk="normal",
+                        confidence=graph_conf,
+                    )
+                    edges.append(edge)
+        except Exception:
+            pass
         return edges
 
     def _shortest_path(self, start_id: str, target_page_types: tuple[str, ...], allowed_app: str = "") -> list[RouteStep]:
