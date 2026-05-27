@@ -1585,6 +1585,15 @@ class MemoryManager:
                     )
                     print(f"🔄 FAISS Semantic Hint: 参考历史页面特征")
 
+        # Session memory: persist the original task intent so the VLM never
+        # "forgets" what the user actually asked for, even when graph actions
+        # carry historical data from previous sessions.
+        if self.current_task:
+            context_data["semantic_context"] = (
+                f"[会话记忆] 用户原始任务: {self.current_task}\n"
+                f"{context_data.get('semantic_context', '')}"
+            ).strip()
+
         return context_data
 
     def locate_and_get_context(

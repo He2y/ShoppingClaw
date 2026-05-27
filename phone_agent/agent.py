@@ -710,22 +710,29 @@ class PhoneAgent:
                         part for part in (context_data.get("semantic_context", ""), grounding_hint) if part
                     )
 
+            _next_action = context_data.get("next_actions", [None])[0] if context_data.get("next_actions") else None
+            _action_type = _next_action.get("type", "") if _next_action else ""
+            # Actions that don't need coordinate compilation (compound macros,
+            # text input, app launch, system navigation).
+            _NON_COORDINATE_ACTIONS = frozenset({"Compound", "Type", "Launch", "Back", "Wait", "Home"})
             if (
                 mode == "navigate"
-                and context_data.get("next_actions")
-                and context_data["next_actions"][0].get("confidence", 1.0) >= 0.7  # Lowered from 0.8 to allow graph navigation
-                and self._compile_spatial_shortcut_action(
-                    context_data["next_actions"][0],
-                    screen_width=screenshot.width,
-                    screen_height=screenshot.height,
-                )[0] is not None
+                and _next_action
+                and _next_action.get("confidence", 1.0) >= 0.7
+                and (
+                    _action_type in _NON_COORDINATE_ACTIONS
+                    or self._compile_spatial_shortcut_action(
+                        _next_action,
+                        screen_width=screenshot.width,
+                        screen_height=screenshot.height,
+                    )[0] is not None
+                )
             ):
                 # Debug: log graph navigation attempt
                 if self.agent_config.verbose:
-                    best_action = context_data["next_actions"][0]
-                    print(f"[Graph Nav] mode={mode}, confidence={best_action.get('confidence', 1.0):.2f}, action={best_action.get('type', 'unknown')}")
+                    print(f"[Graph Nav] mode={mode}, confidence={_next_action.get('confidence', 1.0):.2f}, action={_next_action.get('type', 'unknown')}")
                 # Fast track: return the highest confidence action directly without VLM inference
-                best_action = context_data["next_actions"][0]
+                best_action = _next_action
 
                 # Fill runtime slots for compound actions with task-specific values
                 goal_slots = context_data.get("goal_spec", {}).get("slots", {})

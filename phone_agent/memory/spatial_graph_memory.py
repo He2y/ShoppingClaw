@@ -113,9 +113,26 @@ _SLOT_PATTERNS = {
         r"query[:=]\s*([^,;]+)",
         r"搜索[：:]\s*([^,;，。]+)",
         r"搜索\s*([^\s,;，。；并到]{1,30})",
+        # Natural Chinese shopping: "买(一个)iPhone 17 pro max"
+        r"买(?:一个|一台|一部|一款|一件|个)?\s*([^,;，。；]+?)(?:[，。；]|加入|提交|下单|购买|去|$)",
+        # "搜(一下)机械键盘", "找(一下)AirPods"
+        r"(?:找|搜)(?:一下|一搜)?\s*([^,;，。；]{1,40})",
+        # "购买XXX"
+        r"购买\s*([^,;，。；]{1,40})",
     ),
-    "product": (r"product[:=]\s*([^,;]+)", r"商品[：:]\s*([^,;，。]+)"),
+    "product": (
+        r"product[:=]\s*([^,;]+)",
+        r"商品[：:]\s*([^,;，。]+)",
+        r"买(?:一个|一台|一部|一款|一件|个)?\s*([^,;，。；]+)",
+    ),
     "price": (r"(?:¥|￥)\s*([0-9]+(?:\.[0-9]+)?)",),
+    # Spec attributes extracted from task text for product detail page
+    "color": (
+        r"(银色|白色|黑色|金色|蓝色|紫色|绿色|红色|粉色|灰色|深空灰|午夜蓝|星光色|远峰蓝|苍岭绿|暗紫色)",
+    ),
+    "storage": (
+        r"([0-9]+\s*G(?:B)?)",
+    ),
 }
 
 
@@ -1324,6 +1341,12 @@ class SpatialGraphMemory:
         if params:
             resolved["target_desc"] = repr(params)
             resolved["target"] = params.get("semantic_target", resolved.get("target", ""))
+            # Boost confidence when runtime slots are successfully filled —
+            # a concrete action with real task data is more reliable than a
+            # generic template with placeholder values.
+            if slots and params.get("requires_runtime_input"):
+                base_conf = float(resolved.get("confidence", 0.8))
+                resolved["confidence"] = min(1.0, base_conf * 1.3)
         return resolved
 
     @classmethod
