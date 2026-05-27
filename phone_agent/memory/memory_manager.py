@@ -15,6 +15,15 @@ from .core import UnifiedSessionState, Product, ProductStatus
 from .retrieval_gateway import RetrievalGateway, RetrievalResult
 from .spatial_graph_memory import PageBelief, RuntimeDAG, SpatialGraphMemory
 
+# Page transitions where the graph action is a *spatial suggestion* that
+# the VLM must verify before execution. These involve selecting a specific
+# item (product, spec) where the graph only knows where ONE item was in a
+# past session — not which item matches the current user's request.
+_VLM_VERIFY_TRANSITIONS: frozenset[tuple[str, str]] = frozenset({
+    ("search_result", "product_detail"),
+    ("product_detail", "spec_selection"),
+})
+
 
 # Patterns for extracting user preferences (non-shopping: contacts, apps)
 PREFERENCE_PATTERNS = {
@@ -174,6 +183,40 @@ class MemoryManager:
         BFS can target the correct page type and use accurate slot values.
         """
         self._vlm_plan = plan
+
+    @staticmethod
+    def _requires_vlm_verification(source_page_type: str, target_page_type: str) -> bool:
+        """Return True when this transition involves a semantic choice (e.g.
+        picking a specific product from a list) that the graph cannot make."""
+        return (source_page_type, target_page_type) in _VLM_VERIFY_TRANSITIONS
+
+    def _inject_vlm_verification_hint(
+        self,
+        next_action: dict[str, Any],
+        source_page_type: str,
+        target_page_type: str,
+        context_data: dict[str, Any],
+    ) -> None:
+        """Mark the action as requiring VLM verification and inject a
+        context hint so the VLM can cross-check the screenshot against the
+        user's task before acting."""
+        next_action["_requires_vlm_verification"] = True
+        action_type = next_action.get("type", "")
+        action_target = next_action.get("target", "")
+        hint = (
+            f"[图谱路径参考] 当前页面: {source_page_type}，下一步目标: {target_page_type}\n"
+            f"图谱建议动作: {action_type}"
+        )
+        if action_target:
+            hint += f"，元素: {action_target}"
+        hint += (
+            f"\n⚠️ 此步骤涉及商品/规格选择——图谱提供的是历史路径上的参考坐标，"
+            f"不一定匹配当前用户需求。你必须通过截图确认页面内容与用户任务一致后再操作。"
+            f"如果截图内容与用户要求不符，忽略图谱建议，自行判断！"
+        )
+        context_data["semantic_context"] = (
+            f"{hint}\n{context_data.get('semantic_context', '')}"
+        ).strip()
 
     def end_task(self, success: bool, result: str = "", end_state_id: str | None = None):
         """Called when a task completes."""
@@ -1689,6 +1732,15 @@ class MemoryManager:
             }
             if next_action:
                 next_action["_runtime_plan_id"] = self._runtime_dag.plan_id
+                # VLM verification gate: for semantic transitions (e.g.
+                # search_result→product_detail), inject the graph action as
+                # a suggestion instead of executing it blindly.
+                source_pt = dag_node.page_type if dag_node else ""
+                target_pt = next_action.get("postcondition", "")
+                if self._requires_vlm_verification(source_pt, target_pt):
+                    self._inject_vlm_verification_hint(
+                        next_action, source_pt, target_pt, context_data
+                    )
                 context_data["mode"] = "navigate"
                 context_data["next_actions"] = [next_action]
                 context_data["route_plan"] = {
@@ -1885,6 +1937,13 @@ class MemoryManager:
                 )
             if self._runtime_dag:
                 next_action["_runtime_plan_id"] = self._runtime_dag.plan_id
+            # VLM verification gate for semantic transitions
+            src_pt = current_page_state.page_type if current_page_state else ""
+            tgt_pt = next_action.get("postcondition", "")
+            if self._requires_vlm_verification(src_pt, tgt_pt):
+                self._inject_vlm_verification_hint(
+                    next_action, src_pt, tgt_pt, context_data
+                )
             context_data["next_actions"] = [next_action]
             # AMSG v4: Inject functionality hints into semantic_context
             if v4_func_ctx.get("semantic_hint"):

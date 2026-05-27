@@ -776,10 +776,15 @@ class PhoneAgent:
             # Actions that don't need coordinate compilation (compound macros,
             # text input, app launch, system navigation).
             _NON_COORDINATE_ACTIONS = frozenset({"Compound", "Type", "Launch", "Back", "Wait", "Home"})
+            # VLM verification gate: when the graph action involves a semantic
+            # choice (e.g. picking the right product from search results), the
+            # graph only provides a spatial suggestion — the VLM must verify
+            # the screenshot matches the user's task before acting.
             if (
                 mode == "navigate"
                 and _next_action
                 and _next_action.get("confidence", 1.0) >= 0.7
+                and not _next_action.get("_requires_vlm_verification")
                 and (
                     _action_type in _NON_COORDINATE_ACTIONS
                     or self._compile_spatial_shortcut_action(
@@ -872,6 +877,14 @@ class PhoneAgent:
                     thinking="[Graph Shortcut Navigated]",
                     message=result.message or action.get("message"),
                 )
+            elif (
+                mode == "navigate"
+                and _next_action
+                and _next_action.get("_requires_vlm_verification")
+            ):
+                if self.agent_config.verbose:
+                    print(f"🤝 [VLM-Graph Co-pilot] 图谱建议 {_next_action.get('type')}"
+                          f"→{_next_action.get('postcondition','')}，转交VLM验证确认")
             else:
                 if self.agent_config.verbose:
                     print(f"🧭 知识图谱查询: 未匹配到可信历史动作，使用视觉大模型进行推理 (Explore Mode)")
