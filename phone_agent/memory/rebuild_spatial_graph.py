@@ -14,7 +14,12 @@ from .graph_store import GraphStore
 from .import_exploration import find_page_files
 from .manual_trajectory_importer import ManualTrajectoryImporter, ManualTrajectoryImportResult
 from .spatial_graph_memory import SpatialGraphMemory
-from phone_agent.spatial.reporting import build_amsg_dry_run_report, format_amsg_markdown
+from phone_agent.spatial.reporting import (
+    build_amsg_dry_run_report,
+    build_amsg_v4_functionality_report,
+    format_amsg_markdown,
+    format_amsg_v4_markdown,
+)
 from phone_agent.spatial.schema_registry import SchemaRegistry
 
 _REQUIRED_SAFE_EDGES = (
@@ -288,6 +293,11 @@ def main() -> int:
         default=None,
         help="Optional path for a research-oriented AMSG dry-run report (.md or .json).",
     )
+    parser.add_argument(
+        "--amsg-v4-report",
+        default=None,
+        help="Optional path for an AMSG v4 self-discovered functionality report (.md or .json).",
+    )
     args = parser.parse_args()
 
     report = rebuild_spatial_graph(
@@ -317,6 +327,19 @@ def main() -> int:
         else:
             report_path.write_text(format_amsg_markdown(amsg_report), encoding="utf-8")
         report["amsg_report_path"] = str(report_path)
+    if args.amsg_v4_report:
+        amsg_v4_report = build_amsg_v4_functionality_report(
+            exploration_root=args.exploration,
+            rebuild_report=report,
+            app_filter=args.app_filter or args.quality_app,
+        )
+        report_path = Path(args.amsg_v4_report)
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        if report_path.suffix.lower() == ".json":
+            report_path.write_text(json.dumps(amsg_v4_report, ensure_ascii=False, indent=2), encoding="utf-8")
+        else:
+            report_path.write_text(format_amsg_v4_markdown(amsg_v4_report), encoding="utf-8")
+        report["amsg_v4_report_path"] = str(report_path)
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 
