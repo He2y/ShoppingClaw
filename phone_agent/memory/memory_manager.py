@@ -109,6 +109,7 @@ class MemoryManager:
         self._runtime_dag: RuntimeDAG | None = None
         self._runtime_dag_task: str = ""
         self._coverage_gaps: list[str] = []
+        self._vlm_plan: dict[str, Any] = {}
         self._runtime_metrics: dict[str, int] = {
             "page_classifier_calls": 0,
             "page_classifier_skips": 0,
@@ -164,7 +165,15 @@ class MemoryManager:
 
         if self.enable_auto_extract:
             self._extract_from_task(task)
-    
+
+    def set_vlm_plan(self, plan: dict[str, Any]) -> None:
+        """Store VLM-generated task plan for use during route planning.
+
+        The plan enriches goal_spec in locate_and_get_context() so the graph
+        BFS can target the correct page type and use accurate slot values.
+        """
+        self._vlm_plan = plan
+
     def end_task(self, success: bool, result: str = "", end_state_id: str | None = None):
         """Called when a task completes."""
         if self.current_task:
@@ -1775,6 +1784,37 @@ class MemoryManager:
             task,
             app=current_page_state.app if current_page_state else semantic_layout,
         )
+        # Merge VLM pre-plan into goal_spec so the graph BFS targets the
+        # correct page type and carries accurate slot values (e.g. color,
+        # storage) instead of relying solely on regex heuristics.
+        if self._vlm_plan:
+            vlm_target = self._vlm_plan.get("target_page", "")
+            vlm_specs: dict[str, str] = {
+                k: str(v) for k, v in self._vlm_plan.get("specs", {}).items() if v
+            }
+            vlm_query = self._vlm_plan.get("search_query", "")
+            vlm_product = self._vlm_plan.get("product", "")
+            # Build enriched slot dict: VLM values override regex extraction
+            enriched_slots = dict(goal_spec.slots)
+            if vlm_query:
+                enriched_slots["query"] = vlm_query
+            if vlm_product:
+                enriched_slots["product"] = vlm_product
+            for k, v in vlm_specs.items():
+                if k not in enriched_slots:
+                    enriched_slots[k] = v
+            # Override target page type when VLM gives a clear signal
+            enriched_targets = list(goal_spec.target_page_types)
+            if vlm_target and vlm_target not in enriched_targets:
+                enriched_targets.insert(0, vlm_target)
+            from phone_agent.memory.spatial_graph_memory import GoalSpec
+            goal_spec = GoalSpec(
+                domain=goal_spec.domain,
+                target_page_types=tuple(dict.fromkeys(enriched_targets)),
+                slots=enriched_slots,
+                forbidden_actions=goal_spec.forbidden_actions,
+                missing_info_policy=goal_spec.missing_info_policy,
+            )
         route_plan = self.spatial_graph_memory.plan(belief, goal_spec)
         repair_hint = pending_repair_hint
 

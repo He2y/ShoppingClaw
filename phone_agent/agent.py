@@ -254,8 +254,15 @@ class PhoneAgent:
             self.tracer.start_task(task, model=self.model_config.model_name)
 
         # Start memory tracking
+        self._vlm_plan: dict[str, Any] = {}
         if self.memory_manager:
             self.memory_manager.start_task(task)
+            # VLM pre-planning: decompose task before graph execution so the
+            # graph router uses accurate target page types and spec slots
+            # instead of relying solely on regex-based heuristics.
+            self._vlm_plan = self._vlm_pre_plan(task)
+            if self._vlm_plan:
+                self.memory_manager.set_vlm_plan(self._vlm_plan)
 
         # First step with user prompt
         result = self._execute_step(task, is_first=True)
@@ -566,6 +573,60 @@ class PhoneAgent:
         action["_device_action_ir"] = device_action.to_dict()
         action["_source_model_protocol"] = getattr(self._model_type, "value", str(self._model_type))
         return action
+
+    def _vlm_pre_plan(self, task: str) -> dict[str, Any]:
+        """Use VLM to decompose the shopping task into a structured plan.
+
+        Called before the first execute_step so the graph router can use
+        VLM-enriched goal information instead of only regex-based extraction.
+        Returns empty dict on failure (caller falls back to rule-based path).
+        """
+        prompt = (
+            "You are a mobile shopping task planner. Extract structured "
+            "information from the user's task.\n\n"
+            f'Task: "{task}"\n\n'
+            "Return ONLY valid JSON (no other text):\n"
+            '{"search_query": "...", "product": "...",'
+            ' "specs": {"color": "...", "storage": "...", "size": "..."},'
+            ' "target_action": "add_to_cart|buy_now|checkout|view_cart",'
+            ' "target_page": "spec_selection|cart|checkout|product_detail|search_result",'
+            ' "steps": ["step1", "step2", ...]}\n\n'
+            "Rules:\n"
+            "- search_query: best search keywords for finding the product\n"
+            "- product: target product name\n"
+            "- specs: ONLY attributes the user explicitly mentioned. Omit keys with no value.\n"
+            "- target_action: what the user wants to do at the end\n"
+            "- target_page: the page type where target_action is performed\n"
+            "- steps: 3-5 ordered steps to complete the task\n\n"
+            'Example for "去淘宝买iPhone 17 pro max，银色 512G，加入购物车":\n'
+            '{"search_query": "iPhone 17 pro max", "product": "iPhone 17 pro max",'
+            ' "specs": {"color": "银色", "storage": "512G"},'
+            ' "target_action": "add_to_cart", "target_page": "spec_selection",'
+            ' "steps": ["搜索iPhone 17 pro max", "从搜索结果选择合适商品",'
+            ' "选择银色和512G规格", "点击加入购物车"]}\n\n'
+            "JSON:"
+        )
+        try:
+            response = self.model_client.client.chat.completions.create(
+                model=self.model_config.model_name,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=512,
+                temperature=0.0,
+                stream=False,
+            )
+            content = response.choices[0].message.content or ""
+            json_match = re.search(r"\{[\s\S]*\}", content)
+            if json_match:
+                plan = json.loads(json_match.group())
+                if self.agent_config.verbose:
+                    print(f"[VLM Pre-Plan] target={plan.get('target_page')}, "
+                          f"query={plan.get('search_query', '')[:30]}, "
+                          f"specs={plan.get('specs', {})}")
+                return plan
+        except Exception:
+            if self.agent_config.verbose:
+                print("[VLM Pre-Plan] failed, falling back to rule-based extraction")
+        return {}
 
     def _execute_step(
         self, user_prompt: str | None = None, is_first: bool = False
