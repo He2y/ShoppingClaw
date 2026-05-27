@@ -854,7 +854,10 @@ class OfflineExplorer:
                 self._log(f"  Parse error: {e}")
                 action = {"_metadata": "finish", "message": str(e)}
 
-            inferred_page_type = self._infer_page_type_from_reasoning(response.thinking)
+            reasoning_for_repair = response.thinking
+            if action.get("_metadata") == "finish" and str(action.get("message") or "").startswith("Failed to parse action"):
+                reasoning_for_repair = f"{response.thinking}\n{response.action}"
+            inferred_page_type = self._infer_page_type_from_reasoning(reasoning_for_repair)
             if inferred_page_type and inferred_page_type != current_page.page_type:
                 self._log(
                     f"  belief repair: classifier={current_page.page_type.value} "
@@ -997,6 +1000,7 @@ class OfflineExplorer:
         )
         visual_markers = (
             "当前截图",
+            "当前页面是",
             "当前状态",
             "当前已经",
             "从截图",
@@ -1010,16 +1014,21 @@ class OfflineExplorer:
             "显示的是",
         )
         lines = []
+        capturing_visual_context = False
         for raw_line in text.splitlines():
             line = raw_line.strip().lower()
             if not line or any(marker in line for marker in excluded_markers):
                 continue
             if any(marker in line for marker in visual_markers):
+                capturing_visual_context = True
+            if capturing_visual_context:
                 lines.append(line)
+            if len(lines) >= 12:
+                break
         if not lines:
             return None
 
-        for scoped in lines[:8]:
+        for scoped in ["\n".join(lines), *lines[:8]]:
             if "权限" in scoped or "permission" in scoped:
                 return ShoppingPageType.PERMISSION
             if OfflineExplorer._is_settings_page_evidence(scoped):
@@ -1028,7 +1037,7 @@ class OfflineExplorer:
                 return ShoppingPageType.PAYMENT
             if any(token in scoped for token in ("地址", "address")):
                 return ShoppingPageType.ADDRESS
-            if any(token in scoped for token in ("登录", "login")):
+            if OfflineExplorer._is_login_page_evidence(scoped):
                 return ShoppingPageType.LOGIN
             if any(token in scoped for token in ("订单确认", "确认订单", "checkout")):
                 return ShoppingPageType.CHECKOUT
@@ -1073,6 +1082,20 @@ class OfflineExplorer:
             "settings page",
         )
         return any(token.lower() in text for token in settings_tokens)
+
+    @staticmethod
+    def _is_login_page_evidence(text: str) -> bool:
+        login_page_tokens = (
+            "登录页",
+            "登录页面",
+            "手机号输入",
+            "密码输入",
+            "验证码",
+            "login page",
+        )
+        return any(token.lower() in text for token in login_page_tokens) or (
+            "登录按钮" in text and ("手机号" in text or "验证码" in text or "密码" in text)
+        )
 
     @staticmethod
     def _is_cart_page_evidence(text: str) -> bool:

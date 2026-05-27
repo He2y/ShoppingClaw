@@ -343,6 +343,21 @@ def test_offline_explorer_recognizes_cart_page_from_page_controls():
     assert OfflineExplorer._infer_page_type_from_reasoning(reasoning) == ShoppingPageType.CART
 
 
+def test_offline_explorer_repairs_cart_from_parse_error_text():
+    reasoning = "从截图来看，当前页面是购物车页面，显示购物车 (40)，有商品列表、全选和去结算按钮。"
+
+    assert OfflineExplorer._infer_page_type_from_reasoning(reasoning) == ShoppingPageType.CART
+
+
+def test_offline_explorer_does_not_repair_safety_ban_as_login_page():
+    reasoning = (
+        "从当前截图来看，我已经在商品详情页了，页面显示荣耀手机的价格、配置和颜色选择。"
+        "根据安全规则，不要购买、不要加购、不要登录、不要支付或提交订单。"
+    )
+
+    assert OfflineExplorer._infer_page_type_from_reasoning(reasoning) == ShoppingPageType.PRODUCT_DETAIL
+
+
 def test_offline_explorer_allows_purchase_cta_as_spec_trigger_on_detail():
     page = PageInfo(
         page_type=ShoppingPageType.PRODUCT_DETAIL,

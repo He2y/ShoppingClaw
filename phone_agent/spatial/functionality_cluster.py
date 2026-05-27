@@ -91,7 +91,7 @@ class FunctionalityClusterer:
 
 def build_cluster(members: list[FunctionalityItem]) -> FunctionalityCluster:
     representative = max(members, key=lambda item: (item.is_verified, item.confidence, len(item.description)))
-    page_types = sorted({page_type_from_id(item.page_node_id) for item in members if page_type_from_id(item.page_node_id)})
+    page_types = sorted({source_page_type(item) for item in members if source_page_type(item)})
     regions = sorted({item.region for item in members if item.region and item.region != "unknown"})
     verified_edges = sorted({edge_signature(item) for item in members if item.is_verified})
     success_count = sum(1 for item in members if item.is_verified)
@@ -114,6 +114,15 @@ def build_cluster(members: list[FunctionalityItem]) -> FunctionalityCluster:
 
 
 def functionality_similarity(left: FunctionalityItem, right: FunctionalityItem) -> float:
+    if left.is_verified and right.is_verified:
+        left_source = source_page_type(left)
+        right_source = source_page_type(right)
+        if left_source and right_source and left_source != right_source:
+            return 0.0
+        left_action = action_type(left)
+        right_action = action_type(right)
+        if left_action and right_action and left_action != right_action:
+            return 0.0
     if left.observed_postcondition and right.observed_postcondition and left.observed_postcondition != right.observed_postcondition:
         return 0.0
     if left.observed_postcondition and left.observed_postcondition == right.observed_postcondition:
@@ -146,6 +155,24 @@ def canonical_name(item: FunctionalityItem) -> str:
 
 def edge_signature(item: FunctionalityItem) -> str:
     return f"{item.page_node_id}->{item.observed_postcondition}:{item.region or 'unknown'}"
+
+
+def source_page_type(item: FunctionalityItem) -> str:
+    label_match = re.search(r"\bfrom ([a-z_]+) to\b", item.label)
+    if label_match:
+        return label_match.group(1)
+    description_match = re.search(r"\bfrom ([a-z_]+) to observed postcondition\b", item.description)
+    if description_match:
+        return description_match.group(1)
+    return page_type_from_id(item.page_node_id)
+
+
+def action_type(item: FunctionalityItem) -> str:
+    label_match = re.match(r"([a-z_]+)", item.label)
+    if label_match:
+        return label_match.group(1)
+    action = item.source_action or {}
+    return str(action.get("action") or action.get("action_type") or "").strip().lower()
 
 
 def infer_cluster_risk(members: list[FunctionalityItem]) -> str:

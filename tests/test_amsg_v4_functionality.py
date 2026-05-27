@@ -60,6 +60,31 @@ def test_functionality_clusterer_merges_similar_verified_edges_without_presets()
     assert any("spec_selection" in cluster.canonical_name for cluster in clusters)
 
 
+def test_functionality_clusterer_separates_same_target_from_different_sources():
+    extractor = FunctionalityExtractor()
+    open_detail = extractor.from_transition(
+        {
+            "from": "search_result:result list",
+            "to": "product_detail:detail",
+            "action": {"action": "Tap", "element": [500, 420]},
+        },
+        app="Taobao",
+    )
+    close_spec = extractor.from_transition(
+        {
+            "from": "spec_selection:spec dialog",
+            "to": "product_detail:detail",
+            "action": {"action": "Back"},
+        },
+        app="Taobao",
+    )
+
+    _, clusters = FunctionalityClusterer().cluster([open_detail, close_spec])
+
+    assert len(clusters) == 2
+    assert sorted(cluster.page_types[0] for cluster in clusters) == ["search_result", "spec_selection"]
+
+
 def test_functionality_coverage_is_discovery_based_not_bucket_based():
     extractor = FunctionalityExtractor()
     verified = extractor.from_transition(
