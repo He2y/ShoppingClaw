@@ -36,6 +36,13 @@ class FunctionalityQualityGate:
             high_risk_verified = [cluster.cluster_id for cluster in clusters if cluster.risk_level == "high" and cluster.success_count > 0]
             if high_risk_verified:
                 reasons.append(f"high-risk functionality clusters should not be directly promoted: {len(high_risk_verified)}")
+        broad_unverified = [
+            cluster.cluster_id
+            for cluster in clusters
+            if cluster.success_count == 0 and len(cluster.page_types) >= 3
+        ]
+        if broad_unverified:
+            reasons.append(f"over-broad unverified functionality clusters: {len(broad_unverified)}")
         return FunctionalityQualityResult(
             passed=not reasons,
             reasons=tuple(reasons),

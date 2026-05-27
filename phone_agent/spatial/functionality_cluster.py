@@ -57,7 +57,7 @@ class FunctionalityClusterer:
     def cluster(self, items: list[FunctionalityItem]) -> tuple[list[FunctionalityItem], list[FunctionalityCluster]]:
         clusters: list[list[FunctionalityItem]] = []
         for item in items:
-            if item.type != "functionality":
+            if item.type != "functionality" or not item.is_promotable:
                 continue
             match_index = self._best_cluster(item, clusters)
             if match_index is None:
@@ -72,8 +72,8 @@ class FunctionalityClusterer:
             output_clusters.append(cluster)
             clustered_items.extend(item.with_cluster(cluster.cluster_id) for item in members)
 
-        data_items = [item for item in items if item.type != "functionality"]
-        clustered_items.extend(data_items)
+        non_clustered_items = [item for item in items if item.type != "functionality" or not item.is_promotable]
+        clustered_items.extend(non_clustered_items)
         return clustered_items, output_clusters
 
     def _best_cluster(self, item: FunctionalityItem, clusters: list[list[FunctionalityItem]]) -> int | None:
@@ -96,7 +96,8 @@ def build_cluster(members: list[FunctionalityItem]) -> FunctionalityCluster:
     verified_edges = sorted({edge_signature(item) for item in members if item.is_verified})
     success_count = sum(1 for item in members if item.is_verified)
     risk_level = infer_cluster_risk(members)
-    cluster_id = stable_id("fn_cluster", representative.label, representative.observed_postcondition, tuple(page_types), tuple(regions))
+    role = representative.canonical_role or canonical_name(representative)
+    cluster_id = stable_id("fn_cluster", role, representative.observed_postcondition, tuple(page_types), tuple(regions))
     return FunctionalityCluster(
         cluster_id=cluster_id,
         canonical_name=canonical_name(representative),
@@ -114,6 +115,22 @@ def build_cluster(members: list[FunctionalityItem]) -> FunctionalityCluster:
 
 
 def functionality_similarity(left: FunctionalityItem, right: FunctionalityItem) -> float:
+    if left.type != "functionality" or right.type != "functionality":
+        return 0.0
+    if not left.is_promotable or not right.is_promotable:
+        return 0.0
+    left_role = left.canonical_role
+    right_role = right.canonical_role
+    if left_role and right_role:
+        if left_role != right_role:
+            return 0.0
+        left_source = source_page_type(left)
+        right_source = source_page_type(right)
+        if left_source and right_source and left_source != right_source:
+            return 0.0
+        if left.observed_postcondition and right.observed_postcondition and left.observed_postcondition != right.observed_postcondition:
+            return 0.0
+        return 0.95 if left.region == right.region or not left.region or not right.region else 0.82
     if left.is_verified and right.is_verified:
         left_source = source_page_type(left)
         right_source = source_page_type(right)
@@ -148,6 +165,8 @@ def token_set(*parts: str) -> set[str]:
 
 
 def canonical_name(item: FunctionalityItem) -> str:
+    if item.canonical_role:
+        return item.canonical_role
     if item.observed_postcondition:
         return f"{item.label} -> {item.observed_postcondition}"
     return item.label or item.description[:60] or "discovered functionality"
@@ -178,6 +197,20 @@ def action_type(item: FunctionalityItem) -> str:
 
 
 def infer_cluster_risk(members: list[FunctionalityItem]) -> str:
+    safe_roles = {
+        "open_search",
+        "submit_search",
+        "open_product_detail",
+        "open_filter_panel",
+        "apply_or_close_filter",
+        "rollback_to_search_result",
+        "rollback_to_product_detail",
+    }
+    if members and all((item.canonical_role or "") in safe_roles for item in members):
+        return "normal"
+    risky_postconditions = {"checkout", "payment", "address", "login"}
+    if any((item.observed_postcondition or "").lower() in risky_postconditions for item in members):
+        return "high"
     high_tokens = ("payment", "checkout", "address", "支付", "付款", "结算", "提交订单", "地址")
     medium_tokens = ("cart", "spec", "购物车", "规格")
     text = " ".join(

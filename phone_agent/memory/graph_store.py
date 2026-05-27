@@ -1006,6 +1006,8 @@ class GraphStore:
                 bbox = item.get("bbox") if isinstance(item.get("bbox"), list) else []
                 app = str(item.get("app") or app_filter or "")
                 page_type = str(item.get("page_type") or "")
+                item_type = str(item.get("type") or "functionality")
+                is_promotable = bool(item.get("is_promotable", True))
                 cluster_id = str(item.get("cluster_id") or "")
                 observed_postcondition = str(item.get("observed_postcondition") or "")
                 region = str(item.get("region") or "")
@@ -1018,6 +1020,10 @@ class GraphStore:
                         i.app = $app,
                         i.page_type = $page_type,
                         i.type = $type,
+                        i.source_kind = $source_kind,
+                        i.canonical_role = $canonical_role,
+                        i.is_promotable = $is_promotable,
+                        i.screen_cluster_id = $screen_cluster_id,
                         i.label = $label,
                         i.description = $description,
                         i.bbox = $bbox,
@@ -1036,7 +1042,11 @@ class GraphStore:
                     page_node_id=str(item.get("page_node_id") or ""),
                     app=app,
                     page_type=page_type,
-                    type=str(item.get("type") or "functionality"),
+                    type=item_type,
+                    source_kind=str(item.get("source_kind") or ""),
+                    canonical_role=str(item.get("canonical_role") or ""),
+                    is_promotable=is_promotable,
+                    screen_cluster_id=str(item.get("screen_cluster_id") or ""),
                     label=str(item.get("label") or ""),
                     description=str(item.get("description") or ""),
                     bbox=bbox,
@@ -1052,7 +1062,7 @@ class GraphStore:
                 )
                 counts["items"] += 1
 
-                if cluster_id:
+                if cluster_id and item_type == "functionality" and is_promotable:
                     session.run(
                         """
                         MATCH (i:FunctionalityItem {functionality_id: $functionality_id})
@@ -1079,13 +1089,18 @@ class GraphStore:
                     ).single()
                     counts["ui_links"] += int(result["linked"] or 0) if result else 0
 
-                if observed_postcondition:
+                if observed_postcondition and item_type == "functionality" and is_promotable:
                     result = session.run(
                         """
                         MATCH (a:Action)
                         WHERE ($page_type = "" OR a.source_page_type = $page_type)
                           AND (a.expected_postcondition = $postcondition OR a.target_page_type = $postcondition)
-                          AND ($region = "" OR a.region = $region)
+                          AND (
+                            $region = ""
+                            OR a.region = $region
+                            OR a.semantic_target = $canonical_role
+                            OR a.semantic_target = $expected_effect
+                          )
                         MATCH (i:FunctionalityItem {functionality_id: $functionality_id})
                         MERGE (a)-[:IMPLEMENTS_FUNCTION]->(i)
                         WITH a, i
@@ -1098,6 +1113,8 @@ class GraphStore:
                         page_type=page_type,
                         postcondition=observed_postcondition,
                         region=region,
+                        canonical_role=str(item.get("canonical_role") or ""),
+                        expected_effect=str(item.get("expected_effect") or ""),
                         functionality_id=item_id,
                         cluster_id=cluster_id,
                     ).single()

@@ -12,7 +12,7 @@ from .core import (
     VerificationResult,
 )
 from .exploration_queue import ExplorationJob, ExplorationQueueBuilder, FunctionalityFrontierWeights
-from .functionality import FunctionalityExtractor, FunctionalityItem
+from .functionality import FunctionalityExtractor, FunctionalityItem, StrongVLMFunctionalityExtractor
 from .functionality_cluster import FunctionalityCluster, FunctionalityClusterer
 from .hypothesis import EdgeHypothesis, EdgeHypothesisGenerator
 from .planner import SpatialPlanner, SpatialRoutePlan
@@ -44,6 +44,7 @@ __all__ = [
     "FunctionalityExtractor",
     "FunctionalityFrontierWeights",
     "FunctionalityItem",
+    "StrongVLMFunctionalityExtractor",
     "FunctionalityQualityGate",
     "FunctionalityQualityResult",
     "MobileSchema",

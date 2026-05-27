@@ -49,7 +49,7 @@ def compute_functionality_coverage(
     strong_vlm_configured: bool = False,
     window_size: int = 50,
 ) -> FunctionalityCoverageMetrics:
-    functionality_items = [item for item in items if item.type == "functionality"]
+    functionality_items = [item for item in items if item.type == "functionality" and item.is_promotable]
     verified_clusters = [cluster for cluster in clusters if cluster.is_verified]
     stable_clusters = [cluster for cluster in clusters if cluster.is_stable]
     high_risk_clusters = [cluster for cluster in clusters if cluster.risk_level == "high"]
@@ -88,7 +88,7 @@ def saturation_curve(items: list[FunctionalityItem], *, window_size: int = 50) -
     seen: set[str] = set()
     curve: list[int] = []
     current_new = 0
-    for index, item in enumerate((item for item in items if item.type == "functionality"), 1):
+    for index, item in enumerate((item for item in items if item.type == "functionality" and item.is_promotable), 1):
         identity = item.cluster_id or item.functionality_id
         if identity not in seen:
             seen.add(identity)

@@ -11,7 +11,7 @@ from phone_agent.memory.import_exploration import find_page_files
 from .active_builder import ActiveGraphBuilder
 from .coverage_metrics import compute_functionality_coverage
 from .exploration_queue import ExplorationQueueBuilder
-from .functionality import FunctionalityExtractor
+from .functionality import FunctionalityExtractor, StrongVLMFunctionalityExtractor
 from .functionality_cluster import FunctionalityClusterer
 from .hypothesis import EdgeHypothesisGenerator
 from .quality_gate import FunctionalityQualityGate
@@ -164,16 +164,19 @@ def build_amsg_v4_functionality_report(
     registry = SchemaRegistry()
     pages = _load_pages(exploration_root, registry=registry, app_filter=app_filter)
     transitions = _load_transitions(exploration_root, registry=registry, app_filter=app_filter)
+    screen_clusters = ScreenClusterer().cluster(pages)
+    _attach_screen_cluster_ids(pages, screen_clusters)
+    strong_vlm = resolve_strong_vlm_config()
+    strong_extractor = StrongVLMFunctionalityExtractor(strong_vlm)
     functionality_extractor = FunctionalityExtractor()
     functionality_items = []
     for page in pages:
+        functionality_items.extend(strong_extractor.from_page(page))
         functionality_items.extend(functionality_extractor.from_page(page, artifact_path=str(page.get("artifact_path") or "")))
     for transition in transitions:
         functionality_items.append(functionality_extractor.from_transition(transition, app=str(transition.get("artifact_app") or app_filter or "")))
 
     clustered_items, clusters = FunctionalityClusterer().cluster(functionality_items)
-    screen_clusters = ScreenClusterer().cluster(pages)
-    strong_vlm = resolve_strong_vlm_config()
     embedding = resolve_embedding_config()
     coverage = compute_functionality_coverage(
         items=clustered_items,
@@ -202,11 +205,16 @@ def build_amsg_v4_functionality_report(
             "screenshots": len(pages),
             "screen_clusters": len(screen_clusters),
             "functionality_items": len(clustered_items),
+            "data_items": len([item for item in clustered_items if item.type == "data"]),
+            "promotable_functionality_items": len(
+                [item for item in clustered_items if item.type == "functionality" and item.is_promotable]
+            ),
             "functionality_clusters": len(clusters),
             "promoted_edges": promoted_edges,
             "transitions_seen": transitions_seen,
         },
         "functionality_coverage": coverage.to_dict(),
+        "functionality_type_counts": _functionality_type_counts(clustered_items),
         "quality_gate": quality.to_dict(),
         "model_config": {
             "strong_vlm": strong_vlm.to_dict(),
@@ -286,7 +294,57 @@ def _load_pages(
             item["artifact_app"] = artifact_app
             item["artifact_path"] = str(pages_path)
             pages.append(item)
+        _attach_trajectory_evidence(pages, pages_path)
     return pages
+
+
+def _attach_screen_cluster_ids(pages: list[dict[str, Any]], clusters: list[Any]) -> None:
+    by_hash: dict[tuple[str, str, str], str] = {}
+    for cluster in clusters:
+        for screenshot_hash in cluster.screenshot_hashes:
+            by_hash[(cluster.app.lower(), cluster.page_type, screenshot_hash)] = cluster.cluster_id
+    for page in pages:
+        app = str(page.get("app") or page.get("artifact_app") or "").lower()
+        page_type = str(page.get("page_type") or "unknown")
+        screenshot_hash = str(page.get("screenshot_hash") or "")
+        page["screen_cluster_id"] = by_hash.get((app, page_type, screenshot_hash), "")
+
+
+def _attach_trajectory_evidence(pages: list[dict[str, Any]], pages_path: Path) -> None:
+    trajectory_path = _match_trajectory_path(pages_path)
+    if not trajectory_path.exists():
+        return
+    try:
+        data = json.loads(trajectory_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return
+    by_hash = {
+        str(page.get("screenshot_hash") or ""): page
+        for page in pages
+        if str(page.get("artifact_path") or "") == str(pages_path)
+    }
+    for step in data.get("steps") or []:
+        if not isinstance(step, dict):
+            continue
+        screenshot_hash = str(step.get("screenshot_hash") or "")
+        page = by_hash.get(screenshot_hash)
+        if not page:
+            continue
+        evidence = " ".join([str(step.get("thinking") or ""), str(step.get("page_summary") or "")]).strip()
+        if evidence:
+            page["thinking_evidence"] = evidence
+
+
+def _match_trajectory_path(pages_path: Path) -> Path:
+    return pages_path.with_name(pages_path.name.replace("_explore_", "_explore_trajectory_"))
+
+
+def _functionality_type_counts(items: list[Any]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in items:
+        key = str(getattr(item, "type", "") or "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _load_transitions(

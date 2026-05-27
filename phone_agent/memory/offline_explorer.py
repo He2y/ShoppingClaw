@@ -1273,11 +1273,13 @@ class OfflineExplorer:
         target_type = target.page_type.value
         if source.page_type in _HIGH_RISK_PAGE_TYPES or target.page_type in _HIGH_RISK_PAGE_TYPES:
             return "high-risk page boundary"
-        if source_type == target_type:
-            return "self-loop or unchanged screen"
         if source_type == "dialog":
             return ""
         action_type = str(action.get("action") or action.get("action_type") or "").lower()
+        if source_type == target_type:
+            if source_type in {"search_input", "filter_panel"} and action_type in {"tap", "type", "type_name", "input"}:
+                return ""
+            return "self-loop or unchanged screen"
         if action_type in {"type", "wait"}:
             return "non-navigation action"
 

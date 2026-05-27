@@ -22,7 +22,8 @@ def test_functionality_extractor_marks_verified_transition_postcondition():
     assert item.observed_postcondition == "cart"
     assert item.expected_effect == "cart"
     assert item.region == "top_right"
-    assert "product_detail" in item.label
+    assert item.canonical_role == "open_cart_from_header"
+    assert item.label == "open_cart_from_header"
 
 
 def test_functionality_clusterer_merges_similar_verified_edges_without_presets():
@@ -56,8 +57,8 @@ def test_functionality_clusterer_merges_similar_verified_edges_without_presets()
 
     assert len(clusters) == 2
     assert sorted(cluster.success_count for cluster in clusters) == [1, 2]
-    assert any("cart" in cluster.canonical_name for cluster in clusters)
-    assert any("spec_selection" in cluster.canonical_name for cluster in clusters)
+    assert any(cluster.canonical_name == "open_cart_from_header" for cluster in clusters)
+    assert any(cluster.canonical_name == "open_spec_selector" for cluster in clusters)
 
 
 def test_functionality_clusterer_separates_same_target_from_different_sources():
@@ -116,6 +117,101 @@ def test_functionality_coverage_is_discovery_based_not_bucket_based():
     assert metrics["verified_functionality_clusters"] == 1
     assert metrics["verified_functionality_ratio"] == round(1 / len(clusters), 4)
     assert "target_buckets" not in metrics
+
+
+def test_visible_fallback_is_not_promoted_functionality():
+    items = FunctionalityExtractor().from_page(
+        {
+            "app": "Taobao",
+            "page_type": "search_result",
+            "summary": "result list with no parsed elements",
+            "elements": {},
+        }
+    )
+
+    assert not [item for item in items if item.label.endswith("visible functions")]
+    _, clusters = FunctionalityClusterer().cluster(items)
+    assert clusters == []
+
+
+def test_page_extractor_separates_controls_and_data_items():
+    items = FunctionalityExtractor().from_page(
+        {
+            "app": "Taobao",
+            "page_type": "product_detail",
+            "summary": "detail",
+            "elements": {
+                "top_cart_icon": "Open cart from header",
+                "price": "¥63",
+                "product_title": "phone case",
+            },
+        }
+    )
+
+    assert any(item.type == "functionality" and item.canonical_role == "open_cart_from_header" for item in items)
+    assert any(item.type == "data" and item.canonical_role == "price" for item in items)
+    assert any(item.type == "data" and item.canonical_role == "product_title" for item in items)
+
+
+def test_search_result_query_is_data_not_submit_functionality():
+    items = FunctionalityExtractor().from_page(
+        {
+            "app": "Taobao",
+            "page_type": "search_result",
+            "summary": "result list",
+            "elements": {
+                "query": "headphones",
+                "filter_button": "Open filters",
+            },
+        }
+    )
+
+    query_item = next(item for item in items if item.label == "query")
+    assert query_item.type == "data"
+    assert query_item.is_promotable is False
+    assert query_item.canonical_role == "page_data"
+    assert any(item.type == "functionality" and item.canonical_role == "open_filter_panel" for item in items)
+
+
+def test_safe_filter_recovery_cluster_not_marked_high_risk_by_address_text():
+    item = FunctionalityExtractor().from_transition(
+        {
+            "from": "filter_panel:Filter panel with address data",
+            "to": "search_result:Product results",
+            "action": {"action": "Back", "semantic_target": "rollback_to_search_result"},
+        },
+        app="Taobao",
+    )
+
+    _, clusters = FunctionalityClusterer().cluster([item])
+
+    assert clusters[0].canonical_name == "apply_or_close_filter"
+    assert clusters[0].risk_level == "normal"
+
+
+def test_unverified_functionality_does_not_cluster_across_page_types():
+    extractor = FunctionalityExtractor()
+    home_item = extractor.from_page(
+        {
+            "app": "Taobao",
+            "page_type": "home",
+            "summary": "home",
+            "elements": {"search_bar": "search entry"},
+        }
+    )[0]
+    search_item = extractor.from_page(
+        {
+            "app": "Taobao",
+            "page_type": "search_input",
+            "summary": "input",
+            "elements": {"search_bar": "submit search"},
+        }
+    )[0]
+
+    _, clusters = FunctionalityClusterer().cluster([home_item, search_item])
+
+    assert len(clusters) == 2
+    assert sorted(cluster.page_types[0] for cluster in clusters) == ["home", "search_input"]
 
 
 def test_exploration_queue_targets_unverified_safe_clusters_only():
@@ -192,7 +288,14 @@ def test_amsg_v4_report_discovers_verified_clusters_from_artifacts(tmp_path, mon
     assert report["functionality_coverage"]["discovered_functionality_clusters"] >= 1
     assert report["functionality_coverage"]["verified_functionality_clusters"] >= 1
     assert report["functionality_coverage"]["functionality_semantics_quality"] == "limited"
+    assert report["functionality_type_counts"]["data"] >= 1
     assert any(cluster["verified_edges"] for cluster in report["functionality_clusters"])
+    assert not any("visible functions" in cluster["canonical_name"] for cluster in report["functionality_clusters"])
+    assert not [
+        cluster
+        for cluster in report["functionality_clusters"]
+        if cluster["success_count"] == 0 and len(cluster["page_types"]) >= 3
+    ]
     assert report["functionality_items"]
     assert all("app" in item and "page_type" in item for item in report["functionality_items"])
     assert "AMSG v4 Self-Discovered Functionality Report" in markdown

@@ -15,6 +15,7 @@ from phone_agent.memory.rebuild_spatial_graph import rebuild_spatial_graph
 from phone_agent.memory.spatial_graph_memory import (
     PageBelief,
     PageBeliefCandidate,
+    GoalSpec,
     RuntimeDAG,
     SpatialGraphMemory,
     TransitionEdge,
@@ -708,6 +709,84 @@ def test_staging_compacts_search_input_type_and_submit(tmp_path):
     assert edge.postcondition == "search_result"
 
 
+def test_staging_recovers_search_compound_from_trajectory_when_type_was_rejected(tmp_path):
+    pages_path = tmp_path / "taobao_explore_2.json"
+    transitions_path = tmp_path / "taobao_explore_transitions_2.json"
+    trajectory_path = tmp_path / "taobao_explore_trajectory_2.json"
+    pages_path.write_text(
+        json.dumps(
+            {
+                "app": "Taobao",
+                "pages": [
+                    {
+                        "page_type": "search_input",
+                        "summary": "Search input",
+                        "elements": {"search_bar": "active input"},
+                        "screenshot_hash": "input",
+                        "app": "Taobao",
+                    },
+                    {
+                        "page_type": "search_result",
+                        "summary": "Search results",
+                        "elements": {"product_cards": "tap product card"},
+                        "screenshot_hash": "result",
+                        "app": "Taobao",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    transitions_path.write_text(
+        json.dumps(
+            {
+                "app": "Taobao",
+                "transitions": [
+                    {
+                        "from": "search_input:Search input",
+                        "action": {"action": "Tap", "element": [893, 71]},
+                        "to": "search_result:Search results",
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    trajectory_path.write_text(
+        json.dumps(
+            {
+                "app": "Taobao",
+                "steps": [
+                    {
+                        "step": 1,
+                        "page_type": "unknown",
+                        "page_summary": "temporary classifier failure",
+                        "action": {"action": "Type", "text": "headphones"},
+                    },
+                    {
+                        "step": 2,
+                        "page_type": "search_input",
+                        "page_summary": "Search input",
+                        "action": {"action": "Tap", "element": [893, 71]},
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    _, edges, report = SpatialGraphMemory().import_exploration_staging(pages_path, transitions_path)
+
+    assert report.compound_edges == 1
+    assert report.transitions_promoted == 1
+    edge = edges[0]
+    assert edge.action_type == "Compound"
+    assert edge.action_target == "submit_search"
+    assert edge.action_params["runtime_slots"] == ["query"]
+    assert edge.action_params["actions"][0]["text"] == "<query>"
+    assert edge.action_params["actions"][0]["example_text"] == "headphones"
+
+
 def test_staging_compacts_filter_panel_multi_step_flow(tmp_path):
     pages_path = tmp_path / "taobao_explore_1.json"
     transitions_path = tmp_path / "taobao_explore_transitions_1.json"
@@ -954,6 +1033,181 @@ def test_runtime_dag_exposes_next_action_and_blocks_high_risk():
 
     assert memory.next_planned_action(dag) is None
     assert dag.coverage_gaps
+
+
+def test_runtime_dag_fills_compound_query_slot():
+    memory = SpatialGraphMemory()
+    search = memory.build_page_state(
+        ui_hash="search",
+        semantic_layout="Taobao search_input",
+        app="Taobao",
+        page_type="search_input",
+        state_id_strategy="semantic",
+    )
+    result = memory.build_page_state(
+        ui_hash="result",
+        semantic_layout="Taobao search_result",
+        app="Taobao",
+        page_type="search_result",
+        state_id_strategy="semantic",
+    )
+    edge = TransitionEdge(
+        source_id=search.state_id,
+        target_id=result.state_id,
+        action_type="Compound",
+        action_target="submit_search",
+        action_params={
+            "_metadata": "do",
+            "action": "Compound",
+            "actions": [
+                {"_metadata": "do", "action": "Type", "text": "<query>", "example_text": "耳机"},
+                {"_metadata": "do", "action": "Tap", "element": [893, 71]},
+            ],
+            "requires_runtime_input": True,
+            "runtime_slots": ["query"],
+            "semantic_target": "submit_search",
+        },
+        postcondition="search_result",
+    )
+    dag = RuntimeDAG(
+        plan_id="plan-query",
+        app="Taobao",
+        goal_spec=GoalSpec(domain="shopping", target_page_types=("search_result",), slots={"query": "耳机"}),
+        nodes={search.state_id: search, result.state_id: result},
+        route=[edge],
+    )
+
+    action = memory.next_planned_action(dag)
+
+    params = memory._decode_embedded_action_params(action)
+    assert params["actions"][0]["text"] == "耳机"
+
+
+def test_runtime_dag_leaves_unfilled_compound_slot_for_handler_block():
+    memory = SpatialGraphMemory()
+    edge = TransitionEdge(
+        source_id="state_search",
+        target_id="state_result",
+        action_type="Compound",
+        action_target="submit_search",
+        action_params={
+            "_metadata": "do",
+            "action": "Compound",
+            "actions": [{"_metadata": "do", "action": "Type", "text": "<query>"}],
+            "runtime_slots": ["query"],
+        },
+        postcondition="search_result",
+    )
+    dag = RuntimeDAG(
+        plan_id="plan-missing-query",
+        app="Taobao",
+        goal_spec=GoalSpec(domain="shopping", target_page_types=("search_result",), slots={}),
+        route=[edge],
+    )
+
+    action = memory.next_planned_action(dag)
+
+    params = memory._decode_embedded_action_params(action)
+    assert params["actions"][0]["text"] == "<query>"
+
+
+def test_promote_prefers_slot_search_compound_over_direct_submit_tap():
+    memory = SpatialGraphMemory()
+    search = memory.build_page_state(
+        ui_hash="search",
+        semantic_layout="Taobao search_input",
+        app="Taobao",
+        page_type="search_input",
+        state_id_strategy="semantic",
+    )
+    result = memory.build_page_state(
+        ui_hash="result",
+        semantic_layout="Taobao search_result",
+        app="Taobao",
+        page_type="search_result",
+        state_id_strategy="semantic",
+    )
+    direct = TransitionEdge(
+        source_id=search.state_id,
+        target_id=result.state_id,
+        action_type="Tap",
+        action_target="[893, 71]",
+        action_params={"action": "Tap", "element": [893, 71]},
+        postcondition="search_result",
+    )
+    compound = TransitionEdge(
+        source_id=search.state_id,
+        target_id=result.state_id,
+        action_type="Compound",
+        action_target="submit_search",
+        action_params={
+            "action": "Compound",
+            "semantic_target": "submit_search",
+            "actions": [{"action": "Type", "text": "<query>"}, {"action": "Tap", "element": [893, 71]}],
+            "runtime_slots": ["query"],
+            "requires_runtime_input": True,
+        },
+        postcondition="search_result",
+    )
+
+    report = memory.promote_staging_to_canonical(
+        {search.state_id: search, result.state_id: result},
+        [direct, compound],
+        persist=False,
+    )
+
+    edges = memory._local_edges[search.state_id]
+    assert report.transitions_promoted == 1
+    assert report.transitions_filtered == 1
+    assert len(edges) == 1
+    assert edges[0].action_type == "Compound"
+    assert edges[0].action_params["semantic_target"] == "submit_search"
+
+
+def test_promote_prefers_explicit_semantic_edge_over_generic_affordance():
+    memory = SpatialGraphMemory()
+    result = memory.build_page_state(
+        ui_hash="result",
+        semantic_layout="Taobao search_result",
+        app="Taobao",
+        page_type="search_result",
+        state_id_strategy="semantic",
+    )
+    panel = memory.build_page_state(
+        ui_hash="filter",
+        semantic_layout="Taobao filter_panel",
+        app="Taobao",
+        page_type="filter_panel",
+        state_id_strategy="semantic",
+    )
+    generic = TransitionEdge(
+        source_id=result.state_id,
+        target_id=panel.state_id,
+        action_type="Tap",
+        action_target="middle_right filter_panel affordance",
+        action_params={"action": "Tap", "element": [889, 329]},
+        postcondition="filter_panel",
+    )
+    explicit = TransitionEdge(
+        source_id=result.state_id,
+        target_id=panel.state_id,
+        action_type="Tap",
+        action_target="open_filter_panel",
+        action_params={"action": "Tap", "element": [889, 329], "semantic_target": "open_filter_panel"},
+        postcondition="filter_panel",
+    )
+
+    report = memory.promote_staging_to_canonical(
+        {result.state_id: result, panel.state_id: panel},
+        [generic, explicit],
+        persist=False,
+    )
+
+    edges = memory._local_edges[result.state_id]
+    assert report.transitions_promoted == 1
+    assert report.transitions_filtered == 1
+    assert len(edges) == 1
+    assert edges[0].action_params["semantic_target"] == "open_filter_panel"
 
 
 def test_failed_edge_has_higher_weighted_cost():

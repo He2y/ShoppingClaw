@@ -645,7 +645,14 @@ class SpatialGraphMemory:
                 )
             )
 
+        trajectory_file = self.match_trajectory_path(pages_file)
+        trajectory_data = self._read_json(trajectory_file) if trajectory_file.exists() else {}
+        raw_steps, synthesized_compound_count = self._synthesize_search_compound_steps(
+            raw_steps,
+            trajectory_data,
+        )
         compacted_steps, compacted_raw_count, dropped_self_loops = self._compact_consecutive_page_actions(raw_steps)
+        compacted_raw_count += synthesized_compound_count
         filtered += dropped_self_loops
 
         promoted_edges: list[TransitionEdge] = []
@@ -682,6 +689,99 @@ class SpatialGraphMemory:
             missing_edges=missing,
         )
         return canonical_states, promoted_edges, report
+
+    def _synthesize_search_compound_steps(
+        self,
+        steps: list[_StagingTransition],
+        trajectory_data: dict[str, Any],
+    ) -> tuple[list[_StagingTransition], int]:
+        """Recover slot-aware search macros from full trajectories.
+
+        OfflineExplorer can occasionally classify the active input screen as
+        unknown while the GUI model is typing. The transitions file then keeps
+        only the final submit tap. The trajectory still contains the typed
+        value, so staging can reconstruct the reusable template:
+        Type <query> -> submit.
+        """
+        if not steps:
+            return steps, 0
+        search_compounds = self._search_compound_actions_from_trajectory(trajectory_data)
+        if not search_compounds:
+            return steps, 0
+
+        remaining = list(search_compounds)
+        synthesized = 0
+        repaired: list[_StagingTransition] = []
+        for step in steps:
+            if (
+                remaining
+                and step.source.page_type == "search_input"
+                and step.target.page_type == "search_result"
+                and str(step.action.get("action") or step.action.get("action_type") or "").lower() in {"tap", "click"}
+            ):
+                compound_action = remaining.pop(0)
+                repaired.append(
+                    _StagingTransition(
+                        source=step.source,
+                        target=step.target,
+                        action=compound_action,
+                        outcome=step.outcome,
+                        raw_count=2,
+                    )
+                )
+                synthesized += 1
+                continue
+            repaired.append(step)
+        return repaired, synthesized
+
+    def _search_compound_actions_from_trajectory(self, trajectory_data: dict[str, Any]) -> list[dict[str, Any]]:
+        steps = trajectory_data.get("steps")
+        if not isinstance(steps, list):
+            return []
+
+        compounds: list[dict[str, Any]] = []
+        for index, item in enumerate(steps):
+            if not isinstance(item, dict):
+                continue
+            action = item.get("action") if isinstance(item.get("action"), dict) else {}
+            action_type = str(action.get("action") or action.get("action_type") or "").lower()
+            if action_type not in {"tap", "click"}:
+                continue
+            if str(item.get("page_type") or "") != "search_input":
+                continue
+
+            type_action = self._nearest_prior_type_action(steps, index)
+            if not type_action:
+                continue
+            submit_action = dict(action)
+            submit_action.setdefault("_metadata", "do")
+            compound = self._make_compound_action([type_action, submit_action], page_type="search_input")
+            compound["semantic_target"] = "submit_search"
+            compound["expected_postcondition"] = "search_result"
+            compound["source_kind"] = "trajectory_synthesis"
+            compound["summary"] = "slot-aware search submit synthesized from trajectory"
+            compounds.append(compound)
+        return compounds
+
+    @staticmethod
+    def _nearest_prior_type_action(steps: list[Any], submit_index: int) -> dict[str, Any] | None:
+        for prior in range(submit_index - 1, max(-1, submit_index - 4), -1):
+            item = steps[prior]
+            if not isinstance(item, dict):
+                continue
+            action = item.get("action") if isinstance(item.get("action"), dict) else {}
+            action_type = str(action.get("action") or action.get("action_type") or "").lower()
+            if action_type not in {"type", "type_name", "input"}:
+                continue
+            page_type = str(item.get("page_type") or "")
+            if page_type not in {"search_input", "unknown", ""}:
+                continue
+            if not str(action.get("text") or "").strip():
+                continue
+            normalized = dict(action)
+            normalized.setdefault("_metadata", "do")
+            return normalized
+        return None
 
     def canonicalize_pages(
         self,
@@ -1017,6 +1117,8 @@ class SpatialGraphMemory:
         promoted_edges = 0
         filtered_edges = 0
         compound_edges = 0
+        edge_list, preferred_filtered = self._prefer_slot_compound_edges(list(edges))
+        filtered_edges += preferred_filtered
         state_id_map: dict[str, str] = {}
         resolved_states: dict[str, PageState] = {}
         for state in canonical_states.values():
@@ -1030,7 +1132,7 @@ class SpatialGraphMemory:
             self._local_states[resolved.state_id] = resolved
             if persist:
                 self._persist_page_state(resolved)
-        for edge in edges:
+        for edge in edge_list:
             source_id = state_id_map.get(edge.source_id, edge.source_id)
             target_id = state_id_map.get(edge.target_id, edge.target_id)
             source = resolved_states.get(source_id)
@@ -1078,6 +1180,83 @@ class SpatialGraphMemory:
             compound_edges=compound_edges,
         )
 
+    def _prefer_slot_compound_edges(self, edges: list[TransitionEdge]) -> tuple[list[TransitionEdge], int]:
+        """Prefer reusable slot macros over coordinate-only submit taps."""
+        search_compound_pairs = {
+            (edge.source_id, edge.target_id)
+            for edge in edges
+            if self._is_slot_search_compound(edge)
+        }
+        explicit_semantic_keys = {
+            (edge.source_id, edge.target_id, edge.action_type.lower())
+            for edge in edges
+            if self._is_explicit_semantic_edge(edge)
+        }
+        if not search_compound_pairs and not explicit_semantic_keys:
+            return edges, 0
+
+        preferred: list[TransitionEdge] = []
+        filtered = 0
+        for edge in edges:
+            if (edge.source_id, edge.target_id) in search_compound_pairs and self._is_direct_search_submit_tap(edge):
+                filtered += 1
+                continue
+            if (
+                (edge.source_id, edge.target_id, edge.action_type.lower()) in explicit_semantic_keys
+                and self._is_generic_affordance_edge(edge)
+            ):
+                filtered += 1
+                continue
+            preferred.append(edge)
+        return preferred, filtered
+
+    @staticmethod
+    def _is_slot_search_compound(edge: TransitionEdge) -> bool:
+        params = edge.action_params or {}
+        runtime_slots = params.get("runtime_slots") or []
+        if isinstance(runtime_slots, str):
+            runtime_slots = [runtime_slots]
+        semantic_target = str(params.get("semantic_target") or edge.action_target or "")
+        return (
+            edge.action_type.lower() == "compound"
+            and edge.postcondition == "search_result"
+            and "query" in {str(slot) for slot in runtime_slots}
+            and (semantic_target == "submit_search" or params.get("requires_runtime_input") is True)
+        )
+
+    @staticmethod
+    def _is_direct_search_submit_tap(edge: TransitionEdge) -> bool:
+        params = edge.action_params or {}
+        return (
+            edge.action_type.lower() in {"tap", "click"}
+            and edge.postcondition == "search_result"
+            and str(params.get("target_page_type") or "") in {"", "search_result"}
+        )
+
+    @staticmethod
+    def _is_explicit_semantic_edge(edge: TransitionEdge) -> bool:
+        params = edge.action_params or {}
+        target = str(params.get("semantic_target") or edge.action_target or "")
+        return target in {
+            "open_search",
+            "submit_search",
+            "open_product_detail",
+            "open_filter_panel",
+            "open_spec_selector",
+            "confirm_spec_add_to_cart",
+            "confirm_add_to_cart_success",
+            "open_cart_from_header",
+            "rollback_to_product_detail",
+            "rollback_to_search_result",
+            "apply_or_close_filter",
+        }
+
+    @staticmethod
+    def _is_generic_affordance_edge(edge: TransitionEdge) -> bool:
+        params = edge.action_params or {}
+        target = str(params.get("semantic_target") or edge.action_target or "").strip().lower()
+        return target.endswith(" affordance")
+
     def compile_task_dag(
         self,
         screen: dict[str, Any],
@@ -1122,7 +1301,56 @@ class SpatialGraphMemory:
         if edge.risk == "high" or edge.postcondition in _HIGH_RISK_PAGE_TYPES:
             runtime_dag.coverage_gaps.append(f"high-risk boundary: {edge.postcondition}")
             return None
-        return edge.to_next_action()
+        return self._fill_runtime_slots(edge.to_next_action(), runtime_dag.goal_spec.slots)
+
+    def _fill_runtime_slots(self, action: dict[str, Any], slots: dict[str, str]) -> dict[str, Any]:
+        """Replace reusable compound placeholders with task-specific slots."""
+        resolved = dict(action)
+        params = self._fill_action_slots(self._decode_embedded_action_params(resolved), slots)
+        if params:
+            resolved["target_desc"] = repr(params)
+            resolved["target"] = params.get("semantic_target", resolved.get("target", ""))
+        return resolved
+
+    @classmethod
+    def _fill_action_slots(cls, action: dict[str, Any], slots: dict[str, str]) -> dict[str, Any]:
+        if not action:
+            return {}
+        resolved = dict(action)
+        if isinstance(resolved.get("text"), str):
+            resolved["text"] = cls._replace_slot_value(resolved["text"], slots)
+        actions = resolved.get("actions")
+        if isinstance(actions, list):
+            resolved["actions"] = [
+                cls._fill_action_slots(step, slots) if isinstance(step, dict) else step
+                for step in actions
+            ]
+        return resolved
+
+    @staticmethod
+    def _replace_slot_value(value: str, slots: dict[str, str]) -> str:
+        match = re.fullmatch(r"<([a-zA-Z0-9_]+)>", value.strip())
+        if not match:
+            return value
+        return str(slots.get(match.group(1)) or value)
+
+    @staticmethod
+    def _decode_embedded_action_params(action: dict[str, Any]) -> dict[str, Any]:
+        value = action.get("target_desc")
+        if isinstance(value, dict):
+            return dict(value)
+        if not isinstance(value, str) or not value.strip():
+            return {}
+        try:
+            decoded = json.loads(value)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            try:
+                import ast
+
+                decoded = ast.literal_eval(value)
+            except (SyntaxError, ValueError, TypeError):
+                return {}
+        return dict(decoded) if isinstance(decoded, dict) else {}
 
     def verify_planned_step(
         self,
@@ -1145,6 +1373,12 @@ class SpatialGraphMemory:
     def match_transitions_path(pages_path: str | Path) -> Path:
         pages_file = Path(pages_path)
         name = pages_file.name.replace("_explore_", "_explore_transitions_")
+        return pages_file.with_name(name)
+
+    @staticmethod
+    def match_trajectory_path(pages_path: str | Path) -> Path:
+        pages_file = Path(pages_path)
+        name = pages_file.name.replace("_explore_", "_explore_trajectory_")
         return pages_file.with_name(name)
 
     @staticmethod

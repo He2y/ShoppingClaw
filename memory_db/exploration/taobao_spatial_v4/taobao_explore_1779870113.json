@@ -1,0 +1,90 @@
+{
+  "app": "淘宝",
+  "task": "real-device adb verified filter recovery: search_result -> filter_panel -> search_result",
+  "explored_at": "2026-05-27T16:20:00+08:00",
+  "total_pages": 2,
+  "coverage": {
+    "covered_page_types": [
+      "filter_panel",
+      "search_result"
+    ],
+    "covered_transitions": [
+      [
+        "search_result",
+        "filter_panel"
+      ],
+      [
+        "filter_panel",
+        "search_result"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "search_result",
+      "summary": "Product search results",
+      "elements": {
+        "filter_button": {
+          "text": "Filter",
+          "role": "button",
+          "bbox": [
+            873,
+            710,
+            1075,
+            815
+          ]
+        },
+        "sort_tabs": "comprehensive sales all tmall shop flash_delivery",
+        "product_card": "product cards with title price shop payment_count",
+        "query": "headphones"
+      },
+      "screenshot_hash": "search-result-adb-filter-recovery",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "filter_panel",
+      "summary": "Filter panel",
+      "elements": {
+        "close_button": {
+          "text": "Close",
+          "role": "button",
+          "bbox": [
+            980,
+            435,
+            1038,
+            493
+          ]
+        },
+        "back_action": {
+          "text": "System Back",
+          "role": "navigation"
+        },
+        "confirm_button": {
+          "text": "Confirm",
+          "role": "button",
+          "bbox": [
+            550,
+            2150,
+            1050,
+            2260
+          ]
+        },
+        "clear_button": {
+          "text": "Clear selected filters",
+          "role": "button",
+          "bbox": [
+            20,
+            2150,
+            530,
+            2260
+          ]
+        },
+        "data_filters": "logistics discount shop_rating price_range shipping_region brand wearing_style connection_type earphone_type scene interface_type",
+        "address_data": "Shanghai address text visible in location section"
+      },
+      "screenshot_hash": "filter-panel-adb-filter-recovery",
+      "app": "淘宝"
+    }
+  ]
+}
