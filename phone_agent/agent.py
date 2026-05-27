@@ -723,6 +723,13 @@ class PhoneAgent:
                 # Fast track: return the highest confidence action directly without VLM inference
                 best_action = context_data["next_actions"][0]
 
+                # Fill runtime slots for compound actions with task-specific values
+                goal_slots = context_data.get("goal_spec", {}).get("slots", {})
+                if goal_slots and self.memory_manager:
+                    best_action = self.memory_manager.spatial_graph_memory._fill_runtime_slots(
+                        best_action, goal_slots
+                    )
+
                 # Check confidence threshold before executing
                 action_confidence = best_action.get("confidence", 1.0)
                 if action_confidence < 0.7:  # Lowered from 0.8 to allow graph navigation

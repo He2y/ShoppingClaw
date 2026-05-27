@@ -108,7 +108,11 @@ _ELEMENT_AFFORDANCE_HINTS = {
 }
 
 _SLOT_PATTERNS = {
-    "query": (r"query[:=]\s*([^,;]+)", r"搜索[：:]\s*([^,;，。]+)"),
+    "query": (
+        r"query[:=]\s*([^,;]+)",
+        r"搜索[：:]\s*([^,;，。]+)",
+        r"搜索\s*([^\s,;，。；并到]{1,30})",
+    ),
     "product": (r"product[:=]\s*([^,;]+)", r"商品[：:]\s*([^,;，。]+)"),
     "price": (r"(?:¥|￥)\s*([0-9]+(?:\.[0-9]+)?)",),
 }
@@ -1319,6 +1323,10 @@ class SpatialGraphMemory:
         resolved = dict(action)
         if isinstance(resolved.get("text"), str):
             resolved["text"] = cls._replace_slot_value(resolved["text"], slots)
+        if isinstance(resolved.get("semantic_target"), str):
+            resolved["semantic_target"] = cls._replace_slot_value(
+                resolved["semantic_target"], slots
+            )
         actions = resolved.get("actions")
         if isinstance(actions, list):
             resolved["actions"] = [
@@ -1329,10 +1337,9 @@ class SpatialGraphMemory:
 
     @staticmethod
     def _replace_slot_value(value: str, slots: dict[str, str]) -> str:
-        match = re.fullmatch(r"<([a-zA-Z0-9_]+)>", value.strip())
-        if not match:
-            return value
-        return str(slots.get(match.group(1)) or value)
+        def _sub(m: re.Match) -> str:
+            return str(slots.get(m.group(1)) or m.group(0))
+        return re.sub(r"<([a-zA-Z0-9_]+)>", _sub, value)
 
     @staticmethod
     def _decode_embedded_action_params(action: dict[str, Any]) -> dict[str, Any]:

@@ -1184,6 +1184,163 @@ class MemoryManager:
 
         return "\n".join(parts) if parts else ""
 
+    # ------------------------------------------------------------------
+    # AMSG v4 Functionality Layer: query canonical roles, data items,
+    # and verified functionality from the self-discovered graph
+    # ------------------------------------------------------------------
+
+    def _query_v4_functionality_context(
+        self,
+        page_type: str,
+        current_app: str = "",
+        belief: Any | None = None,
+    ) -> dict[str, Any]:
+        """Query v4 FunctionalityItem/Cluster layer for current page context.
+
+        Returns a dict with:
+        - available_roles: canonical_role strings known for this page_type
+        - data_items: key data observed on similar pages (prices, titles, etc.)
+        - verified_clusters: FunctionalityCluster names verified on this page_type
+        - semantic_hint: natural language hint for VLM context injection
+        """
+        result: dict[str, Any] = {
+            "available_roles": [],
+            "data_items": [],
+            "verified_clusters": [],
+            "semantic_hint": "",
+        }
+        if not self.graph_store or not self.graph_store.driver:
+            return result
+
+        try:
+            app = current_app or ""
+            with self.graph_store.driver.session(database=self.graph_store.database) as s:
+                # 1) Canonical roles available on this page_type
+                roles_query = """
+                    MATCH (i:FunctionalityItem)
+                    WHERE i.type = 'functionality'
+                      AND i.is_promotable = true
+                      AND i.page_type = $page_type
+                      AND ($app = '' OR i.app CONTAINS $app OR i.app = '')
+                    RETURN DISTINCT i.canonical_role AS role, count(*) AS cnt
+                    ORDER BY cnt DESC
+                """
+                roles = [
+                    dict(r) for r in s.run(roles_query, page_type=page_type, app=app)
+                ]
+                result["available_roles"] = roles
+
+                # 2) Data items observed on this page_type
+                data_query = """
+                    MATCH (i:FunctionalityItem)
+                    WHERE i.type = 'data'
+                      AND i.page_type = $page_type
+                      AND i.canonical_role IS NOT NULL
+                      AND i.canonical_role <> ''
+                      AND ($app = '' OR i.app CONTAINS $app OR i.app = '')
+                    RETURN DISTINCT i.canonical_role AS role, i.description AS sample, i.confidence AS conf
+                    ORDER BY conf DESC
+                    LIMIT 12
+                """
+                data_items = [
+                    dict(r) for r in s.run(data_query, page_type=page_type, app=app)
+                ]
+                result["data_items"] = data_items
+
+                # 3) Verified functionality clusters for this page_type
+                cluster_query = """
+                    MATCH (c:FunctionalityCluster)
+                    WHERE c.success_count > 0
+                      AND $page_type IN c.page_types
+                    RETURN c.canonical_name AS name, c.canonical_description AS description,
+                           c.success_count AS verified, size(c.member_functionality_ids) AS members,
+                           c.risk_level AS risk
+                    ORDER BY verified DESC
+                """
+                clusters = [
+                    dict(r) for r in s.run(cluster_query, page_type=page_type)
+                ]
+                result["verified_clusters"] = clusters
+
+                # 4) IMPLEMENTS_FUNCTION links from Actions to FunctionalityItems
+                impl_query = """
+                    MATCH (a:Action)-[:IMPLEMENTS_FUNCTION]->(i:FunctionalityItem)
+                    WHERE i.page_type = $page_type
+                      AND ($app = '' OR i.app CONTAINS $app OR i.app = '')
+                    RETURN a.type AS action_type, a.semantic_target AS target,
+                           i.canonical_role AS role, a.region AS region
+                    LIMIT 10
+                """
+                impls = [
+                    dict(r) for r in s.run(impl_query, page_type=page_type, app=app)
+                ]
+                result["implemented_actions"] = impls
+
+                # 5) Build natural language semantic hint
+                hint_parts: list[str] = []
+                if roles:
+                    role_names = [r["role"] for r in roles[:8]]
+                    hint_parts.append(
+                        f"[Available actions on {page_type}]: {', '.join(role_names)}"
+                    )
+                if clusters:
+                    cluster_names = [c["name"] for c in clusters[:5]]
+                    hint_parts.append(
+                        f"[Verified navigation paths]: {', '.join(cluster_names)}"
+                    )
+                if data_items:
+                    data_roles = [d["role"] for d in data_items[:6] if d.get("role")]
+                    hint_parts.append(
+                        f"[Observable data fields]: {', '.join(data_roles)}"
+                    )
+                result["semantic_hint"] = " | ".join(hint_parts) if hint_parts else ""
+
+        except Exception as e:
+            if getattr(self, '_verbose', True):
+                print(f"[V4 Functionality] Query failed: {e}")
+
+        return result
+
+    def _enrich_next_action_with_functionality(
+        self,
+        next_action: dict,
+        v4_context: dict,
+    ) -> dict:
+        """Enrich a graph-planned next_action with v4 functionality metadata.
+
+        Looks up IMPLEMENTS_FUNCTION edges to find the canonical_role
+        that matches the planned action's semantic_target, and attaches
+        it to the action for better VLM grounding.
+        """
+        enriched = dict(next_action)
+        target = str(next_action.get("target") or next_action.get("semantic_target") or "")
+        action_type = str(next_action.get("type") or "")
+
+        impls = v4_context.get("implemented_actions") or []
+        for impl in impls:
+            impl_target = str(impl.get("target") or "")
+            impl_type = str(impl.get("action_type") or "")
+            if (
+                (target and target in impl_target)
+                or (impl_target and impl_target in target)
+                or (action_type and action_type.lower() == impl_type.lower())
+            ):
+                enriched["canonical_role"] = impl.get("role", "")
+                enriched["_v4_functionality_region"] = impl.get("region", "")
+                break
+
+        # Also check if the target matches any available canonical_role
+        if not enriched.get("canonical_role"):
+            roles = v4_context.get("available_roles") or []
+            for role_info in roles:
+                role = role_info.get("role", "")
+                if role and (role in target or target in role):
+                    enriched["canonical_role"] = role
+                    break
+
+        return enriched
+
+
     def record_product_to_kb(
         self, name: str, price: float | None = None,
         specs: dict | None = None, page_type: str = "",
@@ -1530,6 +1687,26 @@ class MemoryManager:
         context_data["current_state_id"] = belief.current_state_id
         context_data["belief"] = belief.to_dict()
 
+        # AMSG v4: Query functionality layer for current page
+        v4_func_ctx: dict[str, Any] = {}
+        inferred_page_type = (
+            screen_dict.get("page_type")
+            or (current_page_state.page_type if current_page_state else "")
+        )
+        inferred_app = (
+            screen_dict.get("app")
+            or screen_dict.get("artifact_app")
+            or (current_page_state.app if current_page_state else "")
+            or ""
+        )
+        if inferred_page_type and inferred_page_type != "unknown":
+            v4_func_ctx = self._query_v4_functionality_context(
+                page_type=inferred_page_type,
+                current_app=inferred_app,
+                belief=belief,
+            )
+            context_data["_v4_functionality"] = v4_func_ctx
+
         if not self._task_start_state_id:
             self._task_start_state_id = belief.current_state_id
         if not self.state.current_state_id:
@@ -1613,13 +1790,30 @@ class MemoryManager:
         if route_plan.mode == "navigate" and route_plan.next_action:
             context_data["mode"] = "navigate"
             next_action = dict(route_plan.next_action)
+            # Fill compound action runtime slots with task-specific values
+            if goal_spec.slots:
+                next_action = self.spatial_graph_memory._fill_runtime_slots(
+                    next_action, goal_spec.slots
+                )
+            # AMSG v4: Enrich with canonical_role from functionality layer
+            if v4_func_ctx:
+                next_action = self._enrich_next_action_with_functionality(
+                    next_action, v4_func_ctx
+                )
             if self._runtime_dag:
                 next_action["_runtime_plan_id"] = self._runtime_dag.plan_id
             context_data["next_actions"] = [next_action]
+            # AMSG v4: Inject functionality hints into semantic_context
+            if v4_func_ctx.get("semantic_hint"):
+                context_data["semantic_context"] = (
+                    f"[V4 Knowledge] {v4_func_ctx['semantic_hint']}\n"
+                    f"{context_data.get('semantic_context', '')}"
+                ).strip()
             # Debug logging
-            print(f"[SpatialGraph] Navigate mode: action={route_plan.next_action.get('type')}, "
-                  f"confidence={route_plan.next_action.get('confidence', 0):.2f}, "
-                  f"target={route_plan.next_action.get('target', '')[:30]}")
+            print(f"[SpatialGraph] Navigate mode: action={next_action.get('type')}, "
+                  f"confidence={next_action.get('confidence', 0):.2f}, "
+                  f"target={next_action.get('target', '')[:30]}"
+                  f"{', v4_role=' + next_action.get('canonical_role', '') if next_action.get('canonical_role') else ''}")
             return context_data
         if route_plan.mode == "goal_reached":
             context_data["mode"] = "goal_reached"
@@ -1636,6 +1830,11 @@ class MemoryManager:
             if similarity >= 0.85:
                 first_action = self._get_first_action(trajectory)
                 if first_action:
+                    # AMSG v4: Enrich legacy action with functionality
+                    if v4_func_ctx:
+                        first_action = self._enrich_next_action_with_functionality(
+                            first_action, v4_func_ctx
+                        )
                     context_data["mode"] = "navigate"
                     context_data["next_actions"] = [first_action]
                     context_data["task_trajectory"] = trajectory
@@ -1649,6 +1848,13 @@ class MemoryManager:
                     f"{condensed_text}"
                 ).strip()
                 context_data["task_trajectory"] = trajectory
+
+        # AMSG v4: Inject functionality hints into explore mode context
+        if v4_func_ctx.get("semantic_hint") and context_data["mode"] == "explore":
+            context_data["semantic_context"] = (
+                f"[V4 Knowledge] {v4_func_ctx['semantic_hint']}\n"
+                f"{context_data.get('semantic_context', '')}"
+            ).strip()
 
         if semantic_layout and len(semantic_layout) > 5:
             similar_states = self.store.search(
