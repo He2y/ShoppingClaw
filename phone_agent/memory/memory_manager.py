@@ -141,6 +141,7 @@ class MemoryManager:
         self._last_repair_decision = None
         self._runtime_dag = None
         self._runtime_dag_task = task
+        self._vlm_plan = {}
         self._coverage_gaps = []
         self._runtime_metrics = {
             "page_classifier_calls": 0,
