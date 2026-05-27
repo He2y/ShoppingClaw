@@ -8,6 +8,7 @@ deterministic so it can reuse existing GUI/VLM models without extra training.
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import heapq
 import json
@@ -240,7 +241,7 @@ class TransitionEdge:
         return self.cost + fail_rate * 3.0 + risk_penalty - confidence_bonus * 0.3
 
     def to_next_action(self) -> dict[str, Any]:
-        return {
+        result = {
             "type": self.action_type,
             "target": self.action_target,
             "target_desc": repr(self.action_params),
@@ -251,6 +252,15 @@ class TransitionEdge:
             "risk": self.risk,
             "reasoning": self.evidence,
         }
+        # Pass coordinate locator for direct grounding without VLM
+        for key in ("element", "coordinate", "bbox"):
+            if key in self.action_params:
+                result["target_locator"] = {
+                    key: self.action_params[key],
+                    "coordinate_space": self.action_params.get("coordinate_space", "normalized_1000"),
+                }
+                break
+        return result
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -1968,6 +1978,8 @@ class SpatialGraphMemory:
                         RETURN src.state_id AS src_id, src.page_type AS src_pt,
                                a.type AS action_type, a.semantic_target AS action_target,
                                a.region AS region,
+                               a.target_locator AS target_locator,
+                               a.target_desc AS target_desc,
                                tgt.page_type AS postcondition, tgt.state_id AS tgt_id,
                                coalesce(a.confidence, 0.8) AS confidence,
                                coalesce(a.frequency, 1) AS freq
@@ -1984,6 +1996,8 @@ class SpatialGraphMemory:
                           AND ($app = '' OR src.app CONTAINS $app OR src.app = '')
                         RETURN src.state_id AS src_id, a.type AS action_type,
                                a.semantic_target AS action_target, a.region AS region,
+                               a.target_locator AS target_locator,
+                               a.target_desc AS target_desc,
                                tgt.page_type AS postcondition, tgt.state_id AS tgt_id,
                                coalesce(a.confidence, 0.8) AS confidence,
                                coalesce(a.frequency, 1) AS freq
@@ -2008,15 +2022,43 @@ class SpatialGraphMemory:
                     # the runtime state's page_type (classifier mismatch).
                     if src_pt != page_type:
                         graph_conf *= 0.85  # 15% penalty for type mismatch
+                    action_params: dict[str, Any] = {
+                        "region": r.get("region", ""),
+                        "app": app,
+                    }
+                    # Parse element coordinates from target_locator or target_desc.
+                    # target_locator is usually "{}" (empty); coordinates live in
+                    # target_desc as a Python repr string, e.g.
+                    #   "{'action': 'Tap', 'element': [499, 114], ...}"
+                    for raw_key in ("target_locator", "target_desc"):
+                        raw = r.get(raw_key)
+                        if not raw:
+                            continue
+                        parsed = None
+                        if isinstance(raw, dict):
+                            parsed = raw
+                        elif isinstance(raw, str) and raw.strip():
+                            try:
+                                parsed = json.loads(raw)
+                            except (json.JSONDecodeError, ValueError):
+                                try:
+                                    parsed = ast.literal_eval(raw)
+                                except (SyntaxError, ValueError):
+                                    pass
+                        if isinstance(parsed, dict):
+                            for loc_key in ("element", "coordinate", "bbox"):
+                                if loc_key in parsed:
+                                    action_params[loc_key] = parsed[loc_key]
+                                    if "coordinate_space" in parsed:
+                                        action_params["coordinate_space"] = parsed["coordinate_space"]
+                                    break
+                            break  # stop after first successful parse
                     edge = TransitionEdge(
                         source_id=source_state_id,  # remap to runtime state
                         target_id=r.get("tgt_id", ""),
                         action_type=r.get("action_type", "Tap"),
                         action_target=r.get("action_target", ""),
-                        action_params={
-                            "region": r.get("region", ""),
-                            "app": app,
-                        },
+                        action_params=action_params,
                         postcondition=r.get("postcondition", ""),
                         success_count=int(r.get("freq", 1)),
                         fail_count=0,
