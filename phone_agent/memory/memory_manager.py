@@ -1640,23 +1640,33 @@ class MemoryManager:
             and self._runtime_dag.is_usable
             and screen_dict.get("_runtime_hint")
         ):
-            current_node = self._runtime_dag.nodes.get(self._runtime_dag.current_node_id)
-            if (
-                self._pending_transition_source is not None
-                and self._pending_transition_action is not None
-                and current_node is not None
-            ):
-                self.spatial_graph_memory.record_observation(
-                    self._pending_transition_source,
-                    self._pending_transition_action,
-                    current_node,
-                    outcome="success",
-                )
+            # Record the completed transition and advance the DAG.
+            # The target node may not be in dag.nodes because graph edges
+            # reference Neo4j state_ids which differ from runtime state_ids.
+            if self._pending_transition_source is not None:
+                target_state = self._runtime_dag.nodes.get(self._runtime_dag.current_node_id)
+                if target_state is None:
+                    # Synthesize a minimal target state so record_observation
+                    # can store the transition for future graph learning.
+                    from phone_agent.memory.spatial_graph_memory import PageState
+                    target_state = PageState(
+                        state_id=self._runtime_dag.current_node_id,
+                        app=self._runtime_dag.app or "",
+                        page_type=self._pending_transition_action.get("postcondition", ""),
+                    )
+                if self._pending_transition_action is not None:
+                    self.spatial_graph_memory.record_observation(
+                        self._pending_transition_source,
+                        self._pending_transition_action,
+                        target_state,
+                        outcome="success",
+                    )
                 self._pending_transition_source = None
                 self._pending_transition_action = None
                 self._pending_expected_postcondition = None
                 self._runtime_dag.advance()
             next_action = self.spatial_graph_memory.next_planned_action(self._runtime_dag)
+            dag_node = self._runtime_dag.nodes.get(self._runtime_dag.current_node_id)
             context_data["runtime_dag"] = self._runtime_dag.to_dict()
             context_data["runtime_metrics"] = self.get_runtime_metrics()
             context_data["goal_spec"] = self._runtime_dag.goal_spec.to_dict()
@@ -1665,7 +1675,7 @@ class MemoryManager:
                 "current_state_id": self._runtime_dag.current_node_id,
                 "confidence": 1.0,
                 "is_novel": False,
-                "candidates": [current_node.to_dict()] if current_node else [],
+                "candidates": [dag_node.to_dict()] if dag_node else [],
             }
             if next_action:
                 next_action["_runtime_plan_id"] = self._runtime_dag.plan_id
