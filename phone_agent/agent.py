@@ -338,17 +338,31 @@ class PhoneAgent:
     # ------------------------------------------------------------------
 
     def _detect_critical_scenario(
-        self, current_app: str, screenshot_base64: str
+        self,
+        current_app: str,
+        screenshot_base64: str,
+        page_type: str | None = None,
     ) -> list[str]:
         """Return hints injected into VLM context when on a shopping spec page."""
         if not any(app in (current_app or "") for app in self._shopping_config.apps):
             return []
 
+        if page_type not in {"spec_selection", "checkout", "payment"}:
+            return []
+
+        requested_specs = self._requested_spec_slots()
+        if requested_specs:
+            return [
+                "[SpecGuard]\n"
+                f"用户已明确指定规格：{self._format_specs(requested_specs)}。\n"
+                "不要再询问用户。请先在当前页面选择这些规格；只有在规格已经匹配后，才能点击确认/加入购物车/立即购买。\n"
+                "如果页面没有对应规格或无法判断是否匹配，先选择可见的匹配项或回退重试，不要进入结算、支付、地址或登录页面。"
+            ]
+
         return [
-            "🚨 你正在商品详情/规格选择页面。用户未指定完整规格参数。\n"
-            "唯一正确操作：do(action=\"Interact\", message=\"请问您需要哪个规格？\")\n"
-            "如果你在想「我帮他选个默认的」——这是错误的，会导致用户收到不想要的商品。\n"
-            "立即执行 Interact，不要点任何购买/加入购物车按钮！"
+            "[SpecGuard]\n"
+            "当前可能处于规格选择或下单确认页面，但用户没有明确指定规格。\n"
+            "不要默认替用户选择具体 SKU；如果下一步会确认规格、加入购物车或购买，应先询问用户需要哪个规格。"
         ]
 
     # ── SKU extraction patterns ──
@@ -361,6 +375,30 @@ class PhoneAgent:
         r"(\d+\s*(?:TB?|GB?))",  # 512G, 512GB, 1TB, 256G
     ]
     _SIZE_VALUES = {"S", "M", "L", "XL", "XXL", "XXXL", "均码", "大码", "小码"}
+    _SPEC_KEY_ALIASES = {
+        "color": "颜色",
+        "colour": "颜色",
+        "颜色": "颜色",
+        "机身颜色": "颜色",
+        "storage": "容量",
+        "capacity": "容量",
+        "memory": "容量",
+        "容量": "容量",
+        "存储容量": "容量",
+        "size": "尺码",
+        "尺码": "尺码",
+        "尺寸": "尺码",
+    }
+    _SPEC_COMMIT_TARGETS = {
+        "confirm_spec_add_to_cart",
+        "confirm_add_to_cart_success",
+        "confirm_spec",
+        "add_to_cart",
+        "buy_now",
+        "submit_order",
+        "checkout",
+        "payment",
+    }
 
     def _extract_specs_from_task(self, task: str) -> dict[str, str]:
         """
@@ -390,6 +428,44 @@ class PhoneAgent:
                 specs["尺码"] = size
                 break
 
+        return specs
+
+    @classmethod
+    def _normalize_spec_key(cls, key: str) -> str:
+        normalized = str(key or "").strip()
+        return cls._SPEC_KEY_ALIASES.get(
+            normalized.lower(),
+            cls._SPEC_KEY_ALIASES.get(normalized, normalized),
+        )
+
+    @classmethod
+    def _format_specs(cls, specs: dict[str, str]) -> str:
+        return "，".join(
+            f"{cls._normalize_spec_key(key)}={value}"
+            for key, value in specs.items()
+            if value
+        )
+
+    def _requested_spec_slots(self) -> dict[str, str]:
+        """Merge explicit SKU constraints from task text and VLM pre-plan."""
+        specs: dict[str, str] = {}
+        for key, value in self._extract_specs_from_task(getattr(self, "_current_task", "")).items():
+            if value:
+                specs[self._normalize_spec_key(key)] = str(value)
+
+        plans = []
+        if isinstance(getattr(self, "_vlm_plan", None), dict):
+            plans.append(self._vlm_plan)
+        memory_plan = getattr(getattr(self, "memory_manager", None), "_vlm_plan", None)
+        if isinstance(memory_plan, dict):
+            plans.append(memory_plan)
+        for plan in plans:
+            plan_specs = plan.get("specs", {})
+            if not isinstance(plan_specs, dict):
+                continue
+            for key, value in plan_specs.items():
+                if value:
+                    specs[self._normalize_spec_key(key)] = str(value)
         return specs
 
     def _is_spec_selected(
@@ -439,6 +515,46 @@ class PhoneAgent:
             return "请问您需要什么糖度？"
         return "请问您需要什么规格和配置？"
 
+    def _is_spec_commit_action(self, action: dict, thinking: str, page_type: str | None) -> bool:
+        """Return True only for actions that commit a spec/purchase choice."""
+        if page_type not in {"spec_selection", "checkout", "payment"}:
+            return False
+
+        action_name = str(action.get("action") or action.get("action_type") or "").lower()
+        if action_name in {"interact", "back", "wait", "type", "launch", "home"}:
+            return False
+
+        semantic_target = str(action.get("semantic_target") or action.get("target") or "").lower()
+        if semantic_target in self._SPEC_COMMIT_TARGETS:
+            return True
+        if any(token in semantic_target for token in self._SPEC_COMMIT_TARGETS):
+            return True
+
+        selection_tokens = ("choose_spec", "select_spec", "颜色", "容量", "尺码", "规格项", "option")
+        if any(token.lower() in semantic_target for token in selection_tokens):
+            return False
+
+        action_text = json.dumps(action, ensure_ascii=False).lower()
+        commit_keywords = (
+            "确定",
+            "确认",
+            "加入购物车",
+            "加购",
+            "立即购买",
+            "购买",
+            "提交订单",
+            "结算",
+            "支付",
+            "confirm",
+            "add to cart",
+            "buy now",
+            "checkout",
+            "submit order",
+            "pay",
+        )
+        combined = f"{action_text}\n{thinking}".lower()
+        return any(keyword.lower() in combined for keyword in commit_keywords)
+
     def _spec_guard_check(
         self,
         action: dict,
@@ -474,26 +590,17 @@ class PhoneAgent:
         if _action_name in ("terminate", "answer"):
             return None
 
-        # CRITICAL: Only trigger on spec-related pages
-        # Prevents false positives on search_result, home, etc.
-        if not page_type or page_type not in ("spec_selection", "product_detail", "checkout"):
+        # Only guard actual spec commit / high-risk confirmation pages.
+        # Product-detail CTA is allowed because it opens the spec sheet.
+        if not page_type or page_type not in ("spec_selection", "checkout", "payment"):
             return None
 
-        thinking_mentions_specs = any(
-            kw in thinking for kw in self._shopping_config.spec_keywords
-        )
-        if not thinking_mentions_specs:
-            return None
-
-        thinking_has_purchase_intent = any(
-            kw in thinking for kw in self._shopping_config.purchase_keywords
-        )
-        if not thinking_has_purchase_intent:
+        if not self._is_spec_commit_action(action, thinking, page_type):
             return None
 
         # ── Self-reflection: cross-reference user's original task ──
         original_task = self._current_task
-        user_requested_specs = self._extract_specs_from_task(original_task)
+        user_requested_specs = self._requested_spec_slots()
 
         if user_requested_specs:
             # User explicitly specified SKU — verify they're selected
@@ -506,6 +613,13 @@ class PhoneAgent:
                 print(
                     f"✅ [SpecGuard] 用户指定SKU已全部选中 "
                     f"({user_requested_specs})，放行"
+                )
+                return None
+
+            if page_type not in {"checkout", "payment"}:
+                print(
+                    f"⚠️ [SpecGuard] 用户已指定SKU但模型思考未证明已选中 "
+                    f"({user_requested_specs})，不追问用户；交由VLM按显式规格继续选择"
                 )
                 return None
 
@@ -659,12 +773,14 @@ class PhoneAgent:
             summary = ""
             elements = None
             use_page_classifier = True
+            runtime_hint_used = False
             if self.memory_manager and hasattr(self.memory_manager, "should_use_page_classifier"):
                 use_page_classifier = self.memory_manager.should_use_page_classifier(
                     step=self._step_count,
                     current_app=current_app or "",
                 )
                 if not use_page_classifier:
+                    runtime_hint_used = True
                     hint = self.memory_manager.runtime_screen_hint(current_app or "")
                     page_type = hint.get("page_type")
                     summary = hint.get("summary", "")
@@ -713,11 +829,7 @@ class PhoneAgent:
                 "page_type": page_type,
                 "summary": summary,
                 "elements": elements,
-                "_runtime_hint": (
-                    self.memory_manager is not None
-                    and self.memory_manager._runtime_dag is not None
-                    and self.memory_manager._runtime_dag.is_usable
-                ),
+                "_runtime_hint": runtime_hint_used,
             }
 
             # Keep semantic_layout variable for backward compatibility
@@ -984,7 +1096,11 @@ class PhoneAgent:
 
         # Critical scenario detection (spec-guard — keep, it prevents bad purchases)
         if self.memory_manager:
-            critical_hints = self._detect_critical_scenario(current_app, screenshot.base64_data)
+            critical_hints = self._detect_critical_scenario(
+                current_app,
+                screenshot.base64_data,
+                page_type=page_type,
+            )
             if critical_hints:
                 extra_context_parts.append("\n\n".join(critical_hints))
                 if self.agent_config.verbose:

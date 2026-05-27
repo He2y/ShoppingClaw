@@ -2,6 +2,7 @@ import json
 
 from phone_agent.memory.manual_trajectory_importer import ManualTrajectoryImporter
 from phone_agent.memory.graph_store import GraphStore
+from phone_agent.memory import offline_explorer
 from phone_agent.memory.memory_manager import MemoryManager
 from phone_agent.memory.offline_explorer import (
     CoverageTarget,
@@ -192,11 +193,11 @@ def test_locate_uses_graph_state_as_current_when_localized():
     assert belief.candidates[0].reason == "semantic graph localization"
 
 
-def test_chinese_add_to_cart_task_targets_cart():
+def test_chinese_add_to_cart_task_targets_spec_selection():
     goal = SpatialGraphMemory().infer_goal("在淘宝搜索一个商品并加入购物车", app="淘宝")
 
     assert goal.domain == "shopping"
-    assert goal.target_page_types == ("cart",)
+    assert goal.target_page_types == ("spec_selection",)
 
 
 def test_negative_cart_clause_does_not_override_search_result_goal():
@@ -498,6 +499,13 @@ def test_import_exploration_files_builds_route(tmp_path):
                 "app": "淘宝",
             },
             {
+                "page_type": "spec_selection",
+                "summary": "耳机规格选择",
+                "elements": {"spec_options": "choose spec", "confirm_button": "confirm add to cart"},
+                "screenshot_hash": "spechash0000001",
+                "app": "淘宝",
+            },
+            {
                 "page_type": "cart",
                 "summary": "购物车",
                 "elements": {"cart_items": "selected cart items"},
@@ -522,6 +530,11 @@ def test_import_exploration_files_builds_route(tmp_path):
             {
                 "from": "product_detail:耳机商品详情",
                 "action": {"action": "Tap", "semantic_target": "add_to_cart"},
+                "to": "spec_selection:耳机规格选择",
+            },
+            {
+                "from": "spec_selection:耳机规格选择",
+                "action": {"action": "Tap", "semantic_target": "confirm_spec_add_to_cart"},
                 "to": "cart:购物车",
             },
         ],
@@ -539,10 +552,10 @@ def test_import_exploration_files_builds_route(tmp_path):
     )
     route = memory.plan(belief, memory.infer_goal("加入购物车", app="淘宝"))
 
-    assert result.pages_imported == 4
-    assert result.transitions_imported == 3
+    assert result.pages_imported == 5
+    assert result.transitions_imported == 4
     assert route.mode == "navigate"
-    assert route.steps[-1].edge.postcondition == "cart"
+    assert route.steps[-1].edge.postcondition == "spec_selection"
     assert route.next_action["type"] == "Tap"
 
 
@@ -1399,6 +1412,7 @@ def test_page_classifier_falls_back_to_phone_agent_when_strong_vlm_missing(monke
     monkeypatch.setenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1")
     monkeypatch.setenv("PHONE_AGENT_API_KEY", "EMPTY")
     monkeypatch.setattr(task_synthesis, "load_dotenv", lambda: None)
+    monkeypatch.setattr(offline_explorer, "load_dotenv", lambda: None)
     task_synthesis._ENV_LOADED = False
 
     classifier = PageClassifier(mode="off")

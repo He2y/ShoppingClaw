@@ -330,25 +330,46 @@ class PageClassifier:
         max_image_width: int = 720,
     ):
         explicit_override = bool(api_key and base_url and model)
+        source = "explicit" if explicit_override else "phone_agent"
         if explicit_override:
             # All three explicitly provided — use as-is
             api_key = api_key or "EMPTY"
             base_url = base_url or "http://localhost:8000/v1"
             model = model or "autoglm-phone-9b"
         else:
-            # Use operational VLM for page classification (lightweight task).
-            # The strong VLM (AMSG_STRONG_VLM_MODEL=glm-5v-turbo) is a reasoning
-            # model whose reasoning_tokens consume the max_tokens budget, leaving
-            # empty content and causing all classifications to return UNKNOWN.
             load_dotenv()
-            api_key = api_key or os.environ.get("PHONE_AGENT_API_KEY", "EMPTY")
-            base_url = base_url or os.environ.get("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1")
-            model = model or os.environ.get("PHONE_AGENT_MODEL", "autoglm-phone-9b")
+            configured_providers = (
+                (
+                    "amsg_strong_vlm",
+                    os.environ.get("AMSG_STRONG_VLM_API_KEY"),
+                    os.environ.get("AMSG_STRONG_VLM_BASE_URL"),
+                    os.environ.get("AMSG_STRONG_VLM_MODEL"),
+                ),
+                (
+                    "offline_vlm",
+                    os.environ.get("OFFLINE_VLM_API_KEY"),
+                    os.environ.get("OFFLINE_VLM_BASE_URL"),
+                    os.environ.get("OFFLINE_VLM_MODEL"),
+                ),
+                (
+                    "phone_agent",
+                    os.environ.get("PHONE_AGENT_API_KEY", "EMPTY"),
+                    os.environ.get("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1"),
+                    os.environ.get("PHONE_AGENT_MODEL", "autoglm-phone-9b"),
+                ),
+            )
+            for candidate_source, candidate_key, candidate_base, candidate_model in configured_providers:
+                if candidate_key and candidate_base and candidate_model:
+                    api_key = api_key or candidate_key
+                    base_url = base_url or candidate_base
+                    model = model or candidate_model
+                    source = candidate_source
+                    break
 
         self.client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
         self.model = model
         self.base_url = base_url
-        self.source = "explicit" if explicit_override else "phone_agent"
+        self.source = source
         self.mode = mode
         self.timeout = timeout
         self.max_image_width = max_image_width
