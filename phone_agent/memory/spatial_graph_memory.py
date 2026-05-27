@@ -80,14 +80,14 @@ _PAGE_TYPE_KEYWORDS = [
 ]
 
 _GOAL_PAGE_KEYWORDS = [
-    ("cart", ("购物车", "加入购物车", "加购", "加到购物车", "add cart", "cart")),
+    # "加入购物车" / "加购" → the action of adding to cart happens on
+    # the spec_selection page, NOT by navigating to the cart page (which
+    # is just viewing what's already there).
+    ("spec_selection", ("加入购物车", "加购", "加到购物车", "add to cart", "add cart", "立即购买", "购买", "下单")),
+    ("cart", ("购物车", "查看购物车", "去购物车", "view cart", "cart")),
     ("checkout", ("结算", "提交订单", "确认订单", "checkout")),
     ("product_detail", ("商品详情", "详情", "product", "detail")),
     ("search_result", ("搜索", "搜索结果", "search", "result")),
-    ("cart", ("购物车", "加入购物车", "加购", "add cart", "cart")),
-    ("checkout", ("结算", "提交订单", "确认订单", "checkout")),
-    ("product_detail", ("详情", "商品", "product", "detail")),
-    ("search_result", ("搜索", "search", "结果")),
 ]
 
 _ELEMENT_AFFORDANCE_HINTS = {
@@ -345,10 +345,14 @@ class GoalSpec:
                     target_page_types.append(page_type)
         if "checkout" in target_page_types:
             target_page_types = ["checkout"]
+        elif "spec_selection" in target_page_types:
+            # "加入购物车" / "购买" → navigate to spec_selection where the
+            # add-to-cart / buy button actually lives (NOT the cart icon).
+            target_page_types = ["spec_selection"]
         elif "cart" in target_page_types:
             target_page_types = ["cart"]
         if not target_page_types:
-            target_page_types = ["search_result", "product_detail", "cart"]
+            target_page_types = ["search_result", "product_detail", "spec_selection"]
 
         domain = "shopping" if _contains_any(f"{task} {app}", _SHOPPING_APPS) else "general"
         slots = SpatialGraphMemory.extract_slots_from_text(task)

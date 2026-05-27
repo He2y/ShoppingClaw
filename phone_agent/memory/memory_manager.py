@@ -1807,6 +1807,28 @@ class MemoryManager:
                 f"{spatial_context}\n{context_data.get('semantic_context', '')}"
             ).strip()
 
+        # Lightweight task plan: inject spec requirements so the VLM knows
+        # exactly what to do on each page even when the graph only provides
+        # navigation structure.
+        if goal_spec.slots:
+            plan_parts: list[str] = []
+            if goal_spec.slots.get("query"):
+                plan_parts.append(f"搜索关键词: {goal_spec.slots['query']}")
+            if goal_spec.slots.get("product"):
+                plan_parts.append(f"目标商品: {goal_spec.slots['product']}")
+            spec_attrs = []
+            if goal_spec.slots.get("color"):
+                spec_attrs.append(f"颜色={goal_spec.slots['color']}")
+            if goal_spec.slots.get("storage"):
+                spec_attrs.append(f"容量={goal_spec.slots['storage']}")
+            if spec_attrs:
+                plan_parts.append(f"规格选择: {', '.join(spec_attrs)}")
+            if plan_parts:
+                context_data["semantic_context"] = (
+                    f"[任务计划] {' | '.join(plan_parts)}\n"
+                    f"{context_data.get('semantic_context', '')}"
+                ).strip()
+
         if route_plan.mode == "navigate" and route_plan.next_action:
             context_data["mode"] = "navigate"
             next_action = dict(route_plan.next_action)
