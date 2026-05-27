@@ -40,6 +40,7 @@ from phone_agent.model.client import MessageBuilder, ModelClient, ModelConfig
 from phone_agent.spatial.active_builder import ActiveGraphBuilder
 from phone_agent.spatial.hypothesis import EdgeHypothesisGenerator
 from phone_agent.spatial.semantics import ScreenSemanticsExtractor
+from phone_agent.spatial.task_synthesis import resolve_strong_vlm_config
 
 
 # ── Enums & Data Classes ───────────────────────────────────────
@@ -58,6 +59,7 @@ class ShoppingPageType(Enum):
     FILTER_PANEL = "filter_panel"
     CATEGORY = "category"
     MY_ACCOUNT = "my_account"
+    SETTINGS = "settings"
     STORE = "store"
     LOGIN = "login"
     DIALOG = "dialog"
@@ -182,6 +184,7 @@ _PAGE_TYPE_MAP: Dict[str, ShoppingPageType] = {
     "filter_panel": ShoppingPageType.FILTER_PANEL,
     "category": ShoppingPageType.CATEGORY,
     "my_account": ShoppingPageType.MY_ACCOUNT,
+    "settings": ShoppingPageType.SETTINGS,
     "store": ShoppingPageType.STORE,
     "login": ShoppingPageType.LOGIN,
     "dialog": ShoppingPageType.DIALOG,
@@ -202,6 +205,7 @@ _PAGE_TYPE_SUMMARY: Dict[ShoppingPageType, str] = {
     ShoppingPageType.FILTER_PANEL: "筛选面板",
     ShoppingPageType.CATEGORY: "分类页",
     ShoppingPageType.MY_ACCOUNT: "个人中心",
+    ShoppingPageType.SETTINGS: "设置页",
     ShoppingPageType.STORE: "店铺页",
     ShoppingPageType.LOGIN: "登录页",
     ShoppingPageType.DIALOG: "干扰弹窗",
@@ -231,6 +235,12 @@ _UNSAFE_ACTION_TOKENS = (
     "submit",
     "checkout",
     "buy now",
+    "logout",
+    "log out",
+    "switch account",
+    "退出登录",
+    "切换账号",
+    "注销账号",
 )
 
 _SPEC_TRIGGER_TOKENS = (
@@ -266,6 +276,7 @@ _CLASSIFIER_SYSTEM_PROMPT = (
     "- checkout: 结算/订单确认 — 收货地址、支付方式选择、商品清单、提交订单按钮\n"
     "- category: 分类页 — 左侧一级分类列表+右侧子分类网格、或分类图标网格布局\n"
     "- my_account: 个人中心 — 用户头像区域、订单入口(待付款/待发货/待收货)、优惠券/收藏/足迹等入口\n"
+    "- settings: 设置页 — 账号与安全、隐私设置、通用设置、消息通知、支付设置、切换账号/退出登录等设置列表\n"
     "- store: 店铺主页 — 店铺Logo和名称、店铺评分、店铺内商品列表、关注按钮\n"
     "- login: 登录页 — 手机号输入框、密码输入框、登录按钮、验证码、第三方登录图标\n"
     "- dialog: 遮挡主页面的弹窗/广告/优惠券/活动面板 — 有关闭按钮、确认按钮或半屏遮罩；优先识别为dialog而不是底层页面\n"
@@ -286,11 +297,12 @@ _CLASSIFIER_SYSTEM_PROMPT = (
 _CLASSIFIER_FAST_SYSTEM_PROMPT = (
     "你是移动购物App页面快速分类器。只判断当前页面类型和一句功能摘要，不要抽取元素。\n"
     "page_type 必须是以下之一: home, search_input, search_result, product_detail, "
-    "spec_selection, cart, checkout, payment, address, filter_panel, category, my_account, store, login, dialog, permission, unknown。\n"
+    "spec_selection, cart, checkout, payment, address, filter_panel, category, my_account, settings, store, login, dialog, permission, unknown。\n"
     "如果有优惠券、广告、活动、权限等遮挡主页面的弹窗，优先输出 dialog 或 permission，不要输出底层页面类型。\n"
     "home 可以有未激活搜索框；search_input 需要键盘、光标、搜索历史或搜索建议；search_result 需要商品卡片/价格/结果列表。\n"
     "普通搜索结果页上出现筛选按钮仍是 search_result；只有筛选条件面板展开时才是 filter_panel。\n"
     "完整商品页是 product_detail；顶部购物车图标只是入口，不能因此判为 cart；只有规格弹窗/半屏规格选择才是 spec_selection。\n"
+    "账号与安全、隐私设置、通用设置、消息通知、支付设置等列表页是 settings，不要误判为 product_detail 或 checkout。\n"
     "严格输出 JSON，不要加额外文字: "
     '{"page_type": "<类型>", "summary": "<≤15字功能概括>"}'
 )
@@ -304,26 +316,29 @@ class PageClassifier:
     We crop it out before sending the image to the classifier, so the VLM
     only sees the actual page content area.
 
-    Uses a separate lightweight model (qwen3-vl-flash) for speed and cost.
+    Uses the configured strong VLM by default because classification is a graph
+    quality gate, not the low-level action executor.
     """
 
     def __init__(
         self,
-        api_key: str,
+        api_key: str | None = None,
         base_url: str | None = None,
         model: str | None = None,
         mode: str = "fast",
         timeout: float = 8.0,
         max_image_width: int = 720,
     ):
-        # Use environment variables as defaults
-        import os
-        api_key = api_key or os.environ.get("PHONE_AGENT_API_KEY") or os.environ.get("OFFLINE_VLM_API_KEY", "EMPTY")
-        base_url = base_url or os.environ.get("PHONE_AGENT_BASE_URL") or os.environ.get("OFFLINE_VLM_BASE_URL", "http://localhost:8000/v1")
-        model = model or os.environ.get("PHONE_AGENT_MODEL") or os.environ.get("OFFLINE_VLM_MODEL", "autoglm-phone-9b")
+        explicit_override = bool(api_key or base_url or model)
+        config = resolve_strong_vlm_config()
+        api_key = api_key or config.api_key or "EMPTY"
+        base_url = base_url or config.base_url or "http://localhost:8000/v1"
+        model = model or config.model or "autoglm-phone-9b"
 
         self.client = OpenAI(base_url=base_url, api_key=api_key, timeout=timeout)
         self.model = model
+        self.base_url = base_url
+        self.source = "explicit" if explicit_override else (config.source or "explicit")
         self.mode = mode
         self.timeout = timeout
         self.max_image_width = max_image_width
@@ -426,6 +441,7 @@ class PageClassifier:
         if not text:
             return {}
         rules: tuple[tuple[str, tuple[str, ...], str], ...] = (
+            ("settings", ("设置", "账号与安全", "隐私设置", "通用设置", "消息通知", "支付设置", "settings"), "设置页"),
             ("filter_panel", ("全部筛选", "价格区间", "筛选选项", "自定最低价", "自定最高价", "filter"), "商品筛选面板"),
             ("spec_selection", ("规格", "sku", "数量选择", "颜色分类", "机身颜色", "版本", "确认选择"), "商品规格选择"),
             ("checkout", ("订单确认", "提交订单", "收货地址", "配送方式"), "订单确认页"),
@@ -543,7 +559,7 @@ class OfflineExplorer:
         storage_dir: str = "memory_db/exploration",
         max_steps: int = 15,
         task_description: str = "广度优先探索所有主要页面类型",
-        classifier_api_key: str = "",
+        classifier_api_key: str | None = "",
         classifier_base_url: str | None = None,
         classifier_model: str = "qwen3-vl-flash",
         auto_import_graph: bool = False,
@@ -937,7 +953,8 @@ class OfflineExplorer:
         )
         self._log(
             f"  {prefix} step={step} mode={self.classifier.mode} "
-            f"model={self.classifier.model} time={self.classifier.last_duration:.2f}s "
+            f"source={self.classifier.source} model={self.classifier.model} "
+            f"time={self.classifier.last_duration:.2f}s "
             f"-> {page_info.page_type.value}"
         )
         return page_info
@@ -1005,6 +1022,8 @@ class OfflineExplorer:
         for scoped in lines[:8]:
             if "权限" in scoped or "permission" in scoped:
                 return ShoppingPageType.PERMISSION
+            if OfflineExplorer._is_settings_page_evidence(scoped):
+                return ShoppingPageType.SETTINGS
             if any(token in scoped for token in ("支付页", "付款页面", "收银台", "支付密码", "付款方式", "payment page")):
                 return ShoppingPageType.PAYMENT
             if any(token in scoped for token in ("地址", "address")):
@@ -1037,6 +1056,23 @@ class OfflineExplorer:
             if any(token in scoped for token in ("首页", "home")):
                 return ShoppingPageType.HOME
         return None
+
+    @staticmethod
+    def _is_settings_page_evidence(text: str) -> bool:
+        settings_tokens = (
+            "设置页",
+            "设置页面",
+            "账号与安全",
+            "隐私设置",
+            "通用设置",
+            "消息通知",
+            "支付设置",
+            "国家与地区",
+            "切换账号",
+            "退出登录",
+            "settings page",
+        )
+        return any(token.lower() in text for token in settings_tokens)
 
     @staticmethod
     def _is_cart_page_evidence(text: str) -> bool:
@@ -1488,9 +1524,21 @@ def main() -> int:
     parser.add_argument("--base-url", default=os.getenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1"))
     parser.add_argument("--model", default=os.getenv("PHONE_AGENT_MODEL", "autoglm-phone-9b"))
     parser.add_argument("--apikey", default=os.getenv("PHONE_AGENT_API_KEY", "EMPTY"))
-    parser.add_argument("--classifier-base-url", default=os.getenv("PHONE_AGENT_BASE_URL") or os.getenv("OFFLINE_VLM_BASE_URL", "http://localhost:8000/v1"))
-    parser.add_argument("--classifier-model", default=os.getenv("PHONE_AGENT_MODEL") or os.getenv("OFFLINE_VLM_MODEL", "autoglm-phone-9b"))
-    parser.add_argument("--classifier-apikey", default=os.getenv("PHONE_AGENT_API_KEY", os.getenv("OFFLINE_VLM_API_KEY", "EMPTY")))
+    parser.add_argument(
+        "--classifier-base-url",
+        default=None,
+        help="Override classifier API base URL. Default: AMSG_STRONG_VLM_* -> OFFLINE_VLM_* -> PHONE_AGENT_*.",
+    )
+    parser.add_argument(
+        "--classifier-model",
+        default=None,
+        help="Override classifier model. Default: AMSG_STRONG_VLM_* -> OFFLINE_VLM_* -> PHONE_AGENT_*.",
+    )
+    parser.add_argument(
+        "--classifier-apikey",
+        default=None,
+        help="Override classifier API key. Default: AMSG_STRONG_VLM_* -> OFFLINE_VLM_* -> PHONE_AGENT_*.",
+    )
     parser.add_argument("--classifier-mode", choices=["fast", "full", "off"], default=os.getenv("OFFLINE_CLASSIFIER_MODE", "fast"))
     parser.add_argument("--classifier-timing", choices=["after_action", "before_action"], default=os.getenv("OFFLINE_CLASSIFIER_TIMING", "after_action"))
     parser.add_argument("--classifier-timeout", type=float, default=float(os.getenv("OFFLINE_CLASSIFIER_TIMEOUT", "8")))

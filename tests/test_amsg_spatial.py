@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from phone_agent.memory.offline_explorer import (
     OfflineExplorer,
+    PageClassifier,
     PageInfo,
     ShoppingPageType,
     _PAGE_TYPE_MAP,
@@ -15,6 +16,7 @@ from phone_agent.spatial.model_bridge import SpatialModelBridge
 from phone_agent.spatial.reporting import build_amsg_dry_run_report, format_amsg_markdown
 from phone_agent.spatial.schema_registry import SchemaRegistry
 from phone_agent.spatial.semantics import ScreenSemanticsExtractor
+from phone_agent.spatial import task_synthesis
 from phone_agent.spatial.verifier import PostconditionVerifier
 
 
@@ -448,3 +450,44 @@ def test_offline_explorer_allows_add_to_cart_intent_for_spec_discovery():
         {"action": "Tap", "element": [518, 959]},
         "我将点击加入购物车按钮，这应该会进入规格选择页面。",
     )
+
+
+def test_page_classifier_defaults_to_configured_strong_vlm(monkeypatch):
+    _disable_real_vlm_env(monkeypatch)
+    monkeypatch.setenv("AMSG_STRONG_VLM_BASE_URL", "https://strong.example/v1")
+    monkeypatch.setenv("AMSG_STRONG_VLM_MODEL", "strong-vlm")
+    monkeypatch.setenv("AMSG_STRONG_VLM_API_KEY", "secret")
+
+    classifier = PageClassifier(mode="off")
+
+    assert classifier.base_url == "https://strong.example/v1"
+    assert classifier.model == "strong-vlm"
+    assert classifier.source == "amsg_strong_vlm"
+
+
+def test_offline_explorer_recognizes_settings_page_as_common_mobile_state():
+    reasoning = (
+        "当前屏幕显示的是淘宝设置页面，包含账号与安全、隐私设置、通用设置、消息通知和支付设置。"
+        "底部还有切换账号和退出登录按钮。"
+    )
+
+    assert OfflineExplorer._infer_page_type_from_reasoning(reasoning) == ShoppingPageType.SETTINGS
+    fallback = PageClassifier._infer_result_from_text(reasoning)
+    assert fallback["page_type"] == "settings"
+
+
+def _disable_real_vlm_env(monkeypatch):
+    for key in (
+        "AMSG_STRONG_VLM_BASE_URL",
+        "AMSG_STRONG_VLM_MODEL",
+        "AMSG_STRONG_VLM_API_KEY",
+        "OFFLINE_VLM_BASE_URL",
+        "OFFLINE_VLM_MODEL",
+        "OFFLINE_VLM_API_KEY",
+        "PHONE_AGENT_BASE_URL",
+        "PHONE_AGENT_MODEL",
+        "PHONE_AGENT_API_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(task_synthesis, "load_dotenv", lambda: None)
+    task_synthesis._ENV_LOADED = False

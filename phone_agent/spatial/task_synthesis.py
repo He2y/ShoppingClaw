@@ -92,13 +92,17 @@ class TaskSynthesizer:
 
 
 def _resolve_config(candidates: tuple[tuple[str, str, str, str], ...]) -> AMSGModelConfig:
+    first_partial: AMSGModelConfig | None = None
     for base_key, model_key, api_key, source in candidates:
         base_url = os.environ.get(base_key, "")
         model = os.environ.get(model_key, "")
         key = os.environ.get(api_key, "")
-        if base_url or model or key:
-            return AMSGModelConfig(base_url=base_url, model=model, api_key=key, source=source)
-    return AMSGModelConfig()
+        config = AMSGModelConfig(base_url=base_url, model=model, api_key=key, source=source)
+        if config.configured:
+            return config
+        if (base_url or model or key) and first_partial is None:
+            first_partial = config
+    return first_partial or AMSGModelConfig()
 
 
 _ENV_LOADED = False

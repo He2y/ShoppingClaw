@@ -19,6 +19,7 @@ from phone_agent.memory.spatial_graph_memory import (
     SpatialGraphMemory,
     TransitionEdge,
 )
+from phone_agent.spatial import task_synthesis
 
 
 class FakeGraphStore:
@@ -1083,16 +1084,27 @@ def test_offline_explorer_save_results_auto_imports_spatial_graph(tmp_path):
     assert explorer.last_import_result["transitions_imported"] == 1
 
 
-def test_page_classifier_defaults_to_phone_agent_model(monkeypatch):
-    monkeypatch.delenv("OFFLINE_VLM_MODEL", raising=False)
-    monkeypatch.delenv("OFFLINE_VLM_BASE_URL", raising=False)
+def test_page_classifier_falls_back_to_phone_agent_when_strong_vlm_missing(monkeypatch):
+    for key in (
+        "AMSG_STRONG_VLM_MODEL",
+        "AMSG_STRONG_VLM_BASE_URL",
+        "AMSG_STRONG_VLM_API_KEY",
+        "OFFLINE_VLM_MODEL",
+        "OFFLINE_VLM_BASE_URL",
+        "OFFLINE_VLM_API_KEY",
+    ):
+        monkeypatch.delenv(key, raising=False)
     monkeypatch.setenv("PHONE_AGENT_MODEL", "autoglm-phone")
     monkeypatch.setenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1")
+    monkeypatch.setenv("PHONE_AGENT_API_KEY", "EMPTY")
+    monkeypatch.setattr(task_synthesis, "load_dotenv", lambda: None)
+    task_synthesis._ENV_LOADED = False
 
-    classifier = PageClassifier(api_key="EMPTY", mode="off")
+    classifier = PageClassifier(mode="off")
     page_type, summary, elements = classifier.classify("unused", 100, 100)
 
     assert classifier.model == "autoglm-phone"
+    assert classifier.source == "phone_agent"
     assert classifier.mode == "off"
     assert page_type == ShoppingPageType.UNKNOWN
     assert summary == "classifier disabled"
