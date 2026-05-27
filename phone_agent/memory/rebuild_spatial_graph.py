@@ -154,6 +154,8 @@ def rebuild_spatial_graph(
     quality_app: str = "淘宝",
     include_manual: bool = True,
     app_filter: str | None = None,
+    stage_merge: bool = False,
+    allow_quality_fail: bool = False,
 ) -> dict:
     graph_store = GraphStore(database=database) if write else None
     try:
@@ -181,6 +183,7 @@ def rebuild_spatial_graph(
         exploration_results = []
         exploration_memory = SpatialGraphMemory(graph_store if write and not canonical else None)
         canonical_memory = SpatialGraphMemory(graph_store)
+        stage_memory = SpatialGraphMemory(None) if canonical and stage_merge else None
         manual_quality = None
         exploration_quality_reports = []
 
@@ -199,12 +202,15 @@ def rebuild_spatial_graph(
                 continue
             if canonical:
                 states, edges, quality = exploration_memory.import_exploration_staging(pages_path)
-                promote_report = canonical_memory.promote_staging_to_canonical(states, edges, persist=write)
+                if stage_memory:
+                    promote_report = stage_memory.promote_staging_to_canonical(states, edges, persist=False)
+                else:
+                    promote_report = canonical_memory.promote_staging_to_canonical(states, edges, persist=write)
                 exploration_quality_reports.append(
                     {
                         "pages_path": str(pages_path),
                         "staging": quality.to_dict(),
-                        "promoted": promote_report.to_dict(),
+                        "stage_merge" if stage_memory else "promoted": promote_report.to_dict(),
                     }
                 )
                 exploration_results.append(
@@ -219,10 +225,30 @@ def rebuild_spatial_graph(
                 result = exploration_memory.import_exploration_files(pages_path, persist=write)
                 exploration_results.append(result)
 
+        stage_merge_report = None
+        if canonical and stage_memory:
+            stage_edges = [edge for edges in stage_memory._local_edges.values() for edge in edges]
+            stage_preflight_quality = _quality_gate(stage_memory, app=quality_app)
+            if write and not stage_preflight_quality["passed"] and not allow_quality_fail:
+                raise RuntimeError(
+                    "Stage merge quality gate failed; refusing to write canonical graph: "
+                    + "; ".join(stage_preflight_quality["reasons"])
+                )
+            final_promote = canonical_memory.promote_staging_to_canonical(
+                stage_memory._local_states,
+                stage_edges,
+                persist=write,
+            )
+            stage_merge_report = {
+                "preflight_quality_gate": stage_preflight_quality,
+                "final_promote": final_promote.to_dict(),
+            }
+            exploration_quality_reports.append({"stage_merge_final": stage_merge_report})
+
         if canonical:
             exploration_pages = sum(item["pages_imported"] for item in exploration_results)
             exploration_transitions = sum(item["transitions_imported"] for item in exploration_results)
-            exploration_unique_pages = sum(item["unique_pages"] for item in exploration_results)
+            exploration_unique_pages = len(stage_memory._local_states) if stage_memory else sum(item["unique_pages"] for item in exploration_results)
             exploration_file_reports = exploration_results
             unique_pages = len(canonical_memory._local_states)
         else:
@@ -238,6 +264,7 @@ def rebuild_spatial_graph(
             "mode": "write" if write else "dry-run",
             "database": database,
             "canonical": canonical,
+            "stage_merge": bool(stage_merge and canonical),
             "source_policy": {
                 "include_manual": include_manual,
                 "app_filter": app_filter,
@@ -249,6 +276,7 @@ def rebuild_spatial_graph(
             "exploration": {
                 "files": exploration_file_reports,
                 "quality_reports": exploration_quality_reports,
+                "stage_merge_report": stage_merge_report,
                 "pages_imported": exploration_pages,
                 "unique_pages": exploration_unique_pages,
                 "transitions_imported": exploration_transitions,
@@ -289,6 +317,16 @@ def main() -> int:
         help="Only import exploration artifacts whose top-level app matches this value.",
     )
     parser.add_argument(
+        "--stage-merge",
+        action="store_true",
+        help="Stage all exploration artifacts first, run quality gates, then merge once into the canonical graph.",
+    )
+    parser.add_argument(
+        "--allow-quality-fail",
+        action="store_true",
+        help="Allow --stage-merge writes even when the staging quality gate fails.",
+    )
+    parser.add_argument(
         "--amsg-report",
         default=None,
         help="Optional path for a research-oriented AMSG dry-run report (.md or .json).",
@@ -297,6 +335,11 @@ def main() -> int:
         "--amsg-v4-report",
         default=None,
         help="Optional path for an AMSG v4 self-discovered functionality report (.md or .json).",
+    )
+    parser.add_argument(
+        "--persist-functionality",
+        action="store_true",
+        help="With --write and --amsg-v4-report, persist FunctionalityItem/FunctionalityCluster nodes into Neo4j.",
     )
     args = parser.parse_args()
 
@@ -313,6 +356,8 @@ def main() -> int:
         quality_app=args.quality_app,
         include_manual=not args.exploration_only,
         app_filter=args.app_filter,
+        stage_merge=args.stage_merge,
+        allow_quality_fail=args.allow_quality_fail,
     )
     if args.amsg_report:
         amsg_report = build_amsg_dry_run_report(
@@ -340,6 +385,14 @@ def main() -> int:
         else:
             report_path.write_text(format_amsg_v4_markdown(amsg_v4_report), encoding="utf-8")
         report["amsg_v4_report_path"] = str(report_path)
+        if args.write and args.persist_functionality:
+            functionality_store = GraphStore(database=args.database)
+            try:
+                if not functionality_store.driver:
+                    raise RuntimeError(f"Neo4j is unavailable for database={args.database}")
+                report["amsg_v4_persistence"] = functionality_store.upsert_functionality_graph(amsg_v4_report)
+            finally:
+                functionality_store.close()
     print(json.dumps(report, ensure_ascii=False, indent=2))
     return 0
 

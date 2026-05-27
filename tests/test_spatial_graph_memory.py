@@ -831,6 +831,53 @@ def test_promote_reuses_existing_graph_page_type_nodes():
     assert store.transitions[0]["source_metadata"]["state_id"] == "state_existing_home"
 
 
+def test_promote_merges_coordinate_jitter_into_semantic_edge():
+    store = FakeMergeGraphStore([])
+    memory = SpatialGraphMemory(store)
+    result_page = memory.build_page_state(
+        ui_hash="result",
+        semantic_layout="Taobao search_result",
+        app="Taobao",
+        page_type="search_result",
+        summary="result list",
+        state_id_strategy="semantic",
+    )
+    detail = memory.build_page_state(
+        ui_hash="detail",
+        semantic_layout="Taobao product_detail",
+        app="Taobao",
+        page_type="product_detail",
+        summary="product detail",
+        state_id_strategy="semantic",
+    )
+    edge_a = TransitionEdge.from_action(
+        result_page.state_id,
+        detail.state_id,
+        {"action": "Tap", "element": [253, 474]},
+        postcondition="product_detail",
+    )
+    edge_b = TransitionEdge.from_action(
+        result_page.state_id,
+        detail.state_id,
+        {"action": "Tap", "element": [253, 477]},
+        postcondition="product_detail",
+    )
+
+    report = memory.promote_staging_to_canonical(
+        {result_page.state_id: result_page, detail.state_id: detail},
+        [edge_a, edge_b],
+        persist=True,
+    )
+
+    edges = memory._local_edges[next(iter(memory._local_edges))]
+    assert report.transitions_promoted == 1
+    assert len(edges) == 1
+    assert edges[0].success_count == 2
+    assert edges[0].action_params["_semantic_edge_key"].endswith("|product_detail")
+    assert "middle_left" in edges[0].action_params["_semantic_edge_key"]
+    assert len(store.transitions) == 2
+
+
 def test_canonicalize_filters_app_mismatch_pages():
     memory = SpatialGraphMemory()
     states, edges, report = memory.canonicalize_state_graph(
@@ -1421,3 +1468,61 @@ def test_rebuild_spatial_graph_exploration_only_filters_app(tmp_path):
     assert report["exploration"]["pages_imported"] == 1
     assert report["totals"]["pages"] == 1
     assert report["source_policy"]["skipped_exploration_files"][0]["app"] == "JD"
+
+
+def test_rebuild_spatial_graph_stage_merge_dedupes_before_canonical_merge(tmp_path):
+    exploration = tmp_path / "exploration"
+    exploration.mkdir()
+    (exploration / "taobao_explore_1.json").write_text(
+        json.dumps(
+            {
+                "app": "Taobao",
+                "pages": [
+                    {
+                        "page_type": "search_result",
+                        "summary": "result list",
+                        "elements": {"product_cards": "tap product card"},
+                        "screenshot_hash": "r1",
+                        "app": "Taobao",
+                    },
+                    {
+                        "page_type": "product_detail",
+                        "summary": "detail page",
+                        "elements": {"title": "product"},
+                        "screenshot_hash": "d1",
+                        "app": "Taobao",
+                    },
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    (exploration / "taobao_explore_transitions_1.json").write_text(
+        json.dumps(
+            {
+                "app": "Taobao",
+                "transitions": [
+                    {"from": "search_result:result list", "to": "product_detail:detail page", "action": {"action": "Tap", "element": [253, 474]}},
+                    {"from": "search_result:result list", "to": "product_detail:detail page", "action": {"action": "Tap", "element": [253, 477]}},
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    report = rebuild_spatial_graph(
+        manual_root=None,
+        exploration_root=exploration,
+        write=False,
+        canonical=True,
+        include_manual=False,
+        app_filter="Taobao",
+        quality_app="Taobao",
+        stage_merge=True,
+    )
+
+    assert report["stage_merge"] is True
+    assert report["exploration"]["stage_merge_report"]["final_promote"]["transitions_promoted"] == 1
+    assert report["exploration"]["stage_merge_report"]["preflight_quality_gate"]["edges"] == 1

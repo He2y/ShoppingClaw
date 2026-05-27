@@ -605,6 +605,53 @@ class GraphStore:
         return enriched
 
     @classmethod
+    def _semantic_action_key(
+        cls,
+        action_data: Dict[str, Any],
+        source_metadata: Optional[Dict[str, Any]] = None,
+        target_metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Stable action identity that ignores tiny coordinate jitter.
+
+        Raw model actions can differ by a few pixels while representing the
+        same UI affordance. AMSG treats coordinates as evidence; the persisted
+        Action identity is the source page, normalized intent, semantic target,
+        region, and expected postcondition.
+        """
+        source_metadata = source_metadata or {}
+        target_metadata = target_metadata or {}
+        action_type = str(action_data.get("action_type") or action_data.get("action") or "unknown").lower()
+        intent = str(action_data.get("intent") or action_type).lower()
+        source_type = str(action_data.get("source_page_type") or source_metadata.get("page_type") or "")
+        target_type = str(
+            action_data.get("target_page_type")
+            or action_data.get("expected_postcondition")
+            or target_metadata.get("page_type")
+            or ""
+        )
+        semantic_target = str(action_data.get("semantic_target") or action_data.get("target") or "")
+        region = str(action_data.get("region") or cls._action_region(action_data) or "")
+        return "|".join([source_type, intent, semantic_target, region, target_type])
+
+    @classmethod
+    def _action_region(cls, action_data: Dict[str, Any]) -> str:
+        value = action_data.get("element") or action_data.get("coordinate") or action_data.get("point")
+        if isinstance(value, list) and len(value) == 1 and isinstance(value[0], list):
+            value = value[0]
+        if not isinstance(value, list) or len(value) < 2:
+            return ""
+        try:
+            x = float(value[0])
+            y = float(value[1])
+        except (TypeError, ValueError):
+            return ""
+        vertical = "top" if y <= 250 else "bottom" if y >= 750 else "middle"
+        horizontal = "left" if x <= 330 else "right" if x >= 670 else "center"
+        if vertical == "middle" and horizontal == "center":
+            return "center"
+        return f"{vertical}_{horizontal}"
+
+    @classmethod
     def _build_action_summary(
         cls,
         action_data: Dict[str, Any],
@@ -780,8 +827,13 @@ class GraphStore:
 
         source_state_id = self._normalize_state_id(source_state_hash)
         target_state_id = self._normalize_state_id(target_state_hash)
-        action_hash = hashlib.md5(str(action_data).encode("utf-8")).hexdigest()[:8]
         action_data = self._enrich_action_metadata(action_data, source_metadata, target_metadata)
+        semantic_edge_key = action_data.get("_semantic_edge_key") or self._semantic_action_key(
+            action_data,
+            source_metadata,
+            target_metadata,
+        )
+        action_hash = hashlib.md5(semantic_edge_key.encode("utf-8")).hexdigest()[:8]
         action_id = f"act_{source_state_id}_{target_state_id}_{action_hash}"
         action_type = action_data.get("action_type") or action_data.get("action") or "unknown"
         success_delta = 0 if outcome == "failure" else 1
@@ -816,8 +868,16 @@ class GraphStore:
             s2.updated_at = timestamp()
         MERGE (a:Action {action_id: $a_id})
         SET a.type = $type,
+            a.intent = $intent,
             a.target_desc = $target,
             a.semantic_target = $semantic_target,
+            a.semantic_edge_key = $semantic_edge_key,
+            a.expected_postcondition = $expected_postcondition,
+            a.source_page_type = $source_page_type,
+            a.target_page_type = $target_page_type,
+            a.region = $region,
+            a.risk_level = $action_risk_level,
+            a.target_locator = $target_locator,
             a.summary = $summary,
             a.reasoning = $reasoning,
             a.source_type = coalesce($source_type, a.source_type),
@@ -866,8 +926,16 @@ class GraphStore:
                 s2_risk_level=target_metadata.get("risk_level"),
                 a_id=action_id,
                 type=action_type,
+                intent=str(action_data.get("intent") or action_type).lower(),
                 target=str(action_data),
                 semantic_target=str(action_data.get("semantic_target") or action_data.get("target") or action_data.get("element") or action_data.get("text") or ""),
+                semantic_edge_key=semantic_edge_key,
+                expected_postcondition=str(action_data.get("expected_postcondition") or target_metadata.get("page_type") or ""),
+                source_page_type=str(action_data.get("source_page_type") or source_metadata.get("page_type") or ""),
+                target_page_type=str(action_data.get("target_page_type") or target_metadata.get("page_type") or ""),
+                region=str(action_data.get("region") or ""),
+                action_risk_level=str(action_data.get("risk_level") or target_metadata.get("risk_level") or "normal"),
+                target_locator=json.dumps(action_data.get("target_locator") or {}, ensure_ascii=False, sort_keys=True),
                 summary=str(action_data.get("summary") or ""),
                 reasoning=str(action_data.get("reasoning") or ""),
                 source_type=action_data.get("source_type"),
@@ -877,6 +945,181 @@ class GraphStore:
                 fail_delta=fail_delta,
                 task_id=task_id,
             )
+
+    def upsert_functionality_graph(self, report: Dict[str, Any]) -> Dict[str, int]:
+        """Persist AMSG v4 self-discovered functionality into Neo4j.
+
+        This makes functionality coverage a first-class graph surface instead
+        of a report-only artifact. Functionality items link to the UIState pages
+        that expose them; verified items/clusters link to the Action nodes that
+        implement them and to the observed postcondition pages.
+        """
+        if not self.driver:
+            return {"clusters": 0, "items": 0, "ui_links": 0, "action_links": 0, "postcondition_links": 0}
+
+        clusters = [item for item in (report.get("functionality_clusters") or []) if isinstance(item, dict)]
+        items = [item for item in (report.get("functionality_items") or []) if isinstance(item, dict)]
+        app_filter = str(report.get("app_filter") or "")
+        counts = {"clusters": 0, "items": 0, "ui_links": 0, "action_links": 0, "postcondition_links": 0}
+
+        with self.driver.session(database=self.database) as session:
+            for cluster in clusters:
+                cluster_id = str(cluster.get("cluster_id") or "")
+                if not cluster_id:
+                    continue
+                session.run(
+                    """
+                    MERGE (c:FunctionalityCluster {cluster_id: $cluster_id})
+                    SET c.canonical_name = $canonical_name,
+                        c.canonical_description = $canonical_description,
+                        c.member_functionality_ids = $member_functionality_ids,
+                        c.apps = $apps,
+                        c.page_types = $page_types,
+                        c.regions = $regions,
+                        c.verified_edges = $verified_edges,
+                        c.success_count = $success_count,
+                        c.fail_count = $fail_count,
+                        c.novelty_score = $novelty_score,
+                        c.risk_level = $risk_level,
+                        c.updated_at = timestamp()
+                    """,
+                    cluster_id=cluster_id,
+                    canonical_name=str(cluster.get("canonical_name") or ""),
+                    canonical_description=str(cluster.get("canonical_description") or ""),
+                    member_functionality_ids=list(cluster.get("member_functionality_ids") or []),
+                    apps=list(cluster.get("apps") or []),
+                    page_types=list(cluster.get("page_types") or []),
+                    regions=list(cluster.get("regions") or []),
+                    verified_edges=list(cluster.get("verified_edges") or []),
+                    success_count=int(cluster.get("success_count") or 0),
+                    fail_count=int(cluster.get("fail_count") or 0),
+                    novelty_score=float(cluster.get("novelty_score") or 0.0),
+                    risk_level=str(cluster.get("risk_level") or "normal"),
+                )
+                counts["clusters"] += 1
+
+            for item in items:
+                item_id = str(item.get("functionality_id") or "")
+                if not item_id:
+                    continue
+                source_action = item.get("source_action") if isinstance(item.get("source_action"), dict) else {}
+                bbox = item.get("bbox") if isinstance(item.get("bbox"), list) else []
+                app = str(item.get("app") or app_filter or "")
+                page_type = str(item.get("page_type") or "")
+                cluster_id = str(item.get("cluster_id") or "")
+                observed_postcondition = str(item.get("observed_postcondition") or "")
+                region = str(item.get("region") or "")
+                if region == "unknown":
+                    region = ""
+                session.run(
+                    """
+                    MERGE (i:FunctionalityItem {functionality_id: $functionality_id})
+                    SET i.page_node_id = $page_node_id,
+                        i.app = $app,
+                        i.page_type = $page_type,
+                        i.type = $type,
+                        i.label = $label,
+                        i.description = $description,
+                        i.bbox = $bbox,
+                        i.region = $region,
+                        i.visual_evidence = $visual_evidence,
+                        i.text_evidence = $text_evidence,
+                        i.source_action = $source_action,
+                        i.expected_effect = $expected_effect,
+                        i.observed_postcondition = $observed_postcondition,
+                        i.confidence = $confidence,
+                        i.embedding = $embedding,
+                        i.cluster_id = $cluster_id,
+                        i.updated_at = timestamp()
+                    """,
+                    functionality_id=item_id,
+                    page_node_id=str(item.get("page_node_id") or ""),
+                    app=app,
+                    page_type=page_type,
+                    type=str(item.get("type") or "functionality"),
+                    label=str(item.get("label") or ""),
+                    description=str(item.get("description") or ""),
+                    bbox=bbox,
+                    region=region,
+                    visual_evidence=str(item.get("visual_evidence") or ""),
+                    text_evidence=str(item.get("text_evidence") or ""),
+                    source_action=json.dumps(source_action, ensure_ascii=False, sort_keys=True),
+                    expected_effect=str(item.get("expected_effect") or ""),
+                    observed_postcondition=observed_postcondition,
+                    confidence=float(item.get("confidence") or 0.0),
+                    embedding=list(item.get("embedding") or []),
+                    cluster_id=cluster_id,
+                )
+                counts["items"] += 1
+
+                if cluster_id:
+                    session.run(
+                        """
+                        MATCH (i:FunctionalityItem {functionality_id: $functionality_id})
+                        MATCH (c:FunctionalityCluster {cluster_id: $cluster_id})
+                        MERGE (i)-[:MEMBER_OF]->(c)
+                        """,
+                        functionality_id=item_id,
+                        cluster_id=cluster_id,
+                    )
+
+                if page_type:
+                    result = session.run(
+                        """
+                        MATCH (s:UIState)
+                        WHERE s.page_type = $page_type
+                          AND ($app = "" OR s.app = $app)
+                        MATCH (i:FunctionalityItem {functionality_id: $functionality_id})
+                        MERGE (s)-[:EXPOSES_FUNCTION]->(i)
+                        RETURN count(s) AS linked
+                        """,
+                        page_type=page_type,
+                        app=app,
+                        functionality_id=item_id,
+                    ).single()
+                    counts["ui_links"] += int(result["linked"] or 0) if result else 0
+
+                if observed_postcondition:
+                    result = session.run(
+                        """
+                        MATCH (a:Action)
+                        WHERE ($page_type = "" OR a.source_page_type = $page_type)
+                          AND (a.expected_postcondition = $postcondition OR a.target_page_type = $postcondition)
+                          AND ($region = "" OR a.region = $region)
+                        MATCH (i:FunctionalityItem {functionality_id: $functionality_id})
+                        MERGE (a)-[:IMPLEMENTS_FUNCTION]->(i)
+                        WITH a, i
+                        OPTIONAL MATCH (c:FunctionalityCluster {cluster_id: $cluster_id})
+                        FOREACH (_ IN CASE WHEN c IS NULL THEN [] ELSE [1] END |
+                            MERGE (a)-[:IMPLEMENTS_FUNCTION]->(c)
+                        )
+                        RETURN count(a) AS linked
+                        """,
+                        page_type=page_type,
+                        postcondition=observed_postcondition,
+                        region=region,
+                        functionality_id=item_id,
+                        cluster_id=cluster_id,
+                    ).single()
+                    counts["action_links"] += int(result["linked"] or 0) if result else 0
+
+                    if cluster_id:
+                        result = session.run(
+                            """
+                            MATCH (c:FunctionalityCluster {cluster_id: $cluster_id})
+                            MATCH (t:UIState)
+                            WHERE t.page_type = $postcondition
+                              AND ($app = "" OR t.app = $app)
+                            MERGE (c)-[:LEADS_TO]->(t)
+                            RETURN count(t) AS linked
+                            """,
+                            cluster_id=cluster_id,
+                            postcondition=observed_postcondition,
+                            app=app,
+                        ).single()
+                        counts["postcondition_links"] += int(result["linked"] or 0) if result else 0
+
+        return counts
 
     def get_outgoing_transitions(self, state_id: str, limit: int = 20, app: str = ""):
         """Return outgoing graph edges as TransitionEdge objects."""

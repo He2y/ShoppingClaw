@@ -44,6 +44,8 @@ ACTION_VERBS = {
 class FunctionalityItem:
     functionality_id: str
     page_node_id: str
+    app: str = ""
+    page_type: str = ""
     type: str = "functionality"
     label: str = ""
     description: str = ""
@@ -71,6 +73,8 @@ class FunctionalityItem:
         return {
             "functionality_id": self.functionality_id,
             "page_node_id": self.page_node_id,
+            "app": self.app,
+            "page_type": self.page_type,
             "type": self.type,
             "label": self.label,
             "description": self.description,
@@ -92,6 +96,8 @@ class FunctionalityItem:
         return cls(
             functionality_id=str(data.get("functionality_id") or ""),
             page_node_id=str(data.get("page_node_id") or ""),
+            app=str(data.get("app") or ""),
+            page_type=str(data.get("page_type") or ""),
             type=str(data.get("type") or "functionality"),
             label=str(data.get("label") or ""),
             description=str(data.get("description") or ""),
@@ -130,6 +136,8 @@ class FunctionalityExtractor:
                 item = FunctionalityItem(
                     functionality_id=stable_id("fn", app, page_node_id, label, description),
                     page_node_id=page_node_id,
+                    app=app,
+                    page_type=page_type,
                     type=item_type,
                     label=label,
                     description=description,
@@ -145,6 +153,8 @@ class FunctionalityExtractor:
                 FunctionalityItem(
                     functionality_id=stable_id("fn", app, page_node_id, page_type, summary, artifact_path),
                     page_node_id=page_node_id,
+                    app=app,
+                    page_type=page_type,
                     type="functionality",
                     label=f"{page_type} visible functions",
                     description=f"Observed screen-level functionality on {page_type}: {summary}",
@@ -170,6 +180,8 @@ class FunctionalityExtractor:
         return FunctionalityItem(
             functionality_id=stable_id("fn", app, source_type, action_type, region, target_type, json.dumps(action, sort_keys=True, ensure_ascii=False)),
             page_node_id=stable_id("page", app, source_type, source_summary),
+            app=app,
+            page_type=source_type,
             type="functionality",
             label=label,
             description=description,

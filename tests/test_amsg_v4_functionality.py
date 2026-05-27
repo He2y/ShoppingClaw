@@ -193,6 +193,8 @@ def test_amsg_v4_report_discovers_verified_clusters_from_artifacts(tmp_path, mon
     assert report["functionality_coverage"]["verified_functionality_clusters"] >= 1
     assert report["functionality_coverage"]["functionality_semantics_quality"] == "limited"
     assert any(cluster["verified_edges"] for cluster in report["functionality_clusters"])
+    assert report["functionality_items"]
+    assert all("app" in item and "page_type" in item for item in report["functionality_items"])
     assert "AMSG v4 Self-Discovered Functionality Report" in markdown
 
 

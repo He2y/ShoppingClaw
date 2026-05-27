@@ -888,6 +888,124 @@ class SpatialGraphMemory:
             return f"{action_name}:{action['start']}->{action['end']}"
         return action_name
 
+    def _enrich_edge_action_params(
+        self,
+        edge: TransitionEdge,
+        source: PageState,
+        target: PageState,
+    ) -> dict[str, Any]:
+        """Attach model-agnostic semantic identity while preserving raw evidence."""
+        params = dict(edge.action_params or {})
+        action_type = str(params.get("action_type") or params.get("action") or edge.action_type or "unknown")
+        intent = str(params.get("intent") or self._intent_from_action_type(action_type))
+        region = str(params.get("region") or self._action_region(params) or "")
+        coordinate_only = any(key in params for key in ("element", "coordinate", "point"))
+        semantic_target = str(params.get("semantic_target") or params.get("target") or "").strip()
+        if not semantic_target and not coordinate_only:
+            semantic_target = str(edge.action_target or "").strip()
+        if not semantic_target:
+            if region:
+                semantic_target = f"{region} {target.page_type} affordance"
+            else:
+                semantic_target = f"{target.page_type} affordance"
+        params.setdefault("_metadata", "do")
+        params["action"] = str(params.get("action") or action_type)
+        params["intent"] = intent
+        params["semantic_target"] = semantic_target
+        params["expected_postcondition"] = target.page_type
+        params["source_page_type"] = source.page_type
+        params["target_page_type"] = target.page_type
+        params["risk_level"] = target.risk_level
+        params["region"] = region
+        if "target_locator" not in params:
+            params["target_locator"] = self._target_locator_from_action(params)
+        params["_semantic_edge_key"] = "|".join(
+            [source.page_type, intent, semantic_target, region, target.page_type]
+        )
+        return params
+
+    @staticmethod
+    def _intent_from_action_type(action_type: str) -> str:
+        lowered = action_type.lower()
+        if lowered in {"tap", "click"}:
+            return "tap"
+        if lowered in {"type", "type_name", "input"}:
+            return "type_text"
+        if lowered == "swipe":
+            return "scroll"
+        if lowered == "back":
+            return "go_back"
+        if lowered == "compound":
+            return "compound"
+        return lowered or "unknown"
+
+    @staticmethod
+    def _target_locator_from_action(action: dict[str, Any]) -> dict[str, Any]:
+        if "element" in action:
+            return {"element": action["element"], "coordinate_space": "normalized_1000"}
+        if "coordinate" in action:
+            return {"coordinate": action["coordinate"], "coordinate_space": "normalized_999"}
+        if "point" in action:
+            return {"point": action["point"]}
+        return {}
+
+    @staticmethod
+    def _action_region(action: dict[str, Any]) -> str:
+        value = action.get("element") or action.get("coordinate") or action.get("point")
+        if isinstance(value, list) and len(value) == 1 and isinstance(value[0], list):
+            value = value[0]
+        if not isinstance(value, list) or len(value) < 2:
+            return ""
+        try:
+            x = float(value[0])
+            y = float(value[1])
+        except (TypeError, ValueError):
+            return ""
+        vertical = "top" if y <= 250 else "bottom" if y >= 750 else "middle"
+        horizontal = "left" if x <= 330 else "right" if x >= 670 else "center"
+        if vertical == "middle" and horizontal == "center":
+            return "center"
+        return f"{vertical}_{horizontal}"
+
+    @staticmethod
+    def _edge_identity_key(edge: TransitionEdge) -> tuple[str, str, str, str]:
+        params = edge.action_params or {}
+        semantic_key = str(params.get("_semantic_edge_key") or "")
+        return (edge.source_id, edge.target_id, edge.action_type, semantic_key or edge.action_target)
+
+    def _upsert_local_edge(self, edge: TransitionEdge) -> bool:
+        edges = self._local_edges.setdefault(edge.source_id, [])
+        identity = self._edge_identity_key(edge)
+        for index, existing in enumerate(edges):
+            if self._edge_identity_key(existing) != identity:
+                continue
+            attempts = existing.success_count + existing.fail_count + edge.success_count + edge.fail_count
+            confidence = (
+                ((existing.confidence * max(1, existing.success_count + existing.fail_count)) + (edge.confidence * max(1, edge.success_count + edge.fail_count)))
+                / max(1, attempts)
+            )
+            merged_params = dict(existing.action_params or {})
+            merged_params.update(edge.action_params or {})
+            edges[index] = TransitionEdge(
+                source_id=existing.source_id,
+                target_id=existing.target_id,
+                action_type=existing.action_type,
+                action_target=existing.action_target or edge.action_target,
+                action_params=merged_params,
+                precondition=existing.precondition or edge.precondition,
+                postcondition=existing.postcondition or edge.postcondition,
+                success_count=existing.success_count + edge.success_count,
+                fail_count=existing.fail_count + edge.fail_count,
+                rollback_action=existing.rollback_action or edge.rollback_action,
+                cost=min(existing.cost, edge.cost),
+                risk=existing.risk or edge.risk,
+                confidence=round(confidence, 4),
+                evidence=" | ".join(_dedupe([existing.evidence, edge.evidence])),
+            )
+            return False
+        edges.append(edge)
+        return True
+
     def promote_staging_to_canonical(
         self,
         canonical_states: dict[str, PageState],
@@ -920,12 +1038,13 @@ class SpatialGraphMemory:
             if not source or not target or not self._is_promotable_edge(edge, source, target):
                 filtered_edges += 1
                 continue
+            action_params = self._enrich_edge_action_params(edge, source, target)
             resolved_edge = TransitionEdge(
                 source_id=source.state_id,
                 target_id=target.state_id,
                 action_type=edge.action_type,
-                action_target=edge.action_target,
-                action_params=edge.action_params,
+                action_target=str(action_params.get("semantic_target") or edge.action_target),
+                action_params=action_params,
                 precondition=edge.precondition,
                 postcondition=target.page_type,
                 success_count=edge.success_count,
@@ -936,8 +1055,9 @@ class SpatialGraphMemory:
                 confidence=edge.confidence,
                 evidence=edge.evidence,
             )
-            self._local_edges.setdefault(resolved_edge.source_id, []).append(resolved_edge)
-            promoted_edges += 1
+            is_new_edge = self._upsert_local_edge(resolved_edge)
+            if is_new_edge:
+                promoted_edges += 1
             if resolved_edge.action_type == "Compound":
                 compound_edges += 1
             if persist and self.graph_store and getattr(self.graph_store, "driver", None):

@@ -102,7 +102,7 @@ def build_cluster(members: list[FunctionalityItem]) -> FunctionalityCluster:
         canonical_name=canonical_name(representative),
         canonical_description=representative.description,
         member_functionality_ids=tuple(item.functionality_id for item in members),
-        apps=tuple(sorted({app_from_id(item.page_node_id) for item in members if app_from_id(item.page_node_id)})),
+        apps=tuple(sorted({item.app or app_from_id(item.page_node_id) for item in members if item.app or app_from_id(item.page_node_id)})),
         page_types=tuple(page_types),
         regions=tuple(regions),
         verified_edges=tuple(verified_edges),
@@ -158,6 +158,8 @@ def edge_signature(item: FunctionalityItem) -> str:
 
 
 def source_page_type(item: FunctionalityItem) -> str:
+    if item.page_type:
+        return item.page_type
     label_match = re.search(r"\bfrom ([a-z_]+) to\b", item.label)
     if label_match:
         return label_match.group(1)

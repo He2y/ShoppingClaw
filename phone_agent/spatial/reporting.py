@@ -212,6 +212,7 @@ def build_amsg_v4_functionality_report(
             "strong_vlm": strong_vlm.to_dict(),
             "embedding": embedding.to_dict(),
         },
+        "functionality_items": [item.to_dict() for item in clustered_items],
         "functionality_clusters": [cluster.to_dict() for cluster in clusters[:max_clusters]],
         "exploration_jobs": [job.to_dict() for job in jobs],
         "sample_synthesized_tasks": sample_tasks,
