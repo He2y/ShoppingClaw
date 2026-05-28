@@ -1197,7 +1197,12 @@ class GraphStore:
             return {"clusters": 0, "items": 0, "ui_links": 0, "action_links": 0, "postcondition_links": 0}
 
         clusters = [item for item in (report.get("functionality_clusters") or []) if isinstance(item, dict)]
-        items = [item for item in (report.get("functionality_items") or []) if isinstance(item, dict)]
+        # Only persist promotable (actionable) items — data items (price,
+        # product_title, shop_name, etc.) are ephemeral and pollute the graph.
+        items = [
+            item for item in (report.get("functionality_items") or [])
+            if isinstance(item, dict) and item.get("is_promotable", True)
+        ]
         app_filter = str(report.get("app_filter") or "")
         counts = {"clusters": 0, "items": 0, "ui_links": 0, "action_links": 0, "postcondition_links": 0}
 
