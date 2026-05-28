@@ -1,179 +1,142 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 780" width="1200" height="780">
-  <style>
-    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
-  </style>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 900" width="1280" height="900" role="img" aria-labelledby="title desc">
+  <title id="title">AMSG build pipeline</title>
+  <desc id="desc">Active Mobile Spatial Graph build pipeline showing online execution staging, offline exploration, manual import, quality gates, promotability filtering, and Neo4j schema.</desc>
   <defs>
-    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
-    </marker>
-    <marker id="arrow-purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#9333ea"/>
-    </marker>
-    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
-    </marker>
-    <marker id="arrow-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
-    </marker>
-    <marker id="arrow-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
-      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
-    </marker>
-    <filter id="shadow" x="-4%" y="-4%" width="108%" height="108%">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.08"/>
-    </filter>
+    <marker id="m-blue" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#2563eb"/></marker>
+    <marker id="m-green" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#047857"/></marker>
+    <marker id="m-red" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#dc2626"/></marker>
+    <marker id="m-orange" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#ea580c"/></marker>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; }
+      .title { font-size: 24px; font-weight: 700; fill: #111827; }
+      .subtitle { font-size: 13px; fill: #4b5563; }
+      .section { fill: #fbfcfe; stroke: #cbd5e1; stroke-width: 1.2; }
+      .section-title { font-size: 12px; font-weight: 700; fill: #334155; letter-spacing: .5px; }
+      .box { fill: #fff; stroke: #334155; stroke-width: 1.3; }
+      .blue { fill: #eff6ff; stroke: #2563eb; }
+      .green { fill: #ecfdf5; stroke: #047857; }
+      .red { fill: #fef2f2; stroke: #dc2626; }
+      .orange { fill: #fff7ed; stroke: #ea580c; }
+      .gray { fill: #f8fafc; stroke: #94a3b8; }
+      .name { font-size: 14px; font-weight: 700; fill: #111827; }
+      .small { font-size: 10.5px; fill: #475569; }
+      .tiny { font-size: 9.5px; fill: #64748b; }
+      .line { fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
+      .data { stroke: #2563eb; marker-end: url(#m-blue); }
+      .graph { stroke: #047857; marker-end: url(#m-green); }
+      .drop { stroke: #dc2626; marker-end: url(#m-red); }
+      .action { stroke: #ea580c; marker-end: url(#m-orange); }
+      .label { font-size: 9.5px; font-weight: 700; }
+    </style>
   </defs>
 
-  <rect width="1200" height="780" fill="#ffffff"/>
-  <text x="600" y="32" text-anchor="middle" fill="#111827" font-size="20" font-weight="700">AMSG v4.1 建图管线 — 在线暂存 + 门控写入</text>
-  <text x="600" y="52" text-anchor="middle" fill="#6b7280" font-size="12">record_observation(persist=False) → 任务成功后 canonicalize → promote → Neo4j</text>
+  <rect width="1280" height="900" fill="#fff"/>
+  <text class="title" x="640" y="36" text-anchor="middle">AMSG v4.1: Quality-Controlled Graph Evolution</text>
+  <text class="subtitle" x="640" y="58" text-anchor="middle">The Active Mobile Spatial Graph stores reusable semantic navigation knowledge, not raw UI noise or transient shopping data.</text>
 
-  <!-- ═══ Top: Two Parallel Paths ═══ -->
+  <!-- Three sources -->
+  <rect class="section" x="40" y="86" width="1200" height="196" rx="10"/>
+  <text class="section-title" x="62" y="112">GRAPH KNOWLEDGE SOURCES</text>
+  <rect class="box blue" x="74" y="136" width="286" height="92" rx="9"/>
+  <text class="name" x="217" y="162" text-anchor="middle">Online Execution</text>
+  <text class="small" x="217" y="182" text-anchor="middle">agent.py run, every step</text>
+  <text class="small" x="217" y="200" text-anchor="middle">record_observation(persist=false)</text>
+  <text class="tiny" x="217" y="218" text-anchor="middle">writes only _local_states and _local_edges</text>
+  <rect class="box green" x="498" y="136" width="286" height="92" rx="9"/>
+  <text class="name" x="641" y="162" text-anchor="middle">OfflineExplorer</text>
+  <text class="small" x="641" y="182" text-anchor="middle">human-triggered pre-exploration</text>
+  <text class="small" x="641" y="200" text-anchor="middle">PageClassifier + VLM semantics</text>
+  <text class="tiny" x="641" y="218" text-anchor="middle">batch quality report before persistence</text>
+  <rect class="box orange" x="922" y="136" width="286" height="92" rx="9"/>
+  <text class="name" x="1065" y="162" text-anchor="middle">Manual Import</text>
+  <text class="small" x="1065" y="182" text-anchor="middle">reviewed trajectories</text>
+  <text class="small" x="1065" y="200" text-anchor="middle">persist=true only after audit</text>
+  <text class="tiny" x="1065" y="218" text-anchor="middle">human curated recovery path</text>
 
-  <!-- LEFT: Online Execution Path -->
-  <rect x="40" y="70" width="540" height="290" rx="12" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5" stroke-dasharray="6,4"/>
-  <text x="60" y="90" fill="#7c3aed" font-size="12" font-weight="700">在线执行路径 (agent.py run)</text>
+  <polygon points="217,248 294,252 217,278 140,252" fill="#fff7ed" stroke="#ea580c" stroke-width="1.4"/>
+  <text class="small" x="217" y="256" text-anchor="middle">task</text>
+  <text class="small" x="217" y="270" text-anchor="middle">success?</text>
+  <path class="line data" d="M217 228 V244"/>
+  <path class="line drop" d="M140 252 C96 272 96 304 160 320"/>
+  <text class="label" x="104" y="295" fill="#dc2626">No: discard</text>
 
-  <rect x="60" y="106" width="170" height="46" rx="8" fill="#fff" stroke="#d1d5db" stroke-width="1.5" filter="url(#shadow)"/>
-  <text x="145" y="126" text-anchor="middle" fill="#111827" font-size="12" font-weight="600">每步截图</text>
-  <text x="145" y="142" text-anchor="middle" fill="#6b7280" font-size="10">PageClassifier 分类</text>
+  <!-- Main pipeline -->
+  <rect class="section" x="40" y="318" width="1200" height="238" rx="10"/>
+  <text class="section-title" x="62" y="344">FIVE-STAGE AMSG PIPELINE</text>
+  <rect class="box blue" x="76" y="382" width="150" height="72" rx="8"/>
+  <text class="name" x="151" y="408" text-anchor="middle">1. Observe</text>
+  <text class="small" x="151" y="426" text-anchor="middle">screenshot, action</text>
+  <text class="tiny" x="151" y="442" text-anchor="middle">state_id hash</text>
+  <rect class="box green" x="284" y="382" width="170" height="72" rx="8"/>
+  <text class="name" x="369" y="408" text-anchor="middle">2. Semantic Node</text>
+  <text class="small" x="369" y="426" text-anchor="middle">PageNode</text>
+  <text class="tiny" x="369" y="442" text-anchor="middle">landmarks, affordances, slots, risk</text>
+  <rect class="box orange" x="512" y="382" width="170" height="72" rx="8"/>
+  <text class="name" x="597" y="408" text-anchor="middle">3. Edge Extract</text>
+  <text class="small" x="597" y="426" text-anchor="middle">AffordanceEdge</text>
+  <text class="tiny" x="597" y="442" text-anchor="middle">intent, target, cost, confidence</text>
+  <rect class="box green" x="740" y="382" width="170" height="72" rx="8"/>
+  <text class="name" x="825" y="408" text-anchor="middle">4. Canonicalize</text>
+  <text class="small" x="825" y="426" text-anchor="middle">merge duplicates</text>
+  <text class="tiny" x="825" y="442" text-anchor="middle">semantic signature</text>
+  <rect class="box green" x="968" y="382" width="170" height="72" rx="8"/>
+  <text class="name" x="1053" y="408" text-anchor="middle">5. Promote</text>
+  <text class="small" x="1053" y="426" text-anchor="middle">filter then persist</text>
+  <text class="tiny" x="1053" y="442" text-anchor="middle">Neo4j canonical graph</text>
+  <path class="line data" d="M226 418 H280"/>
+  <path class="line action" d="M454 418 H508"/>
+  <path class="line graph" d="M682 418 H736"/>
+  <path class="line graph" d="M910 418 H964"/>
+  <path class="line graph" d="M294 252 C360 304 610 342 824 378"/>
+  <path class="line graph" d="M641 228 C652 292 730 342 824 378"/>
+  <path class="line graph" d="M1065 228 C1070 292 1062 342 1054 378"/>
 
-  <line x1="230" y1="129" x2="268" y2="129" stroke="#9333ea" stroke-width="2" marker-end="url(#arrow-purple)"/>
+  <rect class="box red" x="112" y="486" width="246" height="46" rx="7"/>
+  <text class="name" x="235" y="506" text-anchor="middle">Pollution Removed</text>
+  <text class="small" x="235" y="523" text-anchor="middle">failed tasks, self loops, low-quality edges</text>
+  <rect class="box green" x="442" y="486" width="390" height="46" rx="7"/>
+  <text class="name" x="637" y="506" text-anchor="middle">Reusable Knowledge Kept</text>
+  <text class="small" x="637" y="523" text-anchor="middle">stable page types, navigable actions, successful transitions, confidence statistics</text>
+  <rect class="box red" x="916" y="486" width="246" height="46" rx="7"/>
+  <text class="name" x="1039" y="506" text-anchor="middle">Transient Data Dropped</text>
+  <text class="small" x="1039" y="523" text-anchor="middle">price, title, shop name, rank index</text>
 
-  <rect x="272" y="106" width="286" height="46" rx="8" fill="#ede9fe" stroke="#9333ea" stroke-width="1.5"/>
-  <text x="415" y="126" text-anchor="middle" fill="#5b21b6" font-size="12" font-weight="600">record_observation(persist=False)</text>
-  <text x="415" y="142" text-anchor="middle" fill="#7c3aed" font-size="10">仅写 _local_states + _local_edges</text>
+  <!-- Schema and filters -->
+  <rect class="section" x="40" y="586" width="590" height="260" rx="10"/>
+  <text class="section-title" x="62" y="612">PROMOTABILITY FILTER</text>
+  <rect class="box green" x="80" y="642" width="220" height="84" rx="8"/>
+  <text class="name" x="190" y="668" text-anchor="middle">Functionality</text>
+  <text class="small" x="190" y="688" text-anchor="middle">is_promotable = true</text>
+  <text class="tiny" x="190" y="706" text-anchor="middle">open_search, open_spec, add_to_cart</text>
+  <rect class="box red" x="360" y="642" width="220" height="84" rx="8"/>
+  <text class="name" x="470" y="668" text-anchor="middle">Data Item</text>
+  <text class="small" x="470" y="688" text-anchor="middle">is_promotable = false</text>
+  <text class="tiny" x="470" y="706" text-anchor="middle">price, title, shop, count, ad text</text>
+  <path class="line graph" d="M190 726 C220 774 300 794 368 806"/>
+  <path class="line drop" d="M470 726 C442 770 446 798 496 808"/>
+  <rect class="box green" x="80" y="778" width="220" height="42" rx="7"/>
+  <text class="small" x="190" y="803" text-anchor="middle">persist to Neo4j</text>
+  <rect class="box red" x="360" y="778" width="220" height="42" rx="7"/>
+  <text class="small" x="470" y="803" text-anchor="middle">discard from graph store</text>
 
-  <line x1="415" y1="152" x2="415" y2="172" stroke="#9333ea" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
-
-  <rect x="272" y="176" width="286" height="36" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1"/>
-  <text x="415" y="198" text-anchor="middle" fill="#6b21a8" font-size="11">重复 N 步... (本地缓存持续增长)</text>
-
-  <line x1="415" y1="212" x2="415" y2="232" stroke="#9333ea" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
-
-  <!-- Decision: success? -->
-  <polygon points="415,238 480,266 415,294 350,266" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
-  <text x="415" y="264" text-anchor="middle" fill="#9a3412" font-size="10" font-weight="600">任务成功?</text>
-
-  <!-- Success path -->
-  <line x1="480" y1="266" x2="540" y2="266" stroke="#16a34a" stroke-width="2"/>
-  <text x="506" y="258" fill="#16a34a" font-size="9" font-weight="600">Yes</text>
-
-  <!-- Failure path -->
-  <line x1="415" y1="294" x2="415" y2="326" stroke="#dc2626" stroke-width="1.5"/>
-  <rect x="340" y="328" width="150" height="24" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
-  <text x="415" y="344" text-anchor="middle" fill="#dc2626" font-size="10" font-weight="600">丢弃本地缓存 (不入库)</text>
-  <text x="350" y="302" fill="#dc2626" font-size="9" font-weight="600">No</text>
-
-  <!-- RIGHT: Quality Gate Pipeline -->
-  <rect x="560" y="70" width="600" height="290" rx="12" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5" stroke-dasharray="6,4"/>
-  <text x="580" y="90" fill="#16a34a" font-size="12" font-weight="700">质量门控管线 (flush_staged_graph)</text>
-
-  <!-- Stage 1 -->
-  <rect x="580" y="108" width="260" height="50" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
-  <rect x="580" y="108" width="260" height="22" rx="8" fill="#16a34a"/>
-  <rect x="580" y="122" width="260" height="8" fill="#16a34a"/>
-  <text x="592" y="124" fill="#fff" font-size="10" font-weight="700">Stage A</text>
-  <text x="710" y="142" text-anchor="middle" fill="#166534" font-size="11" font-weight="600">canonicalize_state_graph()</text>
-  <text x="710" y="152" text-anchor="middle" fill="#6b7280" font-size="9">按 (app, page_type) 合并语义重复节点</text>
-
-  <line x1="710" y1="158" x2="710" y2="176" stroke="#16a34a" stroke-width="2" marker-end="url(#arrow-green)"/>
-
-  <!-- Stage 2 -->
-  <rect x="580" y="180" width="260" height="50" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="2"/>
-  <rect x="580" y="180" width="260" height="22" rx="8" fill="#059669"/>
-  <rect x="580" y="194" width="260" height="8" fill="#059669"/>
-  <text x="592" y="196" fill="#fff" font-size="10" font-weight="700">Stage B</text>
-  <text x="710" y="214" text-anchor="middle" fill="#166534" font-size="11" font-weight="600">promote_staging_to_canonical()</text>
-  <text x="710" y="224" text-anchor="middle" fill="#6b7280" font-size="9">边过滤: 自环/危险转换/低质量</text>
-
-  <line x1="710" y1="230" x2="710" y2="248" stroke="#16a34a" stroke-width="2" marker-end="url(#arrow-green)"/>
-
-  <!-- Stage 3: Neo4j Write -->
-  <ellipse cx="710" cy="265" rx="60" ry="14" fill="#dbeafe" stroke="#008CC1" stroke-width="1.5"/>
-  <rect x="650" y="265" width="120" height="36" fill="#dbeafe" stroke="none"/>
-  <line x1="650" y1="265" x2="650" y2="301" stroke="#008CC1" stroke-width="1.5"/>
-  <line x1="770" y1="265" x2="770" y2="301" stroke="#008CC1" stroke-width="1.5"/>
-  <ellipse cx="710" cy="301" rx="60" ry="14" fill="#93c5fd" stroke="#008CC1" stroke-width="1.5"/>
-  <text x="710" y="288" text-anchor="middle" fill="#1e40af" font-size="12" font-weight="700">Neo4j 写入</text>
-  <text x="710" y="328" text-anchor="middle" fill="#6b7280" font-size="10">审核后持久化</text>
-
-  <!-- Arrow from online success to quality gate -->
-  <line x1="540" y1="266" x2="576" y2="266" stroke="#16a34a" stroke-width="2" marker-end="url(#arrow-green)"/>
-  <path d="M 576,266 Q 576,130 580,130" stroke="#16a34a" stroke-width="2" fill="none" marker-end="url(#arrow-green)"/>
-
-  <!-- FunctionalityItem filter -->
-  <rect x="860" y="108" width="280" height="100" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.5"/>
-  <text x="876" y="128" fill="#dc2626" font-size="11" font-weight="700">FunctionalityItem 过滤</text>
-  <text x="876" y="148" fill="#166534" font-size="10">✓ promotable: open_search, add_to_cart</text>
-  <text x="876" y="164" fill="#166534" font-size="10">✓ promotable: confirm_spec, apply_filter</text>
-  <text x="876" y="184" fill="#dc2626" font-size="10">✗ data: price ¥8999 (瞬态，不入库)</text>
-  <text x="876" y="200" fill="#dc2626" font-size="10">✗ data: product_title, shop_name (不入库)</text>
-
-  <!-- ═══ Bottom: Neo4j Schema ═══ -->
-  <rect x="40" y="380" width="1120" height="240" rx="12" fill="#f0f9ff" stroke="#bfdbfe" stroke-width="1.5" stroke-dasharray="6,4"/>
-  <text x="60" y="400" fill="#1e40af" font-size="12" font-weight="700">Neo4j Graph Schema (门控后)</text>
-
-  <!-- UIState -->
-  <rect x="80" y="416" width="180" height="66" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="2" filter="url(#shadow)"/>
-  <text x="170" y="440" text-anchor="middle" fill="#1e40af" font-size="13" font-weight="700">:UIState</text>
-  <text x="170" y="456" text-anchor="middle" fill="#3b82f6" font-size="9">page_type, landmarks</text>
-  <text x="170" y="470" text-anchor="middle" fill="#3b82f6" font-size="9">affordances, risk_level</text>
-
-  <!-- Action -->
-  <rect x="440" y="416" width="180" height="66" rx="10" fill="#ede9fe" stroke="#7c3aed" stroke-width="2" filter="url(#shadow)"/>
-  <text x="530" y="440" text-anchor="middle" fill="#5b21b6" font-size="13" font-weight="700">:Action</text>
-  <text x="530" y="456" text-anchor="middle" fill="#7c3aed" font-size="9">intent, semantic_target</text>
-  <text x="530" y="470" text-anchor="middle" fill="#7c3aed" font-size="9">confidence, semantic_edge_key</text>
-
-  <!-- Target UIState -->
-  <rect x="800" y="416" width="180" height="66" rx="10" fill="#dbeafe" stroke="#3b82f6" stroke-width="2" filter="url(#shadow)"/>
-  <text x="890" y="440" text-anchor="middle" fill="#1e40af" font-size="13" font-weight="700">:UIState</text>
-  <text x="890" y="460" text-anchor="middle" fill="#3b82f6" font-size="9">(target page)</text>
-
-  <!-- Edges -->
-  <line x1="260" y1="449" x2="436" y2="449" stroke="#ea580c" stroke-width="2" marker-end="url(#arrow-orange)"/>
-  <rect x="296" y="434" width="96" height="14" rx="3" fill="#fff"/>
-  <text x="344" y="445" text-anchor="middle" fill="#ea580c" font-size="9" font-weight="600">:NEXT_ACTION</text>
-  <line x1="620" y1="449" x2="796" y2="449" stroke="#16a34a" stroke-width="2" marker-end="url(#arrow-green)"/>
-  <rect x="656" y="434" width="86" height="14" rx="3" fill="#fff"/>
-  <text x="699" y="445" text-anchor="middle" fill="#16a34a" font-size="9" font-weight="600">:PRODUCES</text>
-
-  <!-- FunctionalityItem (only promotable) -->
-  <rect x="80" y="510" width="180" height="50" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="170" y="532" text-anchor="middle" fill="#166534" font-size="12" font-weight="700">:FunctionalityItem</text>
-  <text x="170" y="548" text-anchor="middle" fill="#15803d" font-size="9">仅 is_promotable=true</text>
-  <path d="M 170,482 L 170,508" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
-  <text x="180" y="498" fill="#2563eb" font-size="8">:EXPOSES</text>
-
-  <!-- FunctionalityCluster -->
-  <rect x="440" y="510" width="180" height="50" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
-  <text x="530" y="532" text-anchor="middle" fill="#166534" font-size="12" font-weight="700">:FunctionalityCluster</text>
-  <text x="530" y="548" text-anchor="middle" fill="#15803d" font-size="9">canonical_name, members</text>
-  <path d="M 530,482 L 530,508" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
-  <text x="540" y="498" fill="#2563eb" font-size="8">:IMPLEMENTS</text>
-
-  <!-- TaskTarget -->
-  <rect x="800" y="510" width="180" height="50" rx="10" fill="#fff7ed" stroke="#fb923c" stroke-width="1.5"/>
-  <text x="890" y="532" text-anchor="middle" fill="#c2410c" font-size="12" font-weight="700">:TaskTarget</text>
-  <text x="890" y="548" text-anchor="middle" fill="#9a3412" font-size="9">description, success</text>
-  <path d="M 890,482 L 890,508" stroke="#9333ea" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
-  <text x="900" y="498" fill="#9333ea" font-size="8">:ENDS_AT</text>
-
-  <!-- ═══ Legend ═══ -->
-  <rect x="40" y="634" width="1120" height="136" rx="8" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
-  <text x="60" y="656" fill="#111827" font-size="12" font-weight="700">v4.1 建图管线 vs 旧版对比</text>
-
-  <rect x="60" y="670" width="520" height="88" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
-  <text x="76" y="688" fill="#dc2626" font-size="11" font-weight="700">旧版 (v4.0) — 每步直接写入</text>
-  <text x="76" y="706" fill="#374151" font-size="10">record_observation() → graph_store.add_state_transition() → Neo4j</text>
-  <text x="76" y="722" fill="#374151" font-size="10">问题: VLM 提取差异 → 语义重复节点快速膨胀</text>
-  <text x="76" y="738" fill="#374151" font-size="10">实例: 淘宝首页产生 70 个 unknown 变体节点</text>
-  <text x="76" y="754" fill="#dc2626" font-size="10" font-weight="600">所有 FunctionalityItem 入库 (含瞬态价格/标题)</text>
-
-  <rect x="600" y="670" width="540" height="88" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1"/>
-  <text x="616" y="688" fill="#16a34a" font-size="11" font-weight="700">新版 (v4.1) — 门控写入</text>
-  <text x="616" y="706" fill="#374151" font-size="10">record_observation(persist=False) → 本地缓存</text>
-  <text x="616" y="722" fill="#374151" font-size="10">成功任务 → canonicalize (去重) → promote (过滤) → Neo4j</text>
-  <text x="616" y="738" fill="#374151" font-size="10">失败任务 → 丢弃 (坏转换不入库)</text>
-  <text x="616" y="754" fill="#16a34a" font-size="10" font-weight="600">仅 is_promotable=true 的功能项入库</text>
+  <rect class="section" x="690" y="586" width="550" height="260" rx="10"/>
+  <text class="section-title" x="712" y="612">NEO4J STORAGE MODEL</text>
+  <rect class="box blue" x="732" y="650" width="132" height="56" rx="8"/>
+  <text class="name" x="798" y="681" text-anchor="middle">UIState</text>
+  <rect class="box orange" x="916" y="650" width="132" height="56" rx="8"/>
+  <text class="name" x="982" y="681" text-anchor="middle">Action</text>
+  <rect class="box blue" x="1100" y="650" width="100" height="56" rx="8"/>
+  <text class="name" x="1150" y="681" text-anchor="middle">UIState</text>
+  <path class="line action" d="M864 678 H912"/>
+  <path class="line graph" d="M1048 678 H1096"/>
+  <text class="tiny" x="888" y="664" text-anchor="middle">NEXT_ACTION</text>
+  <text class="tiny" x="1074" y="664" text-anchor="middle">PRODUCES</text>
+  <rect class="box green" x="732" y="754" width="162" height="42" rx="7"/>
+  <text class="small" x="813" y="779" text-anchor="middle">FunctionalityItem</text>
+  <rect class="box green" x="948" y="754" width="162" height="42" rx="7"/>
+  <text class="small" x="1029" y="779" text-anchor="middle">FunctionalityCluster</text>
+  <rect class="box orange" x="732" y="810" width="162" height="26" rx="6"/>
+  <text class="tiny" x="813" y="827" text-anchor="middle">TaskTarget STARTS_AT</text>
+  <path class="line graph" d="M798 706 V750"/>
+  <path class="line graph" d="M982 706 C992 734 1006 740 1029 750"/>
 </svg>

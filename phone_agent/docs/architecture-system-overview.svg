@@ -1,246 +1,174 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1060 720" width="1060" height="720">
-  <style>
-    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
-  </style>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 900" width="1280" height="900" role="img" aria-labelledby="title desc">
+  <title id="title">ClawGUI-Agent v4.1 System Architecture</title>
+  <desc id="desc">Detailed layered architecture of ClawGUI-Agent including clarification, core services, runtime routing, model adapters, memory, graph, device backends, and safety gates.</desc>
   <defs>
-    <marker id="ab" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#2563eb"/></marker>
-    <marker id="ag" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#059669"/></marker>
-    <marker id="ap" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#9333ea"/></marker>
-    <marker id="ar" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#dc2626"/></marker>
-    <marker id="ao" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#ea580c"/></marker>
-    <marker id="ay" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#ca8a04"/></marker>
-    <filter id="sh" x="-3%" y="-3%" width="106%" height="106%">
-      <feDropShadow dx="0" dy="1.5" stdDeviation="2.5" flood-color="#000" flood-opacity="0.07"/>
-    </filter>
+    <marker id="m-data" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#2563eb"/></marker>
+    <marker id="m-graph" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#047857"/></marker>
+    <marker id="m-memory" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#7c3aed"/></marker>
+    <marker id="m-safety" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#dc2626"/></marker>
+    <marker id="m-action" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#ea580c"/></marker>
+    <style>
+      text { font-family: Arial, Helvetica, sans-serif; }
+      .title { font-size: 24px; font-weight: 700; fill: #111827; }
+      .subtitle { font-size: 13px; fill: #4b5563; }
+      .section { fill: #fbfcfe; stroke: #cbd5e1; stroke-width: 1.2; }
+      .section-title { font-size: 12px; font-weight: 700; fill: #334155; letter-spacing: .5px; }
+      .box { fill: #fff; stroke: #334155; stroke-width: 1.35; }
+      .core { fill: #fffbeb; stroke: #ca8a04; }
+      .agent { fill: #eff6ff; stroke: #2563eb; }
+      .graphbox { fill: #ecfdf5; stroke: #047857; }
+      .memorybox { fill: #faf5ff; stroke: #7c3aed; }
+      .safetybox { fill: #fef2f2; stroke: #dc2626; }
+      .modelbox { fill: #f5f3ff; stroke: #6d28d9; }
+      .devicebox { fill: #fff7ed; stroke: #ea580c; }
+      .name { font-size: 14px; font-weight: 700; fill: #111827; }
+      .small { font-size: 10.5px; fill: #475569; }
+      .tiny { font-size: 9.5px; fill: #64748b; }
+      .data { stroke: #2563eb; marker-end: url(#m-data); }
+      .graph { stroke: #047857; marker-end: url(#m-graph); }
+      .memory { stroke: #7c3aed; marker-end: url(#m-memory); stroke-dasharray: 6 4; }
+      .safety { stroke: #dc2626; marker-end: url(#m-safety); }
+      .action { stroke: #ea580c; marker-end: url(#m-action); }
+      .line { fill: none; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+      .tag { font-size: 9.5px; font-weight: 700; }
+    </style>
   </defs>
 
-  <rect width="1060" height="720" fill="#ffffff"/>
+  <rect width="1280" height="900" fill="#ffffff"/>
+  <text class="title" x="640" y="34" text-anchor="middle">ClawGUI-Agent v4.1: Hybrid VLM + AMSG Runtime</text>
+  <text class="subtitle" x="640" y="56" text-anchor="middle">The system turns mobile GUI control into a gated self-evolving loop: clarify intent, route by graph when safe, reason by VLM when needed, and only persist verified knowledge.</text>
 
-  <!-- Title -->
-  <text x="530" y="30" text-anchor="middle" fill="#111827" font-size="18" font-weight="700">ClawGUI-Agent v4.1 — Core Module Relationships</text>
+  <!-- Top intent/core lane -->
+  <rect class="section" x="38" y="82" width="1204" height="128" rx="10"/>
+  <text class="section-title" x="60" y="108">INTENT COMPLETION AND SHARED CORE</text>
+  <rect class="box agent" x="72" y="126" width="140" height="50" rx="8"/>
+  <text class="name" x="142" y="148" text-anchor="middle">User Task</text>
+  <text class="small" x="142" y="165" text-anchor="middle">natural language</text>
+  <rect class="box core" x="272" y="112" width="238" height="82" rx="8"/>
+  <text class="name" x="391" y="136" text-anchor="middle">ClarificationAgent</text>
+  <text class="small" x="391" y="154" text-anchor="middle">L1 rules -> L2 memory preference</text>
+  <text class="small" x="391" y="171" text-anchor="middle">-> L3 VLM ambiguity check</text>
+  <rect class="box core" x="570" y="112" width="190" height="82" rx="8"/>
+  <text class="name" x="665" y="136" text-anchor="middle">TaskSpecExtractor</text>
+  <text class="small" x="665" y="154" text-anchor="middle">query, product, color</text>
+  <text class="small" x="665" y="171" text-anchor="middle">storage, size, contact, app</text>
+  <rect class="box safetybox" x="820" y="112" width="166" height="82" rx="8"/>
+  <text class="name" x="903" y="136" text-anchor="middle">SpecGuard</text>
+  <text class="small" x="903" y="154" text-anchor="middle">SKU consistency</text>
+  <text class="small" x="903" y="171" text-anchor="middle">before submit/payment</text>
+  <rect class="box" x="1046" y="112" width="160" height="82" rx="8"/>
+  <text class="name" x="1126" y="136" text-anchor="middle">StatusReporter</text>
+  <text class="small" x="1126" y="154" text-anchor="middle">memory, graph</text>
+  <text class="small" x="1126" y="171" text-anchor="middle">clarify, guard events</text>
+  <path class="line data" d="M212 151 H268"/>
+  <path class="line data" d="M510 151 H566"/>
+  <path class="line safety" d="M760 151 H816"/>
+  <path class="line data" d="M986 151 H1042"/>
 
-  <!-- ════════════════════════════════════════════════════ -->
-  <!-- ROW 1: User → ClarificationAgent → PhoneAgent      -->
-  <!-- ════════════════════════════════════════════════════ -->
+  <!-- Runtime lane -->
+  <rect class="section" x="38" y="244" width="758" height="388" rx="10"/>
+  <text class="section-title" x="60" y="270">ONLINE RUNTIME LOOP</text>
+  <rect class="box agent" x="78" y="292" width="178" height="70" rx="9"/>
+  <text class="name" x="167" y="318" text-anchor="middle">PhoneAgent</text>
+  <text class="small" x="167" y="336" text-anchor="middle">screenshot -> plan</text>
+  <text class="small" x="167" y="352" text-anchor="middle">-> action -> trace</text>
+  <rect class="box" x="314" y="292" width="178" height="70" rx="9"/>
+  <text class="name" x="403" y="318" text-anchor="middle">Perception</text>
+  <text class="small" x="403" y="336" text-anchor="middle">PageClassifier</text>
+  <text class="small" x="403" y="352" text-anchor="middle">ScreenSemanticsExtractor</text>
+  <rect class="box graphbox" x="550" y="292" width="206" height="70" rx="9"/>
+  <text class="name" x="653" y="318" text-anchor="middle">SpatialGraphMemory</text>
+  <text class="small" x="653" y="336" text-anchor="middle">locate() -> PageBelief</text>
+  <text class="small" x="653" y="352" text-anchor="middle">plan() -> RoutePlan</text>
+  <path class="line data" d="M256 327 H310"/>
+  <path class="line graph" d="M492 327 H546"/>
 
-  <!-- User -->
-  <circle cx="80" cy="90" r="26" fill="#f1f5f9" stroke="#334155" stroke-width="1.5"/>
-  <text x="80" y="86" text-anchor="middle" fill="#334155" font-size="11" font-weight="700">User</text>
-  <text x="80" y="100" text-anchor="middle" fill="#64748b" font-size="9">Task</text>
+  <rect class="box graphbox" x="78" y="432" width="170" height="74" rx="9"/>
+  <text class="name" x="163" y="458" text-anchor="middle">Navigate</text>
+  <text class="small" x="163" y="476" text-anchor="middle">known route, low risk</text>
+  <text class="tiny" x="163" y="492" text-anchor="middle">VLM skipped</text>
+  <rect class="box modelbox" x="310" y="432" width="170" height="74" rx="9"/>
+  <text class="name" x="395" y="458" text-anchor="middle">Explore</text>
+  <text class="small" x="395" y="476" text-anchor="middle">unknown/low confidence</text>
+  <text class="tiny" x="395" y="492" text-anchor="middle">VLM reasoning</text>
+  <rect class="box safetybox" x="542" y="432" width="170" height="74" rx="9"/>
+  <text class="name" x="627" y="458" text-anchor="middle">Verify</text>
+  <text class="small" x="627" y="476" text-anchor="middle">checkout/payment/login</text>
+  <text class="tiny" x="627" y="492" text-anchor="middle">VLM + SpecGuard</text>
+  <path class="line graph" d="M612 362 C560 396 250 392 164 428"/>
+  <path class="line data" d="M653 362 C620 398 487 397 402 428"/>
+  <path class="line safety" d="M704 362 C740 400 715 416 634 428"/>
 
-  <!-- → -->
-  <line x1="106" y1="90" x2="164" y2="90" stroke="#2563eb" stroke-width="1.8" marker-end="url(#ab)"/>
-  <text x="135" y="82" text-anchor="middle" fill="#2563eb" font-size="9" font-weight="600">task</text>
+  <rect class="box devicebox" x="278" y="548" width="238" height="58" rx="9"/>
+  <text class="name" x="397" y="572" text-anchor="middle">Action Execution</text>
+  <text class="small" x="397" y="590" text-anchor="middle">DeviceActionIR -> backend command</text>
+  <path class="line action" d="M163 506 C164 536 262 552 274 576"/>
+  <path class="line action" d="M395 506 V544"/>
+  <path class="line action" d="M627 506 C625 536 532 552 520 576"/>
+  <path class="line data" d="M278 577 H92 V327 H74"/>
+  <text class="tag" x="108" y="562" fill="#2563eb">next screenshot</text>
 
-  <!-- ClarificationAgent -->
-  <rect x="168" y="62" width="220" height="56" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-width="1.8" filter="url(#sh)"/>
-  <text x="278" y="84" text-anchor="middle" fill="#c2410c" font-size="12" font-weight="700">ClarificationAgent</text>
-  <text x="278" y="100" text-anchor="middle" fill="#9a3412" font-size="9">规则 → Memory偏好 → VLM (三层短路)</text>
+  <!-- Model/device lane -->
+  <rect class="section" x="830" y="244" width="412" height="388" rx="10"/>
+  <text class="section-title" x="852" y="270">MODEL AND DEVICE ABSTRACTION</text>
+  <rect class="box modelbox" x="864" y="294" width="160" height="64" rx="8"/>
+  <text class="name" x="944" y="318" text-anchor="middle">ModelClient</text>
+  <text class="small" x="944" y="336" text-anchor="middle">OpenAI-compatible</text>
+  <rect class="box modelbox" x="1052" y="294" width="152" height="64" rx="8"/>
+  <text class="name" x="1128" y="318" text-anchor="middle">Adapters</text>
+  <text class="small" x="1128" y="336" text-anchor="middle">5 VLM styles</text>
+  <rect class="box modelbox" x="864" y="390" width="340" height="78" rx="8"/>
+  <text class="name" x="1034" y="414" text-anchor="middle">ProtocolBridge</text>
+  <text class="small" x="1034" y="432" text-anchor="middle">native model coordinates -> DeviceActionIR</text>
+  <text class="tiny" x="1034" y="450" text-anchor="middle">AutoGLM [0,1000], UI-TARS smart_resize, Qwen/MAI/GUI-Owl [0,999]</text>
+  <rect class="box devicebox" x="864" y="504" width="340" height="76" rx="8"/>
+  <text class="name" x="1034" y="528" text-anchor="middle">DeviceFactory</text>
+  <text class="small" x="1034" y="546" text-anchor="middle">Android ADB | HarmonyOS HDC | iOS XCTest/WDA</text>
+  <text class="tiny" x="1034" y="564" text-anchor="middle">screenshot, tap, swipe, text, app management</text>
+  <path class="line data" d="M1024 326 H1048"/>
+  <path class="line data" d="M1034 358 V386"/>
+  <path class="line action" d="M1034 468 V500"/>
+  <path class="line data" d="M480 469 C620 420 740 350 860 326"/>
 
-  <!-- → -->
-  <line x1="388" y1="90" x2="454" y2="90" stroke="#2563eb" stroke-width="1.8" marker-end="url(#ab)"/>
-  <text x="421" y="82" text-anchor="middle" fill="#2563eb" font-size="9" font-weight="600">clarified task</text>
+  <!-- Memory/graph lane -->
+  <rect class="section" x="38" y="666" width="1204" height="178" rx="10"/>
+  <text class="section-title" x="60" y="692">MEMORY, GRAPH STORAGE, AND QUALITY-CONTROLLED EVOLUTION</text>
+  <rect class="box memorybox" x="78" y="716" width="190" height="72" rx="8"/>
+  <text class="name" x="173" y="740" text-anchor="middle">Vector Memory</text>
+  <text class="small" x="173" y="758" text-anchor="middle">FAISS + embedding</text>
+  <text class="tiny" x="173" y="774" text-anchor="middle">preferences, contacts, history</text>
+  <rect class="box memorybox" x="318" y="716" width="190" height="72" rx="8"/>
+  <text class="name" x="413" y="740" text-anchor="middle">UnifiedSession</text>
+  <text class="small" x="413" y="758" text-anchor="middle">progress, products</text>
+  <text class="tiny" x="413" y="774" text-anchor="middle">constraints, recent steps</text>
+  <rect class="box graphbox" x="558" y="716" width="190" height="72" rx="8"/>
+  <text class="name" x="653" y="740" text-anchor="middle">Local Staging</text>
+  <text class="small" x="653" y="758" text-anchor="middle">_local_states/_edges</text>
+  <text class="tiny" x="653" y="774" text-anchor="middle">persist=false online</text>
+  <rect class="box graphbox" x="798" y="716" width="190" height="72" rx="8"/>
+  <text class="name" x="893" y="740" text-anchor="middle">Quality Gate</text>
+  <text class="small" x="893" y="758" text-anchor="middle">canonicalize -> promote</text>
+  <text class="tiny" x="893" y="774" text-anchor="middle">filter bad edges/data items</text>
+  <rect class="box graphbox" x="1038" y="716" width="148" height="72" rx="8"/>
+  <text class="name" x="1112" y="740" text-anchor="middle">Neo4j AMSG</text>
+  <text class="small" x="1112" y="758" text-anchor="middle">UIState-Action</text>
+  <text class="tiny" x="1112" y="774" text-anchor="middle">persistent graph</text>
+  <path class="line memory" d="M268 752 H314"/>
+  <path class="line memory" d="M413 716 C410 660 394 636 394 610"/>
+  <path class="line graph" d="M748 752 H794"/>
+  <path class="line graph" d="M988 752 H1034"/>
+  <path class="line graph" d="M653 716 C655 660 656 610 656 366"/>
+  <path class="line memory" d="M173 716 C174 620 300 200 334 196"/>
 
-  <!-- PhoneAgent -->
-  <rect x="458" y="58" width="200" height="64" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2.2" filter="url(#sh)"/>
-  <rect x="462" y="62" width="192" height="56" rx="10" fill="none" stroke="#93c5fd" stroke-width="0.7"/>
-  <text x="558" y="84" text-anchor="middle" fill="#1e40af" font-size="14" font-weight="700">PhoneAgent</text>
-  <text x="558" y="102" text-anchor="middle" fill="#3b82f6" font-size="9">截图→推理→动作 主循环编排</text>
-
-  <!-- TaskSpecExtractor (shared, below ClarificationAgent) -->
-  <rect x="168" y="138" width="148" height="42" rx="8" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="242" y="156" text-anchor="middle" fill="#854d0e" font-size="11" font-weight="700">TaskSpecExtractor</text>
-  <text x="242" y="170" text-anchor="middle" fill="#a16207" font-size="9">统一槽位提取</text>
-
-  <!-- ClarificationAgent ↔ TaskSpecExtractor -->
-  <line x1="278" y1="118" x2="254" y2="134" stroke="#ca8a04" stroke-width="1.5" marker-end="url(#ay)"/>
-  <text x="256" y="128" fill="#a16207" font-size="8" font-weight="600">extract</text>
-
-  <!-- ════════════════════════════════════════════════════ -->
-  <!-- ROW 2: Perception → Planning → Routing             -->
-  <!-- ════════════════════════════════════════════════════ -->
-
-  <!-- PageClassifier -->
-  <rect x="80" y="226" width="160" height="50" rx="8" fill="#ffffff" stroke="#334155" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="160" y="248" text-anchor="middle" fill="#111827" font-size="12" font-weight="700">PageClassifier</text>
-  <text x="160" y="262" text-anchor="middle" fill="#64748b" font-size="9">VLM 页面语义分类</text>
-
-  <!-- SpatialGraphMemory -->
-  <rect x="290" y="226" width="200" height="50" rx="8" fill="#f0fdf4" stroke="#059669" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="390" y="248" text-anchor="middle" fill="#065f46" font-size="12" font-weight="700">SpatialGraphMemory</text>
-  <text x="390" y="262" text-anchor="middle" fill="#047857" font-size="9">locate() → plan() → RoutePlan</text>
-
-  <!-- RuntimeController -->
-  <rect x="540" y="226" width="190" height="50" rx="8" fill="#ffffff" stroke="#334155" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="635" y="248" text-anchor="middle" fill="#111827" font-size="12" font-weight="700">RuntimeController</text>
-  <text x="635" y="262" text-anchor="middle" fill="#64748b" font-size="9">Navigate / Explore / Verify</text>
-
-  <!-- PhoneAgent → PageClassifier -->
-  <path d="M 500,122 L 500,190 L 200,190 L 160,222" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#ab)"/>
-  <text x="340" y="186" text-anchor="middle" fill="#2563eb" font-size="9" font-weight="600">screenshot</text>
-
-  <!-- PageClassifier → SpatialGraphMemory -->
-  <line x1="240" y1="251" x2="286" y2="251" stroke="#334155" stroke-width="1.5" marker-end="url(#ab)"/>
-  <text x="263" y="243" text-anchor="middle" fill="#64748b" font-size="8">page_type</text>
-
-  <!-- SpatialGraphMemory → RuntimeController -->
-  <line x1="490" y1="251" x2="536" y2="251" stroke="#059669" stroke-width="1.5" marker-end="url(#ag)"/>
-  <text x="513" y="243" text-anchor="middle" fill="#059669" font-size="8">belief + plan</text>
-
-  <!-- TaskSpecExtractor → SpatialGraphMemory (GoalSpec slots) -->
-  <path d="M 316,159 Q 400,159 400,222" stroke="#ca8a04" stroke-width="1.3" fill="none" marker-end="url(#ay)"/>
-  <text x="370" y="190" text-anchor="middle" fill="#a16207" font-size="8" font-weight="600">slot_dict</text>
-
-  <!-- ════════════════════════════════════════════════════ -->
-  <!-- ROW 3: Three execution modes + SpecGuard            -->
-  <!-- ════════════════════════════════════════════════════ -->
-
-  <!-- Navigate -->
-  <rect x="80" y="326" width="170" height="50" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="165" y="348" text-anchor="middle" fill="#065f46" font-size="12" font-weight="700">Navigate</text>
-  <text x="165" y="362" text-anchor="middle" fill="#047857" font-size="9">图谱直接执行 · 跳过 VLM</text>
-
-  <!-- Explore -->
-  <rect x="290" y="326" width="200" height="50" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="390" y="348" text-anchor="middle" fill="#1e40af" font-size="12" font-weight="700">Explore (VLM)</text>
-  <text x="390" y="362" text-anchor="middle" fill="#3b82f6" font-size="9">Adapter → Model → parse → 执行</text>
-
-  <!-- Verify -->
-  <rect x="540" y="326" width="190" height="50" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="635" y="348" text-anchor="middle" fill="#991b1b" font-size="12" font-weight="700">Verify</text>
-  <text x="635" y="362" text-anchor="middle" fill="#b91c1c" font-size="9">VLM + SpecGuard (高风险页面)</text>
-
-  <!-- RuntimeController → 3 modes -->
-  <path d="M 580,276 L 580,296 L 165,296 L 165,322" stroke="#059669" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
-  <text x="370" y="290" text-anchor="middle" fill="#059669" font-size="9" font-weight="600">conf ≥ 0.7 · normal risk</text>
-
-  <line x1="635" y1="276" x2="635" y2="322" stroke="#2563eb" stroke-width="1.5" marker-end="url(#ab)"/>
-  <text x="650" y="300" fill="#2563eb" font-size="9" font-weight="600">explore</text>
-
-  <path d="M 690,276 L 690,296 L 850,296 L 850,270 L 730,270 L 690,296" stroke="none" fill="none"/>
-  <path d="M 700,276 L 700,296 L 635,296 L 635,322" stroke="#dc2626" stroke-width="1.5" fill="none" stroke-dasharray="5,3"/>
-  <!-- Verify shares the same box but triggered by high risk - use the Explore arrow for position, add label -->
-  <path d="M 690,276 L 730,296 L 730,322" stroke="#dc2626" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
-  <text x="754" y="300" fill="#dc2626" font-size="9" font-weight="600">risk=high</text>
-
-  <!-- SpecGuard -->
-  <rect x="790" y="326" width="150" height="50" rx="8" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="865" y="348" text-anchor="middle" fill="#991b1b" font-size="12" font-weight="700">SpecGuard</text>
-  <text x="865" y="362" text-anchor="middle" fill="#b91c1c" font-size="9">提交前 SKU 校验</text>
-
-  <!-- SpecGuard ← TaskSpecExtractor -->
-  <path d="M 242,180 L 242,200 L 865,200 L 865,322" stroke="#ca8a04" stroke-width="1.3" fill="none" marker-end="url(#ay)"/>
-  <text x="554" y="194" text-anchor="middle" fill="#a16207" font-size="8" font-weight="600">spec_dict</text>
-
-  <!-- SpecGuard → Verify (intercept action) -->
-  <path d="M 790,351 L 740,351" stroke="#dc2626" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
-  <text x="765" y="345" text-anchor="middle" fill="#dc2626" font-size="8">intercept</text>
-
-  <!-- ════════════════════════════════════════════════════ -->
-  <!-- ROW 4: Device + Staging                             -->
-  <!-- ════════════════════════════════════════════════════ -->
-
-  <!-- DeviceFactory -->
-  <rect x="290" y="426" width="200" height="50" rx="8" fill="#ffffff" stroke="#334155" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="390" y="448" text-anchor="middle" fill="#111827" font-size="12" font-weight="700">DeviceFactory</text>
-  <text x="390" y="462" text-anchor="middle" fill="#64748b" font-size="9">ADB · HDC · XCTest (三平台)</text>
-
-  <!-- All modes → Device -->
-  <path d="M 165,376 L 165,396 L 340,422" stroke="#ea580c" stroke-width="1.5" fill="none" marker-end="url(#ao)"/>
-  <path d="M 390,376 L 390,422" stroke="#ea580c" stroke-width="1.5" fill="none" marker-end="url(#ao)"/>
-  <path d="M 635,376 L 635,396 L 440,422" stroke="#ea580c" stroke-width="1.5" fill="none" marker-end="url(#ao)"/>
-  <text x="500" y="410" text-anchor="middle" fill="#ea580c" font-size="9" font-weight="600">execute action</text>
-
-  <!-- Staging Cache -->
-  <rect x="570" y="426" width="200" height="50" rx="8" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
-  <text x="670" y="444" text-anchor="middle" fill="#065f46" font-size="11" font-weight="700">Local Staging Cache</text>
-  <text x="670" y="460" text-anchor="middle" fill="#047857" font-size="9">record_observation(persist=false)</text>
-
-  <!-- Explore → Staging -->
-  <path d="M 490,360 L 530,360 L 530,420 L 580,436" stroke="#059669" stroke-width="1.3" fill="none" marker-end="url(#ag)"/>
-  <text x="545" y="392" fill="#059669" font-size="8" font-weight="600">stage</text>
-
-  <!-- Device → screenshot loop back -->
-  <path d="M 290,451 L 50,451 L 50,90 L 54,90" stroke="#2563eb" stroke-width="1.3" fill="none" marker-end="url(#ab)" stroke-dasharray="6,3"/>
-  <text x="38" y="270" fill="#2563eb" font-size="9" font-weight="600" transform="rotate(-90,38,270)">screenshot loop</text>
-
-  <!-- ════════════════════════════════════════════════════ -->
-  <!-- ROW 5: Memory + Graph Storage                       -->
-  <!-- ════════════════════════════════════════════════════ -->
-
-  <!-- MemoryStore -->
-  <rect x="80" y="530" width="190" height="60" rx="8" fill="#faf5ff" stroke="#9333ea" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="175" y="554" text-anchor="middle" fill="#5b21b6" font-size="12" font-weight="700">MemoryStore</text>
-  <text x="175" y="570" text-anchor="middle" fill="#7c3aed" font-size="9">FAISS 2048d · 用户偏好/联系人</text>
-  <text x="175" y="582" text-anchor="middle" fill="#7c3aed" font-size="8">按需检索 (RetrievalGateway)</text>
-
-  <!-- Neo4j -->
-  <rect x="310" y="530" width="190" height="60" rx="8" fill="#f0fdf4" stroke="#059669" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="405" y="554" text-anchor="middle" fill="#065f46" font-size="12" font-weight="700">Neo4j (AMSG)</text>
-  <text x="405" y="570" text-anchor="middle" fill="#047857" font-size="9">UIState → Action → UIState</text>
-  <text x="405" y="582" text-anchor="middle" fill="#047857" font-size="8">门控写入 · promotable only</text>
-
-  <!-- UnifiedSessionState -->
-  <rect x="540" y="530" width="200" height="60" rx="8" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
-  <text x="640" y="554" text-anchor="middle" fill="#c2410c" font-size="12" font-weight="700">UnifiedSessionState</text>
-  <text x="640" y="570" text-anchor="middle" fill="#9a3412" font-size="9">商品 · 步骤 · 约束 · 进度</text>
-  <text x="640" y="582" text-anchor="middle" fill="#9a3412" font-size="8">每轮注入轻量级摘要</text>
-
-  <!-- StatusReporter -->
-  <rect x="790" y="530" width="150" height="60" rx="8" fill="#ffffff" stroke="#334155" stroke-width="1.2" stroke-dasharray="4,3"/>
-  <text x="865" y="554" text-anchor="middle" fill="#111827" font-size="12" font-weight="700">StatusReporter</text>
-  <text x="865" y="570" text-anchor="middle" fill="#64748b" font-size="9">记忆/图谱/澄清/守卫</text>
-  <text x="865" y="582" text-anchor="middle" fill="#64748b" font-size="8">CLI + webui 可观测</text>
-
-  <!-- Staging → Neo4j (gated) -->
-  <path d="M 670,476 L 670,496 L 460,520 L 440,526" stroke="#059669" stroke-width="1.8" fill="none" marker-end="url(#ag)"/>
-  <rect x="510" y="494" width="136" height="16" rx="3" fill="#ecfdf5" stroke="none"/>
-  <text x="578" y="506" text-anchor="middle" fill="#059669" font-size="9" font-weight="700">flush_staged_graph</text>
-  <text x="578" y="518" text-anchor="middle" fill="#059669" font-size="8">canonicalize → promote</text>
-
-  <!-- MemoryStore → ClarificationAgent (preferences) -->
-  <path d="M 120,530 L 120,500 L 80,500 L 80,160 L 164,160" stroke="#9333ea" stroke-width="1.3" fill="none" marker-end="url(#ap)" stroke-dasharray="6,3"/>
-  <text x="68" y="340" fill="#9333ea" font-size="8" font-weight="600" transform="rotate(-90,68,340)">user preferences</text>
-
-  <!-- Memory → PhoneAgent (context injection) -->
-  <path d="M 175,530 L 175,510 L 558,510 L 558,490 L 558,122" stroke="#9333ea" stroke-width="1.3" fill="none" marker-end="url(#ap)" stroke-dasharray="6,3"/>
-  <text x="368" y="504" text-anchor="middle" fill="#9333ea" font-size="9" font-weight="600">context injection</text>
-
-  <!-- Neo4j → SpatialGraphMemory (graph query) -->
-  <path d="M 405,530 L 405,510 L 390,280" stroke="#059669" stroke-width="1.3" fill="none" marker-end="url(#ag)" stroke-dasharray="6,3"/>
-  <text x="412" y="400" fill="#059669" font-size="8" font-weight="600" transform="rotate(-90,412,400)">graph query</text>
-
-  <!-- ════════════════════════════════════════════════════ -->
-  <!-- LEGEND                                               -->
-  <!-- ════════════════════════════════════════════════════ -->
-
-  <rect x="40" y="618" width="980" height="90" rx="8" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
-
-  <!-- Arrow legend -->
-  <text x="60" y="638" fill="#111827" font-size="11" font-weight="700">Arrow Legend</text>
-  <line x1="60" y1="656" x2="92" y2="656" stroke="#2563eb" stroke-width="1.8" marker-end="url(#ab)"/>
-  <text x="100" y="660" fill="#64748b" font-size="10">数据流</text>
-  <line x1="160" y1="656" x2="192" y2="656" stroke="#059669" stroke-width="1.8" marker-end="url(#ag)"/>
-  <text x="200" y="660" fill="#64748b" font-size="10">图谱 (门控写入)</text>
-  <line x1="310" y1="656" x2="342" y2="656" stroke="#9333ea" stroke-width="1.5" stroke-dasharray="6,3" marker-end="url(#ap)"/>
-  <text x="350" y="660" fill="#64748b" font-size="10">记忆读取/注入</text>
-  <line x1="470" y1="656" x2="502" y2="656" stroke="#dc2626" stroke-width="1.5" marker-end="url(#ar)"/>
-  <text x="510" y="660" fill="#64748b" font-size="10">安全拦截</text>
-  <line x1="590" y1="656" x2="622" y2="656" stroke="#ea580c" stroke-width="1.5" marker-end="url(#ao)"/>
-  <text x="630" y="660" fill="#64748b" font-size="10">动作执行</text>
-  <line x1="710" y1="656" x2="742" y2="656" stroke="#ca8a04" stroke-width="1.5" marker-end="url(#ay)"/>
-  <text x="750" y="660" fill="#64748b" font-size="10">共享提取</text>
-
-  <!-- Shape legend -->
-  <text x="60" y="688" fill="#111827" font-size="11" font-weight="700">Module Legend</text>
-  <rect x="160" y="676" width="40" height="18" rx="6" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
-  <text x="208" y="690" fill="#64748b" font-size="10">编排器</text>
-  <rect x="270" y="676" width="40" height="18" rx="6" fill="#fefce8" stroke="#ca8a04" stroke-width="1.5"/>
-  <text x="318" y="690" fill="#64748b" font-size="10">共享基础设施</text>
-  <rect x="420" y="676" width="40" height="18" rx="6" fill="#ecfdf5" stroke="#059669" stroke-width="1.5"/>
-  <text x="468" y="690" fill="#64748b" font-size="10">图谱相关</text>
-  <rect x="540" y="676" width="40" height="18" rx="6" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5"/>
-  <text x="588" y="690" fill="#64748b" font-size="10">安全守卫</text>
-  <rect x="650" y="676" width="40" height="18" rx="6" fill="#ffffff" stroke="#334155" stroke-width="1.2" stroke-dasharray="4,3"/>
-  <text x="698" y="690" fill="#64748b" font-size="10">可选/观测</text>
+  <rect x="38" y="858" width="1204" height="28" rx="6" fill="#f8fafc" stroke="#e2e8f0"/>
+  <path class="line data" d="M70 872 H116"/>
+  <text class="tiny" x="126" y="876">data/control</text>
+  <path class="line graph" d="M232 872 H278"/>
+  <text class="tiny" x="288" y="876">graph query/write</text>
+  <path class="line memory" d="M438 872 H484"/>
+  <text class="tiny" x="494" y="876">memory retrieval/injection</text>
+  <path class="line safety" d="M700 872 H746"/>
+  <text class="tiny" x="756" y="876">safety interception</text>
+  <path class="line action" d="M910 872 H956"/>
+  <text class="tiny" x="966" y="876">device action</text>
 </svg>
