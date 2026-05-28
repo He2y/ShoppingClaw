@@ -62,13 +62,84 @@ Agent 每步执行遵循 **感知 → 定位 → 路由 → 执行 → 记录** 
 
 ## 4. 空间图谱 (AMSG)
 
+### 4.1 图谱是什么
+
+AMSG（Active Mobile Spatial Graph）是一个**语义级的应用导航图谱**。与 UI 元素树或像素特征不同，它工作在功能语义层——关注的是"这个页面能做什么、怎么到下一个页面"。
+
+```
+            AMSG 图谱示例 (淘宝购物流)
+
+  [home] ──tap_search──→ [search_input] ──type+submit──→ [search_result]
+                                                              │
+                                                        tap_product
+                                                              ▼
+  [cart] ←──confirm──── [spec_selection] ←──tap_spec── [product_detail]
+```
+
+### 4.2 节点设计：PageNode
+
+每个节点代表一个**语义页面状态**，用三元组 `(landmarks, affordances, slots)` 描述：
+
+| 属性 | 含义 | 示例 (search_result 页) |
+|------|------|----------------------|
+| **landmarks** | 页面上的关键 UI 要素 | 搜索框, 商品卡片, 筛选栏, 排序按钮 |
+| **affordances** | 该页面可执行的操作 | tap_search, open_product, open_filter, sort |
+| **slots** | 任务相关的动态值 | query="iPhone 17", price="¥8999" |
+
+另外每个节点携带 **risk_level**（normal / medium / high），决定 Agent 是否能直接走图谱路径：
+
+- `normal`（home, search_result, product_detail）→ 图谱导航可直接执行
+- `medium`（spec_selection, cart）→ 图谱导航但降低置信度阈值
+- `high`（checkout, payment, login）→ 即使有路径也必须 VLM 验证
+
+这种语义表示的优势在于**对 UI 改版鲁棒**：淘宝改了首页布局，只要"搜索框+商品卡片"的语义不变，图谱节点仍然有效。
+
+### 4.3 边设计：AffordanceEdge
+
+每条边代表一次**页面间的语义转换**，携带：
+
+| 属性 | 作用 |
+|------|------|
+| **intent** | 语义意图（click, type_text, scroll, go_back）|
+| **semantic_target** | 操作对象（"搜索框", "加入购物车按钮"）|
+| **expected_postcondition** | 执行后预期到达的页面类型 |
+| **confidence** | 可靠性，基于历史成功/失败统计自动更新 |
+| **weighted_cost** | 路径规划权重：`1.0 + failure_rate×3 + risk_penalty − confidence×0.3` |
+
+边的 `semantic_edge_key`（由 `source_type|intent|target|region|target_type` 组成）用于去重——同一语义转换不会因为坐标微小偏移产生重复边。
+
+特殊的**复合边（Compound）**：将"输入关键词 → 提交搜索"合成为一条带 `<query>` 槽位的模板边，运行时填入实际搜索词即可复用。
+
+### 4.4 Agent 如何检索图谱获得路线
+
+当 Agent 收到一个任务（如"去淘宝买 iPhone 17 Pro Max 银色 512G，加入购物车"），图谱检索分三步：
+
+**Step 1: 目标推断（GoalSpec）**
+从任务文本提取目标页面类型和槽位：
+- "加入购物车" → 目标页面 = `spec_selection`（加购按钮在规格选择弹窗上）
+- "iPhone 17 Pro Max 银色 512G" → slots = {query, color, storage}
+
+**Step 2: 当前定位（locate）**
+将当前截图的 PageClassifier 分类结果与图谱中的节点匹配：
+- 输入：当前 app=淘宝, page_type=home, semantic_signature
+- 输出：`PageBelief`（最佳匹配节点 + 置信度 0.92）
+
+**Step 3: 路径规划（plan）**
+在图谱上执行 Dijkstra 最短路径搜索：
+- 起点：当前节点（home）
+- 终点：目标页面类型（spec_selection）
+- 权重：edge.weighted_cost（综合成功率、风险、置信度）
+- 输出：`RoutePlan`（mode=navigate, 路径=[home → search_input → search_result → product_detail → spec_selection], 下一步动作）
+
+如果置信度 ≥ 0.7 且 risk ≠ high，Agent 直接执行图谱给出的动作（**Navigate 模式**），跳过 VLM 推理。否则回退到 VLM（**Explore 模式**），同时将新观测暂存到本地缓存供未来使用。
+
+### 4.5 建图管线
+
 ![AMSG Pipeline](docs/architecture-amsg-pipeline.svg)
 
-AMSG 是一个**语义级的应用导航图谱**——节点是页面状态（home, search_result, product_detail...），边是转换动作（tap_search, add_to_cart...），工作在功能语义层而非像素层。
+5 阶段管线：截图 → PageClassifier 分类 → 语义提取 → 节点去重 → 边构建 → 功能发现
 
-**建图管线**：截图 → PageClassifier 分类 → 语义提取（landmarks, affordances, slots）→ 节点去重 → 边构建 → 功能发现
-
-**图谱质量门控**（v4.1 关键改进）：
+### 4.6 图谱质量门控（v4.1）
 
 | 写入路径 | 策略 | 门控 |
 |---------|------|------|
@@ -76,7 +147,7 @@ AMSG 是一个**语义级的应用导航图谱**——节点是页面状态（ho
 | 任务成功 | `flush_staged_graph()` → canonicalize → promote | 去重 + 质量过滤 |
 | 任务失败 | 丢弃 | 坏转换不入库 |
 
-**功能发现过滤**：只有可操作功能（`open_search`, `add_to_cart`）入库，瞬态数据（具体价格 `¥8999`、商品标题）不入库。
+**功能发现过滤**：只有可操作功能（`open_search`, `add_to_cart`）入库，瞬态数据（具体价格、商品标题）不入库。
 
 ---
 
