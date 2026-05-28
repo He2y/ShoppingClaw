@@ -215,4 +215,73 @@
   <text x="796" y="896" fill="#374151" font-size="10">共享 TaskSpecExtractor 提取规格</text>
   <text x="796" y="912" fill="#374151" font-size="10">校验 SKU 匹配 → 放行 / Interact 拦截</text>
   <text x="796" y="930" fill="#9a3412" font-size="10" font-weight="600">两者互补: 意图补全 + 安全兜底</text>
+
+  <!-- ═══════════════════════════════════════════════════ -->
+  <!-- INTER-LAYER ARROWS (labeled module relationships)  -->
+  <!-- ═══════════════════════════════════════════════════ -->
+  <defs>
+    <marker id="arrow-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+  </defs>
+
+  <!-- Entry → Agent: task input -->
+  <path d="M 185,138 L 185,155 L 150,189" stroke="#2563eb" stroke-width="1.8" fill="none" marker-end="url(#arrow-blue)"/>
+  <rect x="130" y="154" width="38" height="14" rx="2" fill="#fff" stroke="none"/>
+  <text x="149" y="164" text-anchor="middle" fill="#2563eb" font-size="9" font-weight="600">task</text>
+
+  <path d="M 355,138 L 355,155 L 270,189" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#arrow-blue)"/>
+  <path d="M 525,138 L 525,155 L 380,189" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#arrow-blue)"/>
+
+  <!-- ClarificationAgent → Core (TaskSpecExtractor) -->
+  <path d="M 640,242 L 640,260 L 360,285" stroke="#dc2626" stroke-width="1.5" fill="none" marker-end="url(#arrow-red)"/>
+  <rect x="440" y="258" width="110" height="14" rx="2" fill="#fff" stroke="none"/>
+  <text x="495" y="268" text-anchor="middle" fill="#dc2626" font-size="9" font-weight="600">extract specs</text>
+
+  <!-- Core (TaskSpecExtractor) → SpecGuard -->
+  <line x1="380" y1="317" x2="398" y2="317" stroke="#dc2626" stroke-width="1.5" marker-end="url(#arrow-red)"/>
+
+  <!-- Core (TaskSpecExtractor) → Memory+Spatial (GoalSpec slots) -->
+  <path d="M 230,338 L 230,360 L 610,360 L 610,392" stroke="#ea580c" stroke-width="1.5" fill="none" marker-end="url(#arrow-orange)"/>
+  <rect x="356" y="350" width="88" height="14" rx="2" fill="#fff" stroke="none"/>
+  <text x="400" y="360" text-anchor="middle" fill="#ea580c" font-size="9" font-weight="600">slot_dict / specs</text>
+
+  <!-- Agent → Model Layer (VLM inference) -->
+  <path d="M 160,242 L 160,260 L 180,392" stroke="#9333ea" stroke-width="1.8" fill="none" marker-end="url(#arrow-purple)"/>
+  <rect x="120" y="316" width="60" height="14" rx="2" fill="#fff" stroke="none"/>
+  <text x="150" y="326" text-anchor="middle" fill="#9333ea" font-size="9" font-weight="600">VLM call</text>
+
+  <!-- Agent → Memory+Spatial (locate + plan) -->
+  <path d="M 320,242 L 320,260 L 700,370 L 780,392" stroke="#16a34a" stroke-width="1.8" fill="none" marker-end="url(#arrow-green)"/>
+  <rect x="482" y="310" width="100" height="14" rx="2" fill="#fff" stroke="none"/>
+  <text x="532" y="320" text-anchor="middle" fill="#16a34a" font-size="9" font-weight="600">locate + plan</text>
+
+  <!-- Memory → Agent (context injection) -->
+  <path d="M 620,394 L 380,280 L 340,242" stroke="#16a34a" stroke-width="1.5" fill="none" marker-end="url(#arrow-green)" stroke-dasharray="6,3"/>
+  <rect x="434" y="306" width="96" height="14" rx="2" fill="#fff" stroke="none"/>
+  <text x="482" y="316" text-anchor="middle" fill="#16a34a" font-size="9" font-weight="600">inject context</text>
+
+  <!-- Action → Device (execute) -->
+  <path d="M 415,534 L 415,560 L 300,600 L 300,635" stroke="#ea580c" stroke-width="1.8" fill="none" marker-end="url(#arrow-orange)"/>
+  <rect x="326" y="578" width="62" height="14" rx="2" fill="#fff" stroke="none"/>
+  <text x="357" y="588" text-anchor="middle" fill="#ea580c" font-size="9" font-weight="600">execute</text>
+
+  <!-- Memory/Spatial → Storage (gated write) -->
+  <path d="M 780,562 L 780,580 L 610,628" stroke="#16a34a" stroke-width="1.5" fill="none" marker-end="url(#arrow-green)"/>
+  <rect x="672" y="586" width="86" height="14" rx="2" fill="#fff" stroke="none"/>
+  <text x="715" y="596" text-anchor="middle" fill="#16a34a" font-size="9" font-weight="600">gated write</text>
+
+  <path d="M 620,534 L 620,560 L 760,628" stroke="#9333ea" stroke-width="1.5" fill="none" marker-end="url(#arrow-purple)" stroke-dasharray="6,3"/>
+  <rect x="650" y="570" width="76" height="14" rx="2" fill="#fff" stroke="none"/>
+  <text x="688" y="580" text-anchor="middle" fill="#9333ea" font-size="9" font-weight="600">embedding</text>
+
+  <!-- SpecGuard → Action (intercept) -->
+  <path d="M 510,338 L 510,360 L 460,380 L 420,394" stroke="#dc2626" stroke-width="1.5" fill="none" marker-end="url(#arrow-red)" stroke-dasharray="5,3"/>
+  <rect x="444" y="368" width="64" height="14" rx="2" fill="#fff" stroke="none"/>
+  <text x="476" y="378" text-anchor="middle" fill="#dc2626" font-size="9" font-weight="600">intercept</text>
+
+  <!-- Device → Agent (screenshot loop) -->
+  <path d="M 160,698 L 60,698 L 60,217 L 76,217" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#arrow-blue)" stroke-dasharray="6,3"/>
+  <rect x="24" y="448" width="70" height="14" rx="2" fill="#fff" stroke="none"/>
+  <text x="59" y="458" text-anchor="middle" fill="#2563eb" font-size="9" font-weight="600">screenshot</text>
 </svg>
