@@ -94,8 +94,10 @@ class PhoneAgent:
         confirmation_callback: Callable[[str], bool] | None = None,
         takeover_callback: Callable[[str], None] | None = None,
         clarification_callback: Callable[[str], str] | None = None,
+        status_callback: Callable | None = None,
     ):
         self.clarification_callback = clarification_callback
+        self.status_callback = status_callback
         self.model_config = model_config or ModelConfig()
         self.agent_config = agent_config or AgentConfig()
 
