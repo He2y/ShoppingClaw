@@ -1,152 +1,220 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 900" width="1280" height="900" role="img" aria-labelledby="title desc">
-  <title id="title">Three-layer memory architecture</title>
-  <desc id="desc">Detailed memory architecture showing vector memory, graph memory, session state, retrieval gateway triggers, clarification integration, context injection, and task lifecycle.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 820" width="1200" height="820">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+  </style>
   <defs>
-    <marker id="m-blue" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#2563eb"/></marker>
-    <marker id="m-green" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#047857"/></marker>
-    <marker id="m-purple" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#7c3aed"/></marker>
-    <marker id="m-red" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#dc2626"/></marker>
-    <marker id="m-orange" markerWidth="9" markerHeight="8" refX="8" refY="4" orient="auto"><path d="M0,0 L9,4 L0,8 Z" fill="#ea580c"/></marker>
-    <style>
-      text { font-family: Arial, Helvetica, sans-serif; }
-      .title { font-size: 24px; font-weight: 700; fill: #111827; }
-      .subtitle { font-size: 13px; fill: #4b5563; }
-      .section { fill: #fbfcfe; stroke: #cbd5e1; stroke-width: 1.2; }
-      .section-title { font-size: 12px; font-weight: 700; fill: #334155; letter-spacing: .5px; }
-      .box { fill: #fff; stroke: #334155; stroke-width: 1.3; }
-      .blue { fill: #eff6ff; stroke: #2563eb; }
-      .green { fill: #ecfdf5; stroke: #047857; }
-      .purple { fill: #faf5ff; stroke: #7c3aed; }
-      .red { fill: #fef2f2; stroke: #dc2626; }
-      .orange { fill: #fff7ed; stroke: #ea580c; }
-      .gray { fill: #f8fafc; stroke: #94a3b8; }
-      .name { font-size: 14px; font-weight: 700; fill: #111827; }
-      .small { font-size: 10.5px; fill: #475569; }
-      .tiny { font-size: 9.5px; fill: #64748b; }
-      .line { fill: none; stroke-width: 1.75; stroke-linecap: round; stroke-linejoin: round; }
-      .data { stroke: #2563eb; marker-end: url(#m-blue); }
-      .graph { stroke: #047857; marker-end: url(#m-green); }
-      .memory { stroke: #7c3aed; marker-end: url(#m-purple); stroke-dasharray: 6 4; }
-      .risk { stroke: #dc2626; marker-end: url(#m-red); }
-      .action { stroke: #ea580c; marker-end: url(#m-orange); }
-    </style>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+    <marker id="arrow-green-dash" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#9333ea"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
   </defs>
 
-  <rect width="1280" height="900" fill="#fff"/>
-  <text class="title" x="640" y="36" text-anchor="middle">Three-Layer Memory Architecture and Runtime Collaboration</text>
-  <text class="subtitle" x="640" y="58" text-anchor="middle">Memory is not injected wholesale: stable knowledge is retrieved selectively, graph knowledge guides navigation, and session state stays lightweight.</text>
+  <rect width="1200" height="820" fill="#ffffff"/>
+  <text x="600" y="32" text-anchor="middle" fill="#111827" font-size="20" font-weight="700">三层记忆架构 + Core 基础设施 + 门控写入</text>
+  <text x="600" y="52" text-anchor="middle" fill="#6b7280" font-size="12">v4.1: TaskSpecExtractor 统一提取 · StatusReporter 可观测 · flush_staged_graph 审核入库</text>
 
-  <!-- Runtime and core -->
-  <rect class="box blue" x="438" y="88" width="270" height="64" rx="10"/>
-  <text class="name" x="573" y="114" text-anchor="middle">PhoneAgent</text>
-  <text class="small" x="573" y="133" text-anchor="middle">main GUI control loop</text>
-  <rect class="box orange" x="748" y="88" width="230" height="64" rx="10"/>
-  <text class="name" x="863" y="114" text-anchor="middle">ClarificationAgent</text>
-  <text class="small" x="863" y="133" text-anchor="middle">pre-task ambiguity resolution</text>
-  <rect class="box red" x="1018" y="88" width="190" height="64" rx="10"/>
-  <text class="name" x="1113" y="114" text-anchor="middle">Core Services</text>
-  <text class="small" x="1113" y="133" text-anchor="middle">TaskSpec, Guard, Status</text>
-  <path class="line data" d="M708 120 H744"/>
-  <path class="line risk" d="M978 120 H1014"/>
+  <!-- ═══ Agent + Core (Top) ═══ -->
+  <rect x="280" y="68" width="340" height="54" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2.5" filter="url(#shadow)"/>
+  <rect x="283" y="71" width="334" height="48" rx="10" fill="none" stroke="#93c5fd" stroke-width="0.8"/>
+  <text x="320" y="92" fill="#2563eb" font-size="15">🤖</text>
+  <text x="342" y="92" fill="#1e40af" font-size="15" font-weight="700">PhoneAgent</text>
+  <text x="450" y="112" text-anchor="middle" fill="#3b82f6" font-size="10">截图→推理→动作 主循环</text>
 
-  <!-- Three layers -->
-  <rect class="section" x="40" y="198" width="370" height="344" rx="10"/>
-  <text class="section-title" x="62" y="224">LAYER 1: VECTOR SEMANTIC MEMORY</text>
-  <rect class="box purple" x="80" y="254" width="292" height="74" rx="9"/>
-  <text class="name" x="226" y="280" text-anchor="middle">MemoryStore + FAISS</text>
-  <text class="small" x="226" y="299" text-anchor="middle">2048-d embedding index for cross-session knowledge</text>
-  <rect class="box" x="80" y="356" width="132" height="34" rx="6"/>
-  <text class="small" x="146" y="377" text-anchor="middle">USER_PREFERENCE</text>
-  <rect class="box" x="240" y="356" width="132" height="34" rx="6"/>
-  <text class="small" x="306" y="377" text-anchor="middle">CONTACT</text>
-  <rect class="box" x="80" y="404" width="132" height="34" rx="6"/>
-  <text class="small" x="146" y="425" text-anchor="middle">TASK_PATTERN</text>
-  <rect class="box" x="240" y="404" width="132" height="34" rx="6"/>
-  <text class="small" x="306" y="425" text-anchor="middle">APP_USAGE</text>
-  <rect class="box" x="80" y="452" width="132" height="34" rx="6"/>
-  <text class="small" x="146" y="473" text-anchor="middle">CORRECTION</text>
-  <rect class="box" x="240" y="452" width="132" height="34" rx="6"/>
-  <text class="small" x="306" y="473" text-anchor="middle">BRAND_AFFINITY</text>
-  <text class="tiny" x="226" y="516" text-anchor="middle">Used by ClarificationAgent to fill missing shopping slots before asking the user.</text>
+  <!-- Core layer badge -->
+  <rect x="650" y="68" width="290" height="54" rx="10" fill="#fef2f2" stroke="#dc2626" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="670" y="90" fill="#dc2626" font-size="12" font-weight="700">Core 基础设施</text>
+  <text x="670" y="108" fill="#b91c1c" font-size="9">TaskSpecExtractor · SpecGuard · StatusReporter</text>
 
-  <rect class="section" x="455" y="198" width="370" height="344" rx="10"/>
-  <text class="section-title" x="477" y="224">LAYER 2: GRAPH STRUCTURAL MEMORY</text>
-  <rect class="box green" x="495" y="254" width="292" height="74" rx="9"/>
-  <text class="name" x="641" y="280" text-anchor="middle">SpatialGraphMemory</text>
-  <text class="small" x="641" y="299" text-anchor="middle">semantic navigation graph over page states</text>
-  <rect class="box green" x="495" y="356" width="132" height="44" rx="7"/>
-  <text class="small" x="561" y="382" text-anchor="middle">locate()</text>
-  <rect class="box green" x="655" y="356" width="132" height="44" rx="7"/>
-  <text class="small" x="721" y="382" text-anchor="middle">plan()</text>
-  <rect class="box green" x="495" y="430" width="292" height="58" rx="8"/>
-  <text class="name" x="641" y="454" text-anchor="middle">Gated Persistence</text>
-  <text class="small" x="641" y="473" text-anchor="middle">record_observation(persist=false) -> flush on success</text>
-  <text class="tiny" x="641" y="516" text-anchor="middle">Provides known paths for Navigate mode and postconditions for Verify mode.</text>
+  <!-- StatusReporter output example -->
+  <rect x="970" y="68" width="190" height="54" rx="8" fill="#111827" stroke="#374151" stroke-width="1"/>
+  <text x="980" y="84" fill="#86efac" font-size="8" font-family="monospace">[i] [memory] 偏好:3 图谱:OK</text>
+  <text x="980" y="96" fill="#fbbf24" font-size="8" font-family="monospace">[i] [clarify] 缺颜色,容量</text>
+  <text x="980" y="108" fill="#86efac" font-size="8" font-family="monospace">[i] [graph] 更新:6页 8转换</text>
 
-  <rect class="section" x="870" y="198" width="370" height="344" rx="10"/>
-  <text class="section-title" x="892" y="224">LAYER 3: SESSION STATE</text>
-  <rect class="box blue" x="910" y="254" width="292" height="74" rx="9"/>
-  <text class="name" x="1056" y="280" text-anchor="middle">UnifiedSessionState</text>
-  <text class="small" x="1056" y="299" text-anchor="middle">lightweight state for the current task</text>
-  <rect class="box" x="910" y="356" width="132" height="34" rx="6"/>
-  <text class="small" x="976" y="377" text-anchor="middle">step history</text>
-  <rect class="box" x="1070" y="356" width="132" height="34" rx="6"/>
-  <text class="small" x="1136" y="377" text-anchor="middle">visited products</text>
-  <rect class="box" x="910" y="404" width="132" height="34" rx="6"/>
-  <text class="small" x="976" y="425" text-anchor="middle">constraints</text>
-  <rect class="box" x="1070" y="404" width="132" height="34" rx="6"/>
-  <text class="small" x="1136" y="425" text-anchor="middle">stagnation</text>
-  <rect class="box blue" x="910" y="468" width="292" height="34" rx="7"/>
-  <text class="small" x="1056" y="489" text-anchor="middle">progress summary injected every step</text>
-  <text class="tiny" x="1056" y="516" text-anchor="middle">Carries recent task context without loading full long-term memory.</text>
+  <!-- ═══ Layer 1: Vector Semantic Memory ═══ -->
+  <rect x="40" y="152" width="320" height="310" rx="12" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="60" y="172" fill="#7c3aed" font-size="11" font-weight="700">LAYER 1: 向量语义记忆</text>
+  <text x="60" y="188" fill="#9333ea" font-size="10">MemoryStore — 跨会话持久化</text>
 
-  <!-- Connections from runtime -->
-  <path class="line memory" d="M520 152 C390 168 230 168 226 194"/>
-  <path class="line graph" d="M573 152 C600 170 630 174 641 194"/>
-  <path class="line data" d="M640 152 C800 172 1036 166 1056 194"/>
-  <path class="line memory" d="M226 542 C250 604 770 610 862 152"/>
-  <path class="line graph" d="M641 542 C640 612 582 650 574 156"/>
-  <path class="line data" d="M1056 542 C1020 610 740 638 574 156"/>
+  <!-- FAISS cylinder -->
+  <ellipse cx="140" cy="218" rx="50" ry="12" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+  <rect x="90" y="218" width="100" height="42" fill="#ede9fe" stroke="none"/>
+  <line x1="90" y1="218" x2="90" y2="260" stroke="#7c3aed" stroke-width="1.5"/>
+  <line x1="190" y1="218" x2="190" y2="260" stroke="#7c3aed" stroke-width="1.5"/>
+  <ellipse cx="140" cy="260" rx="50" ry="12" fill="#c4b5fd" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="140" y="246" text-anchor="middle" fill="#5b21b6" font-size="11" font-weight="700">FAISS 2048d</text>
 
-  <!-- Retrieval gateway -->
-  <rect class="section" x="40" y="586" width="1200" height="118" rx="10"/>
-  <text class="section-title" x="62" y="612">RETRIEVALGATEWAY: SELECTIVE DEEP RETRIEVAL</text>
-  <rect class="box orange" x="76" y="636" width="170" height="42" rx="7"/>
-  <text class="small" x="161" y="653" text-anchor="middle">uncertainty</text>
-  <text class="tiny" x="161" y="668" text-anchor="middle">"not sure", "forgot"</text>
-  <rect class="box orange" x="284" y="636" width="170" height="42" rx="7"/>
-  <text class="small" x="369" y="653" text-anchor="middle">comparison</text>
-  <text class="tiny" x="369" y="668" text-anchor="middle">"which is cheaper"</text>
-  <rect class="box orange" x="492" y="636" width="170" height="42" rx="7"/>
-  <text class="small" x="577" y="653" text-anchor="middle">calculation</text>
-  <text class="tiny" x="577" y="668" text-anchor="middle">"total price"</text>
-  <rect class="box orange" x="700" y="636" width="170" height="42" rx="7"/>
-  <text class="small" x="785" y="653" text-anchor="middle">recall</text>
-  <text class="tiny" x="785" y="668" text-anchor="middle">"previous item"</text>
-  <rect class="box orange" x="908" y="636" width="170" height="42" rx="7"/>
-  <text class="small" x="993" y="653" text-anchor="middle">stagnation</text>
-  <text class="tiny" x="993" y="668" text-anchor="middle">same action x3</text>
-  <rect class="box green" x="1110" y="636" width="96" height="42" rx="7"/>
-  <text class="small" x="1158" y="653" text-anchor="middle">inject</text>
-  <text class="tiny" x="1158" y="668" text-anchor="middle">minimal context</text>
-  <path class="line action" d="M1078 657 H1106"/>
+  <!-- Embedding Client -->
+  <rect x="210" y="216" width="130" height="36" rx="6" fill="#fff" stroke="#d1d5db" stroke-width="1"/>
+  <text x="275" y="232" text-anchor="middle" fill="#111827" font-size="10" font-weight="600">EmbeddingClient</text>
+  <text x="275" y="246" text-anchor="middle" fill="#6b7280" font-size="9">BigModel Embedding-3</text>
 
-  <!-- Injection and lifecycle -->
-  <rect class="section" x="40" y="736" width="1200" height="126" rx="10"/>
-  <text class="section-title" x="62" y="762">TASK LIFECYCLE AND VLM CONTEXT INJECTION</text>
-  <rect class="box purple" x="80" y="788" width="246" height="46" rx="8"/>
-  <text class="small" x="203" y="806" text-anchor="middle">task start: similar tasks + preferences</text>
-  <text class="tiny" x="203" y="822" text-anchor="middle">MemoryManager.start_task()</text>
-  <rect class="box orange" x="374" y="788" width="246" height="46" rx="8"/>
-  <text class="small" x="497" y="806" text-anchor="middle">each step: progress + retrieval signals</text>
-  <text class="tiny" x="497" y="822" text-anchor="middle">record_step(), get_injection_context()</text>
-  <rect class="box red" x="668" y="788" width="246" height="46" rx="8"/>
-  <text class="small" x="791" y="806" text-anchor="middle">risk page: SpecGuard hint</text>
-  <text class="tiny" x="791" y="822" text-anchor="middle">expected color/storage/size</text>
-  <rect class="box green" x="962" y="788" width="246" height="46" rx="8"/>
-  <text class="small" x="1085" y="806" text-anchor="middle">task end: save memory + graph commit</text>
-  <text class="tiny" x="1085" y="822" text-anchor="middle">end_task(), flush_staged_graph()</text>
-  <path class="line memory" d="M326 811 H370"/>
-  <path class="line data" d="M620 811 H664"/>
-  <path class="line graph" d="M914 811 H958"/>
+  <!-- Memory types -->
+  <rect x="60" y="284" width="100" height="24" rx="4" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="110" y="300" text-anchor="middle" fill="#5b21b6" font-size="9">USER_PREFERENCE</text>
+  <rect x="168" y="284" width="80" height="24" rx="4" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="208" y="300" text-anchor="middle" fill="#5b21b6" font-size="9">CONTACT</text>
+  <rect x="256" y="284" width="90" height="24" rx="4" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="301" y="300" text-anchor="middle" fill="#5b21b6" font-size="9">TASK_PATTERN</text>
+  <rect x="60" y="314" width="90" height="24" rx="4" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="105" y="330" text-anchor="middle" fill="#5b21b6" font-size="9">APP_USAGE</text>
+  <rect x="158" y="314" width="100" height="24" rx="4" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="208" y="330" text-anchor="middle" fill="#5b21b6" font-size="9">BRAND_AFFINITY</text>
+  <rect x="266" y="314" width="84" height="24" rx="4" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="308" y="330" text-anchor="middle" fill="#5b21b6" font-size="9">CORRECTION</text>
+
+  <!-- Extraction via TaskSpecExtractor -->
+  <rect x="60" y="350" width="280" height="30" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
+  <text x="200" y="369" text-anchor="middle" fill="#dc2626" font-size="10" font-weight="600">提取来源: TaskSpecExtractor.extract(task)</text>
+
+  <!-- Search formula -->
+  <rect x="60" y="390" width="280" height="30" rx="6" fill="#fff" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="200" y="406" text-anchor="middle" fill="#111827" font-size="10">Score = 0.7 × cosine_sim + 0.3 × importance</text>
+  <text x="200" y="420" text-anchor="middle" fill="#6b7280" font-size="9">去重: sim ≥ 0.85 → 合并</text>
+
+  <!-- ClarificationAgent consultation -->
+  <rect x="60" y="430" width="280" height="28" rx="6" fill="#fff7ed" stroke="#fed7aa" stroke-width="1"/>
+  <text x="200" y="448" text-anchor="middle" fill="#c2410c" font-size="10" font-weight="600">ClarificationAgent Layer 2: 偏好填充缺失规格</text>
+
+  <!-- ═══ Layer 2: Graph Memory ═══ -->
+  <rect x="380" y="152" width="440" height="310" rx="12" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="400" y="172" fill="#16a34a" font-size="11" font-weight="700">LAYER 2: 图结构记忆</text>
+  <text x="400" y="188" fill="#15803d" font-size="10">SpatialGraphMemory — 导航知识 + 门控写入</text>
+
+  <!-- Neo4j -->
+  <ellipse cx="490" cy="218" rx="50" ry="12" fill="#dbeafe" stroke="#008CC1" stroke-width="1.5"/>
+  <rect x="440" y="218" width="100" height="42" fill="#dbeafe" stroke="none"/>
+  <line x1="440" y1="218" x2="440" y2="260" stroke="#008CC1" stroke-width="1.5"/>
+  <line x1="540" y1="218" x2="540" y2="260" stroke="#008CC1" stroke-width="1.5"/>
+  <ellipse cx="490" cy="260" rx="50" ry="12" fill="#93c5fd" stroke="#008CC1" stroke-width="1.5"/>
+  <text x="490" y="246" text-anchor="middle" fill="#1e40af" font-size="11" font-weight="700">Neo4j</text>
+
+  <!-- Graph operations -->
+  <rect x="570" y="212" width="230" height="30" rx="6" fill="#fff" stroke="#86efac" stroke-width="1"/>
+  <text x="685" y="228" text-anchor="middle" fill="#166534" font-size="10" font-weight="600">locate() → PageBelief (定位)</text>
+  <text x="685" y="238" text-anchor="middle" fill="#6b7280" font-size="9">Dijkstra plan() → RoutePlan</text>
+
+  <!-- NEW: Gated write flow -->
+  <rect x="400" y="282" width="400" height="86" rx="8" fill="#dcfce7" stroke="#16a34a" stroke-width="1.5"/>
+  <text x="416" y="300" fill="#166534" font-size="10" font-weight="700">门控写入流程 (v4.1)</text>
+  <text x="416" y="318" fill="#374151" font-size="10">每步: record_observation(persist=False) → 本地缓存</text>
+  <text x="416" y="334" fill="#374151" font-size="10">成功: flush_staged_graph() → canonicalize → promote</text>
+  <text x="416" y="350" fill="#dc2626" font-size="10">失败: 丢弃 (坏转换不入库)</text>
+  <text x="416" y="362" fill="#15803d" font-size="9">FunctionalityItem: 仅 is_promotable=true 入库</text>
+
+  <!-- Path cost -->
+  <rect x="400" y="380" width="400" height="30" rx="6" fill="#fff" stroke="#86efac" stroke-width="1"/>
+  <text x="600" y="399" text-anchor="middle" fill="#111827" font-size="10">路径权重 = 1.0 + failure_rate × 3 + risk_penalty - conf × 0.3</text>
+
+  <!-- TaskIndex -->
+  <rect x="400" y="420" width="160" height="26" rx="4" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="480" y="437" text-anchor="middle" fill="#166534" font-size="10">TaskIndex (FAISS)</text>
+
+  <!-- ═══ Layer 3: Session State ═══ -->
+  <rect x="840" y="152" width="320" height="310" rx="12" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="860" y="172" fill="#ea580c" font-size="11" font-weight="700">LAYER 3: 会话状态</text>
+  <text x="860" y="188" fill="#c2410c" font-size="10">UnifiedSessionState — 单次任务</text>
+
+  <rect x="860" y="204" width="280" height="136" rx="8" fill="#fff" stroke="#ea580c" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="870" y="220" fill="#ea580c" font-size="9" font-weight="600">SESSION</text>
+  <rect x="870" y="230" width="120" height="22" rx="4" fill="#fed7aa" stroke="#fb923c" stroke-width="1"/>
+  <text x="930" y="245" text-anchor="middle" fill="#9a3412" font-size="9">商品列表 (状态)</text>
+  <rect x="998" y="230" width="130" height="22" rx="4" fill="#fed7aa" stroke="#fb923c" stroke-width="1"/>
+  <text x="1063" y="245" text-anchor="middle" fill="#9a3412" font-size="9">步骤历史</text>
+  <rect x="870" y="258" width="120" height="22" rx="4" fill="#fed7aa" stroke="#fb923c" stroke-width="1"/>
+  <text x="930" y="273" text-anchor="middle" fill="#9a3412" font-size="9">约束条件</text>
+  <rect x="998" y="258" width="130" height="22" rx="4" fill="#fed7aa" stroke="#fb923c" stroke-width="1"/>
+  <text x="1063" y="273" text-anchor="middle" fill="#9a3412" font-size="9">进度追踪</text>
+  <rect x="870" y="286" width="120" height="22" rx="4" fill="#fed7aa" stroke="#fb923c" stroke-width="1"/>
+  <text x="930" y="301" text-anchor="middle" fill="#9a3412" font-size="9">当前页面/应用</text>
+  <rect x="998" y="286" width="130" height="22" rx="4" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
+  <text x="1063" y="301" text-anchor="middle" fill="#dc2626" font-size="9">停滞检测</text>
+  <text x="1000" y="330" text-anchor="middle" fill="#9a3412" font-size="9">轻量级 → 每轮注入进度摘要</text>
+
+  <!-- RetrievalGateway -->
+  <rect x="860" y="354" width="280" height="56" rx="8" fill="#fff" stroke="#ea580c" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="876" y="374" fill="#ea580c" font-size="12">🔍</text>
+  <text x="896" y="374" fill="#c2410c" font-size="11" font-weight="700">RetrievalGateway</text>
+  <text x="1000" y="392" text-anchor="middle" fill="#9a3412" font-size="9">按需触发: "不确定" / "对比" / "多少钱" / 停滞</text>
+  <text x="1000" y="406" text-anchor="middle" fill="#6b7280" font-size="9">非每步注入 → 降低 VLM 上下文污染</text>
+
+  <!-- ═══ Arrows: Agent ↔ Layers ═══ -->
+  <path d="M 320,122 Q 200,140 200,150" stroke="#9333ea" stroke-width="1.5" fill="none" marker-end="url(#arrow-purple)"/>
+  <text x="230" y="140" fill="#9333ea" font-size="9" font-weight="600">retrieve</text>
+  <path d="M 450,122 L 500,150" stroke="#16a34a" stroke-width="1.5" fill="none" marker-end="url(#arrow-green)"/>
+  <text x="462" y="140" fill="#16a34a" font-size="9" font-weight="600">locate+plan</text>
+  <path d="M 580,122 Q 900,140 960,150" stroke="#ea580c" stroke-width="1.5" fill="none" marker-end="url(#arrow-orange)"/>
+  <text x="780" y="136" fill="#ea580c" font-size="9" font-weight="600">inject progress</text>
+
+  <!-- Core → ClarificationAgent flow -->
+  <path d="M 795,95 Q 830,95 830,140 L 200,140 L 200,150" stroke="#dc2626" stroke-width="1" fill="none" stroke-dasharray="4,2" marker-end="url(#arrow-red)"/>
+  <text x="500" y="136" fill="#dc2626" font-size="8">ClarificationAgent 查询偏好</text>
+
+  <!-- ═══ Bottom: Context Injection ═══ -->
+  <rect x="40" y="488" width="1120" height="170" rx="12" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="60" y="510" fill="#111827" font-size="12" font-weight="700">VLM 上下文注入格式 (注入到最后一条 user 消息的 text 开头)</text>
+
+  <rect x="60" y="522" width="340" height="120" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1"/>
+  <text x="76" y="540" fill="#16a34a" font-size="10" font-weight="600">图谱语义上下文 (Layer 2)</text>
+  <text x="76" y="558" fill="#374151" font-size="10">"你当前在淘宝的商品详情页。"</text>
+  <text x="76" y="574" fill="#374151" font-size="10">"下一步建议: 点击"加入购物车""</text>
+  <text x="76" y="590" fill="#374151" font-size="10">"(confidence: 0.85)"</text>
+  <text x="76" y="614" fill="#9a3412" font-size="9">来源: RuntimeController → locate+plan</text>
+
+  <rect x="420" y="522" width="340" height="120" rx="8" fill="#fff7ed" stroke="#fed7aa" stroke-width="1"/>
+  <text x="436" y="540" fill="#ea580c" font-size="10" font-weight="600">记忆进度上下文 (Layer 3)</text>
+  <text x="436" y="558" fill="#374151" font-size="10">[进度] 打开淘宝→搜索→浏览</text>
+  <text x="436" y="574" fill="#374151" font-size="10">[商品] iPhone 17 Pro Max ¥8999</text>
+  <text x="436" y="590" fill="#374151" font-size="10">[约束] 银色, 512G</text>
+  <text x="436" y="614" fill="#9a3412" font-size="9">来源: UnifiedState.progress_summary()</text>
+
+  <rect x="780" y="522" width="360" height="120" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
+  <text x="796" y="540" fill="#dc2626" font-size="10" font-weight="600">SpecGuard 提示 (core/spec_guard.py)</text>
+  <text x="796" y="558" fill="#374151" font-size="10">[SpecGuard] 用户已指定规格：</text>
+  <text x="796" y="574" fill="#374151" font-size="10">颜色=银色，容量=512G</text>
+  <text x="796" y="590" fill="#374151" font-size="10">请选择后再点击确认/加入购物车</text>
+  <text x="796" y="614" fill="#9a3412" font-size="9">来源: SpecGuard.get_context_hints()</text>
+  <text x="796" y="628" fill="#9a3412" font-size="9">提取: TaskSpecExtractor.extract(task)</text>
+
+  <!-- ═══ Legend ═══ -->
+  <rect x="40" y="672" width="1120" height="140" rx="8" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="60" y="694" fill="#111827" font-size="12" font-weight="700">v4.1 记忆系统变更</text>
+
+  <rect x="60" y="706" width="350" height="94" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
+  <text x="76" y="724" fill="#dc2626" font-size="10" font-weight="700">Core 基础设施集成</text>
+  <text x="76" y="742" fill="#374151" font-size="10">TaskSpecExtractor: 统一提取，被 4 模块共享</text>
+  <text x="76" y="758" fill="#374151" font-size="10">SpecGuard: 独立模块，显式传参</text>
+  <text x="76" y="774" fill="#374151" font-size="10">StatusReporter: CLI 可见记忆/图谱状态</text>
+  <text x="76" y="790" fill="#374151" font-size="10">ClarificationAgent: 查询偏好填充缺失规格</text>
+
+  <rect x="430" y="706" width="350" height="94" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1"/>
+  <text x="446" y="724" fill="#16a34a" font-size="10" font-weight="700">图谱写入门控</text>
+  <text x="446" y="742" fill="#374151" font-size="10">在线: persist=False → 本地缓存</text>
+  <text x="446" y="758" fill="#374151" font-size="10">成功: flush_staged_graph → canonicalize → Neo4j</text>
+  <text x="446" y="774" fill="#374151" font-size="10">失败: 丢弃 (坏转换不污染图谱)</text>
+  <text x="446" y="790" fill="#374151" font-size="10">Functionality: 仅 promotable 入库</text>
+
+  <rect x="800" y="706" width="340" height="94" rx="6" fill="#fff7ed" stroke="#fed7aa" stroke-width="1"/>
+  <text x="816" y="724" fill="#ea580c" font-size="10" font-weight="700">可观测性输出 (StatusReporter)</text>
+  <text x="816" y="742" fill="#374151" font-size="10">[i] [memory] 偏好:N 图谱:OK 相似:M</text>
+  <text x="816" y="758" fill="#374151" font-size="10">[i] [clarify] 缺失规格 / Memory命中</text>
+  <text x="816" y="774" fill="#374151" font-size="10">[i] [graph] 更新:P页 T转换 (过滤F)</text>
+  <text x="816" y="790" fill="#374151" font-size="10">[i] [spec_guard] 放行 / 拦截原因</text>
 </svg>
