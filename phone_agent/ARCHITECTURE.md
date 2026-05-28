@@ -78,21 +78,22 @@ AMSG（Active Mobile Spatial Graph）是一个**语义级的应用导航图谱**
 
 ### 4.2 节点设计：PageNode
 
-每个节点代表一个**语义页面状态**，用三元组 `(landmarks, affordances, slots)` 描述：
+每个节点代表一个**语义页面状态**。核心标识是 `page_type`（如 home、search_result、product_detail），描述"这是什么页面"；辅以 landmarks 和 affordances 描述"页面上有什么、能做什么"。
 
-| 属性 | 含义 | 示例 (search_result 页) |
-|------|------|----------------------|
-| **landmarks** | 页面上的关键 UI 要素 | 搜索框, 商品卡片, 筛选栏, 排序按钮 |
-| **affordances** | 该页面可执行的操作 | tap_search, open_product, open_filter, sort |
-| **slots** | 任务相关的动态值 | query="iPhone 17", price="¥8999" |
+**节点关键属性**：
 
-另外每个节点携带 **risk_level**（normal / medium / high），决定 Agent 是否能直接走图谱路径：
+| 属性 | 设计意义 |
+|------|---------|
+| **page_type** | 节点的主标识。17 种语义类型（home, search_input, search_result, product_detail, spec_selection, cart, checkout, payment...）|
+| **landmarks** | **看到什么**——页面上可观测的关键 UI 要素（搜索框、商品卡片、价格标签、筛选栏）。来自两个来源的合并：Schema YAML 先验知识 + 运行时 PageClassifier 从截图提取的 elements |
+| **affordances** | **能做什么**——该页面提供的操作能力（open_search、open_product、add_to_cart、filter）。同样由 Schema 先验 + 运行时推断合并而来 |
+| **slots** | 当前观测到的动态值（query="iPhone 17"、price="¥8999"）。注意：这是**观测值**，不是模板参数 |
+| **risk_level** | 安全分级，由 Schema 中的 page_type 映射决定：`normal` → 可直接导航，`medium` → 降低置信度阈值，`high`（checkout/payment/login）→ 强制 VLM 验证 |
+| **semantic_signature** | 去重键，由 `app|domain|page_type|landmarks|affordances|slots` 拼接后哈希。同一语义页面在不同截图间产生相同签名 → 合并为一个节点，避免变体膨胀 |
 
-- `normal`（home, search_result, product_detail）→ 图谱导航可直接执行
-- `medium`（spec_selection, cart）→ 图谱导航但降低置信度阈值
-- `high`（checkout, payment, login）→ 即使有路径也必须 VLM 验证
+**landmarks vs affordances 的区别**：landmarks 回答"页面长什么样"（视觉锚点），affordances 回答"用户下一步能做什么"（动作空间）。图谱路由时，affordances 决定从当前页面可以走哪些边；landmarks 用于定位匹配（当前截图是否对应这个节点）。
 
-这种语义表示的优势在于**对 UI 改版鲁棒**：淘宝改了首页布局，只要"搜索框+商品卡片"的语义不变，图谱节点仍然有效。
+**对 UI 改版鲁棒的原因**：节点的身份不是像素或坐标，而是 `page_type` + 语义签名。淘宝改了首页布局，只要"搜索框 + 商品推荐"的语义结构不变，节点仍然匹配。
 
 ### 4.3 边设计：AffordanceEdge
 
