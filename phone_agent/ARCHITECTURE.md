@@ -1,6 +1,6 @@
 # ClawGUI-Agent 系统架构文档
 
-> **版本**: v4 (AMSG Runtime)  
+> **版本**: v4.1 (AMSG Runtime + Unified Core)  
 > **最后更新**: 2026-05-28  
 > **适用读者**: 不熟悉本项目的研究者、开发者
 
@@ -29,7 +29,7 @@
 |------|---------|---------------------|
 | **VLM 推理成本高** | 每一步都需要截图→VLM→动作，单任务 10-50 步，延迟和费用不可忽视 | 空间图谱导航模式：已知路径直接跳过 VLM，0 推理成本执行 |
 | **跨会话记忆缺失** | 每次任务从零开始，不学习用户偏好，不复用已探索路径 | 三层记忆架构：向量语义记忆 + Neo4j 图记忆 + 会话状态 |
-| **购物安全风险** | Agent 可能误操作付款、下单错误规格 | SpecGuard 机制 + 风险分级 + VLM 验证门 |
+| **购物安全风险** | Agent 可能误操作付款、下单错误规格 | SpecGuard + ClarificationAgent 双层防护 + 风险分级 |
 
 ### 1.2 核心理念
 
@@ -37,10 +37,10 @@
 传统 Agent:   截图 → VLM推理 → 动作 → 截图 → VLM推理 → 动作 → ...（每步都依赖VLM）
 
 ClawGUI-Agent: 截图 → 图谱定位 ─┬→ [已知路径] → 图谱导航 → 直接执行（跳过VLM）
-                               └→ [未知场景] → VLM推理 → 执行 → 同时建图（扩展图谱）
+                               └→ [未知场景] → VLM推理 → 执行 → 本地暂存观测（任务结束后审核入库）
 ```
 
-这构成了一个**自进化闭环**：Agent 每一次执行都在扩展图谱，使未来的同类任务越来越快。
+这构成了一个**质量可控的自进化闭环**：Agent 执行时收集观测，任务成功后经过去重和质量过滤才写入图谱。
 
 ---
 
@@ -54,11 +54,12 @@ ClawGUI-Agent: 截图 → 图谱定位 ─┬→ [已知路径] → 图谱导航
 
 | 层级 | 路径 | 核心文件 |
 |------|------|---------|
-| Agent 编排 | `phone_agent/` | `agent.py` (66K), `agent_ios.py`, `clarify.py`, `device_factory.py` |
+| Agent 编排 | `phone_agent/` | `agent.py`, `agent_ios.py`, `clarify.py`, `device_factory.py` |
+| **Core 基础设施** | `phone_agent/core/` | **`task_spec.py`** (统一槽位提取), **`spec_guard.py`** (购物安全), **`status.py`** (可观测性) |
 | 模型层 | `phone_agent/model/` | `adapters.py`, `client.py`, `protocol_bridge.py` |
 | 动作层 | `phone_agent/actions/` | `handler.py` + 4 个特化 handler |
-| 记忆层 | `phone_agent/memory/` | `memory_manager.py` (93K), `graph_store.py` (66K), `spatial_graph_memory.py` (102K) |
-| 空间层 | `phone_agent/spatial/` | 19 个模块，含 `runtime_controller.py`, `core.py`, `functionality.py` |
+| 记忆层 | `phone_agent/memory/` | `memory_manager.py`, `graph_store.py`, `spatial_graph_memory.py` |
+| 空间层 | `phone_agent/spatial/` | `runtime_controller.py`, `core.py`, `functionality.py` 等 19 模块 |
 | 设备层 | `phone_agent/{adb,hdc,xctest}/` | 各含 `connection.py`, `device.py`, `input.py`, `screenshot.py` |
 | 配置层 | `phone_agent/config/` | 提示词模板 × 5 模型 × 2 语言，购物配置，应用映射 |
 
@@ -66,7 +67,119 @@ ClawGUI-Agent: 截图 → 图谱定位 ─┬→ [已知路径] → 图谱导航
 
 ## 3. 核心模块设计
 
-### 3.1 Model Layer — 多模型适配
+### 3.1 Core 基础设施层 (`phone_agent/core/`)
+
+v4.1 新增的基础设施层，为 Agent 编排、记忆系统、空间图谱提供共享能力。**无外部依赖，位于依赖图的叶子层**。
+
+```
+core/task_spec.py      ← 无依赖
+core/spec_guard.py     ← 依赖 core/task_spec
+core/status.py         ← 无依赖
+```
+
+#### 3.1.1 TaskSpecExtractor — 统一槽位提取
+
+**解决的问题**：规格/槽位提取逻辑此前分散在 4 处（agent.py、spatial_graph_memory.py、memory_manager.py、clarify.py），正则模式不同、命名不统一（中文 vs 英文）、覆盖范围不一致。
+
+**设计**：
+
+```python
+@dataclass(frozen=True)
+class TaskSlots:
+    query: str = ""        # 搜索关键词
+    product: str = ""      # 商品名
+    price: str = ""        # 价格
+    color: str = ""        # 颜色 (24 种)
+    storage: str = ""      # 容量 (TB/GB/G)
+    size: str = ""         # 尺码 (S~XXXL)
+    contact: str = ""      # 联系人
+    app: str = ""          # 应用名
+    domain: str = "general"  # shopping / food_delivery / general
+
+    spec_dict → dict[str, str]   # 中文键 {"颜色": "银色"}，兼容 SpecGuard
+    slot_dict → dict[str, str]   # 英文键 {"color": "银色"}，兼容 GoalSpec
+    missing_shopping_specs → list[str]  # 缺失的购物规格
+```
+
+**消费者**：
+
+| 模块 | 使用方式 |
+|------|---------|
+| ClarificationAgent | `extract(task)` → 判断是否需要澄清 + 识别缺失规格 |
+| SpecGuard | `extract(task).spec_dict` → 提交前校验规格匹配 |
+| GoalSpec | `extract(task).slot_dict` → 空间图谱路径规划 |
+| MemoryManager | `extract(task)` → 偏好/联系人/应用自动提取 |
+
+#### 3.1.2 SpecGuard — 购物安全守卫
+
+**设计初衷**：在购买提交前（add_to_cart、checkout、payment）添加最后一道防线，校验用户期望的 SKU 是否与当前页面选择一致。
+
+**从 agent.py 提取为独立模块**（原 ~310 行内联代码），接口显式传参，不再穿透 PhoneAgent 内部状态：
+
+```python
+class SpecGuard:
+    def get_context_hints(current_app, page_type, task, vlm_plan) -> list[str]
+        """购物关键页面注入 VLM 提示"""
+
+    def check(action, thinking, current_app, page_type, task, vlm_plan) -> dict | None
+        """提交前安全校验，返回修改后的 Interact action 或 None（放行）"""
+```
+
+**与 ClarificationAgent 的协作**：两者共享 `TaskSpecExtractor` 提取规格，但职责互补：
+- ClarificationAgent：**任务开始前**补全缺失信息，提高 VLM 规划精度
+- SpecGuard：**购买提交前**校验已选规格，防止误操作
+
+#### 3.1.3 StatusReporter — 可观测性
+
+**解决的问题**：记忆系统、图谱连接、澄清决策此前是黑盒——CLI 用户无法判断子系统是否可用。
+
+```python
+class StatusReporter:
+    def emit(source: str, level: str, message: str, **details) -> None
+```
+
+**关键输出点**：
+
+```
+[i] [memory] 记忆系统就绪 | 偏好: 3条 | 图谱: Neo4j 已连接 | 相似任务: 2条
+[i] [clarify] 检测到购物任务 | 缺失: 颜色, 容量 | Memory 命中: 容量=512G (历史偏好)
+[*] [clarify] 仍缺 颜色 → 向用户询问
+[i] [graph]   图谱更新: 6 页面, 8 转换 (过滤 3)
+[i] [spec_guard] 规格选择页 | 用户要求: 银色+512G | 当前选中: ✓ 匹配 → 放行
+```
+
+### 3.2 ClarificationAgent — 任务意图补全
+
+**设计初衷**：用户提出模糊请求（"买个 iPhone"缺颜色容量）时，主动向用户补充信息。补全后的任务文本影响下游所有环节——GoalSpec 槽位更准确、图谱路由更精确、VLM 规划更高效。
+
+**三层短路设计**：
+
+```
+任务文本 "在京东买个 iPhone 17 Pro Max"
+  │
+  ├→ Layer 1: TaskSpecExtractor.extract(task)          ← 规则 (0ms)
+  │   domain=shopping, query="iPhone 17 Pro Max"
+  │   缺失: 颜色, 容量, 尺码
+  │   → 非购物任务? → 直接返回 CLEAR
+  │   → 规格齐全? → 直接返回 CLEAR
+  │
+  ├→ Layer 2: Memory 偏好查询                            ← 历史偏好
+  │   检查 user_preferences 是否能填充缺失槽位
+  │   → "容量=512G" 来自历史偏好 → 填充
+  │   → 所有缺失填满? → 返回 CLEAR + 偏好注入任务文本
+  │
+  └→ Layer 3: VLM 歧义检测                              ← 仅购物+仍有缺失
+      _detect_ambiguity() → CLARIFY: "请问您想要什么颜色？"
+      → 通过 clarification_callback 询问用户
+      → _reconstruct_task() → "在京东买 iPhone 17 Pro Max 银色 512G，加入购物车"
+```
+
+**相比旧版的改进**：
+- 非购物任务（"打开计算器"）不再浪费 VLM 调用
+- Memory 偏好主动参与消歧，减少不必要的用户打断
+- `skip_reason` 字段提供决策可观测性
+
+### 3.3 Model Layer — 多模型适配
 
 系统支持 5 种 VLM，通过 **Adapter Pattern** 统一接口：
 
@@ -82,71 +195,15 @@ ModelType ─┤─── QwenVLAdapter ──── [0, 999] 归一化 + tool_c
            └─── GUIOwlAdapter ──── [0, 999] + 文本操作历史
 ```
 
-**每个 Adapter 负责**：
-1. `get_system_prompt()` — 模型专属提示词（含坐标系声明、动作格式定义）
-2. `build_messages()` — 构建对话消息（处理图片数量限制、历史压缩）
-3. `parse_response()` — 解析模型输出为 `(thinking, action)` 二元组
+**ProtocolBridge** 将所有模型的原生坐标统一为 `DeviceActionIR`，坐标转换路径：**模型原生空间 → DeviceActionIR → absolute 像素 → 设备执行**。
 
-**ProtocolBridge** 将所有模型的原生坐标统一为 `DeviceActionIR`：
-
-```python
-@dataclass
-class DeviceActionIR:
-    action_type: str              # "click", "type", "scroll", "system_button", ...
-    coordinate: tuple[float, float] | None
-    coordinate_space: str          # "normalized_999", "normalized_1000", "absolute", ...
-    screen_size: tuple[int, int]
-    source_model: str
-    text: str | None = None
-    metadata: dict = field(default_factory=dict)
-```
-
-坐标转换路径：**模型原生空间 → DeviceActionIR → absolute 像素 → 设备执行**。
-
-**消息构建策略差异**：
-
-| 策略 | 模型 | 特征 |
-|------|------|------|
+| 消息构建策略 | 模型 | 特征 |
+|------------|------|------|
 | 累积式 | AutoGLM | 保留完整对话历史，含多张截图 |
 | 窗口式 | Qwen-VL, GUI-Owl | 每次重建，只含当前截图 + 文本操作历史 |
 | 混合式 | MAI-UI, UI-TARS | 保留历史但限制图片数 (3/5 张) |
 
-### 3.2 Action Layer — 动作解析与执行
-
-```
-VLM 输出 (各格式不同)
-    │
-    ▼
-┌──────────────────┐
-│ parse_response() │  ← 模型专属 handler 解析
-│ 容错：markdown噪声、│
-│ XML标签残缺、嵌套  │
-└────────┬─────────┘
-         │
-         ▼
-┌────────────────────┐
-│ DeviceActionIR     │  ← ProtocolBridge 归一化
-│ (模型无关中间表示)   │
-└────────┬───────────┘
-         │
-         ▼
-┌────────────────────┐
-│ ActionHandler      │  ← 坐标转换 + 设备执行
-│ execute(action)    │
-│ ├─ Tap / Swipe     │
-│ ├─ Type / Launch   │
-│ ├─ Back / Home     │
-│ └─ Interact (询问)  │
-└────────────────────┘
-```
-
-**SpecGuard**（购物安全守卫）：
-- 在 `spec_selection`、`checkout`、`payment` 页面激活
-- 从用户任务中提取期望规格（颜色、容量、尺码）
-- 执行前校验当前页面规格是否匹配
-- 不匹配时阻断操作，触发 Interact 向用户确认
-
-### 3.3 Device Layer — 三平台抽象
+### 3.4 Device Layer — 三平台抽象
 
 `DeviceFactory` 通过工厂模式统一三个平台的设备控制接口：
 
@@ -235,22 +292,6 @@ class PageNode:
     semantic_signature: str         # 语义指纹 (用于去重)
 ```
 
-**AffordanceEdge (边)**:
-```python
-@dataclass
-class AffordanceEdge:
-    source_node: str                # 源页面 ID
-    target_node: str                # 目标页面 ID
-    intent: str                     # 语义意图 (click, type_text, scroll, ...)
-    semantic_target: str            # 语义目标 (搜索框, 加入购物车按钮, ...)
-    target_locator: dict            # 坐标/bbox 定位信息
-    expected_postcondition: str     # 预期目标页面类型
-    success_count: int              # 成功次数
-    fail_count: int                 # 失败次数
-    confidence: float               # 可靠性 (基于成功率)
-    weighted_cost: float            # Dijkstra 路径权重
-```
-
 **风险分级**:
 
 | Risk Level | 页面类型 | 策略 |
@@ -263,7 +304,65 @@ class AffordanceEdge:
 
 ![AMSG Build Pipeline](docs/architecture-amsg-pipeline.svg)
 
-### 5.4 Schema 注册表
+### 5.4 在线与离线写入的质量门控
+
+**v4.1 关键变更**：在线执行不再直接写入 Neo4j。
+
+| 路径 | 触发时机 | 写入策略 | 质量门控 |
+|------|---------|---------|---------|
+| **离线探索** (OfflineExplorer) | 人工触发的预探索 | canonicalize → promote → Neo4j | ✅ 去重 + 边过滤 + 质量报告 |
+| **在线执行** (agent.py run) | 每步 record_observation | **本地暂存** (`_local_states` / `_local_edges`) | ✅ 不写 Neo4j |
+| **任务结束提交** (end_task) | 成功任务结束时 | `flush_staged_graph()` → canonicalize → promote → Neo4j | ✅ 去重 + 边过滤 |
+| **手动导入** (ManualTrajectoryImporter) | 审核后的轨迹导入 | `persist=True` 直接写入 | ✅ 人工审核 |
+
+**`record_observation(persist=False)` 机制**：
+
+```
+每步执行 → record_observation(persist=False)
+           │
+           ├→ _local_states[state_id] = PageState    ← 仅内存
+           └→ _local_edges[source_id].append(edge)   ← 仅内存
+
+任务成功 → end_task(success=True)
+           │
+           └→ flush_staged_graph()
+               │
+               ├→ canonicalize_state_graph()     ← 合并语义重复节点
+               ├→ promote_staging_to_canonical() ← 边质量过滤 + 去重
+               └→ graph_store 写入 Neo4j          ← 审核后持久化
+
+任务失败 → end_task(success=False)
+           └→ 不写入图谱（避免坏转换污染）
+```
+
+**解决的问题**：此前 `record_observation()` 每步直接写入 Neo4j，VLM 提取的 landmarks/affordances 微小差异导致同一语义页面产生大量变体节点（如淘宝首页出现 70 个 `unknown` 类型节点），图谱快速膨胀。
+
+### 5.5 功能发现与过滤
+
+FunctionalityExtractor 从页面元素和转换动作中发现可操作功能项。v4.1 在 Neo4j 持久化层增加了 `is_promotable` 过滤：
+
+| 类型 | `is_promotable` | 示例 | 持久化到 Neo4j |
+|------|-----------------|------|----------------|
+| **功能项** (functionality) | `True` | `open_search`, `confirm_spec_add_to_cart` | ✅ |
+| **数据项** (data) | `False` | 具体价格 `¥8999`、商品标题、店铺名 | ❌ 不写入 |
+
+**解决的问题**：此前所有 FunctionalityItem（包括 `price`、`product_title`、`shop_name` 等瞬态数据）都写入 Neo4j，导致 53 个功能节点中 38 个是无用的数据项。过滤后仅保留有导航复用价值的操作类功能。
+
+### 5.6 Neo4j 存储模型
+
+```
+(:UIState) -[:NEXT_ACTION {confidence, frequency, fail_count}]-> (:Action)
+(:Action)  -[:PRODUCES {success_rate}]-> (:UIState)
+
+(:TaskTarget) -[:STARTS_AT]-> (:UIState)
+(:TaskTarget) -[:ENDS_AT]->   (:UIState)
+
+(:UIState) -[:EXPOSES_FUNCTION]-> (:FunctionalityItem)   ← 仅 is_promotable=true
+(:Action)  -[:IMPLEMENTS_FUNCTION]-> (:FunctionalityCluster)
+(:FunctionalityCluster) -[:LEADS_TO]-> (:UIState)
+```
+
+### 5.7 Schema 注册表
 
 `spatial/schemas/` 下的 YAML 文件定义了领域知识先验：
 
@@ -282,26 +381,6 @@ transitions:
     intent: open_spec
     affordance: 规格选择
     risk: normal
-
-app_aliases:
-  taobao: [淘宝, 手机淘宝, com.taobao.taobao]
-  jd: [京东, com.jd.commerce]
-```
-
-SchemaRegistry 在建图和路由时提供归一化和验证。
-
-### 5.5 Neo4j 存储模型
-
-```
-(:UIState) -[:NEXT_ACTION {confidence, frequency, fail_count}]-> (:Action)
-(:Action)  -[:PRODUCES {success_rate}]-> (:UIState)
-
-(:TaskTarget) -[:STARTS_AT]-> (:UIState)
-(:TaskTarget) -[:ENDS_AT]->   (:UIState)
-
-(:UIState) -[:EXPOSES_FUNCTION]-> (:FunctionalityItem)
-(:Action)  -[:IMPLEMENTS_FUNCTION]-> (:FunctionalityCluster)
-(:FunctionalityCluster) -[:LEADS_TO]-> (:UIState)
 ```
 
 ---
@@ -317,9 +396,9 @@ SchemaRegistry 在建图和路由时提供归一化和验证。
 | 类型 | 枚举值 | 示例 | 来源 |
 |------|--------|------|------|
 | 用户偏好 | `USER_PREFERENCE` | "用户偏好自提而非快递" | 自动提取/用户纠正 |
-| 联系人 | `CONTACT` | "张三: 微信好友" | 任务文本提取 |
+| 联系人 | `CONTACT` | "张三: 微信好友" | 任务文本提取 (TaskSpecExtractor) |
 | 任务模式 | `TASK_PATTERN` | "买手机常搜索淘宝再比价京东" | 历史轨迹学习 |
-| 应用习惯 | `APP_USAGE` | "常用应用: 淘宝" | 操作统计 |
+| 应用习惯 | `APP_USAGE` | "常用应用: 淘宝" | 操作统计 (TaskSpecExtractor) |
 | 任务历史 | `TASK_HISTORY` | "在淘宝买了 iPhone, 10步完成" | 任务结束记录 |
 | 用户纠正 | `USER_CORRECTION` | "用户说不要选默认地址" | Interact 反馈 |
 | 品牌亲和 | `BRAND_AFFINITY` | "用户偏好 Apple 产品" | 长期行为分析 |
@@ -339,29 +418,33 @@ SchemaRegistry 在建图和路由时提供归一化和验证。
 ### 6.4 记忆生命周期
 
 ```
-任务开始
+任务开始 → MemoryManager.start_task()
   │
   ├→ 检索相似历史任务 (FAISS + Neo4j)
   ├→ 加载用户偏好记忆
   ├→ 初始化 UnifiedSessionState
+  ├→ [StatusReporter] 输出系统就绪状态                   ← v4.1 新增
+  │
+  ▼
+ClarificationAgent.check_and_clarify()                  ← v4.1 重构
+  │
+  ├→ Layer 1: TaskSpecExtractor 规则提取 (0ms)
+  ├→ Layer 2: Memory 偏好填充缺失规格
+  └→ Layer 3: VLM 歧义检测 (仅购物+仍有缺失)
   │
   ▼
 每一步执行
   │
   ├→ 自动提取记忆 (从 thinking 和 action)
-  │   → 联系人提取: "给[Name]发..." 
-  │   → 应用提取: "打开[App]"
-  │   → 偏好提取: "用户选择了..."
-  │
   ├→ record_step() → 更新会话状态
-  │
   ├→ RetrievalGateway 检查 → 按需注入
-  │
-  └→ 记录图谱转换 (source → target edge)
+  └→ record_observation(persist=False)                   ← v4.1 改为本地暂存
   
-任务结束
+任务结束 → MemoryManager.end_task()
   │
-  ├→ 提交轨迹到 Neo4j
+  ├→ 成功任务 → flush_staged_graph()                     ← v4.1 审核后写入
+  │             → canonicalize + promote → Neo4j
+  ├→ 保存轨迹到 pending_trajectories.json
   ├→ 更新 FAISS 任务索引
   ├→ 提取任务级记忆
   └→ 持久化到磁盘
@@ -381,7 +464,7 @@ SchemaRegistry 在建图和路由时提供归一化和验证。
 | 模式 | 触发条件 | VLM 调用 | 图谱角色 | 记忆角色 |
 |------|---------|---------|---------|---------|
 | **Navigate** | 图谱有高置信度路径 (≥0.7) + 非高风险 | **跳过** | 提供路径 + 动作 | 提供进度上下文 |
-| **Explore** | 图谱无匹配 / 低置信度 / 新场景 | **执行** | 接收观测，扩展图谱 | 提供语义上下文 + 按需检索 |
+| **Explore** | 图谱无匹配 / 低置信度 / 新场景 | **执行** | 本地暂存观测 | 提供语义上下文 + 按需检索 |
 | **Verify** | 高风险页面 (payment/checkout) | **执行** | 提供预期后置条件 | 提供 SpecGuard 校验 |
 
 ### 7.3 Navigate 模式 (图谱导航快速路径)
@@ -409,7 +492,7 @@ SchemaRegistry 在建图和路由时提供归一化和验证。
     直接执行 → 跳过 VLM 推理 → 节省 ~2-5 秒延迟 + API 费用
 ```
 
-### 7.4 Explore 模式 (VLM 推理 + 在线建图)
+### 7.4 Explore 模式 (VLM 推理 + 本地暂存)
 
 ```
 当前截图 → PageClassifier → page_type="unknown" 或 无图谱匹配
@@ -426,10 +509,9 @@ SchemaRegistry 在建图和路由时提供归一化和验证。
     ③ VLM 推理 → thinking + action
     ④ 执行动作
     
-    同时建图:
-    ⑤ 为当前页面创建新 PageNode
-    ⑥ 记录 TransitionEdge (从上一页到当前页)
-    ⑦ 更新 Neo4j
+    观测暂存（不写 Neo4j）:
+    ⑤ record_observation(persist=False) → _local_states + _local_edges
+    ⑥ 任务成功后 flush_staged_graph() → canonicalize → promote → Neo4j
     
     → 下次遇到相同场景时可走 Navigate 模式
 ```
@@ -445,8 +527,8 @@ SchemaRegistry 在建图和路由时提供归一化和验证。
     
     VLM 验证流程:
     ① 截图发给 VLM
-    ② 注入 SpecGuard 上下文:
-       - "用户要求: 银色 512G"
+    ② 注入 SpecGuard 上下文 (来自 core/spec_guard.py):
+       - "用户要求: 银色 512G"（TaskSpecExtractor 提取）
        - "当前页面选择的规格: [待VLM确认]"
     ③ VLM 判断是否匹配
     ④ 匹配 → 执行
@@ -469,8 +551,9 @@ VLM 接收的上下文注入发生在消息文本的**开头**（不是结尾）
  [商品] 已浏览: iPhone 17 Pro Max ¥8999 (淘宝旗舰店)
  [约束] 用户要求: 银色, 512G"
 
-── SpecGuard 提示 (购物关键页面) ──
-"⚠️ 当前为规格选择页面，请确保选择正确的颜色和容量再操作"
+── SpecGuard 提示 (购物关键页面, 来自 core/spec_guard.py) ──
+"[SpecGuard] 用户已明确指定规格：颜色=银色，容量=512G。
+ 不要再询问用户。请先选择这些规格；只有匹配后才能点击确认。"
 ```
 
 ---
@@ -485,21 +568,11 @@ VLM 接收的上下文注入发生在消息文本的**开头**（不是结尾）
 
 **方案**: AMSG 空间图谱实现"已知路径零 VLM 推理"。Navigate 模式在置信度足够时直接执行图谱路径，将每步延迟从 2-5 秒降至毫秒级。
 
-**深挖方向**:
-- 图谱覆盖度 vs VLM 调用率的量化关系
-- 图谱置信度阈值的自适应调节
-- 跨应用图谱迁移（淘宝的购物流程知识迁移到京东）
+#### 创新 2: 质量门控的在线图谱进化
 
-#### 创新 2: 在线自进化图谱
+**问题**: 静态知识图谱无法适应 UI 变化；而无门控的在线写入导致节点污染。
 
-**问题**: 静态知识图谱无法适应 UI 变化（App 改版、新功能上线）。
-
-**方案**: Agent 每次执行都在**同时建图** — Explore 模式产生的观测实时写入图谱。失败的边会增加 fail_count，降低 confidence，自然地将过时路径权重降低。
-
-**深挖方向**:
-- 图谱更新策略：何时删除过时节点/边
-- 多用户共享图谱时的冲突解决
-- 图谱质量的自动化评估指标
+**方案**: 在线执行时仅暂存观测到本地缓存，任务成功后经过 `canonicalize_state_graph()` 去重合并 + `promote_staging_to_canonical()` 质量过滤，才写入 Neo4j。失败任务的坏转换不入库。
 
 #### 创新 3: 语义级页面表示
 
@@ -507,21 +580,11 @@ VLM 接收的上下文注入发生在消息文本的**开头**（不是结尾）
 
 **方案**: PageNode 使用 (landmarks, affordances, slots) 三元组表示页面语义。"搜索框 + 商品卡片 → 搜索结果页" 这个语义在 UI 改版后依然成立。
 
-**深挖方向**:
-- 语义相似度计算的改进（当前用 hash 匹配，可引入 embedding 相似度）
-- 跨语言/跨地区 App 的语义对齐
-- 从语义表示自动生成测试用例
+#### 创新 4: 功能发现与 Promotability 过滤
 
-#### 创新 4: 功能发现 (Functionality Discovery)
+**问题**: Agent 只知道"怎么走"，不知道"页面还能做什么"；且瞬态数据（具体价格、商品标题）污染图谱。
 
-**问题**: Agent 只知道"怎么走"，不知道"页面还能做什么"。
-
-**方案**: v4 新增 FunctionalityExtractor + FunctionalityClusterer，自动发现页面上的可操作功能项，聚类为功能簇，持久化到图谱。
-
-**深挖方向**:
-- 功能覆盖度驱动的主动探索策略
-- 功能簇作为任务规划的 building blocks
-- 功能发现的 benchmark 评估
+**方案**: FunctionalityExtractor 自动发现页面功能，按 `is_promotable` 区分操作项和数据项。只有可操作功能（如 `open_search`、`confirm_spec_add_to_cart`）持久化到 Neo4j，瞬态数据不入库。
 
 #### 创新 5: 三层记忆架构 + 按需检索
 
@@ -533,24 +596,15 @@ VLM 接收的上下文注入发生在消息文本的**开头**（不是结尾）
 - Layer 3 (会话状态): 轻量进度追踪，每步注入
 - RetrievalGateway: 只在 VLM 表现出不确定时才触发深度检索
 
-**深挖方向**:
-- 记忆重要性衰减曲线的优化
-- 记忆注入对 VLM 推理质量的因果分析
-- 隐私保护的联邦记忆共享
-
-#### 创新 6: SpecGuard 购物安全机制
+#### 创新 6: ClarificationAgent + SpecGuard 双层购物安全
 
 **问题**: Agent 误操作购物（错误规格、意外下单）的后果严重且不可逆。
 
 **方案**: 
+- **ClarificationAgent** (任务前): 三层短路检测缺失规格，主动向用户补全，提高下游规划精度
+- **SpecGuard** (提交前): 从任务文本和 VLM plan 提取期望规格，在结算前校验
+- 两者共享 `TaskSpecExtractor` 提取基础设施，协作但职责分离
 - 风险分级：页面级 (high/medium/normal) 控制是否必须 VLM 验证
-- 规格守卫：从任务文本提取用户期望规格，在结算前自动校验
-- 人机交互兜底：不确定时用 Interact 动作主动询问用户
-
-**深挖方向**:
-- 风险评估的自动化学习（从历史错误中学习新的风险模式）
-- 多模态规格验证（OCR + VLM 联合确认屏幕上的规格文字）
-- 可逆操作检测（哪些操作可以撤销，哪些不能）
 
 ### 8.2 与现有工作的差异化定位
 
@@ -559,7 +613,8 @@ VLM 接收的上下文注入发生在消息文本的**开头**（不是结尾）
 | 每步推理 | 必须 VLM | 必须 VLM | 可选 VLM (图谱导航跳过) |
 | 跨会话学习 | 无 | 无 | 三层记忆持久化 |
 | 页面理解 | 像素/元素级 | 像素级 | 语义级 (PageNode) |
-| 安全机制 | 无 | 无 | SpecGuard + 风险分级 |
+| 安全机制 | 无 | 无 | ClarificationAgent + SpecGuard 双层 |
+| 图谱质量 | N/A | N/A | 门控写入 + canonicalize + promotability 过滤 |
 | 导航知识 | 无 | 无 | AMSG 空间图谱 |
 | 多模型支持 | 单模型 | 单模型 | 5 种 VLM 统一适配 |
 | 平台支持 | 单平台 | Android | Android + HarmonyOS + iOS |
@@ -582,23 +637,29 @@ VLM 接收的上下文注入发生在消息文本的**开头**（不是结尾）
 
 ## 附录 A: 核心文件索引
 
-| 文件 | 行数 | 职责 |
-|------|------|------|
-| `agent.py` | ~1400 | Agent 主循环编排，VLM 推理，图谱/记忆集成 |
-| `memory/memory_manager.py` | ~2000 | 记忆系统总协调，自动提取，上下文构建 |
-| `memory/spatial_graph_memory.py` | ~2700 | 图谱建图、定位、路径规划、去重、在线更新 |
-| `memory/graph_store.py` | ~1400 | Neo4j 驱动，Cypher 查询，图谱 CRUD |
-| `memory/offline_explorer.py` | ~1600 | PageClassifier VLM 分类，离线探索循环 |
-| `spatial/runtime_controller.py` | ~520 | v4 运行时控制器，路由决策，DAG 管理 |
-| `spatial/functionality.py` | ~600 | 功能发现与分类 |
-| `spatial/core.py` | ~330 | PageNode, AffordanceEdge, DeviceActionIR 定义 |
-| `model/adapters.py` | ~800 | 5 种 VLM 适配器 |
-| `model/protocol_bridge.py` | ~600 | 坐标系归一化，动作 IR 转换 |
-| `actions/handler.py` | ~650 | 通用动作解析与执行 |
-| `spatial/model_bridge.py` | ~150 | AMSG 语义动作 → 设备动作编译 |
-| `clarify.py` | ~285 | 购物场景任务澄清子代理 |
-| `memory/core/unified_state.py` | ~600 | 会话状态单一数据源 |
-| `memory/retrieval_gateway.py` | ~200 | 按需检索触发器 |
+| 文件 | 职责 |
+|------|------|
+| **Core 基础设施** | |
+| `core/task_spec.py` | 统一槽位提取 (TaskSlots + TaskSpecExtractor)，被 4 个模块共享 |
+| `core/spec_guard.py` | 购物安全守卫，提交前规格校验 |
+| `core/status.py` | 可观测性事件分发 (StatusReporter) |
+| **Agent 编排** | |
+| `agent.py` | Agent 主循环编排，VLM 推理，图谱/记忆集成 |
+| `clarify.py` | 三层短路澄清子代理 (规则 → Memory → VLM) |
+| **记忆系统** | |
+| `memory/memory_manager.py` | 记忆总协调，自动提取，上下文构建，图谱门控写入 |
+| `memory/spatial_graph_memory.py` | 图谱建图、定位、路径规划、去重、flush_staged_graph |
+| `memory/graph_store.py` | Neo4j 驱动，Cypher 查询，FunctionalityItem promotability 过滤 |
+| `memory/offline_explorer.py` | PageClassifier VLM 分类，离线探索循环 |
+| **空间图谱** | |
+| `spatial/runtime_controller.py` | v4 运行时控制器，路由决策，DAG 管理 |
+| `spatial/functionality.py` | 功能发现与分类 (promotable vs data) |
+| `spatial/core.py` | PageNode, AffordanceEdge, DeviceActionIR 定义 |
+| `spatial/model_bridge.py` | AMSG 语义动作 → 设备动作编译 |
+| **模型与设备** | |
+| `model/adapters.py` | 5 种 VLM 适配器 |
+| `model/protocol_bridge.py` | 坐标系归一化，动作 IR 转换 |
+| `actions/handler.py` | 通用动作解析与执行 |
 
 ## 附录 B: 环境变量速查
 
@@ -612,3 +673,16 @@ VLM 接收的上下文注入发生在消息文本的**开头**（不是结尾）
 | `EMBEDDING_API_KEY` | — | BigModel Embedding-3 API 密钥 |
 | `NEO4J_URI` | `bolt://localhost:7687` | Neo4j 连接地址 |
 | `NEO4J_DATABASE` | `shopping` | Neo4j 数据库名 |
+
+## 附录 C: 图谱维护
+
+```bash
+# 诊断图谱健康状况
+python scripts/cleanup_polluted_graph.py
+
+# 执行清理（去重 + 删除孤立节点 + 合并重复 Action）
+python scripts/cleanup_polluted_graph.py --fix
+
+# 清理指定数据库
+python scripts/cleanup_polluted_graph.py --fix --database shopping-spatial-v4-pipeline-test
+```
