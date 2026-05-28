@@ -48,9 +48,7 @@ ClawGUI-Agent: 截图 → 图谱定位 ─┬→ [已知路径] → 图谱导航
 
 ### 2.1 架构图
 
-![System Architecture (Paper Style)](docs/architecture-system-paper.svg)
-
-> 补充参考：[分层模块视图](docs/architecture-system-overview.svg)
+![System Architecture Overview](docs/architecture-system-overview.svg)
 
 ### 2.2 模块文件映射
 

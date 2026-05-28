@@ -1,0 +1,66 @@
+{
+  "app": "淘宝",
+  "task": "只完成一个安全采集任务：当前应在淘宝商品详情页。点击页面底部的加购/购买/去购买类 CTA 一次，用来打开规格选择弹窗；看到规格选择弹窗或半屏规格面板后立即 finish 停止。不要选择规格，不要点击确认，不要支付，不要提交订单。",
+  "total_transitions": 1,
+  "coverage": {
+    "covered_page_types": [
+      "product_detail",
+      "spec_selection"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "search_result",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "product_detail",
+        "spec_selection"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "spec_selection",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          740,
+          959
+        ]
+      },
+      "to": "spec_selection:规格选择弹窗"
+    }
+  ],
+  "rejected_transitions": []
+}

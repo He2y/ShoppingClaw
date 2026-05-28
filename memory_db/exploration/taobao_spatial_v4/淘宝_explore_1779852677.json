@@ -1,0 +1,75 @@
+{
+  "app": "淘宝",
+  "task": "只完成一个安全采集任务：当前应在淘宝规格选择弹窗或半屏规格面板。关闭弹窗或返回上一层，回到商品详情页后立即 finish 停止。不要选择规格，不要点击确认，不要支付，不要提交订单。",
+  "explored_at": "2026-05-27T11:31:17.041665",
+  "total_pages": 3,
+  "coverage": {
+    "covered_page_types": [
+      "product_detail",
+      "search_result",
+      "spec_selection"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "spec_selection",
+        "product_detail"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "product_detail",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "spec_selection",
+      "summary": "规格选择弹窗",
+      "elements": {},
+      "screenshot_hash": "ab4931c90bd223de33c17f49fb21dd06",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "商品详情页",
+      "elements": {},
+      "screenshot_hash": "4b10fd4d156d105e8d864df34875bef1",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_result",
+      "summary": "商品搜索结果",
+      "elements": {},
+      "screenshot_hash": "509ccd56095efea8814be930d28a48ab",
+      "app": "淘宝"
+    }
+  ]
+}

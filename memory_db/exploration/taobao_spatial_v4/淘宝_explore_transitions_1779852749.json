@@ -1,0 +1,66 @@
+{
+  "app": "淘宝",
+  "task": "只完成一个安全采集任务：当前应在淘宝商品搜索结果页。点击一个自然商品卡片进入商品详情页；看到完整商品详情页后立即 finish 停止。不要点击购买、加购、规格、购物车、登录、支付或提交订单。",
+  "total_transitions": 1,
+  "coverage": {
+    "covered_page_types": [
+      "product_detail",
+      "search_result"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "spec_selection",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "search_result",
+        "product_detail"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [
+    {
+      "from": "search_result:商品搜索结果",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          253,
+          477
+        ]
+      },
+      "to": "product_detail:商品详情页"
+    }
+  ],
+  "rejected_transitions": []
+}

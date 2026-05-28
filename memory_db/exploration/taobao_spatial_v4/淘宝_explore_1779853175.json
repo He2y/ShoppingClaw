@@ -1,0 +1,68 @@
+{
+  "app": "淘宝",
+  "task": "只完成一个安全采集任务：当前应在淘宝首页或推荐页。点击顶部搜索框进入搜索输入页；看到搜索输入框激活、搜索建议/历史或键盘后立即 finish 停止。不要输入内容，不要点击商品，不要购买，不要登录。",
+  "explored_at": "2026-05-27T11:39:35.310838",
+  "total_pages": 2,
+  "coverage": {
+    "covered_page_types": [
+      "home",
+      "search_input"
+    ],
+    "missing_page_types": [
+      "search_result",
+      "product_detail",
+      "spec_selection",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "home",
+        "search_input"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "home",
+      "summary": "首页",
+      "elements": {},
+      "screenshot_hash": "f51ed3e7eba976dd8a60d3c13809fb6e",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_input",
+      "summary": "搜索输入页",
+      "elements": {},
+      "screenshot_hash": "8a916d72a01b3159d8007614a9f42792",
+      "app": "淘宝"
+    }
+  ]
+}

@@ -1,0 +1,73 @@
+{
+  "app": "淘宝",
+  "task": "只完成一个安全采集任务：当前应在淘宝商品搜索结果页。点击页面右侧或顶部筛选栏中的『筛选』入口，打开筛选条件面板；看到筛选条件、价格区间、品牌/属性选项或确认筛选按钮后立即 finish 停止。不要选择条件，不要点击商品卡片，不要购买，不要登录。",
+  "explored_at": "2026-05-27T11:49:16.432190",
+  "total_pages": 2,
+  "coverage": {
+    "covered_page_types": [
+      "filter_panel",
+      "search_result"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "product_detail",
+      "spec_selection",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "search_result",
+        "filter_panel"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "search_result",
+      "summary": "商品搜索结果",
+      "elements": {},
+      "screenshot_hash": "984c53690f5c2eea73e6682c5c72134a",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "filter_panel",
+      "summary": "筛选面板",
+      "elements": {},
+      "screenshot_hash": "997007ed508d5f01836e78d7497cef28",
+      "app": "淘宝"
+    }
+  ]
+}

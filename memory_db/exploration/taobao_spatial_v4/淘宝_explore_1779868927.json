@@ -1,0 +1,76 @@
+{
+  "app": "淘宝",
+  "task": "安全采集淘宝搜索链路：从首页点击顶部搜索框，进入搜索输入页后输入 耳机，然后点击搜索/提交，看到商品搜索结果页后立即 finish。不要点击商品、筛选、购物车、登录、支付、地址或提交订单。",
+  "explored_at": "2026-05-27T16:02:07.614567",
+  "total_pages": 3,
+  "coverage": {
+    "covered_page_types": [
+      "search_input",
+      "search_result",
+      "unknown"
+    ],
+    "missing_page_types": [
+      "home",
+      "product_detail",
+      "spec_selection",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "search_input",
+        "search_result"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "search_result",
+      "summary": "商品搜索结果",
+      "elements": {},
+      "screenshot_hash": "0e238752ad6d7147664efb68ef84944c",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "unknown",
+      "summary": "API/parse error: Expecting value: line 1 column 1 (char 0)",
+      "elements": {},
+      "screenshot_hash": "ceabdd42c0f5c50558f5e1f001937a09",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_input",
+      "summary": "搜索输入页",
+      "elements": {},
+      "screenshot_hash": "e03fcbb92c5b80acac1d8d077ab512cb",
+      "app": "淘宝"
+    }
+  ]
+}

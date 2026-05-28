@@ -1,0 +1,68 @@
+{
+  "app": "淘宝",
+  "task": "只完成一个安全采集任务：当前应在淘宝商品详情页。点击页面顶部右侧的购物车图标/购物车入口，进入购物车页面；看到购物车列表页后立即 finish 停止。不要点击底部加入购物车、去购买、立即购买按钮，不要结算，不要支付，不要提交订单。",
+  "explored_at": "2026-05-27T11:46:57.656916",
+  "total_pages": 2,
+  "coverage": {
+    "covered_page_types": [
+      "cart",
+      "product_detail"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "search_result",
+      "spec_selection",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "product_detail",
+        "cart"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "product_detail"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "product_detail",
+      "summary": "商品详情页",
+      "elements": {},
+      "screenshot_hash": "8749e6b738da821718e40dc5bda390d0",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "cart",
+      "summary": "购物车列表",
+      "elements": {},
+      "screenshot_hash": "fb2e14a63bd38cb98c206d6d944b311d",
+      "app": "淘宝"
+    }
+  ]
+}
