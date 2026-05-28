@@ -552,11 +552,20 @@ class PhoneAgent:
 
             # [HITL Active Clarification] - Use ClarificationAgent on first step
             if is_first and self.clarification_agent:
+                # Pass user preferences so ClarificationAgent can fill gaps
+                user_prefs = None
+                if self.memory_manager:
+                    try:
+                        summary = self.memory_manager.get_user_summary()
+                        user_prefs = summary.get("preferences", [])
+                    except Exception:
+                        pass
                 result = self.clarification_agent.check_and_clarify(
                     task=user_prompt or self._current_task,
                     image_base64=screenshot.base64_data,
                     current_app=current_app,
                     memory_context=context_data.get("semantic_context", ""),
+                    user_preferences=user_prefs,
                     clarification_callback=self.clarification_callback,
                     verbose=self.agent_config.verbose,
                 )
