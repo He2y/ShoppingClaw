@@ -286,6 +286,21 @@ class MemoryManager:
                 end_state=end_state_id or self._current_state_id,
             )
 
+        # Flush staged graph observations to Neo4j (canonicalize + promote)
+        # Only for successful tasks — failed tasks may contain bad transitions
+        if success and self.spatial_graph_memory:
+            try:
+                report = self.spatial_graph_memory.flush_staged_graph()
+                if self._verbose and report.transitions_promoted > 0:
+                    print(
+                        f"[i] [graph] 图谱更新: {report.canonical_pages} 页面, "
+                        f"{report.transitions_promoted} 转换 "
+                        f"(过滤 {report.transitions_filtered})"
+                    )
+            except Exception as e:
+                if self._verbose:
+                    print(f"[!] [graph] 图谱提交失败: {e}")
+
         self.current_task = ""
         self.task_start_time = ""
 

@@ -115,7 +115,7 @@ class ManualTrajectoryImporter:
             if index + 1 >= len(pages):
                 break
             action = self._action_from_react_record(action_record, run_dir=run_dir, index=index + 1)
-            self.memory.record_observation(pages[index], action, pages[index + 1], outcome="success")
+            self.memory.record_observation(pages[index], action, pages[index + 1], outcome="success", persist=True)
             transition_count += 1
 
         goal_spec = GoalSpec.from_task(primary_task, app).to_dict()

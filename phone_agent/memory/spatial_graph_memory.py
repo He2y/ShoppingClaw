@@ -1549,7 +1549,17 @@ class SpatialGraphMemory:
         action: dict[str, Any],
         after: str | PageState,
         outcome: str = "success",
+        *,
+        persist: bool = False,
     ) -> None:
+        """Record a page transition observation.
+
+        Args:
+            persist: If True, write immediately to Neo4j. Default False
+                     (stage locally only). Use ``flush_staged_graph()``
+                     or ``promote_staging_to_canonical()`` to persist
+                     after quality review.
+        """
         source_id = before.state_id if isinstance(before, PageState) else str(before)
         target_id = after.state_id if isinstance(after, PageState) else str(after)
         target_page = after.page_type if isinstance(after, PageState) else ""
@@ -1568,7 +1578,7 @@ class SpatialGraphMemory:
         )
         self._local_edges.setdefault(source_id, []).append(edge)
 
-        if self.graph_store and getattr(self.graph_store, "driver", None):
+        if persist and self.graph_store and getattr(self.graph_store, "driver", None):
             self.graph_store.add_state_transition(
                 source_id,
                 target_id,
@@ -1577,6 +1587,26 @@ class SpatialGraphMemory:
                 source_metadata=before.to_dict() if isinstance(before, PageState) else None,
                 target_metadata=after.to_dict() if isinstance(after, PageState) else None,
             )
+
+    def flush_staged_graph(self) -> GraphQualityReport:
+        """Canonicalize and promote all staged observations to Neo4j.
+
+        This is the ONLY correct way to persist online observations.
+        Called by MemoryManager.end_task() for successful tasks.
+        """
+        if not self._local_states:
+            return GraphQualityReport(0, 0, 0, 0, 0, 0)
+
+        canonical_states, promoted_edges, report = self.canonicalize_state_graph(
+            self._local_states.values(),
+            edges_by_source=self._local_edges,
+        )
+        if canonical_states:
+            promote_report = self.promote_staging_to_canonical(
+                canonical_states, promoted_edges, persist=True,
+            )
+            return promote_report
+        return report
 
     def repair(
         self,
