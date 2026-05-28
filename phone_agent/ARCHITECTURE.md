@@ -48,59 +48,7 @@ ClawGUI-Agent: 截图 → 图谱定位 ─┬→ [已知路径] → 图谱导航
 
 ### 2.1 架构图
 
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                           ClawGUI-Agent System                              │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │                        Entry Layer                                   │   │
-│  │   main.py (CLI)          webui.py (Gradio)         nanobot (Chat)   │   │
-│  └──────────────────────────────┬───────────────────────────────────────┘   │
-│                                 │                                           │
-│  ┌──────────────────────────────▼───────────────────────────────────────┐   │
-│  │                      Agent Orchestrator                              │   │
-│  │                                                                      │   │
-│  │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────────────┐   │   │
-│  │  │  PhoneAgent   │  │IOSPhoneAgent │  │  ClarificationAgent     │   │   │
-│  │  │  (Android/    │  │(iOS XCTest)  │  │  (购物场景主动澄清)       │   │   │
-│  │  │   HarmonyOS)  │  │              │  │                          │   │   │
-│  │  └──────┬───────┘  └──────────────┘  └──────────────────────────┘   │   │
-│  └─────────┼────────────────────────────────────────────────────────────┘   │
-│            │                                                                │
-│  ┌─────────▼────────────────────────────────────────────────────────────┐   │
-│  │                     Core Subsystems                                  │   │
-│  │                                                                      │   │
-│  │  ┌─────────────────┐  ┌────────────────┐  ┌──────────────────────┐  │   │
-│  │  │  Model Layer     │  │ Action Layer   │  │  Memory Layer        │  │   │
-│  │  │                  │  │                │  │                      │  │   │
-│  │  │  ModelClient     │  │ ActionHandler  │  │  MemoryManager       │  │   │
-│  │  │  5× Adapters     │  │ 5× Handlers   │  │  ├─ MemoryStore      │  │   │
-│  │  │  ProtocolBridge  │  │ SpecGuard     │  │  ├─ GraphStore        │  │   │
-│  │  │                  │  │                │  │  ├─ SpatialGraphMem  │  │   │
-│  │  └────────┬─────────┘  └───────┬────────┘  │  ├─ UnifiedState    │  │   │
-│  │           │                    │            │  └─ RetrievalGW     │  │   │
-│  │           │                    │            └──────────┬───────────┘  │   │
-│  │           │                    │                       │              │   │
-│  │  ┌────────▼────────────────────▼───────────────────────▼───────────┐  │   │
-│  │  │                    Spatial Layer (AMSG v4)                      │  │   │
-│  │  │                                                                │  │   │
-│  │  │  RuntimeController  │ PageClassifier  │ SchemaRegistry         │  │   │
-│  │  │  SpatialPlanner     │ SemanticExtract │ FunctionalityCluster   │  │   │
-│  │  │  SpatialModelBridge │ ActiveBuilder   │ PostconditionVerifier  │  │   │
-│  │  └────────────────────────────────────────────────────────────────┘  │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │                     Device Layer                                     │   │
-│  │   DeviceFactory → ADB (Android) │ HDC (HarmonyOS) │ XCTest (iOS)   │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-│  ┌──────────────────────────────────────────────────────────────────────┐   │
-│  │                     Storage Layer                                    │   │
-│  │   Neo4j (图谱)  │  FAISS (向量索引)  │  JSON/NumPy (本地持久化)      │   │
-│  └──────────────────────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────────────────────┘
-```
+![System Architecture Overview](docs/architecture-system-overview.svg)
 
 ### 2.2 模块文件映射
 
@@ -214,96 +162,7 @@ VLM 输出 (各格式不同)
 
 ### 4.1 完整执行循环
 
-```
-用户任务 "去淘宝买 iPhone 17 Pro Max，银色 512G，加入购物车"
-    │
-    ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ Phase 0: 初始化                                                  │
-│                                                                  │
-│  ① 解析模型类型 → 加载 Adapter + Handler                          │
-│  ② MemoryManager.start_task(task)                                │
-│     → 检索相似历史任务                                              │
-│     → 提取用户偏好记忆                                              │
-│  ③ ClarificationAgent.check_and_clarify(task, screenshot)        │
-│     → 检测任务是否模糊（缺规格/缺平台）                               │
-│     → 模糊则主动询问用户，重组任务文本                                 │
-└──────────────────────────┬───────────────────────────────────────┘
-                           │
-                           ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ Phase 1: 截图 & 感知                                              │
-│                                                                  │
-│  ① DeviceFactory.get_screenshot() → base64 图片                  │
-│  ② DeviceFactory.get_current_app() → 当前应用名                   │
-│  ③ 计算 state_id = MD5(screenshot)                               │
-└──────────────────────────┬───────────────────────────────────────┘
-                           │
-                           ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ Phase 2: 图谱定位 & 路由决策                                       │
-│                                                                  │
-│  ① PageClassifier(screenshot) → page_type + summary + elements  │
-│  ② ScreenSemanticsExtractor → PageNode (landmarks, affordances, │
-│     slots, risk_level)                                           │
-│  ③ SpatialGraphMemory.locate() → PageBelief                     │
-│     → 在 Neo4j 中匹配候选节点                                      │
-│     → 返回 confidence + candidates                               │
-│  ④ SpatialGraphMemory.plan() → RoutePlan                        │
-│     → Dijkstra 最短路径规划                                        │
-│     → 返回 mode: navigate / explore / goal_reached              │
-│                                                                  │
-│  路由判断:                                                        │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │ IF mode == "navigate" AND confidence ≥ 0.7                  │ │
-│  │    AND risk_level != "high"                                 │ │
-│  │ THEN → Phase 2a (图谱导航快速路径)                            │ │
-│  │ ELSE → Phase 3 (VLM 推理路径)                                │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└──────────────┬──────────────────────────────┬────────────────────┘
-               │                              │
-               ▼                              ▼
-┌──────────────────────────┐  ┌──────────────────────────────────┐
-│ Phase 2a: 图谱导航        │  │ Phase 3: VLM 推理                 │
-│ (跳过 VLM)                │  │                                  │
-│                          │  │ ① Adapter.build_messages()       │
-│ ① SpatialModelBridge     │  │    构建对话消息（含截图、历史）       │
-│   .compile_direct_action │  │ ② 注入语义上下文                   │
-│   → DeviceActionIR       │  │    (图谱建议 + 记忆 + 进度)        │
-│ ② 转换为设备坐标          │  │ ③ ModelClient.request(messages)  │
-│ ③ 直接执行                │  │    → 流式推理 (thinking + action)  │
-│                          │  │ ④ 解析 + SpecGuard 校验           │
-│                          │  │ ⑤ 执行动作                        │
-└──────────────┬───────────┘  └───────────────┬──────────────────┘
-               │                              │
-               └──────────────┬───────────────┘
-                              │
-                              ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ Phase 4: 状态更新 & 记忆记录                                       │
-│                                                                  │
-│  ① UnifiedSessionState.record_step(thinking, action, app)       │
-│  ② MemoryManager.update_state_and_transition()                  │
-│     → 记录页面转换 (source → target)                               │
-│     → 更新边的 success/fail 计数                                   │
-│     → 在线扩展空间图谱                                              │
-│  ③ RetrievalGateway 检查是否需要触发按需检索                        │
-│  ④ 检查终止条件 (finished / max_steps)                            │
-│     → 未完成: 回到 Phase 1                                        │
-│     → 完成: Phase 5                                              │
-└──────────────────────────────┬───────────────────────────────────┘
-                               │
-                               ▼
-┌──────────────────────────────────────────────────────────────────┐
-│ Phase 5: 任务结束                                                 │
-│                                                                  │
-│  ① MemoryManager.end_task(success, result)                      │
-│  ② 提交轨迹到 Neo4j (commit_task_trajectory)                     │
-│  ③ 更新 FAISS 任务索引                                            │
-│  ④ 保存 pending_trajectories.json                                │
-│  ⑤ 返回结果给用户                                                 │
-└──────────────────────────────────────────────────────────────────┘
-```
+![Agent Execution Loop](docs/architecture-agent-loop.svg)
 
 ### 4.2 关键数据流
 
@@ -402,56 +261,7 @@ class AffordanceEdge:
 
 ### 5.3 建图管线 (5 阶段)
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                    AMSG 建图管线                                   │
-│                                                                  │
-│  Stage 1: 页面分类 (PageClassifier)                               │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  输入: base64 截图 + 任务描述                                  │ │
-│  │  预处理: 裁掉状态栏(顶部4%) + 导航栏(底部12%)                   │ │
-│  │  VLM 分类: 17 种页面类型 (home, search_input, product_detail..│ │
-│  │  输出: ShoppingPageType + summary + elements dict            │ │
-│  └─────────────────────────────┬───────────────────────────────┘ │
-│                                │                                 │
-│  Stage 2: 语义提取 (ScreenSemanticsExtractor)                     │
-│  ┌─────────────────────────────▼───────────────────────────────┐ │
-│  │  应用名归一化 (淘宝→taobao, 京东→jd)                           │ │
-│  │  地标推断: elements keys → landmarks                          │ │
-│  │  能力推断: element labels → affordances                       │ │
-│  │  槽位提取: regex → query, product, price, color, storage      │ │
-│  │  风险评估: page_type → risk_level                             │ │
-│  │  输出: PageNode (完整语义节点)                                  │ │
-│  └─────────────────────────────┬───────────────────────────────┘ │
-│                                │                                 │
-│  Stage 3: 节点去重 & 存储                                         │
-│  ┌─────────────────────────────▼───────────────────────────────┐ │
-│  │  规范键: (app, page_type, summary_prefix)                    │ │
-│  │  合并策略: landmarks 取并集(上限12), 保留较短 summary           │ │
-│  │  过滤: 丢弃 unknown/dialog/permission 临时页面                 │ │
-│  │  持久化: Neo4j :UIState 节点                                  │ │
-│  └─────────────────────────────┬───────────────────────────────┘ │
-│                                │                                 │
-│  Stage 4: 边构建 & 转换记录                                       │
-│  ┌─────────────────────────────▼───────────────────────────────┐ │
-│  │  TransitionEdge.from_action(source, target, action)          │ │
-│  │  边富化: action_type → intent, 提取 region, semantic_target   │ │
-│  │  语义边键去重: source_type|intent|target|region|target_type   │ │
-│  │  复合动作合成: Type <query> + Submit → 带槽位模板边             │ │
-│  │  边过滤: 移除自环, 过滤危险转换 (pay, logout)                   │ │
-│  │  持久化: Neo4j :Action 节点 + NEXT_ACTION/PRODUCES 关系       │ │
-│  └─────────────────────────────┬───────────────────────────────┘ │
-│                                │                                 │
-│  Stage 5: 功能发现 & 聚类 (v4 新增)                                │
-│  ┌─────────────────────────────▼───────────────────────────────┐ │
-│  │  FunctionalityExtractor: 从页面元素提取功能项                   │ │
-│  │  分类: "functionality" (可操作) vs "data" (数据展示)            │ │
-│  │  FunctionalityClusterer: 相似功能聚类 (threshold=0.58)        │ │
-│  │  持久化: Neo4j :FunctionalityItem + :FunctionalityCluster    │ │
-│  │  覆盖度量: FunctionalityCoverageMetrics                       │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────┘
-```
+![AMSG Build Pipeline](docs/architecture-amsg-pipeline.svg)
 
 ### 5.4 Schema 注册表
 
@@ -500,37 +310,7 @@ SchemaRegistry 在建图和路由时提供归一化和验证。
 
 ### 6.1 三层记忆架构
 
-```
-┌──────────────────────────────────────────────────────────────────┐
-│                        Memory Architecture                       │
-│                                                                  │
-│  Layer 1: 向量语义记忆 (MemoryStore)                               │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  存储: FAISS IndexFlatIP + Embedding-3 API (2048维)          │ │
-│  │  内容: 用户偏好、联系人、任务模式、应用习惯、品牌亲和度           │ │
-│  │  检索: 0.7×余弦相似度 + 0.3×重要性评分                         │ │
-│  │  去重: 相似度 ≥ 0.85 时合并而非新增                             │ │
-│  │  持久化: memories_meta.json + embeddings.npy                  │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                                                                  │
-│  Layer 2: 图结构记忆 (GraphStore + SpatialGraphMemory)             │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  存储: Neo4j 图数据库                                         │ │
-│  │  内容: 页面状态、转换路径、任务轨迹、功能发现                     │ │
-│  │  检索: 图遍历 + Dijkstra 最短路径                               │ │
-│  │  路径权重: cost = 1.0 + failure_rate×3 + risk_penalty         │ │
-│  │            - confidence×0.3                                   │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-│                                                                  │
-│  Layer 3: 会话状态 (UnifiedSessionState)                           │
-│  ┌─────────────────────────────────────────────────────────────┐ │
-│  │  生命周期: 单次任务                                            │ │
-│  │  内容: 商品列表(含状态)、步骤历史、约束条件、进度追踪             │ │
-│  │  停滞检测: 连续3步相同动作 → 触发按需检索                        │ │
-│  │  进度摘要: 每轮注入 VLM (轻量级)                                │ │
-│  └─────────────────────────────────────────────────────────────┘ │
-└──────────────────────────────────────────────────────────────────┘
-```
+![Memory Architecture & Runtime Collaboration](docs/architecture-memory-system.svg)
 
 ### 6.2 记忆类型
 
@@ -593,42 +373,8 @@ SchemaRegistry 在建图和路由时提供归一化和验证。
 
 ### 7.1 协作全景图
 
-```
-                          ┌────────────────────┐
-                          │    PhoneAgent       │
-                          │   _execute_step()   │
-                          └─────────┬──────────┘
-                                    │
-          ┌─────────────────────────┼─────────────────────────┐
-          │                         │                         │
-          ▼                         ▼                         ▼
-┌──────────────────┐  ┌──────────────────────┐  ┌──────────────────┐
-│ Spatial Graph    │  │    VLM Inference      │  │ Memory System    │
-│                  │  │                       │  │                  │
-│ ● locate()       │  │ ● build_messages()   │  │ ● get_injection  │
-│   → 定位当前页面  │  │ ● request()          │  │   _context()     │
-│                  │  │ ● parse_response()   │  │   → 进度摘要      │
-│ ● plan()         │  │                       │  │   → 商品上下文    │
-│   → 规划路径     │  │                       │  │                  │
-│                  │  │                       │  │ ● add_step()     │
-│ ● compile_       │  │                       │  │   → 记录步骤      │
-│   direct_action  │  │                       │  │                  │
-│   → 图谱直接执行  │  │                       │  │ ● update_state_  │
-│                  │  │                       │  │   and_transition  │
-└────────┬─────────┘  └───────────┬───────────┘  └────────┬─────────┘
-         │                        │                       │
-         │    ┌───────────────────┘                       │
-         │    │  注入图谱语义上下文                          │
-         │    │  + 记忆上下文                               │
-         │    │                                           │
-         └────┼───────────────────────────────────────────┘
-              │   执行结果反馈 → 同时更新图谱和记忆
-              ▼
-       ┌──────────────┐
-       │ Device Layer  │
-       │ (ADB/HDC/iOS) │
-       └──────────────┘
-```
+> 三层记忆与 Agent 的运行时交互关系见上图 [Section 6.1](#61-三层记忆架构)。
+> Agent 主循环中 Navigate/Explore/Verify 三种模式的详细流程见 [Section 4.1](#41-完整执行循环)。
 
 ### 7.2 三种运行模式
 

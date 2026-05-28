@@ -1,0 +1,250 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 780" width="1200" height="780">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+  </style>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+    <marker id="arrow-green-dash" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#9333ea"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="780" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="600" y="35" text-anchor="middle" fill="#111827" font-size="20" font-weight="700">三层记忆架构 &amp; 运行时协作</text>
+  <text x="600" y="55" text-anchor="middle" fill="#6b7280" font-size="12">Memory Architecture — 向量语义 + 图结构 + 会话状态，按需注入 VLM 上下文</text>
+
+  <!-- ═══════ Agent Core (Center) ═══════ -->
+  <rect x="430" y="80" width="340" height="68" rx="12" fill="#eff6ff" stroke="#2563eb" stroke-width="2.5" filter="url(#shadow)"/>
+  <rect x="434" y="84" width="332" height="60" rx="10" fill="none" stroke="#93c5fd" stroke-width="0.8"/>
+  <text x="480" y="110" fill="#2563eb" font-size="16">🤖</text>
+  <text x="502" y="110" fill="#1e40af" font-size="16" font-weight="700">PhoneAgent</text>
+  <text x="600" y="134" text-anchor="middle" fill="#3b82f6" font-size="11">截图→推理→动作 主循环</text>
+
+  <!-- ═══════ Layer 1: Vector Semantic Memory (Left) ═══════ -->
+  <rect x="40" y="190" width="320" height="350" rx="12" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="60" y="212" fill="#7c3aed" font-size="11" font-weight="700">LAYER 1: 向量语义记忆</text>
+  <text x="60" y="228" fill="#9333ea" font-size="10">MemoryStore — 跨会话持久化</text>
+
+  <!-- FAISS cylinder -->
+  <ellipse cx="140" cy="258" rx="50" ry="14" fill="#ede9fe" stroke="#7c3aed" stroke-width="1.5"/>
+  <rect x="90" y="258" width="100" height="50" fill="#ede9fe" stroke="none"/>
+  <line x1="90" y1="258" x2="90" y2="308" stroke="#7c3aed" stroke-width="1.5"/>
+  <line x1="190" y1="258" x2="190" y2="308" stroke="#7c3aed" stroke-width="1.5"/>
+  <ellipse cx="140" cy="282" rx="50" ry="14" fill="none" stroke="#7c3aed" stroke-width="0.7" opacity="0.5"/>
+  <ellipse cx="140" cy="308" rx="50" ry="14" fill="#c4b5fd" stroke="#7c3aed" stroke-width="1.5"/>
+  <text x="140" y="290" text-anchor="middle" fill="#5b21b6" font-size="12" font-weight="700">FAISS</text>
+  <text x="140" y="336" text-anchor="middle" fill="#6b7280" font-size="10">2048维 Embedding-3</text>
+
+  <!-- Embedding Client -->
+  <rect x="220" y="252" width="120" height="40" rx="6" fill="#ffffff" stroke="#d1d5db" stroke-width="1"/>
+  <text x="280" y="270" text-anchor="middle" fill="#111827" font-size="11" font-weight="600">EmbeddingClient</text>
+  <text x="280" y="284" text-anchor="middle" fill="#6b7280" font-size="9">BigModel API</text>
+
+  <!-- Memory types -->
+  <rect x="60" y="350" width="120" height="28" rx="4" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="120" y="368" text-anchor="middle" fill="#5b21b6" font-size="10">USER_PREFERENCE</text>
+
+  <rect x="190" y="350" width="90" height="28" rx="4" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="235" y="368" text-anchor="middle" fill="#5b21b6" font-size="10">CONTACT</text>
+
+  <rect x="60" y="386" width="110" height="28" rx="4" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="115" y="404" text-anchor="middle" fill="#5b21b6" font-size="10">TASK_PATTERN</text>
+
+  <rect x="178" y="386" width="100" height="28" rx="4" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="228" y="404" text-anchor="middle" fill="#5b21b6" font-size="10">APP_USAGE</text>
+
+  <rect x="60" y="422" width="120" height="28" rx="4" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="120" y="440" text-anchor="middle" fill="#5b21b6" font-size="10">BRAND_AFFINITY</text>
+
+  <rect x="188" y="422" width="110" height="28" rx="4" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="243" y="440" text-anchor="middle" fill="#5b21b6" font-size="10">CORRECTION</text>
+
+  <!-- Search formula -->
+  <rect x="60" y="464" width="280" height="34" rx="6" fill="#ffffff" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="200" y="478" text-anchor="middle" fill="#111827" font-size="10">检索评分 = 0.7 × 余弦相似度 + 0.3 × 重要性</text>
+  <text x="200" y="492" text-anchor="middle" fill="#6b7280" font-size="9">去重阈值: similarity ≥ 0.85 → 合并</text>
+
+  <!-- Storage files -->
+  <path d="M 80,510 L 148,510 L 158,520 L 158,540 L 80,540 Z" fill="#fff7ed" stroke="#fb923c" stroke-width="1"/>
+  <path d="M 148,510 L 148,520 L 158,520" fill="#fed7aa" stroke="#fb923c" stroke-width="0.8"/>
+  <text x="119" y="530" text-anchor="middle" fill="#c2410c" font-size="9">memories.json</text>
+
+  <path d="M 170,510 L 238,510 L 248,520 L 248,540 L 170,540 Z" fill="#fff7ed" stroke="#fb923c" stroke-width="1"/>
+  <path d="M 238,510 L 238,520 L 248,520" fill="#fed7aa" stroke="#fb923c" stroke-width="0.8"/>
+  <text x="209" y="530" text-anchor="middle" fill="#c2410c" font-size="9">embeddings.npy</text>
+
+  <!-- ═══════ Layer 2: Graph Memory (Center) ═══════ -->
+  <rect x="390" y="190" width="420" height="350" rx="12" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="410" y="212" fill="#16a34a" font-size="11" font-weight="700">LAYER 2: 图结构记忆</text>
+  <text x="410" y="228" fill="#15803d" font-size="10">SpatialGraphMemory + GraphStore — 导航知识</text>
+
+  <!-- Neo4j cylinder -->
+  <ellipse cx="510" cy="258" rx="56" ry="14" fill="#dbeafe" stroke="#008CC1" stroke-width="1.5"/>
+  <rect x="454" y="258" width="112" height="50" fill="#dbeafe" stroke="none"/>
+  <line x1="454" y1="258" x2="454" y2="308" stroke="#008CC1" stroke-width="1.5"/>
+  <line x1="566" y1="258" x2="566" y2="308" stroke="#008CC1" stroke-width="1.5"/>
+  <ellipse cx="510" cy="308" rx="56" ry="14" fill="#93c5fd" stroke="#008CC1" stroke-width="1.5"/>
+  <text x="510" y="290" text-anchor="middle" fill="#1e40af" font-size="12" font-weight="700">Neo4j</text>
+  <text x="510" y="336" text-anchor="middle" fill="#6b7280" font-size="10">空间图谱 AMSG v4</text>
+
+  <!-- Graph operations -->
+  <rect x="590" y="250" width="190" height="36" rx="6" fill="#ffffff" stroke="#86efac" stroke-width="1"/>
+  <text x="685" y="266" text-anchor="middle" fill="#166534" font-size="10" font-weight="600">locate()</text>
+  <text x="685" y="280" text-anchor="middle" fill="#6b7280" font-size="9">定位当前页面 → PageBelief</text>
+
+  <rect x="590" y="296" width="190" height="36" rx="6" fill="#ffffff" stroke="#86efac" stroke-width="1"/>
+  <text x="685" y="312" text-anchor="middle" fill="#166534" font-size="10" font-weight="600">plan()</text>
+  <text x="685" y="326" text-anchor="middle" fill="#6b7280" font-size="9">Dijkstra 路径规划 → RoutePlan</text>
+
+  <rect x="590" y="342" width="190" height="36" rx="6" fill="#ffffff" stroke="#86efac" stroke-width="1"/>
+  <text x="685" y="358" text-anchor="middle" fill="#166534" font-size="10" font-weight="600">record_transition()</text>
+  <text x="685" y="372" text-anchor="middle" fill="#6b7280" font-size="9">在线建图 (success/fail)</text>
+
+  <!-- Graph node diagram (mini) -->
+  <circle cx="440" cy="400" r="20" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="440" y="404" text-anchor="middle" fill="#1e40af" font-size="8" font-weight="600">home</text>
+
+  <circle cx="530" cy="380" r="20" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="530" y="384" text-anchor="middle" fill="#1e40af" font-size="7" font-weight="600">search</text>
+
+  <circle cx="530" cy="430" r="20" fill="#dbeafe" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="530" y="434" text-anchor="middle" fill="#1e40af" font-size="7" font-weight="600">detail</text>
+
+  <circle cx="630" cy="410" r="20" fill="#fee2e2" stroke="#dc2626" stroke-width="1.5"/>
+  <text x="630" y="414" text-anchor="middle" fill="#991b1b" font-size="7" font-weight="600">cart</text>
+
+  <circle cx="720" cy="410" r="20" fill="#fef2f2" stroke="#dc2626" stroke-width="2"/>
+  <text x="720" y="414" text-anchor="middle" fill="#991b1b" font-size="7" font-weight="600">pay</text>
+  <text x="720" y="440" text-anchor="middle" fill="#dc2626" font-size="7">⚠️ high</text>
+
+  <!-- Mini edges -->
+  <line x1="460" y1="396" x2="508" y2="384" stroke="#6b7280" stroke-width="1"/>
+  <line x1="460" y1="408" x2="508" y2="426" stroke="#6b7280" stroke-width="1"/>
+  <line x1="550" y1="386" x2="550" y2="412" stroke="#6b7280" stroke-width="1"/>
+  <line x1="550" y1="430" x2="608" y2="414" stroke="#6b7280" stroke-width="1"/>
+  <line x1="650" y1="410" x2="698" y2="410" stroke="#dc2626" stroke-width="1"/>
+
+  <!-- Path cost formula -->
+  <rect x="410" y="462" width="370" height="36" rx="6" fill="#ffffff" stroke="#86efac" stroke-width="1"/>
+  <text x="595" y="478" text-anchor="middle" fill="#111827" font-size="10">路径权重 = 1.0 + failure_rate × 3 + risk_penalty - conf × 0.3</text>
+  <text x="595" y="492" text-anchor="middle" fill="#6b7280" font-size="9">高风险页面: 即使有路径也强制 VLM 验证</text>
+
+  <!-- TaskIndex -->
+  <rect x="410" y="510" width="160" height="28" rx="4" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="490" y="528" text-anchor="middle" fill="#166534" font-size="10">TaskIndex (FAISS)</text>
+
+  <path d="M 580,524 L 618,524 L 618,510" fill="none" stroke="#16a34a" stroke-width="1" stroke-dasharray="3,2"/>
+  <text x="638" y="520" fill="#6b7280" font-size="9">task_index.npy</text>
+
+  <!-- ═══════ Layer 3: Session State (Right) ═══════ -->
+  <rect x="840" y="190" width="320" height="350" rx="12" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5" stroke-dasharray="6,4"/>
+  <text x="860" y="212" fill="#ea580c" font-size="11" font-weight="700">LAYER 3: 会话状态</text>
+  <text x="860" y="228" fill="#c2410c" font-size="10">UnifiedSessionState — 单次任务</text>
+
+  <!-- Session State box (dashed = ephemeral) -->
+  <rect x="860" y="248" width="280" height="160" rx="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="870" y="266" fill="#ea580c" font-size="10" font-weight="600">SESSION</text>
+
+  <rect x="870" y="276" width="120" height="24" rx="4" fill="#fed7aa" stroke="#fb923c" stroke-width="1"/>
+  <text x="930" y="292" text-anchor="middle" fill="#9a3412" font-size="10">商品列表 (状态)</text>
+
+  <rect x="998" y="276" width="130" height="24" rx="4" fill="#fed7aa" stroke="#fb923c" stroke-width="1"/>
+  <text x="1063" y="292" text-anchor="middle" fill="#9a3412" font-size="10">步骤历史</text>
+
+  <rect x="870" y="308" width="120" height="24" rx="4" fill="#fed7aa" stroke="#fb923c" stroke-width="1"/>
+  <text x="930" y="324" text-anchor="middle" fill="#9a3412" font-size="10">约束条件</text>
+
+  <rect x="998" y="308" width="130" height="24" rx="4" fill="#fed7aa" stroke="#fb923c" stroke-width="1"/>
+  <text x="1063" y="324" text-anchor="middle" fill="#9a3412" font-size="10">进度追踪</text>
+
+  <rect x="870" y="340" width="120" height="24" rx="4" fill="#fed7aa" stroke="#fb923c" stroke-width="1"/>
+  <text x="930" y="356" text-anchor="middle" fill="#9a3412" font-size="10">当前页面/应用</text>
+
+  <rect x="998" y="340" width="130" height="24" rx="4" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
+  <text x="1063" y="356" text-anchor="middle" fill="#dc2626" font-size="10">停滞检测</text>
+
+  <text x="1000" y="392" text-anchor="middle" fill="#9a3412" font-size="10">轻量级 → 每轮注入进度摘要</text>
+
+  <!-- RetrievalGateway -->
+  <rect x="860" y="420" width="280" height="70" rx="8" fill="#ffffff" stroke="#ea580c" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="870" y="440" fill="#ea580c" font-size="14">🔍</text>
+  <text x="890" y="440" fill="#c2410c" font-size="12" font-weight="700">RetrievalGateway</text>
+  <text x="1000" y="460" text-anchor="middle" fill="#9a3412" font-size="10">按需触发 (非每步)</text>
+  <text x="1000" y="476" text-anchor="middle" fill="#6b7280" font-size="10">"不确定" / "对比" / "多少钱" / 停滞</text>
+
+  <!-- ═══════ Arrows: Agent ↔ Memory Layers ═══════ -->
+  <!-- Agent → Layer 1 (read) -->
+  <path d="M 430,114 Q 300,114 200,188" stroke="#9333ea" stroke-width="1.5" fill="none" marker-end="url(#arrow-purple)"/>
+  <rect x="266" y="140" width="60" height="14" rx="2" fill="#ffffff" stroke="none"/>
+  <text x="296" y="151" text-anchor="middle" fill="#9333ea" font-size="9" font-weight="600">retrieve</text>
+
+  <!-- Agent → Layer 2 (navigate) -->
+  <path d="M 600,148 L 600,188" stroke="#16a34a" stroke-width="1.5" fill="none" marker-end="url(#arrow-green)"/>
+  <text x="614" y="170" fill="#16a34a" font-size="9" font-weight="600">locate + plan</text>
+
+  <!-- Agent → Layer 3 (inject) -->
+  <path d="M 770,114 Q 900,114 1000,188" stroke="#ea580c" stroke-width="1.5" fill="none" marker-end="url(#arrow-orange)"/>
+  <rect x="856" y="140" width="54" height="14" rx="2" fill="#ffffff" stroke="none"/>
+  <text x="883" y="151" text-anchor="middle" fill="#ea580c" font-size="9" font-weight="600">inject</text>
+
+  <!-- Layer 1 → Agent (write, dashed) -->
+  <path d="M 310,190 Q 370,158 430,130" stroke="#16a34a" stroke-width="1.5" fill="none" stroke-dasharray="5,3" marker-end="url(#arrow-green-dash)"/>
+  <rect x="336" y="150" width="42" height="14" rx="2" fill="#ffffff" stroke="none"/>
+  <text x="357" y="161" text-anchor="middle" fill="#16a34a" font-size="9" font-weight="600">store</text>
+
+  <!-- ═══════ Bottom: Context Injection Format ═══════ -->
+  <rect x="40" y="568" width="1120" height="190" rx="12" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="60" y="590" fill="#111827" font-size="13" font-weight="700">VLM 上下文注入格式 (注入到最后一条 user 消息的 text 开头)</text>
+
+  <rect x="60" y="602" width="350" height="140" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1"/>
+  <text x="76" y="620" fill="#16a34a" font-size="10" font-weight="600">图谱语义上下文 (SpatialGraphMemory)</text>
+  <text x="76" y="638" fill="#374151" font-size="10">"你当前在淘宝的商品详情页。"</text>
+  <text x="76" y="654" fill="#374151" font-size="10">"下一步建议: 点击"加入购物车"按钮"</text>
+  <text x="76" y="670" fill="#374151" font-size="10">"(confidence: 0.85)"</text>
+  <text x="76" y="696" fill="#9a3412" font-size="10">来源: Layer 2 — locate() + plan()</text>
+
+  <rect x="430" y="602" width="350" height="140" rx="8" fill="#fff7ed" stroke="#fed7aa" stroke-width="1"/>
+  <text x="446" y="620" fill="#ea580c" font-size="10" font-weight="600">记忆进度上下文 (MemoryManager)</text>
+  <text x="446" y="638" fill="#374151" font-size="10">[进度] 已完成: 打开淘宝→搜索→浏览</text>
+  <text x="446" y="654" fill="#374151" font-size="10">[商品] iPhone 17 Pro Max ¥8999</text>
+  <text x="446" y="670" fill="#374151" font-size="10">[约束] 银色, 512G</text>
+  <text x="446" y="696" fill="#9a3412" font-size="10">来源: Layer 3 — progress_summary()</text>
+
+  <rect x="800" y="602" width="340" height="140" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
+  <text x="816" y="620" fill="#dc2626" font-size="10" font-weight="600">SpecGuard 提示 (购物关键页面)</text>
+  <text x="816" y="638" fill="#374151" font-size="10">⚠️ 当前为规格选择页面</text>
+  <text x="816" y="654" fill="#374151" font-size="10">请确保选择正确的颜色和容量</text>
+  <text x="816" y="670" fill="#374151" font-size="10">再执行下一步操作</text>
+  <text x="816" y="696" fill="#9a3412" font-size="10">来源: SpecGuard — risk="medium/high"</text>
+
+  <!-- ═══════ Legend ═══════ -->
+  <rect x="40" y="762" width="600" height="16" rx="3" fill="none" stroke="none"/>
+  <line x1="50" y1="770" x2="80" y2="770" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+  <text x="86" y="774" fill="#6b7280" font-size="10">Memory read</text>
+  <line x1="170" y1="770" x2="200" y2="770" stroke="#16a34a" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#arrow-green-dash)"/>
+  <text x="206" y="774" fill="#6b7280" font-size="10">Memory write</text>
+  <line x1="300" y1="770" x2="330" y2="770" stroke="#9333ea" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+  <text x="336" y="774" fill="#6b7280" font-size="10">Retrieval</text>
+  <line x1="400" y1="770" x2="430" y2="770" stroke="#ea580c" stroke-width="1.5" marker-end="url(#arrow-orange)"/>
+  <text x="436" y="774" fill="#6b7280" font-size="10">Context inject</text>
+</svg>

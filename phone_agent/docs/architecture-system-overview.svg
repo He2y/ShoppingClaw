@@ -1,0 +1,293 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 880" width="1200" height="880">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+  </style>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#9333ea"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
+    </marker>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+    <linearGradient id="headerGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#2563eb" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#9333ea" stop-opacity="0.08"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="880" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="600" y="38" text-anchor="middle" fill="#111827" font-size="20" font-weight="700">ClawGUI-Agent System Architecture</text>
+  <text x="600" y="58" text-anchor="middle" fill="#6b7280" font-size="12">Hybrid VLM + Spatial Graph Navigation for Mobile GUI Automation</text>
+
+  <!-- ═══════════ Layer 1: Entry Layer ═══════════ -->
+  <rect x="40" y="75" width="1120" height="88" rx="10" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1" stroke-dasharray="6,4"/>
+  <text x="56" y="92" fill="#6b7280" font-size="10" font-weight="600" letter-spacing="0.06em">ENTRY LAYER</text>
+
+  <!-- CLI -->
+  <rect x="140" y="100" width="140" height="50" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="162" y="122" fill="#6b7280" font-size="10">⌨️</text>
+  <text x="178" y="122" fill="#111827" font-size="13" font-weight="600">main.py</text>
+  <text x="210" y="138" text-anchor="middle" fill="#6b7280" font-size="11">CLI 入口</text>
+
+  <!-- WebUI -->
+  <rect x="340" y="100" width="140" height="50" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5" filter="url(#shadow)"/>
+  <rect x="340" y="100" width="140" height="18" rx="8" fill="#f3f4f6" stroke="none"/>
+  <rect x="340" y="112" width="140" height="6" fill="#f3f4f6"/>
+  <circle cx="354" cy="109" r="3.5" fill="#ef4444" opacity="0.7"/>
+  <circle cx="364" cy="109" r="3.5" fill="#f59e0b" opacity="0.7"/>
+  <circle cx="374" cy="109" r="3.5" fill="#10b981" opacity="0.7"/>
+  <text x="410" y="138" text-anchor="middle" fill="#111827" font-size="13" font-weight="600">webui.py</text>
+
+  <!-- nanobot -->
+  <rect x="540" y="100" width="140" height="50" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="610" y="122" text-anchor="middle" fill="#111827" font-size="13" font-weight="600">nanobot</text>
+  <text x="610" y="138" text-anchor="middle" fill="#6b7280" font-size="11">Chat Gateway</text>
+
+  <!-- Clarification Agent -->
+  <rect x="760" y="100" width="180" height="50" rx="8" fill="#fff7ed" stroke="#fed7aa" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="850" y="122" text-anchor="middle" fill="#ea580c" font-size="13" font-weight="600">ClarificationAgent</text>
+  <text x="850" y="138" text-anchor="middle" fill="#9a3412" font-size="11">购物场景主动澄清</text>
+
+  <!-- Arrows: Entry → Agent -->
+  <line x1="210" y1="150" x2="360" y2="210" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+  <line x1="410" y1="150" x2="420" y2="210" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+  <line x1="610" y1="150" x2="500" y2="210" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+
+  <!-- ═══════════ Layer 2: Agent Orchestrator ═══════════ -->
+  <rect x="40" y="178" width="1120" height="100" rx="10" fill="url(#headerGrad)" stroke="#bfdbfe" stroke-width="1" stroke-dasharray="6,4"/>
+  <text x="56" y="196" fill="#2563eb" font-size="10" font-weight="600" letter-spacing="0.06em">AGENT ORCHESTRATOR</text>
+
+  <!-- PhoneAgent (hexagon-inspired double border) -->
+  <rect x="280" y="208" width="280" height="56" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2.5" filter="url(#shadow)"/>
+  <rect x="283" y="211" width="274" height="50" rx="8" fill="none" stroke="#93c5fd" stroke-width="0.8"/>
+  <text x="420" y="233" text-anchor="middle" fill="#1e40af" font-size="15" font-weight="700">PhoneAgent</text>
+  <text x="420" y="250" text-anchor="middle" fill="#3b82f6" font-size="11">Android / HarmonyOS — 截图→推理→动作 主循环</text>
+
+  <!-- IOSPhoneAgent -->
+  <rect x="600" y="208" width="180" height="56" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="690" y="233" text-anchor="middle" fill="#1e40af" font-size="13" font-weight="600">IOSPhoneAgent</text>
+  <text x="690" y="250" text-anchor="middle" fill="#3b82f6" font-size="11">iOS XCTest</text>
+
+  <!-- ═══════════ Layer 3: Core Subsystems ═══════════ -->
+  <rect x="40" y="296" width="1120" height="280" rx="10" fill="#fafafa" stroke="#e5e7eb" stroke-width="1" stroke-dasharray="6,4"/>
+  <text x="56" y="314" fill="#6b7280" font-size="10" font-weight="600" letter-spacing="0.06em">CORE SUBSYSTEMS</text>
+
+  <!-- Model Layer box -->
+  <rect x="60" y="325" width="280" height="235" rx="8" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1" stroke-dasharray="5,3"/>
+  <text x="76" y="342" fill="#7c3aed" font-size="10" font-weight="600">MODEL LAYER</text>
+
+  <!-- ModelClient -->
+  <rect x="80" y="352" width="116" height="44" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="138" y="370" text-anchor="middle" fill="#111827" font-size="12" font-weight="600">ModelClient</text>
+  <text x="138" y="386" text-anchor="middle" fill="#6b7280" font-size="10">OpenAI 兼容</text>
+
+  <!-- ProtocolBridge -->
+  <rect x="206" y="352" width="120" height="44" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="266" y="370" text-anchor="middle" fill="#111827" font-size="12" font-weight="600">ProtocolBridge</text>
+  <text x="266" y="386" text-anchor="middle" fill="#6b7280" font-size="10">坐标归一化</text>
+
+  <!-- 5 Adapters -->
+  <rect x="80" y="406" width="246" height="36" rx="6" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="203" y="428" text-anchor="middle" fill="#5b21b6" font-size="11" font-weight="600">5× VLM Adapters</text>
+
+  <!-- Adapter chips -->
+  <rect x="80" y="450" width="70" height="24" rx="4" fill="#ffffff" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="115" y="466" text-anchor="middle" fill="#7c3aed" font-size="9" font-weight="600">AutoGLM</text>
+  <rect x="156" y="450" width="60" height="24" rx="4" fill="#ffffff" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="186" y="466" text-anchor="middle" fill="#7c3aed" font-size="9" font-weight="600">UI-TARS</text>
+  <rect x="222" y="450" width="62" height="24" rx="4" fill="#ffffff" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="253" y="466" text-anchor="middle" fill="#7c3aed" font-size="9" font-weight="600">Qwen-VL</text>
+  <rect x="105" y="480" width="56" height="24" rx="4" fill="#ffffff" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="133" y="496" text-anchor="middle" fill="#7c3aed" font-size="9" font-weight="600">MAI-UI</text>
+  <rect x="167" y="480" width="68" height="24" rx="4" fill="#ffffff" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="201" y="496" text-anchor="middle" fill="#7c3aed" font-size="9" font-weight="600">GUI-Owl</text>
+
+  <!-- Prompt Templates -->
+  <rect x="80" y="514" width="246" height="32" rx="6" fill="#ffffff" stroke="#d1d5db" stroke-width="1"/>
+  <text x="203" y="534" text-anchor="middle" fill="#6b7280" font-size="11">Prompt Templates × 5 模型 × 2 语言</text>
+
+  <!-- Action Layer box -->
+  <rect x="360" y="325" width="200" height="235" rx="8" fill="#fef2f2" stroke="#fca5a5" stroke-width="1" stroke-dasharray="5,3"/>
+  <text x="376" y="342" fill="#dc2626" font-size="10" font-weight="600">ACTION LAYER</text>
+
+  <rect x="380" y="352" width="160" height="44" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="460" y="370" text-anchor="middle" fill="#111827" font-size="12" font-weight="600">ActionHandler</text>
+  <text x="460" y="386" text-anchor="middle" fill="#6b7280" font-size="10">解析 + 执行</text>
+
+  <rect x="380" y="406" width="160" height="36" rx="6" fill="#fee2e2" stroke="#fca5a5" stroke-width="1"/>
+  <text x="460" y="428" text-anchor="middle" fill="#991b1b" font-size="11" font-weight="600">5× Specialized Handlers</text>
+
+  <!-- SpecGuard -->
+  <rect x="380" y="458" width="160" height="44" rx="8" fill="#fff7ed" stroke="#fb923c" stroke-width="1.5"/>
+  <text x="400" y="478" fill="#c2410c" font-size="14">🛡️</text>
+  <text x="418" y="478" fill="#c2410c" font-size="12" font-weight="600">SpecGuard</text>
+  <text x="460" y="494" text-anchor="middle" fill="#9a3412" font-size="10">购物安全守卫</text>
+
+  <!-- DeviceActionIR -->
+  <rect x="380" y="514" width="160" height="32" rx="6" fill="#ffffff" stroke="#d1d5db" stroke-width="1"/>
+  <text x="460" y="534" text-anchor="middle" fill="#6b7280" font-size="11">DeviceActionIR</text>
+
+  <!-- Memory Layer box -->
+  <rect x="580" y="325" width="560" height="235" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1" stroke-dasharray="5,3"/>
+  <text x="596" y="342" fill="#16a34a" font-size="10" font-weight="600">MEMORY + SPATIAL LAYER</text>
+
+  <!-- MemoryManager -->
+  <rect x="600" y="352" width="150" height="44" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="675" y="370" text-anchor="middle" fill="#111827" font-size="12" font-weight="600">MemoryManager</text>
+  <text x="675" y="386" text-anchor="middle" fill="#6b7280" font-size="10">总协调器</text>
+
+  <!-- MemoryStore -->
+  <rect x="600" y="406" width="150" height="36" rx="6" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="675" y="428" text-anchor="middle" fill="#166534" font-size="11" font-weight="600">MemoryStore (FAISS)</text>
+
+  <!-- UnifiedState -->
+  <rect x="600" y="452" width="150" height="36" rx="6" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="675" y="474" text-anchor="middle" fill="#166534" font-size="11" font-weight="600">UnifiedSessionState</text>
+
+  <!-- RetrievalGateway -->
+  <rect x="600" y="498" width="150" height="36" rx="6" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="675" y="520" text-anchor="middle" fill="#166534" font-size="11" font-weight="600">RetrievalGateway</text>
+
+  <!-- SpatialGraphMemory -->
+  <rect x="770" y="352" width="170" height="44" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="855" y="370" text-anchor="middle" fill="#111827" font-size="12" font-weight="600">SpatialGraphMemory</text>
+  <text x="855" y="386" text-anchor="middle" fill="#6b7280" font-size="10">定位 + 路径规划</text>
+
+  <!-- RuntimeController -->
+  <rect x="770" y="406" width="170" height="36" rx="6" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/>
+  <text x="855" y="428" text-anchor="middle" fill="#1e40af" font-size="11" font-weight="600">RuntimeController v4</text>
+
+  <!-- SpatialModelBridge -->
+  <rect x="770" y="452" width="170" height="36" rx="6" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/>
+  <text x="855" y="474" text-anchor="middle" fill="#1e40af" font-size="11" font-weight="600">SpatialModelBridge</text>
+
+  <!-- FunctionalityCluster -->
+  <rect x="770" y="498" width="170" height="36" rx="6" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/>
+  <text x="855" y="520" text-anchor="middle" fill="#1e40af" font-size="11" font-weight="600">Functionality Discovery</text>
+
+  <!-- PageClassifier + SchemaRegistry -->
+  <rect x="960" y="352" width="160" height="44" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="1040" y="370" text-anchor="middle" fill="#111827" font-size="12" font-weight="600">PageClassifier</text>
+  <text x="1040" y="386" text-anchor="middle" fill="#6b7280" font-size="10">VLM 页面分类</text>
+
+  <rect x="960" y="406" width="160" height="36" rx="6" fill="#ffffff" stroke="#d1d5db" stroke-width="1"/>
+  <text x="1040" y="428" text-anchor="middle" fill="#6b7280" font-size="11">SchemaRegistry (YAML)</text>
+
+  <rect x="960" y="452" width="160" height="36" rx="6" fill="#ffffff" stroke="#d1d5db" stroke-width="1"/>
+  <text x="1040" y="474" text-anchor="middle" fill="#6b7280" font-size="11">SemanticExtractor</text>
+
+  <rect x="960" y="498" width="160" height="36" rx="6" fill="#ffffff" stroke="#d1d5db" stroke-width="1"/>
+  <text x="1040" y="520" text-anchor="middle" fill="#6b7280" font-size="11">PostconditionVerifier</text>
+
+  <!-- Arrows: Agent → Subsystems -->
+  <line x1="340" y1="264" x2="200" y2="350" stroke="#9333ea" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+  <line x1="420" y1="264" x2="460" y2="350" stroke="#ea580c" stroke-width="1.5" marker-end="url(#arrow-orange)"/>
+  <line x1="500" y1="264" x2="675" y2="350" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+  <line x1="520" y1="264" x2="855" y2="350" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+
+  <!-- ═══════════ Layer 4: Device Layer ═══════════ -->
+  <rect x="40" y="592" width="520" height="100" rx="10" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1" stroke-dasharray="6,4"/>
+  <text x="56" y="610" fill="#6b7280" font-size="10" font-weight="600" letter-spacing="0.06em">DEVICE LAYER</text>
+
+  <!-- DeviceFactory -->
+  <rect x="60" y="620" width="130" height="56" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5" filter="url(#shadow)"/>
+  <text x="125" y="645" text-anchor="middle" fill="#111827" font-size="12" font-weight="600">DeviceFactory</text>
+  <text x="125" y="661" text-anchor="middle" fill="#6b7280" font-size="10">平台抽象</text>
+
+  <!-- ADB -->
+  <rect x="210" y="624" width="100" height="46" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="260" y="645" text-anchor="middle" fill="#111827" font-size="12" font-weight="600">ADB</text>
+  <text x="260" y="659" text-anchor="middle" fill="#6b7280" font-size="10">Android</text>
+
+  <!-- HDC -->
+  <rect x="320" y="624" width="100" height="46" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="370" y="645" text-anchor="middle" fill="#111827" font-size="12" font-weight="600">HDC</text>
+  <text x="370" y="659" text-anchor="middle" fill="#6b7280" font-size="10">HarmonyOS</text>
+
+  <!-- XCTest -->
+  <rect x="430" y="624" width="110" height="46" rx="8" fill="#ffffff" stroke="#d1d5db" stroke-width="1.5"/>
+  <text x="485" y="645" text-anchor="middle" fill="#111827" font-size="12" font-weight="600">XCTest</text>
+  <text x="485" y="659" text-anchor="middle" fill="#6b7280" font-size="10">iOS (WDA)</text>
+
+  <!-- Arrow: Action Layer → Device -->
+  <line x1="460" y1="546" x2="300" y2="620" stroke="#ea580c" stroke-width="1.5" marker-end="url(#arrow-orange)"/>
+
+  <!-- ═══════════ Layer 5: Storage Layer ═══════════ -->
+  <rect x="580" y="592" width="580" height="100" rx="10" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1" stroke-dasharray="6,4"/>
+  <text x="596" y="610" fill="#6b7280" font-size="10" font-weight="600" letter-spacing="0.06em">STORAGE LAYER</text>
+
+  <!-- Neo4j cylinder -->
+  <ellipse cx="660" cy="630" rx="44" ry="12" fill="#dbeafe" stroke="#008CC1" stroke-width="1.5"/>
+  <rect x="616" y="630" width="88" height="40" fill="#dbeafe" stroke="none"/>
+  <line x1="616" y1="630" x2="616" y2="670" stroke="#008CC1" stroke-width="1.5"/>
+  <line x1="704" y1="630" x2="704" y2="670" stroke="#008CC1" stroke-width="1.5"/>
+  <ellipse cx="660" cy="670" rx="44" ry="12" fill="#93c5fd" stroke="#008CC1" stroke-width="1.5"/>
+  <text x="660" y="656" text-anchor="middle" fill="#1e40af" font-size="12" font-weight="700">Neo4j</text>
+  <text x="660" y="696" text-anchor="middle" fill="#6b7280" font-size="10">空间图谱</text>
+
+  <!-- FAISS cylinder -->
+  <ellipse cx="810" cy="630" rx="44" ry="12" fill="#ede9fe" stroke="#0467DF" stroke-width="1.5"/>
+  <rect x="766" y="630" width="88" height="40" fill="#ede9fe" stroke="none"/>
+  <line x1="766" y1="630" x2="766" y2="670" stroke="#0467DF" stroke-width="1.5"/>
+  <line x1="854" y1="630" x2="854" y2="670" stroke="#0467DF" stroke-width="1.5"/>
+  <ellipse cx="810" cy="670" rx="44" ry="12" fill="#c4b5fd" stroke="#0467DF" stroke-width="1.5"/>
+  <text x="810" y="656" text-anchor="middle" fill="#5b21b6" font-size="12" font-weight="700">FAISS</text>
+  <text x="810" y="696" text-anchor="middle" fill="#6b7280" font-size="10">向量索引</text>
+
+  <!-- JSON/NumPy -->
+  <!-- Folded corner document -->
+  <path d="M 918,622 L 988,622 L 1000,634 L 1000,678 L 918,678 Z" fill="#fff7ed" stroke="#fb923c" stroke-width="1.5"/>
+  <path d="M 988,622 L 988,634 L 1000,634" fill="#fed7aa" stroke="#fb923c" stroke-width="1"/>
+  <line x1="930" y1="648" x2="988" y2="648" stroke="#fb923c" stroke-width="0.8" opacity="0.5"/>
+  <line x1="930" y1="660" x2="982" y2="660" stroke="#fb923c" stroke-width="0.8" opacity="0.5"/>
+  <text x="959" y="643" text-anchor="middle" fill="#c2410c" font-size="11" font-weight="600">JSON</text>
+  <text x="959" y="674" text-anchor="middle" fill="#c2410c" font-size="10">NumPy</text>
+  <text x="959" y="696" text-anchor="middle" fill="#6b7280" font-size="10">本地持久化</text>
+
+  <!-- Arrows: Memory/Spatial → Storage -->
+  <path d="M 675,536 L 675,570 L 660,620" stroke="#16a34a" stroke-width="1.5" fill="none" marker-end="url(#arrow-green)" stroke-dasharray="5,3"/>
+  <path d="M 675,536 L 710,570 L 810,620" stroke="#16a34a" stroke-width="1.5" fill="none" marker-end="url(#arrow-green)" stroke-dasharray="5,3"/>
+  <path d="M 855,536 L 855,570 L 660,620" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#arrow-blue)" stroke-dasharray="5,3"/>
+  <path d="M 855,536 L 920,570 L 959,620" stroke="#2563eb" stroke-width="1.5" fill="none" marker-end="url(#arrow-blue)" stroke-dasharray="5,3"/>
+
+  <!-- ═══════════ Legend ═══════════ -->
+  <rect x="40" y="720" width="1120" height="140" rx="8" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="60" y="742" fill="#111827" font-size="12" font-weight="600">Legend</text>
+
+  <!-- Arrow legends -->
+  <line x1="60" y1="760" x2="100" y2="760" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <text x="110" y="764" fill="#6b7280" font-size="11">图谱数据流</text>
+  <line x1="60" y1="784" x2="100" y2="784" stroke="#16a34a" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <text x="110" y="788" fill="#6b7280" font-size="11">记忆读写</text>
+  <line x1="60" y1="808" x2="100" y2="808" stroke="#9333ea" stroke-width="2" marker-end="url(#arrow-purple)"/>
+  <text x="110" y="812" fill="#6b7280" font-size="11">模型推理</text>
+  <line x1="60" y1="832" x2="100" y2="832" stroke="#ea580c" stroke-width="2" marker-end="url(#arrow-orange)"/>
+  <text x="110" y="836" fill="#6b7280" font-size="11">动作执行</text>
+
+  <!-- Shape legends -->
+  <rect x="280" y="752" width="60" height="24" rx="8" fill="#eff6ff" stroke="#2563eb" stroke-width="2"/>
+  <text x="360" y="769" fill="#6b7280" font-size="11">核心组件 (双边框=编排器)</text>
+  <rect x="280" y="782" width="60" height="24" rx="8" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="360" y="799" fill="#6b7280" font-size="11">记忆子系统</text>
+  <rect x="280" y="812" width="60" height="24" rx="8" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/>
+  <text x="360" y="829" fill="#6b7280" font-size="11">空间图谱子系统</text>
+
+  <!-- Key data -->
+  <text x="600" y="756" fill="#111827" font-size="11" font-weight="600">Key Numbers</text>
+  <text x="600" y="776" fill="#6b7280" font-size="11">• 5 种 VLM 模型统一适配 (AutoGLM, UI-TARS, Qwen-VL, MAI-UI, GUI-Owl)</text>
+  <text x="600" y="796" fill="#6b7280" font-size="11">• 3 平台设备控制 (Android ADB, HarmonyOS HDC, iOS XCTest)</text>
+  <text x="600" y="816" fill="#6b7280" font-size="11">• 17 种语义页面类型, 3 级风险分级 (normal / medium / high)</text>
+  <text x="600" y="836" fill="#6b7280" font-size="11">• 3 层记忆架构: 向量语义 + Neo4j 图结构 + 会话状态</text>
+</svg>

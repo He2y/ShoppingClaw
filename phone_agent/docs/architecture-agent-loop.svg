@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 920" width="1200" height="920">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+  </style>
+  <defs>
+    <marker id="arrow-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arrow-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#16a34a"/>
+    </marker>
+    <marker id="arrow-purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#9333ea"/>
+    </marker>
+    <marker id="arrow-orange" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
+    </marker>
+    <marker id="arrow-red" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+    <filter id="shadow" x="-4%" y="-4%" width="108%" height="108%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="920" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="600" y="35" text-anchor="middle" fill="#111827" font-size="20" font-weight="700">Agent Execution Loop — Navigate / Explore / Verify</text>
+  <text x="600" y="55" text-anchor="middle" fill="#6b7280" font-size="12">PhoneAgent._execute_step() 核心执行流程</text>
+
+  <!-- ═══════ Phase 0: User Task ═══════ -->
+  <!-- User icon -->
+  <circle cx="600" cy="86" r="14" fill="#eff6ff" stroke="#2563eb" stroke-width="1.5"/>
+  <text x="600" y="91" text-anchor="middle" fill="#2563eb" font-size="14">👤</text>
+  <text x="600" y="115" text-anchor="middle" fill="#111827" font-size="12" font-weight="600">用户任务</text>
+
+  <!-- Arrow down -->
+  <line x1="600" y1="122" x2="600" y2="142" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+
+  <!-- ═══════ Phase 1: Screenshot & Perception ═══════ -->
+  <rect x="430" y="148" width="340" height="54" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2" filter="url(#shadow)"/>
+  <text x="456" y="172" fill="#2563eb" font-size="14">📱</text>
+  <text x="476" y="172" fill="#1e40af" font-size="13" font-weight="700">Phase 1: 截图 &amp; 感知</text>
+  <text x="600" y="192" text-anchor="middle" fill="#3b82f6" font-size="11">screenshot → MD5 hash → get_current_app()</text>
+
+  <line x1="600" y1="202" x2="600" y2="222" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+
+  <!-- ═══════ Phase 2: Graph Localization ═══════ -->
+  <rect x="340" y="228" width="520" height="74" rx="10" fill="#f0fdf4" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+  <text x="366" y="252" fill="#16a34a" font-size="14">🗺️</text>
+  <text x="386" y="252" fill="#166534" font-size="13" font-weight="700">Phase 2: 图谱定位 &amp; 路由决策</text>
+  <text x="600" y="272" text-anchor="middle" fill="#15803d" font-size="11">PageClassifier → SemanticExtractor → SpatialGraphMemory.locate() → plan()</text>
+  <text x="600" y="290" text-anchor="middle" fill="#15803d" font-size="11">返回: mode (navigate / explore / goal_reached) + confidence + RoutePlan</text>
+
+  <!-- Decision Diamond -->
+  <line x1="600" y1="302" x2="600" y2="330" stroke="#111827" stroke-width="1.5"/>
+
+  <polygon points="600,336 690,386 600,436 510,386" fill="#fff7ed" stroke="#ea580c" stroke-width="2"/>
+  <text x="600" y="380" text-anchor="middle" fill="#9a3412" font-size="12" font-weight="600">路由判断</text>
+  <text x="600" y="396" text-anchor="middle" fill="#9a3412" font-size="10">mode? confidence?</text>
+  <text x="600" y="410" text-anchor="middle" fill="#9a3412" font-size="10">risk_level?</text>
+
+  <!-- ═══════ Left Branch: Navigate Mode ═══════ -->
+  <line x1="510" y1="386" x2="240" y2="386" stroke="#16a34a" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <!-- Label on arrow -->
+  <rect x="310" y="370" width="160" height="18" rx="3" fill="#ffffff" stroke="none"/>
+  <text x="390" y="383" text-anchor="middle" fill="#16a34a" font-size="11" font-weight="600">navigate + conf≥0.7</text>
+
+  <rect x="60" y="352" width="180" height="70" rx="10" fill="#dcfce7" stroke="#16a34a" stroke-width="2" filter="url(#shadow)"/>
+  <text x="90" y="376" fill="#16a34a" font-size="16">⚡</text>
+  <text x="110" y="376" fill="#166534" font-size="14" font-weight="700">Navigate</text>
+  <text x="150" y="396" text-anchor="middle" fill="#166534" font-size="11">SpatialModelBridge</text>
+  <text x="150" y="410" text-anchor="middle" fill="#166534" font-size="11">.compile_direct_action()</text>
+
+  <text x="150" y="438" text-anchor="middle" fill="#15803d" font-size="10" font-weight="600">跳过 VLM 推理</text>
+  <text x="150" y="452" text-anchor="middle" fill="#15803d" font-size="10">延迟 ~ms 级</text>
+
+  <!-- ═══════ Right Branch: Verify Mode ═══════ -->
+  <line x1="690" y1="386" x2="960" y2="386" stroke="#dc2626" stroke-width="2" marker-end="url(#arrow-red)"/>
+  <rect x="736" y="370" width="180" height="18" rx="3" fill="#ffffff" stroke="none"/>
+  <text x="826" y="383" text-anchor="middle" fill="#dc2626" font-size="11" font-weight="600">risk_level = "high"</text>
+
+  <rect x="960" y="352" width="180" height="70" rx="10" fill="#fef2f2" stroke="#dc2626" stroke-width="2" filter="url(#shadow)"/>
+  <text x="986" y="376" fill="#dc2626" font-size="16">🛡️</text>
+  <text x="1006" y="376" fill="#991b1b" font-size="14" font-weight="700">Verify</text>
+  <text x="1050" y="396" text-anchor="middle" fill="#991b1b" font-size="11">VLM 推理 + SpecGuard</text>
+  <text x="1050" y="410" text-anchor="middle" fill="#991b1b" font-size="11">强制人工验证高风险动作</text>
+
+  <text x="1050" y="438" text-anchor="middle" fill="#b91c1c" font-size="10" font-weight="600">payment / checkout</text>
+  <text x="1050" y="452" text-anchor="middle" fill="#b91c1c" font-size="10">必须 VLM 确认</text>
+
+  <!-- ═══════ Middle Branch: Explore Mode ═══════ -->
+  <line x1="600" y1="436" x2="600" y2="472" stroke="#9333ea" stroke-width="2" marker-end="url(#arrow-purple)"/>
+  <rect x="540" y="442" width="120" height="18" rx="3" fill="#ffffff" stroke="none"/>
+  <text x="600" y="455" text-anchor="middle" fill="#9333ea" font-size="11" font-weight="600">explore / 低置信</text>
+
+  <rect x="430" y="478" width="340" height="120" rx="10" fill="#faf5ff" stroke="#9333ea" stroke-width="2" filter="url(#shadow)"/>
+  <text x="456" y="502" fill="#9333ea" font-size="16">🧠</text>
+  <text x="476" y="502" fill="#5b21b6" font-size="14" font-weight="700">Explore (VLM 推理)</text>
+
+  <text x="460" y="524" fill="#6b21a8" font-size="11">① Adapter.build_messages()</text>
+  <text x="460" y="540" fill="#6b21a8" font-size="11">② 注入: 图谱语义 + 记忆进度 + SpecGuard</text>
+  <text x="460" y="556" fill="#6b21a8" font-size="11">③ ModelClient.request() → thinking + action</text>
+  <text x="460" y="572" fill="#6b21a8" font-size="11">④ Parse → ProtocolBridge → DeviceActionIR</text>
+  <text x="460" y="588" fill="#6b21a8" font-size="11">⑤ ActionHandler.execute()</text>
+
+  <!-- All three paths converge -->
+  <line x1="150" y1="422" x2="150" y2="640" stroke="#16a34a" stroke-width="1.5"/>
+  <line x1="150" y1="640" x2="430" y2="640" stroke="#16a34a" stroke-width="1.5" marker-end="url(#arrow-green)"/>
+
+  <line x1="600" y1="598" x2="600" y2="630" stroke="#9333ea" stroke-width="1.5" marker-end="url(#arrow-purple)"/>
+
+  <line x1="1050" y1="422" x2="1050" y2="640" stroke="#dc2626" stroke-width="1.5"/>
+  <line x1="1050" y1="640" x2="770" y2="640" stroke="#dc2626" stroke-width="1.5" marker-end="url(#arrow-red)"/>
+
+  <!-- ═══════ Phase 4: State Update ═══════ -->
+  <rect x="430" y="622" width="340" height="74" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-width="2" filter="url(#shadow)"/>
+  <text x="456" y="646" fill="#ea580c" font-size="14">📝</text>
+  <text x="476" y="646" fill="#9a3412" font-size="13" font-weight="700">Phase 4: 状态更新 &amp; 记忆记录</text>
+  <text x="600" y="666" text-anchor="middle" fill="#c2410c" font-size="11">UnifiedState.record_step() → MemoryManager.update_transition()</text>
+  <text x="600" y="682" text-anchor="middle" fill="#c2410c" font-size="11">在线扩展图谱 + RetrievalGateway 检查 + 停滞检测</text>
+
+  <!-- Decision: Finished? -->
+  <line x1="600" y1="696" x2="600" y2="722" stroke="#111827" stroke-width="1.5"/>
+
+  <polygon points="600,728 668,764 600,800 532,764" fill="#f9fafb" stroke="#6b7280" stroke-width="1.5"/>
+  <text x="600" y="762" text-anchor="middle" fill="#374151" font-size="12" font-weight="600">完成?</text>
+  <text x="600" y="778" text-anchor="middle" fill="#6b7280" font-size="10">finished / max_steps</text>
+
+  <!-- Loop back arrow (not finished) -->
+  <line x1="532" y1="764" x2="70" y2="764" stroke="#2563eb" stroke-width="1.5"/>
+  <line x1="70" y1="764" x2="70" y2="175" stroke="#2563eb" stroke-width="1.5"/>
+  <line x1="70" y1="175" x2="426" y2="175" stroke="#2563eb" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+  <rect x="80" y="460" width="64" height="18" rx="3" fill="#eff6ff" stroke="none"/>
+  <text x="112" y="473" text-anchor="middle" fill="#2563eb" font-size="11" font-weight="600">继续循环</text>
+
+  <!-- Finished path -->
+  <line x1="600" y1="800" x2="600" y2="830" stroke="#111827" stroke-width="1.5" marker-end="url(#arrow-blue)"/>
+  <rect x="436" y="828" width="328" height="54" rx="10" fill="#eff6ff" stroke="#2563eb" stroke-width="2" filter="url(#shadow)"/>
+  <text x="456" y="852" fill="#2563eb" font-size="14">✅</text>
+  <text x="476" y="852" fill="#1e40af" font-size="13" font-weight="700">Phase 5: 任务结束</text>
+  <text x="600" y="872" text-anchor="middle" fill="#3b82f6" font-size="11">commit trajectory → 更新 FAISS 索引 → 持久化</text>
+
+  <!-- Labels for Yes/No -->
+  <rect x="606" y="796" width="32" height="16" rx="3" fill="#ffffff" stroke="none"/>
+  <text x="622" y="808" text-anchor="middle" fill="#16a34a" font-size="10" font-weight="600">Yes</text>
+  <rect x="490" y="752" width="26" height="16" rx="3" fill="#ffffff" stroke="none"/>
+  <text x="503" y="764" text-anchor="middle" fill="#dc2626" font-size="10" font-weight="600">No</text>
+
+  <!-- ═══════ Side annotations ═══════ -->
+  <!-- Navigate annotation -->
+  <rect x="60" y="468" width="180" height="60" rx="6" fill="#f0fdf4" stroke="#86efac" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="150" y="486" text-anchor="middle" fill="#166534" font-size="10" font-weight="600">Navigate 模式优势</text>
+  <text x="150" y="500" text-anchor="middle" fill="#15803d" font-size="10">• 零 VLM 调用成本</text>
+  <text x="150" y="514" text-anchor="middle" fill="#15803d" font-size="10">• 毫秒级动作延迟</text>
+
+  <!-- Explore annotation -->
+  <rect x="800" y="478" width="180" height="74" rx="6" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="890" y="496" text-anchor="middle" fill="#5b21b6" font-size="10" font-weight="600">Explore 模式副作用</text>
+  <text x="890" y="512" text-anchor="middle" fill="#6b21a8" font-size="10">• 每步同时建图</text>
+  <text x="890" y="528" text-anchor="middle" fill="#6b21a8" font-size="10">• 扩展 AMSG 图谱</text>
+  <text x="890" y="544" text-anchor="middle" fill="#6b21a8" font-size="10">• 下次可走 Navigate</text>
+  <line x1="770" y1="538" x2="800" y2="520" stroke="#9333ea" stroke-width="1" stroke-dasharray="3,2"/>
+
+  <!-- Verify annotation -->
+  <rect x="960" y="460" width="180" height="60" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1" stroke-dasharray="4,2"/>
+  <text x="1050" y="478" text-anchor="middle" fill="#991b1b" font-size="10" font-weight="600">Verify 触发条件</text>
+  <text x="1050" y="492" text-anchor="middle" fill="#b91c1c" font-size="10">• checkout / payment</text>
+  <text x="1050" y="506" text-anchor="middle" fill="#b91c1c" font-size="10">• 规格不匹配 → Interact</text>
+
+  <!-- ═══════ Legend ═══════ -->
+  <rect x="40" y="892" width="400" height="22" rx="4" fill="#f9fafb" stroke="none"/>
+  <line x1="50" y1="903" x2="80" y2="903" stroke="#16a34a" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <text x="86" y="907" fill="#6b7280" font-size="10">Navigate</text>
+  <line x1="150" y1="903" x2="180" y2="903" stroke="#9333ea" stroke-width="2" marker-end="url(#arrow-purple)"/>
+  <text x="186" y="907" fill="#6b7280" font-size="10">Explore</text>
+  <line x1="240" y1="903" x2="270" y2="903" stroke="#dc2626" stroke-width="2" marker-end="url(#arrow-red)"/>
+  <text x="276" y="907" fill="#6b7280" font-size="10">Verify</text>
+  <line x1="320" y1="903" x2="350" y2="903" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <text x="356" y="907" fill="#6b7280" font-size="10">Loop</text>
+</svg>
