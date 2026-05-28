@@ -18,6 +18,7 @@ from phone_agent.actions import ActionHandler
 from phone_agent.actions.handler import do, finish, parse_action
 from phone_agent.config import get_messages, get_system_prompt
 from phone_agent.clarify import ClarificationAgent
+from phone_agent.core.spec_guard import SpecGuard
 from phone_agent.device_factory import get_device_factory
 from phone_agent.model import ModelClient, ModelConfig
 from phone_agent.model.adapters import ModelType, detect_model_type, get_adapter
@@ -150,6 +151,7 @@ class PhoneAgent:
         # Load externalized shopping config (JSON with code defaults)
         from phone_agent.config.shopping_config import ShoppingConfig
         self._shopping_config = ShoppingConfig.load()
+        self._spec_guard = SpecGuard(self._shopping_config)
 
         # Initialize tracer if enabled
         self.tracer = None
@@ -333,320 +335,7 @@ class PhoneAgent:
         self._step_count = 0
 
 
-    # ------------------------------------------------------------------
-    # Spec-page action guard: apps where skipping Interact is critical
-    # (loaded from config/shopping.json with code defaults as fallback)
-    # ------------------------------------------------------------------
-
-    def _detect_critical_scenario(
-        self,
-        current_app: str,
-        screenshot_base64: str,
-        page_type: str | None = None,
-    ) -> list[str]:
-        """Return hints injected into VLM context when on a shopping spec page."""
-        if not any(app in (current_app or "") for app in self._shopping_config.apps):
-            return []
-
-        if page_type not in {"spec_selection", "checkout", "payment"}:
-            return []
-
-        requested_specs = self._requested_spec_slots()
-        if requested_specs:
-            return [
-                "[SpecGuard]\n"
-                f"用户已明确指定规格：{self._format_specs(requested_specs)}。\n"
-                "不要再询问用户。请先在当前页面选择这些规格；只有在规格已经匹配后，才能点击确认/加入购物车/立即购买。\n"
-                "如果页面没有对应规格或无法判断是否匹配，先选择可见的匹配项或回退重试，不要进入结算、支付、地址或登录页面。"
-            ]
-
-        return [
-            "[SpecGuard]\n"
-            "当前可能处于规格选择或下单确认页面，但用户没有明确指定规格。\n"
-            "不要默认替用户选择具体 SKU；如果下一步会确认规格、加入购物车或购买，应先询问用户需要哪个规格。"
-        ]
-
-    # ── SKU extraction patterns ──
-    _COLOR_VALUES = {
-        "银色", "蓝色", "黑色", "白色", "红色", "金色", "绿色", "紫色", "灰色",
-        "粉色", "橙色", "黄色", "棕色", "深空黑色", "星光色", "午夜色", "远峰蓝",
-        "苍岭绿", "暗紫色", "石墨色", "亮黑色", "土豪金", "玫瑰金", "深空灰",
-    }
-    _STORAGE_PATTERNS = [
-        r"(\d+\s*(?:TB?|GB?))",  # 512G, 512GB, 1TB, 256G
-    ]
-    _SIZE_VALUES = {"S", "M", "L", "XL", "XXL", "XXXL", "均码", "大码", "小码"}
-    _SPEC_KEY_ALIASES = {
-        "color": "颜色",
-        "colour": "颜色",
-        "颜色": "颜色",
-        "机身颜色": "颜色",
-        "storage": "容量",
-        "capacity": "容量",
-        "memory": "容量",
-        "容量": "容量",
-        "存储容量": "容量",
-        "size": "尺码",
-        "尺码": "尺码",
-        "尺寸": "尺码",
-    }
-    _SPEC_COMMIT_TARGETS = {
-        "confirm_spec_add_to_cart",
-        "confirm_add_to_cart_success",
-        "confirm_spec",
-        "add_to_cart",
-        "buy_now",
-        "submit_order",
-        "checkout",
-        "payment",
-    }
-
-    def _extract_specs_from_task(self, task: str) -> dict[str, str]:
-        """
-        Parse the user's original task for explicit SKU specifications.
-        Returns a mapping from spec category to value, e.g.:
-        {'颜色': '银色', '容量': '512G'}
-        """
-        specs: dict[str, str] = {}
-
-        # Extract color
-        for color in sorted(self._COLOR_VALUES, key=len, reverse=True):
-            if color in task:
-                specs["颜色"] = color
-                break
-
-        # Extract storage
-        for pattern in self._STORAGE_PATTERNS:
-            m = re.search(pattern, task, re.IGNORECASE)
-            if m:
-                specs["容量"] = m.group(1).upper().replace(" ", "").replace("B", "B")
-                break
-
-        # Extract size
-        for size in sorted(self._SIZE_VALUES, key=len, reverse=True):
-            rsize = rf"\b{re.escape(size)}\b"
-            if re.search(rsize, task):
-                specs["尺码"] = size
-                break
-
-        return specs
-
-    @classmethod
-    def _normalize_spec_key(cls, key: str) -> str:
-        normalized = str(key or "").strip()
-        return cls._SPEC_KEY_ALIASES.get(
-            normalized.lower(),
-            cls._SPEC_KEY_ALIASES.get(normalized, normalized),
-        )
-
-    @classmethod
-    def _format_specs(cls, specs: dict[str, str]) -> str:
-        return "，".join(
-            f"{cls._normalize_spec_key(key)}={value}"
-            for key, value in specs.items()
-            if value
-        )
-
-    def _requested_spec_slots(self) -> dict[str, str]:
-        """Merge explicit SKU constraints from task text and VLM pre-plan."""
-        specs: dict[str, str] = {}
-        for key, value in self._extract_specs_from_task(getattr(self, "_current_task", "")).items():
-            if value:
-                specs[self._normalize_spec_key(key)] = str(value)
-
-        plans = []
-        if isinstance(getattr(self, "_vlm_plan", None), dict):
-            plans.append(self._vlm_plan)
-        memory_plan = getattr(getattr(self, "memory_manager", None), "_vlm_plan", None)
-        if isinstance(memory_plan, dict):
-            plans.append(memory_plan)
-        for plan in plans:
-            plan_specs = plan.get("specs", {})
-            if not isinstance(plan_specs, dict):
-                continue
-            for key, value in plan_specs.items():
-                if value:
-                    specs[self._normalize_spec_key(key)] = str(value)
-        return specs
-
-    def _is_spec_selected(
-        self, thinking: str, spec_key: str, spec_value: str
-    ) -> bool:
-        """
-        Check whether the thinking reflects that a specific SKU value
-        is already selected on the current page.
-        """
-        # Normalize spec_value for fuzzy matching
-        val = spec_value.upper().replace(" ", "")
-        # e.g. "512GB" -> also try "512G"
-        val_short = val.replace("GB", "G").replace("TB", "T")
-
-        # The thinking must mention the value
-        if spec_value not in thinking and val not in thinking and val_short not in thinking:
-            return False
-
-        # And it must appear near a "selected" marker
-        for sv in (spec_value, val, val_short):
-            # Pattern: value appears within 20 chars of a selection marker
-            if re.search(
-                rf"{re.escape(sv)}.{{0,20}}(?:已选中|已选[^项]|已选择|已勾选|✔|✓|\bselected\b|当前)",
-                thinking,
-            ):
-                return True
-            # Pattern: spec_key then value then selection marker
-            if re.search(
-                rf"{re.escape(spec_key)}.*?{re.escape(sv)}",
-                thinking,
-            ) and any(m in thinking for m in ("已选中", "已选", "已选择", "已勾选")):
-                return True
-
-        return False
-
-    def _build_spec_question(self, thinking: str) -> str:
-        """Build a contextual question when the user hasn't specified exact SKU."""
-        if "颜色" in thinking and "容量" in thinking:
-            return "这里有多种颜色和容量可选，请问您需要哪个配置？"
-        elif "颜色" in thinking:
-            return "有多种颜色可选，请问您喜欢哪个颜色？"
-        elif "容量" in thinking:
-            return "有多种容量可选，请问您需要多大容量？"
-        elif "温度" in thinking:
-            return "请问您需要什么温度？"
-        elif "糖度" in thinking:
-            return "请问您需要什么糖度？"
-        return "请问您需要什么规格和配置？"
-
-    def _is_spec_commit_action(self, action: dict, thinking: str, page_type: str | None) -> bool:
-        """Return True only for actions that commit a spec/purchase choice."""
-        if page_type not in {"spec_selection", "checkout", "payment"}:
-            return False
-
-        action_name = str(action.get("action") or action.get("action_type") or "").lower()
-        if action_name in {"interact", "back", "wait", "type", "launch", "home"}:
-            return False
-
-        semantic_target = str(action.get("semantic_target") or action.get("target") or "").lower()
-        if semantic_target in self._SPEC_COMMIT_TARGETS:
-            return True
-        if any(token in semantic_target for token in self._SPEC_COMMIT_TARGETS):
-            return True
-
-        selection_tokens = ("choose_spec", "select_spec", "颜色", "容量", "尺码", "规格项", "option")
-        if any(token.lower() in semantic_target for token in selection_tokens):
-            return False
-
-        action_text = json.dumps(action, ensure_ascii=False).lower()
-        commit_keywords = (
-            "确定",
-            "确认",
-            "加入购物车",
-            "加购",
-            "立即购买",
-            "购买",
-            "提交订单",
-            "结算",
-            "支付",
-            "confirm",
-            "add to cart",
-            "buy now",
-            "checkout",
-            "submit order",
-            "pay",
-        )
-        combined = f"{action_text}\n{thinking}".lower()
-        return any(keyword.lower() in combined for keyword in commit_keywords)
-
-    def _spec_guard_check(
-        self,
-        action: dict,
-        thinking: str,
-        current_app: str,
-        page_type: str | None = None,
-    ) -> dict | None:
-        """
-        Code-level safety net: before purchase/confirm on a spec page,
-        cross-reference the user's original task requirements against
-        what's currently selected. Intercepts only when:
-        - The user didn't specify exact SKU → must ask
-        - The user's specified SKU doesn't match what's selected → must correct
-
-        Args:
-            action: The action to check
-            thinking: The model's reasoning
-            current_app: Current app name
-            page_type: Current page type (from PageClassifier). If None, spec guard is disabled.
-        """
-        if not any(app in (current_app or "") for app in self._shopping_config.apps):
-            return None
-
-        if action.get("action") == "Interact" or action.get("action_type") == "Interact":
-            return None
-
-        # Terminal actions (finish/terminate/answer) mean the model has decided
-        # the task is complete — don't second-guess that decision here
-        _metadata = (action.get("_metadata") or "").lower()
-        if _metadata == "finish":
-            return None
-        _action_name = (action.get("action") or "").lower()
-        if _action_name in ("terminate", "answer"):
-            return None
-
-        # Only guard actual spec commit / high-risk confirmation pages.
-        # Product-detail CTA is allowed because it opens the spec sheet.
-        if not page_type or page_type not in ("spec_selection", "checkout", "payment"):
-            return None
-
-        if not self._is_spec_commit_action(action, thinking, page_type):
-            return None
-
-        # ── Self-reflection: cross-reference user's original task ──
-        original_task = self._current_task
-        user_requested_specs = self._requested_spec_slots()
-
-        if user_requested_specs:
-            # User explicitly specified SKU — verify they're selected
-            missing = []
-            for spec_key, spec_value in user_requested_specs.items():
-                if not self._is_spec_selected(thinking, spec_key, spec_value):
-                    missing.append(f"{spec_key}={spec_value}")
-
-            if not missing:
-                print(
-                    f"✅ [SpecGuard] 用户指定SKU已全部选中 "
-                    f"({user_requested_specs})，放行"
-                )
-                return None
-
-            if page_type not in {"checkout", "payment"}:
-                print(
-                    f"⚠️ [SpecGuard] 用户已指定SKU但模型思考未证明已选中 "
-                    f"({user_requested_specs})，不追问用户；交由VLM按显式规格继续选择"
-                )
-                return None
-
-            question = (
-                f"您要求的是{'，'.join(missing)}，"
-                f"但当前页面尚未选择。请确认规格后继续。"
-            )
-        else:
-            # User didn't specify exact SKU — must ask
-            question = self._build_spec_question(thinking)
-
-        print(f"\n{'─' * 50}")
-        print(f"🛑 [SpecGuard] 规格确认拦截")
-        print(f"   用户任务: {original_task[:100]}")
-        if user_requested_specs:
-            print(f"   用户指定SKU: {user_requested_specs}")
-        print(f"   模型试图: {thinking[:100]}...")
-        print(f"   强制为: Interact → {question}")
-        print(f"{'─' * 50}")
-
-        return {
-            "_metadata": "do",
-            "action": "Interact",
-            "action_type": "Interact",
-            "message": question,
-        }
+    # SpecGuard is now in phone_agent.core.spec_guard — initialized in __init__
 
     def _compile_spatial_shortcut_action(
         self,
@@ -1108,10 +797,11 @@ class PhoneAgent:
 
         # Critical scenario detection (spec-guard — keep, it prevents bad purchases)
         if self.memory_manager:
-            critical_hints = self._detect_critical_scenario(
-                current_app,
-                screenshot.base64_data,
+            critical_hints = self._spec_guard.get_context_hints(
+                current_app=current_app,
                 page_type=page_type,
+                task=self._current_task,
+                vlm_plan=getattr(self, "_vlm_plan", None),
             )
             if critical_hints:
                 extra_context_parts.append("\n\n".join(critical_hints))
@@ -1260,7 +950,14 @@ class PhoneAgent:
 
             # SpecGuard: prevent model from skipping Interact on spec pages
             # Only triggers on spec-related pages (spec_selection, product_detail, checkout)
-            guarded = self._spec_guard_check(action, thinking, current_app, page_type)
+            guarded = self._spec_guard.check(
+                action=action,
+                thinking=thinking,
+                current_app=current_app,
+                page_type=page_type,
+                task=self._current_task,
+                vlm_plan=getattr(self, "_vlm_plan", None),
+            )
             if guarded is not None:
                 action = guarded
 
