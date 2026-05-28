@@ -77,15 +77,15 @@ _PRICE_PATTERNS: tuple[str, ...] = (
     r"(?:¥|￥)\s*([0-9]+(?:\.[0-9]+)?)",
 )
 
-# Contact patterns — from memory_manager.py
-_CONTACT_PATTERNS: tuple[str, ...] = (
+# Contact patterns — from memory_manager.py (public for memory_manager findall usage)
+CONTACT_PATTERNS: tuple[str, ...] = (
     r'(?:给|发送?给?|联系|打电话给?|发消息给?)\s*[「『""]?([\u4e00-\u9fa5a-zA-Z]{2,8})[」』""]?(?:发|说|打|$)',
     r'(?:联系人|好友|朋友)\s*[「『""]?([\u4e00-\u9fa5a-zA-Z]{2,8})[」』""]?',
     r"(?:to|contact|call|message)\s+([a-zA-Z\u4e00-\u9fa5]{2,15})(?:\s|$)",
 )
 
-# App patterns — from memory_manager.py
-_APP_PATTERNS: tuple[str, ...] = (
+# App patterns — from memory_manager.py (public for memory_manager findall usage)
+APP_PATTERNS: tuple[str, ...] = (
     r"(?:打开|启动|使用|进入)\s*([\u4e00-\u9fa5a-zA-Z]+)",
     r"(?:open|launch|use)\s+([a-zA-Z\u4e00-\u9fa5]+)",
 )
@@ -99,6 +99,12 @@ KNOWN_APPS: frozenset[str] = frozenset({
     "spotify", "bilibili", "b站", "小红书", "xiaohongshu", "safari", "chrome",
     "设置", "settings", "相机", "camera", "相册", "photos", "备忘录", "notes",
 })
+
+# Backward-compatible grouped patterns dict (used by memory_manager findall)
+PREFERENCE_PATTERNS: dict[str, list[str]] = {
+    "contact": list(CONTACT_PATTERNS),
+    "app": list(APP_PATTERNS),
+}
 
 # Shopping-related keywords for domain detection
 _SHOPPING_KEYWORDS: tuple[str, ...] = (
@@ -208,7 +214,7 @@ class TaskSpecExtractor:
         query = _first_match(_QUERY_PATTERNS, task)
         product = _first_match(_PRODUCT_PATTERNS, task)
         price = _first_match(_PRICE_PATTERNS, task)
-        contact = _first_match(_CONTACT_PATTERNS, task)
+        contact = _first_match(CONTACT_PATTERNS, task)
         app = _extract_app(task)
         domain = _detect_domain(task)
 
@@ -296,7 +302,7 @@ def _extract_size(task: str) -> str:
 
 def _extract_app(task: str) -> str:
     """Extract app name from task text."""
-    for pattern in _APP_PATTERNS:
+    for pattern in APP_PATTERNS:
         m = re.search(pattern, task, re.IGNORECASE)
         if m:
             # The captured group is the app name

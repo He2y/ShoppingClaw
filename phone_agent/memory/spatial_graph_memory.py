@@ -108,32 +108,8 @@ _ELEMENT_AFFORDANCE_HINTS = {
     "back": "back",
 }
 
-_SLOT_PATTERNS = {
-    "query": (
-        r"query[:=]\s*([^,;]+)",
-        r"搜索[：:]\s*([^,;，。]+)",
-        r"搜索\s*([^\s,;，。；并到]{1,30})",
-        # Natural Chinese shopping: "买(一个)iPhone 17 pro max"
-        r"买(?:一个|一台|一部|一款|一件|个)?\s*([^,;，。；]+?)(?:[，。；]|加入|提交|下单|购买|去|$)",
-        # "搜(一下)机械键盘", "找(一下)AirPods"
-        r"(?:找|搜)(?:一下|一搜)?\s*([^,;，。；]{1,40})",
-        # "购买XXX"
-        r"购买\s*([^,;，。；]{1,40})",
-    ),
-    "product": (
-        r"product[:=]\s*([^,;]+)",
-        r"商品[：:]\s*([^,;，。]+)",
-        r"买(?:一个|一台|一部|一款|一件|个)?\s*([^,;，。；]+)",
-    ),
-    "price": (r"(?:¥|￥)\s*([0-9]+(?:\.[0-9]+)?)",),
-    # Spec attributes extracted from task text for product detail page
-    "color": (
-        r"(银色|白色|黑色|金色|蓝色|紫色|绿色|红色|粉色|灰色|深空灰|午夜蓝|星光色|远峰蓝|苍岭绿|暗紫色)",
-    ),
-    "storage": (
-        r"([0-9]+\s*G(?:B)?)",
-    ),
-}
+# Slot extraction is now provided by phone_agent.core.task_spec.TaskSpecExtractor.
+# _SLOT_PATTERNS removed — use TaskSpecExtractor.extract(text).slot_dict instead.
 
 
 def _safe_slug(value: str, limit: int = 48) -> str:
@@ -1427,14 +1403,8 @@ class SpatialGraphMemory:
 
     @staticmethod
     def extract_slots_from_text(text: str) -> dict[str, str]:
-        slots: dict[str, str] = {}
-        for slot, patterns in _SLOT_PATTERNS.items():
-            for pattern in patterns:
-                match = re.search(pattern, text, flags=re.IGNORECASE)
-                if match:
-                    slots[slot] = match.group(1).strip()
-                    break
-        return slots
+        from phone_agent.core.task_spec import TaskSpecExtractor
+        return TaskSpecExtractor.extract(text).slot_dict
 
     @staticmethod
     def positive_goal_clauses(task: str) -> tuple[str, ...]:

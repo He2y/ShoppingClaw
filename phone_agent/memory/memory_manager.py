@@ -26,33 +26,9 @@ _VLM_VERIFY_TRANSITIONS: frozenset[tuple[str, str]] = frozenset({
 })
 
 
-# Patterns for extracting user preferences (non-shopping: contacts, apps)
-PREFERENCE_PATTERNS = {
-    "contact": [
-        # 改进：更精确的联系人提取，限制长度，排除动词
-        r"(?:给|发送?给?|联系|打电话给?|发消息给?)\s*[「『""]?([\u4e00-\u9fa5a-zA-Z]{2,8})[」』""]?(?:发|说|打|$)",
-        r"(?:联系人|好友|朋友)\s*[「『""]?([\u4e00-\u9fa5a-zA-Z]{2,8})[」』""]?",
-        r"(?:to|contact|call|message)\s+([a-zA-Z\u4e00-\u9fa5]{2,15})(?:\s|$)",
-    ],
-    "app": [
-        r"(打开|启动|使用|进入)[\s]*([\u4e00-\u9fa5a-zA-Z]+)",
-        r"(open|launch|use)[\s]+([a-zA-Z\u4e00-\u9fa5]+)",
-    ],
-    "time_preference": [
-        r"(每天|每周|每月|通常|一般)[\s]*([\u4e00-\u9fa5a-zA-Z]+)",
-        r"(usually|always|often)[\s]+([a-zA-Z\u4e00-\u9fa5]+)",
-    ],
-}
-
-# Common apps to recognize
-KNOWN_APPS = {
-    "微信", "wechat", "支付宝", "alipay", "淘宝", "taobao", "抖音", "tiktok",
-    "美团", "meituan", "饿了么", "eleme", "京东", "jd", "拼多多", "pinduoduo",
-    "高德地图", "amap", "百度地图", "baidu maps", "微博", "weibo", "qq",
-    "钉钉", "dingtalk", "飞书", "feishu", "网易云音乐", "netease music",
-    "spotify", "bilibili", "b站", "小红书", "xiaohongshu", "safari", "chrome",
-    "设置", "settings", "相机", "camera", "相册", "photos", "备忘录", "notes",
-}
+# Preference/slot extraction is now centralized in phone_agent.core.task_spec.
+# PREFERENCE_PATTERNS and KNOWN_APPS moved to TaskSpecExtractor.
+from phone_agent.core.task_spec import KNOWN_APPS, PREFERENCE_PATTERNS, TaskSpecExtractor
 
 
 class MemoryManager:
