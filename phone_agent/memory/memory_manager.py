@@ -159,6 +159,25 @@ class MemoryManager:
         if self.enable_auto_extract:
             self._extract_from_task(task)
 
+        # Emit status for observability
+        if self._verbose:
+            pref_count = len(self.store.get_by_type(MemoryType.USER_PREFERENCE, limit=50))
+            graph_ok = getattr(self.graph_store, "driver", None) is not None
+            runtime_ok = getattr(self.runtime_graph_store, "driver", None) is not None
+            similar_count = 0
+            if self.graph_store and graph_ok:
+                try:
+                    similar = self.graph_store.find_similar_tasks(task, limit=3)
+                    similar_count = len(similar) if similar else 0
+                except Exception:
+                    pass
+            parts = [
+                f"偏好: {pref_count}条",
+                f"图谱: {'Neo4j 已连接' if runtime_ok else '降级模式(无Neo4j)'}",
+                f"相似任务: {similar_count}条",
+            ]
+            print(f"[i] [memory] 记忆系统就绪 | {' | '.join(parts)}")
+
     def _ensure_graph_runtime_controller(self):
         """Return the active AMSG v4 runtime controller.
 
