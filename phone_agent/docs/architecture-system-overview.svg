@@ -128,7 +128,7 @@
   <text x="780" y="436" text-anchor="middle" fill="#111827" font-size="11" font-weight="600">SpatialGraphMemory</text>
   <text x="780" y="450" text-anchor="middle" fill="#6b7280" font-size="9">定位 + 路径 + 暂存</text>
   <rect x="700" y="466" width="160" height="28" rx="6" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/>
-  <text x="780" y="484" text-anchor="middle" fill="#1e40af" font-size="10" font-weight="600">RuntimeController v4</text>
+  <text x="780" y="484" text-anchor="middle" fill="#1e40af" font-size="10" font-weight="600">GraphRuntimeController</text>
   <rect x="700" y="500" width="160" height="28" rx="6" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/>
   <text x="780" y="518" text-anchor="middle" fill="#1e40af" font-size="10" font-weight="600">SpatialModelBridge</text>
   <rect x="700" y="534" width="160" height="28" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
@@ -138,7 +138,7 @@
   <text x="1000" y="436" text-anchor="middle" fill="#111827" font-size="11" font-weight="600">PageClassifier + SchemaRegistry</text>
   <text x="1000" y="450" text-anchor="middle" fill="#6b7280" font-size="9">VLM 页面分类 + YAML 领域先验</text>
   <rect x="880" y="466" width="240" height="28" rx="6" fill="#fff" stroke="#d1d5db" stroke-width="1"/>
-  <text x="1000" y="484" text-anchor="middle" fill="#6b7280" font-size="10">FunctionalityDiscovery (promotable only)</text>
+  <text x="1000" y="484" text-anchor="middle" fill="#6b7280" font-size="10">FunctionalityExtractor (promotable only)</text>
   <rect x="880" y="500" width="240" height="28" rx="6" fill="#fff" stroke="#d1d5db" stroke-width="1"/>
   <text x="1000" y="518" text-anchor="middle" fill="#6b7280" font-size="10">PostconditionVerifier</text>
 

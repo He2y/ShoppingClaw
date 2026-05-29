@@ -105,7 +105,7 @@
   <rect x="430" y="640" width="340" height="74" rx="10" fill="#fff7ed" stroke="#ea580c" stroke-width="2" filter="url(#shadow)"/>
   <text x="456" y="662" fill="#ea580c" font-size="13">📝</text>
   <text x="476" y="662" fill="#9a3412" font-size="12" font-weight="700">Phase 4: 状态更新 &amp; 本地暂存</text>
-  <text x="600" y="682" text-anchor="middle" fill="#c2410c" font-size="10">UnifiedState.record_step() → MemoryManager.update_transition()</text>
+  <text x="600" y="682" text-anchor="middle" fill="#c2410c" font-size="10">UnifiedSessionState.record_step() → MemoryManager.update_transition()</text>
   <text x="600" y="698" text-anchor="middle" fill="#c2410c" font-size="10" font-weight="600">record_observation(persist=False) → 仅写本地缓存</text>
 
   <!-- Decision: Finished? -->
