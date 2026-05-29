@@ -238,3 +238,85 @@ def app_from_id(page_node_id: str) -> str:
         if marker in page_node_id:
             return marker
     return ""
+
+
+# ── Embedding-based clusterer (Definition 6) ────────────────────────
+
+
+def _cosine_sim(a: tuple[float, ...], b: tuple[float, ...]) -> float:
+    if len(a) != len(b) or not a:
+        return 0.0
+    import math
+
+    dot = sum(ai * bi for ai, bi in zip(a, b))
+    norm_a = math.sqrt(sum(ai * ai for ai in a))
+    norm_b = math.sqrt(sum(bi * bi for bi in b))
+    if norm_a < 1e-12 or norm_b < 1e-12:
+        return 0.0
+    return dot / (norm_a * norm_b)
+
+
+class EmbeddingFunctionalityClusterer:
+    """Cosine-similarity clustering using FunctionalityItem.embedding.
+
+    Falls back to Jaccard-based ``functionality_similarity`` when embeddings
+    are missing, ensuring graceful degradation.  Structural bonuses for
+    region and postcondition match are preserved.
+    """
+
+    def __init__(self, similarity_threshold: float = 0.72):
+        self.similarity_threshold = similarity_threshold
+        self._jaccard_fallback = FunctionalityClusterer(similarity_threshold=0.58)
+
+    def cluster(self, items: list[FunctionalityItem]) -> tuple[list[FunctionalityItem], list[FunctionalityCluster]]:
+        # Check if any items have embeddings
+        has_embeddings = any(item.embedding for item in items if item.type == "functionality" and item.is_promotable)
+        if not has_embeddings:
+            return self._jaccard_fallback.cluster(items)
+
+        clusters: list[list[FunctionalityItem]] = []
+        for item in items:
+            if item.type != "functionality" or not item.is_promotable:
+                continue
+            match_index = self._best_cluster(item, clusters)
+            if match_index is None:
+                clusters.append([item])
+            else:
+                clusters[match_index].append(item)
+
+        clustered_items: list[FunctionalityItem] = []
+        output_clusters: list[FunctionalityCluster] = []
+        for members in clusters:
+            cluster_obj = build_cluster(members)
+            output_clusters.append(cluster_obj)
+            clustered_items.extend(item.with_cluster(cluster_obj.cluster_id) for item in members)
+
+        non_clustered = [item for item in items if item.type != "functionality" or not item.is_promotable]
+        clustered_items.extend(non_clustered)
+        return clustered_items, output_clusters
+
+    def _best_cluster(self, item: FunctionalityItem, clusters: list[list[FunctionalityItem]]) -> int | None:
+        best_index: int | None = None
+        best_score = 0.0
+        for index, members in enumerate(clusters):
+            score = max(self._embedding_similarity(item, member) for member in members)
+            if score > best_score:
+                best_index = index
+                best_score = score
+        if best_score >= self.similarity_threshold:
+            return best_index
+        return None
+
+    @staticmethod
+    def _embedding_similarity(left: FunctionalityItem, right: FunctionalityItem) -> float:
+        """Cosine similarity with structural bonuses (region, postcondition)."""
+        if not left.embedding or not right.embedding:
+            return functionality_similarity(left, right)
+
+        base = _cosine_sim(left.embedding, right.embedding)
+        region_bonus = 0.08 if left.region and left.region == right.region else 0.0
+        postcondition_bonus = 0.12 if (
+            left.observed_postcondition
+            and left.observed_postcondition == right.observed_postcondition
+        ) else 0.0
+        return min(1.0, base + region_bonus + postcondition_bonus)

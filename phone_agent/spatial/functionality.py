@@ -191,7 +191,22 @@ class FunctionalityExtractor:
     Strong VLM extraction can feed richer page ``elements`` or text evidence.
     This class keeps a deterministic fallback that refuses to promote vague
     page-level placeholders such as ``search_result visible functions``.
+
+    An optional ``role_classifier`` (Definition 6) can be injected to replace
+    the keyword-based classification with embedding-based prototype matching.
+    When ``role_classifier`` is None, the legacy inline logic is used.
     """
+
+    def __init__(self, role_classifier: Any | None = None) -> None:
+        self._role_classifier = role_classifier
+
+    def _classify(self, page_type: str, label: str, description: str) -> tuple[str, str]:
+        """Route classification through injected classifier or legacy inline."""
+        if self._role_classifier is not None:
+            return self._role_classifier.classify(page_type, label, description)
+        item_type = classify_functionality_type(label, description)
+        canonical_role = canonical_role_from_element(page_type, label, description, item_type=item_type)
+        return (canonical_role, item_type)
 
     def from_page(self, page: dict[str, Any], *, artifact_path: str = "") -> list[FunctionalityItem]:
         page_node_id = page_identity(page)
@@ -205,8 +220,7 @@ class FunctionalityExtractor:
             for key, value in elements.items():
                 label = str(key)
                 description = str(value or key)
-                item_type = classify_functionality_type(label, description)
-                canonical_role = canonical_role_from_element(page_type, label, description, item_type=item_type)
+                canonical_role, item_type = self._classify(page_type, label, description)
                 items.append(
                     FunctionalityItem(
                         functionality_id=stable_id("fn", app, page_node_id, label, description),

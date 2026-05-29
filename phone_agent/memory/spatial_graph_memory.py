@@ -513,12 +513,23 @@ class RuntimeDAG:
 class SpatialGraphMemory:
     """Deep graph-memory module for page localization and route planning."""
 
-    def __init__(self, graph_store: Any | None = None):
+    def __init__(self, graph_store: Any | None = None, config: Any | None = None):
         self.graph_store = graph_store
         self._last_belief: PageBelief | None = None
         self._last_route: RoutePlan | None = None
         self._local_states: dict[str, PageState] = {}
         self._local_edges: dict[str, list[TransitionEdge]] = {}
+
+        # AMSG optimization config (Definitions 3, 5, 7, 8 from FORMALIZATION.md)
+        from phone_agent.spatial.amsg_config import AMSGOptimConfig
+        from phone_agent.spatial.belief_localizer import MultiSignalLocalizer
+        from phone_agent.spatial.edge_lifecycle import EdgeLifecycleManager
+        from phone_agent.spatial.enhanced_planner import EnhancedPlanner
+
+        self._amsg_config: AMSGOptimConfig = config if isinstance(config, AMSGOptimConfig) else AMSGOptimConfig.legacy()
+        self._edge_lifecycle = EdgeLifecycleManager(self._amsg_config)
+        self._localizer = MultiSignalLocalizer(self._amsg_config)
+        self._enhanced_planner = EnhancedPlanner(self._amsg_config)
 
     def build_page_state(
         self,
@@ -1443,40 +1454,86 @@ class SpatialGraphMemory:
         self._local_states[page_state.state_id] = page_state
 
         graph_candidate = self._load_graph_candidate(page_state)
-        if graph_candidate:
-            self._local_states[graph_candidate.state_id] = graph_candidate
-            candidates = [
-                PageBeliefCandidate(
-                    state=graph_candidate,
-                    score=0.92,
-                    reason="semantic graph localization",
-                ),
-                PageBeliefCandidate(
-                    state=page_state,
-                    score=0.82,
-                    reason="current observation signature",
-                ),
-            ]
-            current_state_id = graph_candidate.state_id
-            is_novel = False
-        else:
-            candidates = [
-                PageBeliefCandidate(
-                    state=page_state,
-                    score=1.0,
-                    reason="current observation signature",
-                )
-            ]
-            current_state_id = page_state.state_id
-            is_novel = True
 
-        candidates_tuple = tuple(sorted(candidates, key=lambda item: item.score, reverse=True))
-        belief = PageBelief(
-            current_state_id=current_state_id,
-            candidates=candidates_tuple,
-            confidence=candidates_tuple[0].score,
-            is_novel=is_novel,
-        )
+        # Definition 3 & 7: Multi-signal Bayesian belief localization
+        if self._amsg_config.use_multi_signal_belief:
+            from phone_agent.spatial.belief_localizer import ObservationSignals
+
+            signals = ObservationSignals(
+                app=page_state.app,
+                page_type=page_state.page_type,
+                landmarks=page_state.landmarks,
+                affordances=page_state.affordances,
+                ui_hash=page_state.screenshot_hash,
+                semantic_signature=page_state.semantic_signature,
+            )
+            all_candidates = [page_state]
+            if graph_candidate:
+                self._local_states[graph_candidate.state_id] = graph_candidate
+                all_candidates.append(graph_candidate)
+            dist = self._localizer.update(signals, all_candidates)
+
+            # Feed transition model for temporal channel
+            if previous_action:
+                action_str = str(previous_action.get("action_type") or previous_action.get("action") or "")
+                prev_belief = self._last_belief
+                if prev_belief:
+                    self._localizer.record_transition(
+                        prev_belief.current_state_id, action_str, page_state.state_id
+                    )
+
+            belief_candidates = []
+            for entry in dist.entries:
+                state = self._local_states.get(entry.state_id, page_state)
+                belief_candidates.append(PageBeliefCandidate(
+                    state=state,
+                    score=entry.probability,
+                    reason=entry.reason,
+                ))
+            candidates_tuple = tuple(belief_candidates) or (PageBeliefCandidate(state=page_state, score=1.0, reason="fallback"),)
+            is_novel = graph_candidate is None
+            belief = PageBelief(
+                current_state_id=candidates_tuple[0].state.state_id,
+                candidates=candidates_tuple,
+                confidence=candidates_tuple[0].score,
+                is_novel=is_novel,
+            )
+        else:
+            # Legacy fixed-score behavior
+            if graph_candidate:
+                self._local_states[graph_candidate.state_id] = graph_candidate
+                candidates = [
+                    PageBeliefCandidate(
+                        state=graph_candidate,
+                        score=0.92,
+                        reason="semantic graph localization",
+                    ),
+                    PageBeliefCandidate(
+                        state=page_state,
+                        score=0.82,
+                        reason="current observation signature",
+                    ),
+                ]
+                current_state_id = graph_candidate.state_id
+                is_novel = False
+            else:
+                candidates = [
+                    PageBeliefCandidate(
+                        state=page_state,
+                        score=1.0,
+                        reason="current observation signature",
+                    )
+                ]
+                current_state_id = page_state.state_id
+                is_novel = True
+
+            candidates_tuple = tuple(sorted(candidates, key=lambda item: item.score, reverse=True))
+            belief = PageBelief(
+                current_state_id=current_state_id,
+                candidates=candidates_tuple,
+                confidence=candidates_tuple[0].score,
+                is_novel=is_novel,
+            )
 
         self._last_belief = belief
         return belief
@@ -1577,6 +1634,21 @@ class SpatialGraphMemory:
             outcome=outcome,
         )
         self._local_edges.setdefault(source_id, []).append(edge)
+
+        # Feed edge lifecycle manager (Definition 8 & 9)
+        source_page = before.page_type if isinstance(before, PageState) else ""
+        action_type = str(action.get("action_type") or action.get("action") or "unknown")
+        action_target_str = str(
+            action.get("semantic_target") or action.get("target") or action.get("element") or ""
+        )
+        self._edge_lifecycle.record_outcome(
+            source_page_type=source_page,
+            intent=action_type,
+            action_target=action_target_str,
+            observed_target=target_page,
+            action_key=f"{action_type}:{action_target_str}",
+            risk=risk,
+        )
 
         if persist and self.graph_store and getattr(self.graph_store, "driver", None):
             self.graph_store.add_state_transition(
@@ -1823,6 +1895,24 @@ class SpatialGraphMemory:
             # High-risk pages can be represented as nodes, but their incoming
             # actions are not promoted as executable shortcut edges.
             return False
+
+        # Definition 8: When edge lifecycle verification is enabled, check
+        # whether this edge has been promoted through postcondition verification.
+        if self._amsg_config.edge_promotion_policy == "verified":
+            from phone_agent.spatial.edge_lifecycle import _edge_key
+
+            key = _edge_key(
+                source_state.page_type,
+                edge.action_type,
+                edge.action_target,
+                target_state.page_type,
+            )
+            record = self._edge_lifecycle.get_record(key)
+            if record is not None:
+                return record.is_promotable(self._amsg_config)
+            # No lifecycle record → never observed via postcondition → not promotable
+            return False
+
         return self._is_plausible_transition(edge, source_state, target_state)
 
     @staticmethod
@@ -1940,13 +2030,18 @@ class SpatialGraphMemory:
             )
 
         # Heuristic rule: Inject "加入购物车/立即购买" edges for product_detail pages
-        # when graph lacks proper spec_selection transitions
-        if current_state and current_state.page_type == "product_detail":
+        # when graph lacks proper spec_selection transitions.
+        #
+        # NOTE: When edge_promotion_policy="verified" (paper mode),
+        # heuristic injection is disabled.  Edges must be earned through
+        # real-device postcondition verification (Definition 8).
+        if self._amsg_config.enable_heuristic_injection and current_state and current_state.page_type == "product_detail":
             # Check if any edge leads to spec_selection with correct action
             has_spec_selection_edge = any(
-                edge.postcondition == "spec_selection" and
-                "购物车" in edge.action_target or "购买" in edge.action_target or
-                "cart" in edge.action_target.lower() or "buy" in edge.action_target.lower()
+                edge.postcondition == "spec_selection" and (
+                    "购物车" in edge.action_target or "购买" in edge.action_target or
+                    "cart" in edge.action_target.lower() or "buy" in edge.action_target.lower()
+                )
                 for edge in edges
             )
 
@@ -2109,6 +2204,45 @@ class SpatialGraphMemory:
         return edges
 
     def _shortest_path(self, start_id: str, target_page_types: tuple[str, ...], allowed_app: str = "") -> list[RouteStep]:
+        # Definition 5: When enhanced planner is configured, delegate to it.
+        if self._amsg_config.planner_backend != "dijkstra":
+            def _load_filtered(sid: str) -> list[TransitionEdge]:
+                edges = []
+                for edge in self._load_edges(sid, allowed_app=allowed_app):
+                    target_state = self._local_states.get(edge.target_id)
+                    source_state = self._local_states.get(sid)
+                    if allowed_app and target_state and target_state.app != allowed_app:
+                        continue
+                    if not self._is_plausible_transition(edge, source_state, target_state):
+                        continue
+                    edges.append(edge)
+                return edges
+
+            def _outcome_entropy(source_pt: str, action_key: str) -> float:
+                return self._edge_lifecycle.get_outcome_entropy(source_pt, action_key)
+
+            belief_entropy = 0.0
+            if self._last_belief:
+                # Approximate entropy from candidate scores
+                scores = [c.score for c in self._last_belief.candidates if c.score > 0]
+                total = sum(scores) or 1.0
+                import math as _math
+                belief_entropy = -sum(
+                    (s / total) * _math.log(s / total + 1e-12)
+                    for s in scores
+                )
+
+            raw_path = self._enhanced_planner.plan(
+                start_id,
+                set(target_page_types),
+                _load_filtered,
+                lambda sid: self._local_states.get(sid),
+                belief_entropy=belief_entropy,
+                outcome_entropy_fn=_outcome_entropy,
+            )
+            return [RouteStep(edge=edge) for edge in raw_path]
+
+        # Legacy Dijkstra
         counter = 0
         queue: list[tuple[float, int, str, list[TransitionEdge]]] = [(0.0, counter, start_id, [])]
         best_cost: dict[str, float] = {start_id: 0.0}

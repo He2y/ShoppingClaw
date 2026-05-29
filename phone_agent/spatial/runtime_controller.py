@@ -474,6 +474,21 @@ class GraphRuntimeController:
     def _requires_vlm_verification(self, source_page_type: str, target_page_type: str) -> bool:
         if hasattr(self.manager, "_requires_vlm_verification"):
             return bool(self.manager._requires_vlm_verification(source_page_type, target_page_type))
+
+        # Definition 9: data-driven VLM verification via outcome entropy.
+        # When the EdgeLifecycleManager tracks outcome distributions, high
+        # entropy transitions (same action → multiple possible targets) are
+        # automatically flagged for VLM verification instead of relying on
+        # the hardcoded VLM_VERIFY_TRANSITIONS set.
+        lifecycle = getattr(self.spatial_graph_memory, "_edge_lifecycle", None)
+        if lifecycle is not None:
+            # Check all action keys for this source page type
+            for record in lifecycle.get_promoted_edges_for_page(source_page_type):
+                if record.target_page_type == target_page_type:
+                    action_key = f"{record.intent}:{record.action_target}"
+                    if lifecycle.requires_vlm_verification(source_page_type, action_key):
+                        return True
+
         return (source_page_type, target_page_type) in VLM_VERIFY_TRANSITIONS
 
     def _inject_vlm_verification_hint(
