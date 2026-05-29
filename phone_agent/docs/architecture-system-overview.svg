@@ -27,7 +27,7 @@
   <rect width="1200" height="960" fill="#ffffff"/>
 
   <!-- Title -->
-  <text x="600" y="36" text-anchor="middle" fill="#111827" font-size="20" font-weight="700">ClawGUI-Agent v4.1 System Architecture</text>
+  <text x="600" y="36" text-anchor="middle" fill="#111827" font-size="20" font-weight="700">Mobile-ShoppingAgent v4.1 System Architecture</text>
   <text x="600" y="56" text-anchor="middle" fill="#6b7280" font-size="12">Unified Core + Quality-Gated Spatial Graph + Dual-Layer Shopping Safety</text>
 
   <!-- ═══ Layer 1: Entry ═══ -->
