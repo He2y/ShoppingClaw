@@ -1,4 +1,4 @@
-# ClawGUI-Agent 系统架构
+# Mobile-ShoppingAgent 系统架构
 
 > **版本**: v4.1 (AMSG Runtime)  
 > **更新**: 2026-05-28
@@ -199,7 +199,7 @@ AMSG（Active Mobile Spatial Graph）是一个**语义级的应用导航图谱**
 
 ### 与现有工作对比
 
-| 维度 | AppAgent / CogAgent | GUI-TARS | **ClawGUI-Agent** |
+| 维度 | AppAgent / CogAgent | GUI-TARS | **Mobile-ShoppingAgent** |
 |------|-------|---------|---|
 | 每步推理 | 必须 VLM | 必须 VLM | **可选**（图谱跳过）|
 | 跨会话学习 | 无 | 无 | **三层记忆** |
