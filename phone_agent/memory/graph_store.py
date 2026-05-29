@@ -134,48 +134,6 @@ class GraphStore:
                 candidates.append(dict(record["s"]))
         return candidates
 
-    def find_similar_pages(
-        self,
-        page_type: str,
-        summary: str = "",
-        app: str = "",
-        limit: int = 10,
-    ) -> List[Dict[str, Any]]:
-        """Find UIState nodes matching page_type with optional summary keyword overlap.
-
-        Uses Neo4j string matching for lightweight dedup queries. For full
-        embedding-based similarity, use the SpatialGraphMemory layer.
-        """
-        if not self.driver or not page_type:
-            return []
-
-        # If no summary, fall back to page_type-only query
-        if not summary.strip():
-            return self.find_page_state_candidates(app=app, page_type=page_type, limit=limit)
-
-        query = """
-        MATCH (s:UIState)
-        WHERE s.page_type = $page_type
-          AND ($app = "" OR s.app = $app)
-          AND (
-            s.summary CONTAINS $summary
-            OR s.semantic_signature CONTAINS $summary
-            OR $summary CONTAINS coalesce(s.summary, "")
-          )
-        OPTIONAL MATCH (s)-[rel]-()
-        WITH s, count(rel) AS degree
-        RETURN s
-        ORDER BY degree DESC, coalesce(s.updated_at, 0) DESC
-        LIMIT $limit
-        """
-        results: List[Dict[str, Any]] = []
-        with self.driver.session(database=self.database) as session:
-            for record in session.run(
-                query, page_type=page_type, summary=summary.strip(), app=app or "", limit=limit
-            ):
-                results.append(dict(record["s"]))
-        return results
-
     def find_v4_page_candidates(
         self,
         app: str = "",
@@ -677,78 +635,98 @@ class GraphStore:
     def get_task_trajectory(self, task_id: str, max_steps: int = 20) -> Dict[str, Any]:
         """
         Get the full action sequence for a completed task.
-
-        Uses an iterative graph walk instead of hardcoded MATCH depth,
-        so trajectories of any length (up to *max_steps*) are returned.
-
-        Returns {description, app, steps: [{step, action_type, action_target,
-        reasoning, page_type, summary}...], state_ids: [...], end_state}
+        Returns {description, app, steps: [{state_id, action_type, action_target}...], state_ids: [...]}
         """
         if not self.driver:
             return {}
 
-        # 1. Fetch task metadata + start/end states
-        meta_query = """
+        # Follow the path: UIState -NEXT_ACTION-> Action -PRODUCES-> UIState -...
+        # Fetch up to 20 steps to cover all practical trajectories
+        steps_query = """
         MATCH (t:TaskTarget {target_id: $task_id})
         OPTIONAL MATCH (t)-[:STARTS_AT]->(s0:UIState)
         OPTIONAL MATCH (t)-[:ENDS_AT]->(en:UIState)
+        OPTIONAL MATCH (s0)-[:NEXT_ACTION]->(a1:Action)-[:PRODUCES]->(s1:UIState)
+        OPTIONAL MATCH (s1)-[:NEXT_ACTION]->(a2:Action)-[:PRODUCES]->(s2:UIState)
+        OPTIONAL MATCH (s2)-[:NEXT_ACTION]->(a3:Action)-[:PRODUCES]->(s3:UIState)
+        OPTIONAL MATCH (s3)-[:NEXT_ACTION]->(a4:Action)-[:PRODUCES]->(s4:UIState)
+        OPTIONAL MATCH (s4)-[:NEXT_ACTION]->(a5:Action)-[:PRODUCES]->(s5:UIState)
+        OPTIONAL MATCH (s5)-[:NEXT_ACTION]->(a6:Action)-[:PRODUCES]->(s6:UIState)
+        OPTIONAL MATCH (s6)-[:NEXT_ACTION]->(a7:Action)-[:PRODUCES]->(s7:UIState)
+        OPTIONAL MATCH (s7)-[:NEXT_ACTION]->(a8:Action)-[:PRODUCES]->(s8:UIState)
+        OPTIONAL MATCH (s8)-[:NEXT_ACTION]->(a9:Action)-[:PRODUCES]->(s9:UIState)
+        OPTIONAL MATCH (s9)-[:NEXT_ACTION]->(a10:Action)-[:PRODUCES]->(s10:UIState)
+        OPTIONAL MATCH (s10)-[:NEXT_ACTION]->(a11:Action)-[:PRODUCES]->(s11:UIState)
+        OPTIONAL MATCH (s11)-[:NEXT_ACTION]->(a12:Action)-[:PRODUCES]->(s12:UIState)
+        OPTIONAL MATCH (s12)-[:NEXT_ACTION]->(a13:Action)-[:PRODUCES]->(s13:UIState)
+        OPTIONAL MATCH (s13)-[:NEXT_ACTION]->(a14:Action)-[:PRODUCES]->(s14:UIState)
+        OPTIONAL MATCH (s14)-[:NEXT_ACTION]->(a15:Action)-[:PRODUCES]->(s15:UIState)
         RETURN t.description AS description, t.app AS app,
-               s0.state_id AS start_state, en.state_id AS end_state
+               s0.state_id AS state0,
+               a1.type AS a1_type, a1.semantic_target AS a1_target, a1.reasoning AS a1_reasoning,
+               s1.state_id AS state1,
+               a2.type AS a2_type, a2.semantic_target AS a2_target, a2.reasoning AS a2_reasoning,
+               s2.state_id AS state2,
+               a3.type AS a3_type, a3.semantic_target AS a3_target, a3.reasoning AS a3_reasoning,
+               s3.state_id AS state3,
+               a4.type AS a4_type, a4.semantic_target AS a4_target, a4.reasoning AS a4_reasoning,
+               s4.state_id AS state4,
+               a5.type AS a5_type, a5.semantic_target AS a5_target, a5.reasoning AS a5_reasoning,
+               s5.state_id AS state5,
+               a6.type AS a6_type, a6.semantic_target AS a6_target, a6.reasoning AS a6_reasoning,
+               s6.state_id AS state6,
+               a7.type AS a7_type, a7.semantic_target AS a7_target, a7.reasoning AS a7_reasoning,
+               s7.state_id AS state7,
+               a8.type AS a8_type, a8.semantic_target AS a8_target, a8.reasoning AS a8_reasoning,
+               s8.state_id AS state8,
+               a9.type AS a9_type, a9.semantic_target AS a9_target, a9.reasoning AS a9_reasoning,
+               s9.state_id AS state9,
+               a10.type AS a10_type, a10.semantic_target AS a10_target, a10.reasoning AS a10_reasoning,
+               s10.state_id AS state10,
+               a11.type AS a11_type, a11.semantic_target AS a11_target, a11.reasoning AS a11_reasoning,
+               s11.state_id AS state11,
+               a12.type AS a12_type, a12.semantic_target AS a12_target, a12.reasoning AS a12_reasoning,
+               s12.state_id AS state12,
+               a13.type AS a13_type, a13.semantic_target AS a13_target, a13.reasoning AS a13_reasoning,
+               s13.state_id AS state13,
+               a14.type AS a14_type, a14.semantic_target AS a14_target, a14.reasoning AS a14_reasoning,
+               s14.state_id AS state14,
+               a15.type AS a15_type, a15.semantic_target AS a15_target, a15.reasoning AS a15_reasoning,
+               s15.state_id AS state15,
+               en.state_id AS end_state
+        LIMIT 1
         """
         with self.driver.session(database=self.database) as session:
-            meta = session.run(meta_query, task_id=task_id).single()
-            if not meta:
+            result = session.run(steps_query, task_id=task_id).single()
+            if not result:
                 return {}
 
-            description = meta["description"] or ""
-            app = meta["app"] or ""
-            start_state = meta["start_state"]
-            end_state = meta["end_state"]
+        d = dict(result)
+        description = d.get("description", "")
+        app = d.get("app", "")
+        end_state = d.get("end_state")
 
-            if not start_state:
-                return {
-                    "description": description,
-                    "app": app,
-                    "steps": [],
-                    "state_ids": [],
-                    "end_state": end_state,
-                }
+        # Build steps list
+        steps = []
+        state_ids = []
+        prev_state = d.get("state0")
+        if prev_state:
+            state_ids.append(prev_state)
 
-            # 2. Walk the UIState→Action→UIState chain iteratively
-            step_query = """
-            MATCH (s:UIState {state_id: $current})-[r:NEXT_ACTION]->(a:Action)-[:PRODUCES]->(next:UIState)
-            RETURN a.type AS action_type,
-                   a.semantic_target AS action_target,
-                   a.reasoning AS reasoning,
-                   next.state_id AS next_state,
-                   next.page_type AS page_type,
-                   next.summary AS summary
-            ORDER BY r.confidence DESC, r.frequency DESC
-            LIMIT 1
-            """
-            steps: List[Dict[str, Any]] = []
-            state_ids = [start_state]
-            current = start_state
-            visited = {start_state}
-
-            for i in range(max_steps):
-                record = session.run(step_query, current=current).single()
-                if not record:
-                    break
-                next_state = record["next_state"]
+        for i in range(1, 16):
+            action_type = d.get(f"a{i}_type")
+            action_target = d.get(f"a{i}_target", "")
+            action_reasoning = d.get(f"a{i}_reasoning", "")
+            next_state = d.get(f"state{i}")
+            if action_type:
                 steps.append({
-                    "step": i + 1,
-                    "action_type": record["action_type"] or "unknown",
-                    "action_target": record["action_target"] or "",
-                    "reasoning": record["reasoning"] or "",
-                    "page_type": record["page_type"] or "",
-                    "summary": record["summary"] or "",
+                    "step": i,
+                    "action_type": action_type or "unknown",
+                    "action_target": action_target or "",
+                    "reasoning": action_reasoning or "",
                 })
-                if not next_state or next_state in visited:
-                    break
+            if next_state:
                 state_ids.append(next_state)
-                visited.add(next_state)
-                current = next_state
 
         return {
             "description": description,
@@ -1071,75 +1049,6 @@ class GraphStore:
                 end_state=end_state,
             )
         return True
-
-    def create_exploration_session(
-        self,
-        session_id: str,
-        app: str,
-        session_type: str = "offline_exploration",
-        pages_discovered: int = 0,
-        transitions_promoted: int = 0,
-        task_description: str = "",
-        source_path: str = "",
-    ) -> bool:
-        """Create an ExplorationSession node to distinguish offline exploration from online execution.
-
-        ExplorationSession is also labelled TaskTarget so existing task-search
-        queries can find it, but the extra label and session_type field allow
-        filtering by provenance.
-        """
-        if not self.driver:
-            return False
-
-        query = """
-        MERGE (es:ExplorationSession:TaskTarget {target_id: $session_id})
-        SET es.session_type = $session_type,
-            es.app = $app,
-            es.description = $description,
-            es.pages_discovered = $pages_discovered,
-            es.transitions_promoted = $transitions_promoted,
-            es.source_path = $source_path,
-            es.explored_at = timestamp(),
-            es.success = true
-        """
-        try:
-            with self.driver.session(database=self.database) as session:
-                session.run(
-                    query,
-                    session_id=session_id,
-                    session_type=session_type,
-                    app=app,
-                    description=task_description,
-                    pages_discovered=pages_discovered,
-                    transitions_promoted=transitions_promoted,
-                    source_path=source_path,
-                )
-            if self.task_index and task_description:
-                self.task_index.add_task(session_id, task_description)
-            return True
-        except Exception as e:
-            print(f"Warning: failed to create ExplorationSession: {e}")
-            return False
-
-    def find_exploration_sessions(
-        self, app: str = "", session_type: str = ""
-    ) -> List[Dict[str, Any]]:
-        """List ExplorationSession nodes, optionally filtered by app or session_type."""
-        if not self.driver:
-            return []
-
-        query = """
-        MATCH (es:ExplorationSession)
-        WHERE ($app = "" OR es.app = $app)
-          AND ($session_type = "" OR es.session_type = $session_type)
-        RETURN es
-        ORDER BY es.explored_at DESC
-        """
-        results: List[Dict[str, Any]] = []
-        with self.driver.session(database=self.database) as session:
-            for record in session.run(query, app=app or "", session_type=session_type or ""):
-                results.append(dict(record["es"]))
-        return results
 
     def add_state_transition(
         self,

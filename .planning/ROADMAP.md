@@ -5,7 +5,7 @@
 | Phase | 名称 | 状态 | 目标 |
 |-------|------|------|------|
 | 1 | OfflineExplorer VLM 自主探索 | ✅ 完成 | VLM 自主遍历购物 App，产出页面分类 + 跳转轨迹 |
-| 2 | GraphStore 增强 | ✅ 完成 | 将探索数据灌入 Neo4j，构建 UIState 节点 + Action 边 + TaskTarget 节点 |
+| 2 | GraphStore 增强 | 📋 已规划 | 将探索数据灌入 Neo4j，构建 UIState 节点 + Action 边 + TaskTarget 节点 |
 | 3 | ActTree / PathCache 加速 | 📋 待开始 | 高频路径前缀缓存，实现轨迹 replay 加速 |
 | 4 | 端到端验证 | 📋 待开始 | 真实购物任务完整链路测试 |
 
