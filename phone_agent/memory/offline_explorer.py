@@ -1648,16 +1648,31 @@ class OfflineExplorer:
             memory = SpatialGraphMemory(graph_store)
             states, edges, staging_report = memory.import_exploration_staging(pages_path, transitions_path)
             promote_report = memory.promote_staging_to_canonical(states, edges, persist=True)
+
+            # Record ExplorationSession node in Neo4j
+            session_id = f"explore_{self.app_name}_{int(time.time())}"
+            graph_store.create_exploration_session(
+                session_id=session_id,
+                app=self.app_name,
+                session_type="offline_exploration",
+                pages_discovered=staging_report.canonical_pages,
+                transitions_promoted=promote_report.transitions_promoted,
+                task_description=self.task_description,
+                source_path=str(pages_path),
+            )
+
             self.last_import_result = {
                 "staging": staging_report.to_dict(),
                 "promoted": promote_report.to_dict(),
                 "pages_imported": staging_report.canonical_pages,
                 "transitions_imported": staging_report.transitions_promoted,
+                "session_id": session_id,
             }
             self._log(
                 "  imported spatial graph: "
                 f"{self.last_import_result['pages_imported']} pages, "
-                f"{self.last_import_result['transitions_imported']} transitions"
+                f"{self.last_import_result['transitions_imported']} transitions, "
+                f"session={session_id}"
             )
         finally:
             if owns_graph_store and graph_store:
