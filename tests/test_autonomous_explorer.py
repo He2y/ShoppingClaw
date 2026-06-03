@@ -112,10 +112,24 @@ class TestSafetyFunctions:
         assert is_safe_exploration_action(
             "checkout", {"action": "Tap", "element": [500, 500]},
         )
+        assert is_safe_exploration_action(
+            "checkout", {"action": "Back"},
+        )
+
+    def test_blocks_submit_order_on_checkout(self) -> None:
+        assert not is_safe_exploration_action(
+            "checkout", {"action": "Tap", "element": [500, 900]},
+            instruction="点击提交订单按钮",
+        )
+        assert not is_safe_exploration_action(
+            "checkout", {"action": "Tap", "element": [500, 900]},
+            instruction="点击立即下单",
+        )
 
     def test_blocks_payment_on_checkout_page(self) -> None:
         assert not is_safe_exploration_action(
-            "checkout", {"action": "Tap", "text": "提交订单"},
+            "checkout", {"action": "Tap"},
+            instruction="点击立即支付",
         )
 
     def test_blocks_unsafe_token_in_action(self) -> None:
@@ -134,7 +148,7 @@ class TestSafetyFunctions:
     def test_blocks_unsafe_action_text(self) -> None:
         assert not is_safe_exploration_action(
             "home",
-            {"action": "Tap", "element": [500, 500], "text": "提交订单"},
+            {"action": "Tap", "element": [500, 500], "text": "确认支付"},
         )
 
     def test_allows_checkout_navigation(self) -> None:

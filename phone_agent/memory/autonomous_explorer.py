@@ -60,13 +60,18 @@ _HIGH_RISK_PAGE_TYPES_STR = frozenset({
     "payment", "address", "login", "permission",
 })
 
-# checkout is allowed for graph coverage; only actual payment is blocked.
+# Tokens that block any action anywhere.
 _UNSAFE_ACTION_TOKENS = (
     "立即支付", "确认支付", "确认付款", "指纹支付", "面容支付",
     "pay now", "confirm payment",
-    "提交订单", "确认订单",
     "logout", "log out", "switch account",
     "退出登录", "切换账号", "注销账号",
+)
+
+# Extra tokens blocked on checkout/order pages — prevent order submission.
+_CHECKOUT_BLOCKED_TOKENS = (
+    "提交订单", "确认订单", "立即下单", "立即购买",
+    "去支付", "去付款", "submit order", "place order",
 )
 
 _SCREEN_CHANGE_HASH_LEN = 2000
@@ -182,13 +187,23 @@ class ConvergenceTracker:
 
 # ── Safety ───────────────────────────────────────────────────
 
-def is_safe_exploration_action(page_type: str, action: dict[str, Any], reasoning: str = "") -> bool:
+def is_safe_exploration_action(
+    page_type: str,
+    action: dict[str, Any],
+    reasoning: str = "",
+    instruction: str = "",
+) -> bool:
     if action.get("_metadata") == "finish":
         return True
     if page_type in _HIGH_RISK_PAGE_TYPES_STR:
         return False
-    action_text = json.dumps(action, ensure_ascii=False).lower()
-    return not any(tok.lower() in action_text for tok in _UNSAFE_ACTION_TOKENS)
+    combined = (json.dumps(action, ensure_ascii=False) + " " + reasoning + " " + instruction).lower()
+    if any(tok.lower() in combined for tok in _UNSAFE_ACTION_TOKENS):
+        return False
+    if page_type in ("checkout", "order_confirm", "spec_selection", "cart"):
+        if any(tok.lower() in combined for tok in _CHECKOUT_BLOCKED_TOKENS):
+            return False
+    return True
 
 
 def _generic_transition_rejection(source_type: str, action: dict[str, Any], target_type: str) -> str:
@@ -567,8 +582,12 @@ class AutonomousExplorer:
             self._total_steps += 1
             steps_taken += 1
 
-            if not is_safe_exploration_action(current_page.page_type.value, action):
-                self._log(f"    step {step_idx+1}: blocked (unsafe)")
+            if not is_safe_exploration_action(
+                current_page.page_type.value, action,
+                reasoning=response.thinking or "",
+                instruction=instruction,
+            ):
+                self._log(f"    step {step_idx+1}: blocked (unsafe: {instruction[:30]})")
                 outcome = "blocked"
                 break
 
