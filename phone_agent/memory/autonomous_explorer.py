@@ -208,26 +208,25 @@ class ExplorationSupervisor:
     """Sees full navigation graph + screenshot, outputs coverage-driven plan."""
 
     _SYSTEM_PROMPT = (
-        "你是移动应用导航图谱的探索规划师。目标：系统性发现App中所有可到达的页面和跳转关系。\n\n"
+        "你是移动应用导航图谱的探索规划师。目标：最大化发现App中不同页面类型和跳转路径。\n\n"
         "输出严格JSON（不要其他内容）：\n"
         "{\n"
-        '  "page_type": "当前页面类型（如home/search_input/search_result/product_detail/spec_selection/cart/filter_panel/category/store/my_account/dialog等，根据实际页面自定义命名）",\n'
+        '  "page_type": "当前页面类型（home/search_input/search_result/product_detail/spec_selection/cart/filter_panel/category/store/my_account/order_list/coupon/dialog等）",\n'
         '  "page_summary": "一句话页面描述",\n'
-        '  "visible_elements": ["搜索框", "商品卡片", "筛选按钮", "购物车图标"],  // 最多8个关键元素\n'
-        '  "reasoning": "分析图谱覆盖度和当前页面，说明规划逻辑",\n'
+        '  "visible_elements": ["搜索框", "商品卡片", "筛选按钮", "购物车图标"],\n'
+        '  "reasoning": "分析图谱中标记为★未探索的元素，说明为什么选择这个动作",\n'
         '  "plan": ["具体操作指令1", "具体操作指令2"],\n'
         '  "should_stop": false,\n'
         '  "stop_reason": ""\n'
         "}\n\n"
-        "规划原则：\n"
-        "1. visible_elements列出当前截屏中最重要的5-8个可交互元素（按钮、链接、输入框、卡片等），不要超过8个\n"
-        "2. plan中每条指令必须描述具体可见元素（如'点击底部购物车图标'而非'去购物车'）\n"
-        "3. 优先探索未探索过的元素，尤其是可能通向新页面类型的元素\n"
-        "4. 当前页面在图谱中已充分探索时，导航到有未探索元素的页面\n"
-        "5. 在非核心页面（会员中心、活动页、设置页等）记录后立即返回主流程\n"
-        "6. 在搜索输入页时，指定具体搜索关键词（如'耳机'）\n"
-        "7. 禁止：支付、结算、登录、地址、确认订单相关操作\n"
-        "8. 当图谱已覆盖主要功能流程且未探索元素很少时，设should_stop=true\n"
+        "核心规则：\n"
+        "1. **绝不重复已走过的路径。** 图谱中标记了✓的跳转不要再走，专注★未探索的元素\n"
+        "2. plan中每条指令必须描述截屏中可见的具体元素（如'点击底部购物车图标'）\n"
+        "3. 优先探索底部导航栏Tab（购物车、我的淘宝、消息等）和顶部分类入口\n"
+        "4. 在非核心页面（活动、直播、弹窗等）停留不超过1步，立即返回\n"
+        "5. 在搜索输入页时使用具体关键词（如'耳机'）\n"
+        "6. 禁止：支付、结算、登录、地址、确认订单\n"
+        "7. 当图谱中所有页面的元素都已被标记为✓时，设should_stop=true\n"
     )
 
     def __init__(self) -> None:
@@ -626,35 +625,84 @@ class AutonomousExplorer:
             pt = page.page_type.value
             page_type_groups.setdefault(pt, []).append(key)
 
+        all_explored = self._get_explored_by_page_type()
+        transition_pairs: set[tuple[str, str]] = set()
+        for t in self._transitions:
+            src = t["from"].split(":")[0]
+            tgt = t["to"].split(":")[0]
+            transition_pairs.add((src, tgt))
+
         for pt, keys in sorted(page_type_groups.items()):
-            representative = self._discovered_pages[keys[0]]
-            elements = representative.elements or {}
-            explored = self._explored_actions.get(keys[0], [])
+            best = max(
+                (self._discovered_pages[k] for k in keys),
+                key=lambda p: len(p.elements or {}),
+            )
+            elements = best.elements or {}
+            explored_set = all_explored.get(pt, set())
 
-            outgoing = [t for t in self._transitions if any(t["from"] == k for k in keys)]
-            targets = sorted({t["to"].split(":")[0] for t in outgoing})
+            outgoing = sorted({tgt for src, tgt in transition_pairs if src == pt})
 
-            elem_names = list(elements.keys())[:8]
-            elem_str = ", ".join(elem_names) if elem_names else "未检测到元素"
-            target_str = " → " + ", ".join(targets) if targets else ""
-            explored_str = f" (已执行{len(explored)}个动作)" if explored else ""
+            elem_items = []
+            for name in list(elements.keys())[:10]:
+                mark = "✓" if name in explored_set else "★"
+                elem_items.append(f"{mark}{name}")
+            elem_str = ", ".join(elem_items) if elem_items else "无元素"
 
-            marker = " ← 当前" if any(current_page.state_key() == k for k in keys) else ""
-            lines.append(f"[{pt}] {representative.semantic_summary[:30]}{marker}")
+            target_str = ""
+            if outgoing:
+                target_str = " → " + ", ".join(f"✓{t}" for t in outgoing)
+
+            is_current = current_page.page_type.value == pt
+            marker = " ← 当前页" if is_current else ""
+            lines.append(f"[{pt}]{marker} {best.semantic_summary[:40]}")
             lines.append(f"  元素: {elem_str}")
             if target_str:
-                lines.append(f"  跳转: {target_str}")
-            if explored_str:
-                lines.append(f"  {explored_str}")
+                lines.append(f"  已知跳转:{target_str}")
 
         if not lines:
             lines.append("(空图谱，首次探索)")
 
-        total_elements = sum(len(p.elements or {}) for p in self._discovered_pages.values())
-        total_explored = sum(len(v) for v in self._explored_actions.values())
+        unexplored_count = sum(
+            len(set((self._discovered_pages[keys[0]].elements or {}).keys()) - all_explored.get(pt, set()))
+            for pt, keys in page_type_groups.items()
+        )
         lines.append(f"\n统计: {len(page_type_groups)}种页面, {len(self._transitions)}条跳转, "
-                      f"元素覆盖{total_explored}/{total_elements}")
+                      f"★未探索元素约{unexplored_count}个")
         return "\n".join(lines)
+
+    def _get_explored_by_page_type(self) -> dict[str, set[str]]:
+        """Aggregate explored element names by page_type.
+
+        Instructions like "点击搜索框" match element name "搜索框"
+        via substring containment, so the graph summary can mark
+        elements as ✓explored vs ★unexplored.
+        """
+        instructions_by_type: dict[str, list[str]] = {}
+        for key, actions in self._explored_actions.items():
+            page = self._discovered_pages.get(key)
+            if page:
+                pt = page.page_type.value
+                instructions_by_type.setdefault(pt, []).extend(actions)
+
+        result: dict[str, set[str]] = {}
+        for pt, keys in self._page_type_to_keys().items():
+            instructions = instructions_by_type.get(pt, [])
+            joined = " ".join(instructions)
+            explored_elements: set[str] = set()
+            for key in keys:
+                page = self._discovered_pages.get(key)
+                if page and page.elements:
+                    for elem_name in page.elements:
+                        if elem_name in joined:
+                            explored_elements.add(elem_name)
+            result[pt] = explored_elements
+        return result
+
+    def _page_type_to_keys(self) -> dict[str, list[str]]:
+        groups: dict[str, list[str]] = {}
+        for key, page in self._discovered_pages.items():
+            groups.setdefault(page.page_type.value, []).append(key)
+        return groups
 
     # ── Functionality Extraction ─────────────────────────────
 
