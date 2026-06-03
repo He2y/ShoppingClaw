@@ -1,0 +1,333 @@
+{
+  "app": "淘宝",
+  "lifecycle_summary": {
+    "hypothesis": 0,
+    "candidate": 0,
+    "promoted": 11,
+    "demoted": 0,
+    "total_outcomes": 11
+  },
+  "records": [
+    {
+      "edge_key": "cart|rollback_from_cart_to_my_account|[897, 966]|my_account",
+      "stage": "promoted",
+      "source_page_type": "cart",
+      "target_page_type": "my_account",
+      "intent": "rollback_from_cart_to_my_account",
+      "action_target": "[897, 966]",
+      "outcome_counts": {
+        "my_account": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "my_account",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 0,
+      "created_step": 0
+    },
+    {
+      "edge_key": "my_account|tap_home|[464, 172]|home",
+      "stage": "promoted",
+      "source_page_type": "my_account",
+      "target_page_type": "home",
+      "intent": "tap_home",
+      "action_target": "[464, 172]",
+      "outcome_counts": {
+        "home": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "home",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 3,
+      "created_step": 3
+    },
+    {
+      "edge_key": "unknown|rollback_to_my_account|[]|my_account",
+      "stage": "promoted",
+      "source_page_type": "unknown",
+      "target_page_type": "my_account",
+      "intent": "rollback_to_my_account",
+      "action_target": "[]",
+      "outcome_counts": {
+        "my_account": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "my_account",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 4,
+      "created_step": 4
+    },
+    {
+      "edge_key": "my_account|tap_home|[452, 206]|home",
+      "stage": "promoted",
+      "source_page_type": "my_account",
+      "target_page_type": "home",
+      "intent": "tap_home",
+      "action_target": "[452, 206]",
+      "outcome_counts": {
+        "home": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "home",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 7,
+      "created_step": 7
+    },
+    {
+      "edge_key": "home|tap_unknown|[297, 966]|unknown",
+      "stage": "promoted",
+      "source_page_type": "home",
+      "target_page_type": "unknown",
+      "intent": "tap_unknown",
+      "action_target": "[297, 966]",
+      "outcome_counts": {
+        "unknown": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "unknown",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 11,
+      "created_step": 11
+    },
+    {
+      "edge_key": "unknown|tap_product_detail|[877, 898]|product_detail",
+      "stage": "promoted",
+      "source_page_type": "unknown",
+      "target_page_type": "product_detail",
+      "intent": "tap_product_detail",
+      "action_target": "[877, 898]",
+      "outcome_counts": {
+        "product_detail": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "product_detail",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 12,
+      "created_step": 12
+    },
+    {
+      "edge_key": "product_detail|tap_dialog|[828, 447]|dialog",
+      "stage": "promoted",
+      "source_page_type": "product_detail",
+      "target_page_type": "dialog",
+      "intent": "tap_dialog",
+      "action_target": "[828, 447]",
+      "outcome_counts": {
+        "dialog": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "dialog",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 15,
+      "created_step": 15
+    },
+    {
+      "edge_key": "dialog|tap_product_detail|[934, 227]|product_detail",
+      "stage": "promoted",
+      "source_page_type": "dialog",
+      "target_page_type": "product_detail",
+      "intent": "tap_product_detail",
+      "action_target": "[934, 227]",
+      "outcome_counts": {
+        "product_detail": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "product_detail",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 16,
+      "created_step": 16
+    },
+    {
+      "edge_key": "product_detail|tap_store|[499, 565]|store",
+      "stage": "promoted",
+      "source_page_type": "product_detail",
+      "target_page_type": "store",
+      "intent": "tap_store",
+      "action_target": "[499, 565]",
+      "outcome_counts": {
+        "store": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "store",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 20,
+      "created_step": 20
+    },
+    {
+      "edge_key": "store|tap_home|[698, 967]|home",
+      "stage": "promoted",
+      "source_page_type": "store",
+      "target_page_type": "home",
+      "intent": "tap_home",
+      "action_target": "[698, 967]",
+      "outcome_counts": {
+        "home": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "home",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 21,
+      "created_step": 21
+    },
+    {
+      "edge_key": "home|tap_store|[132, 967]|store",
+      "stage": "promoted",
+      "source_page_type": "home",
+      "target_page_type": "store",
+      "intent": "tap_store",
+      "action_target": "[132, 967]",
+      "outcome_counts": {
+        "store": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "store",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 22,
+      "created_step": 22
+    }
+  ],
+  "outcomes": [
+    {
+      "source_page_type": "cart",
+      "action_key": "rollback_from_cart_to_my_account:[897, 966]",
+      "outcomes": {
+        "my_account": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "my_account",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "my_account",
+      "action_key": "tap_home:[464, 172]",
+      "outcomes": {
+        "home": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "home",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "unknown",
+      "action_key": "rollback_to_my_account:[]",
+      "outcomes": {
+        "my_account": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "my_account",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "my_account",
+      "action_key": "tap_home:[452, 206]",
+      "outcomes": {
+        "home": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "home",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "home",
+      "action_key": "tap_unknown:[297, 966]",
+      "outcomes": {
+        "unknown": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "unknown",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "unknown",
+      "action_key": "tap_product_detail:[877, 898]",
+      "outcomes": {
+        "product_detail": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "product_detail",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "product_detail",
+      "action_key": "tap_dialog:[828, 447]",
+      "outcomes": {
+        "dialog": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "dialog",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "dialog",
+      "action_key": "tap_product_detail:[934, 227]",
+      "outcomes": {
+        "product_detail": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "product_detail",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "product_detail",
+      "action_key": "tap_store:[499, 565]",
+      "outcomes": {
+        "store": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "store",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "store",
+      "action_key": "tap_home:[698, 967]",
+      "outcomes": {
+        "home": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "home",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "home",
+      "action_key": "tap_store:[132, 967]",
+      "outcomes": {
+        "store": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "store",
+      "dominant_ratio": 1.0
+    }
+  ]
+}

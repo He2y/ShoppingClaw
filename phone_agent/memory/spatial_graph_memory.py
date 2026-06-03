@@ -51,7 +51,7 @@ _APP_ALIASES = {
 _APP_MENTION_TOKENS = tuple(sorted({token for tokens in _APP_ALIASES.values() for token in tokens}, key=len, reverse=True))
 
 _HIGH_RISK_PAGE_TYPES = {"payment", "address", "login", "confirm"}
-_MEDIUM_RISK_PAGE_TYPES = {"spec_selection", "cart", "order_list", "refund"}
+_MEDIUM_RISK_PAGE_TYPES = {"spec_selection", "cart", "checkout", "order_list", "refund"}
 _TRANSIENT_PAGE_TYPES = {"unknown"}
 _TASK_DAG_PAGE_LIMIT = 64
 

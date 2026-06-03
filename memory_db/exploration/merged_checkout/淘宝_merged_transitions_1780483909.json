@@ -1,0 +1,106 @@
+{
+  "app": "淘宝",
+  "total_transitions": 9,
+  "transitions": [
+    {
+      "from": "cart:购物车含52件商品，含优惠券和结算按钮",
+      "action": {
+        "action": "Tap",
+        "semantic_target": "结算按钮",
+        "region": "bottom_right"
+      },
+      "to": "checkout:订单确认页，含收货地址、商品信息、配送方式和立即支付按钮"
+    },
+    {
+      "from": "checkout:订单确认页，含收货地址、商品信息、配送方式和立即支付按钮",
+      "action": {
+        "action": "Back"
+      },
+      "to": "cart:购物车含52件商品，含优惠券和结算按钮"
+    },
+    {
+      "from": "cart:购物车含52件商品，含优惠券和结算按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          897,
+          966
+        ]
+      },
+      "to": "my_account:用户个人中心页面，展示会员信息、资产概览、订单状态及活动入口"
+    },
+    {
+      "from": "my_account:用户个人中心页面，展示会员信息、资产概览、订单状态及活动入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          464,
+          172
+        ]
+      },
+      "to": "home:618活动首页，含TCL空调推荐、直播入口、商品卡片及底部导航栏"
+    },
+    {
+      "from": "product_detail:小米净饮机商品详情页，含价格¥2174.13、促销信息、店铺保障及功能参数模块",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          828,
+          447
+        ]
+      },
+      "to": "dialog:服务保障选项弹窗，提供多种延保/维修服务套餐及‘确定’按钮"
+    },
+    {
+      "from": "dialog:服务保障选项弹窗，提供多种延保/维修服务套餐及‘确定’按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          934,
+          227
+        ]
+      },
+      "to": "product_detail:小米净饮机商品详情页，含价格¥2174.13、促销信息、店铺保障及功能参数模块"
+    },
+    {
+      "from": "product_detail:小米净饮机商品详情页，含价格¥2174.13、促销信息、店铺保障及功能参数模块",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          565
+        ]
+      },
+      "to": "store:小米官方旗舰店直播页面，含新品发布会直播流、商品推荐模块及店铺认证信息"
+    },
+    {
+      "from": "store:小米官方旗舰店直播页面，含新品发布会直播流、商品推荐模块及店铺认证信息",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          698,
+          967
+        ]
+      },
+      "to": "home:618活动首页，含TCL空调推荐、直播入口、商品卡片及底部导航栏"
+    },
+    {
+      "from": "home:618活动首页，含TCL空调推荐、直播入口、商品卡片及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          132,
+          967
+        ]
+      },
+      "to": "store:小米官方旗舰店直播页面，含新品发布会直播流、商品推荐模块及店铺认证信息"
+    }
+  ]
+}
