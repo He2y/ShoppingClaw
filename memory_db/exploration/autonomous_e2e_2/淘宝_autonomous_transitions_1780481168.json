@@ -1,0 +1,330 @@
+{
+  "app": "淘宝",
+  "total_transitions": 14,
+  "transitions": [
+    {
+      "from": "home:淘宝首页推荐页，含搜索栏、618活动入口、商品推荐和底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          698,
+          966
+        ]
+      },
+      "to": "cart:购物车含53件商品及优惠券信息"
+    },
+    {
+      "from": "cart:购物车页面，显示53件商品、消费券信息及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          897,
+          967
+        ]
+      },
+      "to": "my_account:用户个人中心与订单管理页"
+    },
+    {
+      "from": "my_account:用户个人中心页面，展示会员权益、资产信息、订单入口及常用功能模块",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          130,
+          588
+        ]
+      },
+      "to": "home:芭芭农场互动种果树游戏主页"
+    },
+    {
+      "from": "home:淘宝首页推荐页, 含618活动入口、商品推荐及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "my_account:用户个人中心与订单管理页"
+    },
+    {
+      "from": "my_account:用户个人中心页面，展示会员权益、资产信息、订单入口及常用功能模块",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          109,
+          172
+        ]
+      },
+      "to": "home:订单与充值中心首页"
+    },
+    {
+      "from": "home:淘宝首页推荐页，含618活动专区、商品卡片及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          297,
+          966
+        ]
+      },
+      "to": "unknown:视频播放页，展示产品使用方法"
+    },
+    {
+      "from": "unknown:当前为视频播放页，展示产品使用方法，含购物车图标和'去查看'按钮等互动元素",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          883,
+          961
+        ]
+      },
+      "to": "product_detail:商品详情页含直播讲解与促销信息"
+    },
+    {
+      "from": "product_detail:商品详情页，展示‘周十五益生菌蜂蜜露’的直播讲解、促销信息、价格及购买入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "store:品牌旗舰店首页，含促销活动与商品推荐"
+    },
+    {
+      "from": "store:周十五旗舰店首页，展示618开门红促销活动、多款蜂蜜商品卡片及品牌信息",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "product_detail:商品详情页含视频、价格与促销信息"
+    },
+    {
+      "from": "product_detail:商品详情页，展示周十五益生菌外用蜂蜜产品信息、618促销价、直播讲解视频及购买操作按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          306,
+          586
+        ]
+      },
+      "to": "store:店铺客服欢迎页及常见问题入口"
+    },
+    {
+      "from": "store:周十五旗舰店首页，展示618促销活动与多款蜂蜜商品卡片",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          98,
+          647
+        ]
+      },
+      "to": "product_detail:商品详情页含视频、促销与规格信息"
+    },
+    {
+      "from": "product_detail:商品详情页，展示‘周十五’蜂蜜露产品信息、促销标签、收藏成功弹窗及底部功能入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "home:首页视频流展示新品扫地机器人"
+    },
+    {
+      "from": "unknown:视频播放页，展示扫地机器人产品演示，含互动按钮与商品跳转入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          419,
+          77
+        ]
+      },
+      "to": "home:直播首页，含主播推荐与家电专场活动"
+    },
+    {
+      "from": "home:淘宝首页推荐页，含618活动弹窗、直播入口及底部导航栏，当前被100元主播折扣券弹窗遮挡",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          707
+        ]
+      },
+      "to": "dialog:直播优惠券领取弹窗"
+    }
+  ],
+  "rejected_transitions": [
+    {
+      "from": "my_account:用户个人中心页面，展示会员信息、资产概览、订单入口及常用功能模块",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "my_account:用户个人中心与订单管理页",
+      "reason": "self-loop"
+    },
+    {
+      "from": "home:淘宝首页推荐页, 含搜索栏、618活动入口、商品推荐和底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          389,
+          71
+        ]
+      },
+      "to": "home:芭芭农场游戏主界面",
+      "reason": "self-loop"
+    },
+    {
+      "from": "home:淘宝首页推荐页，含搜索栏、618活动入口、商品推荐和底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          30,
+          82
+        ]
+      },
+      "to": "home:订单管理首页，含搜索与分类导航",
+      "reason": "self-loop"
+    },
+    {
+      "from": "home:淘宝首页推荐页，含搜索栏、618活动入口、商品推荐和底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "home:首页推荐与618活动促销页面",
+      "reason": "self-loop"
+    },
+    {
+      "from": "home:淘宝首页推荐页，含618活动专区、商品卡片及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          496,
+          323
+        ]
+      },
+      "to": "home:首页展示百亿补贴活动与商品推荐",
+      "reason": "self-loop"
+    },
+    {
+      "from": "home:淘宝首页推荐页，含618活动专区、百亿补贴商品及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "home:首页推荐与618活动促销页面",
+      "reason": "self-loop"
+    },
+    {
+      "from": "unknown:当前为视频播放页, 展示产品使用方法, 底部有购物车图标和'去查看'按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          30,
+          82
+        ]
+      },
+      "to": "unknown:无法识别的空白页面",
+      "reason": "self-loop"
+    },
+    {
+      "from": "product_detail:商品详情页，含直播讲解视频、促销信息、价格与购买按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          69,
+          961
+        ]
+      },
+      "to": "product_detail:商品详情页含专利证书与促销信息",
+      "reason": "self-loop"
+    },
+    {
+      "from": "store:周十五旗舰店首页，含618促销横幅、多款蜂蜜商品卡片及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Swipe",
+        "start": [
+          779,
+          908
+        ],
+        "end": [
+          194,
+          908
+        ]
+      },
+      "to": "store:店铺客服欢迎页与服务选项",
+      "reason": "self-loop"
+    },
+    {
+      "from": "product_detail:商品详情页，展示周十五益生菌外用蜂蜜产品信息、618促销价、直播讲解视频及购买操作按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "product_detail:周十五蜂蜜露商品详情页",
+      "reason": "self-loop"
+    },
+    {
+      "from": "product_detail:商品详情页，展示‘周十五’益生菌外用蜂蜜露产品信息、促销价格、618活动横幅及底部功能入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          296,
+          960
+        ]
+      },
+      "to": "product_detail:周十五蜂蜜露商品详情页",
+      "reason": "self-loop"
+    },
+    {
+      "from": "product_detail:商品详情页，展示‘周十五’蜂蜜露产品信息、促销标签、价格及购买操作按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          296,
+          960
+        ]
+      },
+      "to": "product_detail:周十五蜂蜜露商品详情页",
+      "reason": "self-loop"
+    },
+    {
+      "from": "product_detail:周十五蜂蜜露商品详情页，含促销信息、价格、购买按钮及底部导航入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          296,
+          957
+        ]
+      },
+      "to": "product_detail:商品详情页含促销信息与收藏提示",
+      "reason": "self-loop"
+    },
+    {
+      "from": "dialog:直播优惠券领取弹窗，显示100元8.5折主播折扣券及‘领取并使用’按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          50,
+          87
+        ]
+      },
+      "to": "dialog:直播页面弹出商品规格选择弹窗",
+      "reason": "self-loop"
+    }
+  ]
+}

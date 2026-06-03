@@ -1,0 +1,391 @@
+{
+  "app": "淘宝",
+  "lifecycle_summary": {
+    "hypothesis": 0,
+    "candidate": 0,
+    "promoted": 13,
+    "demoted": 0,
+    "total_outcomes": 14
+  },
+  "records": [
+    {
+      "edge_key": "home|open_search|[914, 668]|search_input",
+      "stage": "promoted",
+      "source_page_type": "home",
+      "target_page_type": "search_input",
+      "intent": "open_search",
+      "action_target": "[914, 668]",
+      "outcome_counts": {
+        "search_input": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "search_input",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 0,
+      "created_step": 0
+    },
+    {
+      "edge_key": "search_input|tap_search_input|[389, 72]|search_input",
+      "stage": "promoted",
+      "source_page_type": "search_input",
+      "target_page_type": "search_input",
+      "intent": "tap_search_input",
+      "action_target": "[389, 72]",
+      "outcome_counts": {
+        "search_input": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "search_input",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 1,
+      "created_step": 1
+    },
+    {
+      "edge_key": "search_input|tap_product_detail|[499, 540]|product_detail",
+      "stage": "promoted",
+      "source_page_type": "search_input",
+      "target_page_type": "product_detail",
+      "intent": "tap_product_detail",
+      "action_target": "[499, 540]",
+      "outcome_counts": {
+        "product_detail": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "product_detail",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 2,
+      "created_step": 2
+    },
+    {
+      "edge_key": "product_detail|tap_search_result|[67, 959]|search_result",
+      "stage": "promoted",
+      "source_page_type": "product_detail",
+      "target_page_type": "search_result",
+      "intent": "tap_search_result",
+      "action_target": "[67, 959]",
+      "outcome_counts": {
+        "search_result": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "search_result",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 3,
+      "created_step": 3
+    },
+    {
+      "edge_key": "search_result|open_product_detail|[253, 649]|product_detail",
+      "stage": "promoted",
+      "source_page_type": "search_result",
+      "target_page_type": "product_detail",
+      "intent": "open_product_detail",
+      "action_target": "[253, 649]",
+      "outcome_counts": {
+        "product_detail": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "product_detail",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 4,
+      "created_step": 4
+    },
+    {
+      "edge_key": "product_detail|swipe_search_result|[]|search_result",
+      "stage": "promoted",
+      "source_page_type": "product_detail",
+      "target_page_type": "search_result",
+      "intent": "swipe_search_result",
+      "action_target": "[]",
+      "outcome_counts": {
+        "search_result": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "search_result",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 5,
+      "created_step": 5
+    },
+    {
+      "edge_key": "spec_selection|confirm_add_to_cart_success|[555, 647]|product_detail",
+      "stage": "promoted",
+      "source_page_type": "spec_selection",
+      "target_page_type": "product_detail",
+      "intent": "confirm_add_to_cart_success",
+      "action_target": "[555, 647]",
+      "outcome_counts": {
+        "product_detail": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "product_detail",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 6,
+      "created_step": 6
+    },
+    {
+      "edge_key": "product_detail|tap_unknown|[296, 956]|unknown",
+      "stage": "promoted",
+      "source_page_type": "product_detail",
+      "target_page_type": "unknown",
+      "intent": "tap_unknown",
+      "action_target": "[296, 956]",
+      "outcome_counts": {
+        "unknown": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "unknown",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 7,
+      "created_step": 7
+    },
+    {
+      "edge_key": "unknown|rollback_to_product_detail|[]|product_detail",
+      "stage": "promoted",
+      "source_page_type": "unknown",
+      "target_page_type": "product_detail",
+      "intent": "rollback_to_product_detail",
+      "action_target": "[]",
+      "outcome_counts": {
+        "product_detail": 2
+      },
+      "total_attempts": 2,
+      "verification_count": 2,
+      "dominant_outcome": "product_detail",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 12,
+      "created_step": 8
+    },
+    {
+      "edge_key": "product_detail|tap_search_result|[499, 737]|search_result",
+      "stage": "promoted",
+      "source_page_type": "product_detail",
+      "target_page_type": "search_result",
+      "intent": "tap_search_result",
+      "action_target": "[499, 737]",
+      "outcome_counts": {
+        "search_result": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "search_result",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 9,
+      "created_step": 9
+    },
+    {
+      "edge_key": "search_result|open_product_detail|[]|product_detail",
+      "stage": "promoted",
+      "source_page_type": "search_result",
+      "target_page_type": "product_detail",
+      "intent": "open_product_detail",
+      "action_target": "[]",
+      "outcome_counts": {
+        "product_detail": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "product_detail",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 10,
+      "created_step": 10
+    },
+    {
+      "edge_key": "product_detail|tap_unknown|[188, 357]|unknown",
+      "stage": "promoted",
+      "source_page_type": "product_detail",
+      "target_page_type": "unknown",
+      "intent": "tap_unknown",
+      "action_target": "[188, 357]",
+      "outcome_counts": {
+        "unknown": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "unknown",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 11,
+      "created_step": 11
+    },
+    {
+      "edge_key": "product_detail|tap_search_result|[499, 939]|search_result",
+      "stage": "promoted",
+      "source_page_type": "product_detail",
+      "target_page_type": "search_result",
+      "intent": "tap_search_result",
+      "action_target": "[499, 939]",
+      "outcome_counts": {
+        "search_result": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "search_result",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 13,
+      "created_step": 13
+    }
+  ],
+  "outcomes": [
+    {
+      "source_page_type": "home",
+      "action_key": "open_search:[914, 668]",
+      "outcomes": {
+        "search_input": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "search_input",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "search_input",
+      "action_key": "tap_search_input:[389, 72]",
+      "outcomes": {
+        "search_input": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "search_input",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "search_input",
+      "action_key": "tap_product_detail:[499, 540]",
+      "outcomes": {
+        "product_detail": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "product_detail",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "product_detail",
+      "action_key": "tap_search_result:[67, 959]",
+      "outcomes": {
+        "search_result": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "search_result",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "search_result",
+      "action_key": "open_product_detail:[253, 649]",
+      "outcomes": {
+        "product_detail": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "product_detail",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "product_detail",
+      "action_key": "swipe_search_result:[]",
+      "outcomes": {
+        "search_result": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "search_result",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "spec_selection",
+      "action_key": "confirm_add_to_cart_success:[555, 647]",
+      "outcomes": {
+        "product_detail": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "product_detail",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "product_detail",
+      "action_key": "tap_unknown:[296, 956]",
+      "outcomes": {
+        "unknown": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "unknown",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "unknown",
+      "action_key": "rollback_to_product_detail:[]",
+      "outcomes": {
+        "product_detail": 2
+      },
+      "total": 2,
+      "entropy": -0.0,
+      "dominant_outcome": "product_detail",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "product_detail",
+      "action_key": "tap_search_result:[499, 737]",
+      "outcomes": {
+        "search_result": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "search_result",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "search_result",
+      "action_key": "open_product_detail:[]",
+      "outcomes": {
+        "product_detail": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "product_detail",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "product_detail",
+      "action_key": "tap_unknown:[188, 357]",
+      "outcomes": {
+        "unknown": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "unknown",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "product_detail",
+      "action_key": "tap_search_result:[499, 939]",
+      "outcomes": {
+        "search_result": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "search_result",
+      "dominant_ratio": 1.0
+    }
+  ]
+}
