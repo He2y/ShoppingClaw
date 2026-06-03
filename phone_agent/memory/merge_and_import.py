@@ -309,77 +309,6 @@ def direct_neo4j_import(
     return {"nodes": node_count, "edges": edge_count}
 
 
-def _build_functionality_report(
-    pages: list[dict],
-    transitions: list[dict],
-    app: str,
-) -> dict[str, Any]:
-    """Build affordance report using VLM analysis with keyword fallback.
-
-    Produces page-level structural affordances instead of element-level
-    instances. Each affordance represents a reusable capability.
-    """
-    from phone_agent.spatial.vlm_affordance_analyzer import (
-        VLMAffordanceAnalyzer,
-        _fallback_affordances,
-    )
-    from phone_agent.spatial.functionality import FunctionalityExtractor, FunctionalityItem
-    from phone_agent.spatial.functionality_cluster import FunctionalityClusterer
-    from phone_agent.spatial.core import stable_id
-
-    analyzer = VLMAffordanceAnalyzer()
-    print(f"    Affordance analyzer: {'VLM (' + analyzer._model + ')' if analyzer.configured else 'fallback'}")
-
-    all_items: list[FunctionalityItem] = []
-
-    for page in pages:
-        page_type = page.get("page_type", "unknown")
-        elements = page.get("elements") or {}
-        summary = page.get("summary", "")
-
-        if analyzer.configured:
-            affordances = analyzer.analyze_page_without_screenshot(
-                page_type=page_type, elements=elements,
-                summary=summary, app_name=app,
-            )
-        if not analyzer.configured or not affordances:
-            affordances = _fallback_affordances(page_type, elements)
-
-        for aff in affordances:
-            all_items.append(FunctionalityItem(
-                functionality_id=stable_id("aff", app, page_type, aff.role),
-                page_node_id=stable_id("page", app, page_type),
-                app=app,
-                page_type=page_type,
-                type="functionality",
-                source_kind="structural_affordance",
-                canonical_role=aff.role,
-                is_promotable=True,
-                label=aff.role,
-                description=aff.description,
-                expected_effect=aff.expected_postcondition,
-                observed_postcondition=aff.expected_postcondition,
-                confidence=0.9 if aff.expected_postcondition else 0.7,
-            ))
-
-    # Also add verified transition affordances
-    extractor = FunctionalityExtractor()
-    for t in transitions:
-        item = extractor.from_transition(t, app=app)
-        if item.functionality_id not in {i.functionality_id for i in all_items}:
-            all_items.append(item)
-
-    clusterer = FunctionalityClusterer()
-    clustered_items, clusters = clusterer.cluster(all_items)
-
-    print(f"    {len(all_items)} affordances → {len(clusters)} clusters")
-
-    return {
-        "app_filter": app,
-        "functionality_items": [item.to_dict() for item in clustered_items],
-        "functionality_clusters": [c.to_dict() for c in clusters],
-    }
-
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Merge exploration data and import to Neo4j")
@@ -468,14 +397,6 @@ def main() -> int:
             else:
                 print(f"  No edges passed staging — check transition key alignment")
 
-            # Step B: Extract + cluster functionalities → semantic layer
-            print(f"\n  [Functionality] Extracting semantic layer...")
-            func_report = _build_functionality_report(merged_pages, merged_transitions, args.app)
-            func_counts = graph_store.upsert_functionality_graph(func_report)
-            print(f"  Clusters: {func_counts['clusters']}, Items: {func_counts['items']}")
-            print(f"  UIState↔Item links: {func_counts['ui_links']}")
-            print(f"  Action↔Item links: {func_counts['action_links']}")
-            print(f"  Cluster→UIState links: {func_counts['postcondition_links']}")
 
         except Exception as e:
             print(f"  Import failed: {e}")
