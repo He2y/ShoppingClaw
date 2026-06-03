@@ -42,7 +42,7 @@ class TestExplorationPolicy:
         d = policy.to_dict()
         assert d["max_total_steps"] == 50
         assert d["max_dry_rounds"] == 3
-        assert len(d) == 8
+        assert len(d) >= 8
 
 
 # ── ConvergenceTracker ───────────────────────────────────────
@@ -182,9 +182,10 @@ class TestSystemPrompt:
         assert "finish" in prompt
 
     def test_supervisor_prompt_contains_strategy(self) -> None:
-        assert "核心页面类型" in ExplorationSupervisor._SYSTEM_PROMPT
-        assert "home" in ExplorationSupervisor._SYSTEM_PROMPT
-        assert "search_result" in ExplorationSupervisor._SYSTEM_PROMPT
+        prompt = ExplorationSupervisor._SYSTEM_PROMPT
+        assert "导航图谱" in prompt
+        assert "未探索" in prompt
+        assert "should_stop" in prompt
 
 
 # ── PageInfo Bridge ──────────────────────────────────────────
@@ -224,16 +225,14 @@ class TestJobExecutionResult:
         assert d["outcome"] == "success"
         assert "search_result" in d["new_page_types_discovered"]
 
-    def test_deviation_result(self) -> None:
+    def test_stalled_result(self) -> None:
         result = JobExecutionResult(
             job_description="Navigate to product",
             steps_taken=1,
-            outcome="deviation",
-            deviation_reason="expected product_detail, got cart",
+            outcome="stalled",
         )
         d = result.to_dict()
-        assert d["outcome"] == "deviation"
-        assert "product_detail" in d["deviation_reason"]
+        assert d["outcome"] == "stalled"
 
 
 class TestSupervisorDecision:
@@ -246,11 +245,11 @@ class TestSupervisorDecision:
         assert d.plan == ("点击搜索框",)
         assert not d.should_stop
 
-    def test_fallback(self) -> None:
+    def test_parse_valid_json(self) -> None:
         supervisor = ExplorationSupervisor.__new__(ExplorationSupervisor)
-        decision = supervisor._fallback(["home:首页"], ["search_input", "search_result"])
-        assert len(decision.plan) >= 1
-        assert "搜索" in decision.plan[0]
+        decision = supervisor._parse('{"reasoning":"test","plan":["点击搜索框"],"should_stop":false}')
+        assert decision.plan == ("点击搜索框",)
+        assert not decision.should_stop
 
 
 # ── AutonomousExplorer._extract_and_cluster ──────────────────

@@ -37,6 +37,7 @@ def main() -> int:
     parser.add_argument("--max-dry-rounds", type=int, default=5, help="Consecutive dry rounds before convergence")
     parser.add_argument("--use-strong-vlm", action="store_true", help="Use strong VLM for functionality extraction")
     parser.add_argument("--classifier-mode", type=str, default="fast", choices=["fast", "full", "off"])
+    parser.add_argument("--auto-import-graph", action="store_true", help="Import results into Neo4j via SpatialGraphMemory")
     parser.add_argument("--quiet", action="store_true", help="Suppress verbose output")
     args = parser.parse_args()
 
@@ -65,6 +66,7 @@ def main() -> int:
         max_job_steps=args.max_job_steps,
         max_dry_rounds=args.max_dry_rounds,
         use_strong_vlm_extractor=args.use_strong_vlm,
+        auto_import_graph=args.auto_import_graph,
     )
     explorer = AutonomousExplorer(
         app_name=args.app,
