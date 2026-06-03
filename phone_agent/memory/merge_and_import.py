@@ -169,6 +169,85 @@ def build_quality_report(
     }
 
 
+def direct_neo4j_import(
+    pages: list[dict],
+    transitions: list[dict],
+    app: str,
+) -> dict[str, int]:
+    """Write merged graph directly to Neo4j, bypassing staging pipeline.
+
+    Creates PageNode nodes and TRANSITION edges between them.
+    Clears existing PageNode/TRANSITION data for this app first.
+    """
+    import os
+    from dotenv import load_dotenv
+    load_dotenv()
+
+    uri = os.environ.get("NEO4J_URI", "bolt://localhost:7687")
+    user = os.environ.get("NEO4J_USER", "neo4j")
+    password = os.environ.get("NEO4J_PASSWORD", "password")
+    database = os.environ.get("NEO4J_DATABASE", "shopping-spatial-v4")
+
+    from neo4j import GraphDatabase
+    driver = GraphDatabase.driver(uri, auth=(user, password))
+    driver.verify_connectivity()
+    print(f"  Neo4j connected: {uri} / {database}")
+
+    node_count = 0
+    edge_count = 0
+
+    with driver.session(database=database) as session:
+        session.run(
+            "MATCH (n:PageNode {app: $app})-[r:TRANSITION]-() DELETE r",
+            app=app,
+        )
+        session.run("MATCH (n:PageNode {app: $app}) DELETE n", app=app)
+        print(f"  Cleared existing PageNode data for {app}")
+
+        for page in pages:
+            pt = page["page_type"]
+            elements = page.get("elements") or {}
+            session.run(
+                "MERGE (n:PageNode {app: $app, page_type: $pt}) "
+                "SET n.summary = $summary, "
+                "    n.elements = $elements, "
+                "    n.element_count = $elem_count",
+                app=app,
+                pt=pt,
+                summary=page.get("summary", ""),
+                elements=json.dumps(elements, ensure_ascii=False),
+                elem_count=len(elements),
+            )
+            node_count += 1
+
+        for t in transitions:
+            src_type = t["from"].split(":")[0]
+            tgt_type = t["to"].split(":")[0]
+            action = t.get("action", {})
+            action_type = action.get("action", "Tap")
+            action_json = json.dumps(action, ensure_ascii=False, default=str)
+
+            session.run(
+                "MATCH (a:PageNode {app: $app, page_type: $src}) "
+                "MATCH (b:PageNode {app: $app, page_type: $tgt}) "
+                "MERGE (a)-[r:TRANSITION {action_type: $act_type}]->(b) "
+                "SET r.action_detail = $action_json, "
+                "    r.from_summary = $from_s, "
+                "    r.to_summary = $to_s",
+                app=app,
+                src=src_type,
+                tgt=tgt_type,
+                act_type=action_type,
+                action_json=action_json,
+                from_s=t["from"],
+                to_s=t["to"],
+            )
+            edge_count += 1
+
+    driver.close()
+    return {"nodes": node_count, "edges": edge_count}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Merge exploration data and import to Neo4j")
     parser.add_argument("--input-dirs", nargs="+", required=True, help="Exploration directories to merge")
@@ -236,21 +315,10 @@ def main() -> int:
 
     # Optional: import to Neo4j
     if args.import_graph:
-        print(f"\n[Import] Loading into SpatialGraphMemory → Neo4j...")
+        print(f"\n[Import] Writing directly to Neo4j...")
         try:
-            from phone_agent.memory.graph_store import GraphStore
-            from phone_agent.memory.spatial_graph_memory import SpatialGraphMemory
-            graph_store = GraphStore()
-            if graph_store.driver:
-                print(f"  Neo4j connected: {graph_store.uri} / {graph_store.database}")
-            else:
-                print(f"  WARNING: Neo4j not available, will save to local memory only")
-            memory = SpatialGraphMemory(graph_store=graph_store)
-            result = memory.import_exploration_files(pages_path, trans_path)
-            print(f"  Pages imported: {result.pages_imported}")
-            print(f"  Transitions imported: {result.transitions_imported}")
-            print(f"  Unique pages in graph: {result.unique_pages}")
-            print(f"  Persisted to Neo4j: {result.persisted_to_graph}")
+            imported = direct_neo4j_import(merged_pages, merged_transitions, args.app)
+            print(f"  Done: {imported['nodes']} page nodes, {imported['edges']} transition edges")
         except Exception as e:
             print(f"  Import failed: {e}")
             import traceback
