@@ -314,19 +314,65 @@ def _build_functionality_report(
     transitions: list[dict],
     app: str,
 ) -> dict[str, Any]:
-    """Build the report dict expected by GraphStore.upsert_functionality_graph()."""
-    from phone_agent.spatial.functionality import FunctionalityExtractor
-    from phone_agent.spatial.functionality_cluster import FunctionalityClusterer
+    """Build affordance report using VLM analysis with keyword fallback.
 
-    extractor = FunctionalityExtractor()
-    all_items = []
+    Produces page-level structural affordances instead of element-level
+    instances. Each affordance represents a reusable capability.
+    """
+    from phone_agent.spatial.vlm_affordance_analyzer import (
+        VLMAffordanceAnalyzer,
+        _fallback_affordances,
+    )
+    from phone_agent.spatial.functionality import FunctionalityExtractor, FunctionalityItem
+    from phone_agent.spatial.functionality_cluster import FunctionalityClusterer
+    from phone_agent.spatial.core import stable_id
+
+    analyzer = VLMAffordanceAnalyzer()
+    print(f"    Affordance analyzer: {'VLM (' + analyzer._model + ')' if analyzer.configured else 'fallback'}")
+
+    all_items: list[FunctionalityItem] = []
+
     for page in pages:
-        all_items.extend(extractor.from_page(page))
+        page_type = page.get("page_type", "unknown")
+        elements = page.get("elements") or {}
+        summary = page.get("summary", "")
+
+        if analyzer.configured:
+            affordances = analyzer.analyze_page_without_screenshot(
+                page_type=page_type, elements=elements,
+                summary=summary, app_name=app,
+            )
+        if not analyzer.configured or not affordances:
+            affordances = _fallback_affordances(page_type, elements)
+
+        for aff in affordances:
+            all_items.append(FunctionalityItem(
+                functionality_id=stable_id("aff", app, page_type, aff.role),
+                page_node_id=stable_id("page", app, page_type),
+                app=app,
+                page_type=page_type,
+                type="functionality",
+                source_kind="structural_affordance",
+                canonical_role=aff.role,
+                is_promotable=True,
+                label=aff.role,
+                description=aff.description,
+                expected_effect=aff.expected_postcondition,
+                observed_postcondition=aff.expected_postcondition,
+                confidence=0.9 if aff.expected_postcondition else 0.7,
+            ))
+
+    # Also add verified transition affordances
+    extractor = FunctionalityExtractor()
     for t in transitions:
-        all_items.append(extractor.from_transition(t, app=app))
+        item = extractor.from_transition(t, app=app)
+        if item.functionality_id not in {i.functionality_id for i in all_items}:
+            all_items.append(item)
 
     clusterer = FunctionalityClusterer()
     clustered_items, clusters = clusterer.cluster(all_items)
+
+    print(f"    {len(all_items)} affordances → {len(clusters)} clusters")
 
     return {
         "app_filter": app,
