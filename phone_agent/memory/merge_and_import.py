@@ -169,15 +169,42 @@ def build_quality_report(
     }
 
 
+_RISK_MAP = {
+    "checkout": "high", "payment": "high", "address": "high",
+    "login": "high", "permission": "high",
+    "spec_selection": "medium", "cart": "medium",
+}
+
+
+def _derive_intent(src_type: str, tgt_type: str, action: dict) -> str:
+    """Derive semantic intent from transition context."""
+    from phone_agent.spatial.functionality import canonical_role_from_transition
+    action_type = str(action.get("action", "Tap")).lower()
+    bbox = action.get("element") or action.get("coordinate")
+    region = ""
+    if isinstance(bbox, list) and len(bbox) >= 2:
+        try:
+            y = float(bbox[1]) if not isinstance(bbox[0], list) else float(bbox[0][1])
+            region = "top" if y < 250 else "bottom" if y > 750 else "middle"
+        except (TypeError, ValueError, IndexError):
+            pass
+    role = canonical_role_from_transition(src_type, tgt_type, action_type, region, action)
+    return role or f"{action_type}_{tgt_type}"
+
+
 def direct_neo4j_import(
     pages: list[dict],
     transitions: list[dict],
     app: str,
 ) -> dict[str, int]:
-    """Write merged graph directly to Neo4j, bypassing staging pipeline.
+    """Write AMSG-aligned graph to Neo4j.
 
-    Creates PageNode nodes and TRANSITION edges between them.
-    Clears existing PageNode/TRANSITION data for this app first.
+    Schema (matches paper Definition 2 & 3):
+      Node: PageNode {page_type, summary, landmarks, affordances, risk_level, ...}
+      Edge: AFFORDANCE {intent, confidence, success_count, fail_count, risk_level,
+                        expected_postcondition, rollback_action, weighted_cost, ...}
+
+    Clears ALL old data in the database for a clean rebuild.
     """
     import os
     from dotenv import load_dotenv
@@ -191,58 +218,86 @@ def direct_neo4j_import(
     from neo4j import GraphDatabase
     driver = GraphDatabase.driver(uri, auth=(user, password))
     driver.verify_connectivity()
-    print(f"  Neo4j connected: {uri} / {database}")
+    print(f"  Neo4j: {uri} / {database}")
 
     node_count = 0
     edge_count = 0
 
     with driver.session(database=database) as session:
-        session.run(
-            "MATCH (n:PageNode {app: $app})-[r:TRANSITION]-() DELETE r",
-            app=app,
-        )
-        session.run("MATCH (n:PageNode {app: $app}) DELETE n", app=app)
-        print(f"  Cleared existing PageNode data for {app}")
+        session.run("MATCH (n) DETACH DELETE n")
+        print(f"  Cleared all existing data")
+
+        session.run("CREATE INDEX IF NOT EXISTS FOR (n:PageNode) ON (n.page_type)")
 
         for page in pages:
             pt = page["page_type"]
             elements = page.get("elements") or {}
+            affordances = tuple(sorted(elements.keys()))
+            landmarks_raw = [v for v in elements.values() if isinstance(v, str)]
+            landmarks = tuple(sorted(set(l[:40] for l in landmarks_raw[:10])))
+            risk = _RISK_MAP.get(pt, "normal")
+
             session.run(
-                "MERGE (n:PageNode {app: $app, page_type: $pt}) "
-                "SET n.summary = $summary, "
-                "    n.elements = $elements, "
-                "    n.element_count = $elem_count",
-                app=app,
-                pt=pt,
+                "CREATE (n:PageNode {"
+                "  app: $app, page_type: $pt, domain: 'shopping',"
+                "  summary: $summary, risk_level: $risk,"
+                "  affordances: $affordances, landmarks: $landmarks,"
+                "  element_count: $elem_count,"
+                "  elements_json: $elements_json"
+                "})",
+                app=app, pt=pt,
                 summary=page.get("summary", ""),
-                elements=json.dumps(elements, ensure_ascii=False),
+                risk=risk,
+                affordances=list(affordances),
+                landmarks=list(landmarks),
                 elem_count=len(elements),
+                elements_json=json.dumps(elements, ensure_ascii=False),
             )
             node_count += 1
+            print(f"    + [{pt}] {len(affordances)} affordances, risk={risk}")
 
         for t in transitions:
             src_type = t["from"].split(":")[0]
             tgt_type = t["to"].split(":")[0]
             action = t.get("action", {})
-            action_type = action.get("action", "Tap")
-            action_json = json.dumps(action, ensure_ascii=False, default=str)
+            action_type = str(action.get("action", "Tap"))
+            intent = _derive_intent(src_type, tgt_type, action)
+            tgt_risk = _RISK_MAP.get(tgt_type, "normal")
+            risk_penalty = {"normal": 0.0, "medium": 0.8, "high": 2.0}.get(tgt_risk, 0.5)
+            confidence = 0.9
+            weighted_cost = round(1.0 + risk_penalty - confidence * 0.3, 2)
 
             session.run(
                 "MATCH (a:PageNode {app: $app, page_type: $src}) "
                 "MATCH (b:PageNode {app: $app, page_type: $tgt}) "
-                "MERGE (a)-[r:TRANSITION {action_type: $act_type}]->(b) "
-                "SET r.action_detail = $action_json, "
-                "    r.from_summary = $from_s, "
-                "    r.to_summary = $to_s",
-                app=app,
-                src=src_type,
-                tgt=tgt_type,
-                act_type=action_type,
-                action_json=action_json,
-                from_s=t["from"],
-                to_s=t["to"],
+                "CREATE (a)-[:AFFORDANCE {"
+                "  intent: $intent,"
+                "  action_type: $action_type,"
+                "  semantic_target: $semantic_target,"
+                "  expected_postcondition: $postcondition,"
+                "  rollback_action: $rollback,"
+                "  risk_level: $risk,"
+                "  confidence: $confidence,"
+                "  success_count: $success,"
+                "  fail_count: 0,"
+                "  weighted_cost: $cost,"
+                "  action_detail: $action_json"
+                "}]->(b)",
+                app=app, src=src_type, tgt=tgt_type,
+                intent=intent,
+                action_type=action_type,
+                semantic_target=t["from"].split(":", 1)[-1][:40] if ":" in t["from"] else "",
+                postcondition=tgt_type,
+                rollback="Back",
+                risk=tgt_risk,
+                confidence=confidence,
+                success=1,
+                cost=weighted_cost,
+                action_json=json.dumps(action, ensure_ascii=False, default=str),
             )
             edge_count += 1
+
+        print(f"    + {edge_count} AFFORDANCE edges")
 
     driver.close()
     return {"nodes": node_count, "edges": edge_count}
