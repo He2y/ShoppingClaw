@@ -236,16 +236,25 @@ def main() -> int:
 
     # Optional: import to Neo4j
     if args.import_graph:
-        print(f"\n[Import] Loading into SpatialGraphMemory...")
+        print(f"\n[Import] Loading into SpatialGraphMemory → Neo4j...")
         try:
+            from phone_agent.memory.graph_store import GraphStore
             from phone_agent.memory.spatial_graph_memory import SpatialGraphMemory
-            memory = SpatialGraphMemory()
+            graph_store = GraphStore()
+            if graph_store.driver:
+                print(f"  Neo4j connected: {graph_store.uri} / {graph_store.database}")
+            else:
+                print(f"  WARNING: Neo4j not available, will save to local memory only")
+            memory = SpatialGraphMemory(graph_store=graph_store)
             result = memory.import_exploration_files(pages_path, trans_path)
             print(f"  Pages imported: {result.pages_imported}")
             print(f"  Transitions imported: {result.transitions_imported}")
+            print(f"  Unique pages in graph: {result.unique_pages}")
             print(f"  Persisted to Neo4j: {result.persisted_to_graph}")
         except Exception as e:
             print(f"  Import failed: {e}")
+            import traceback
+            traceback.print_exc()
 
     print(f"\n{'='*60}")
     print(f"  Pipeline complete")
