@@ -251,6 +251,22 @@ def main() -> int:
                 print(f"  Neo4j: {graph_store.uri} / {graph_store.database}")
             memory = SpatialGraphMemory(graph_store=graph_store)
 
+            # Load lifecycle data from exploration artifacts
+            lifecycle_records: list[dict] = []
+            lifecycle_outcomes: list[dict] = []
+            for input_dir in args.input_dirs:
+                for lc_path in sorted(Path(input_dir).glob("*_lifecycle_*.json")):
+                    try:
+                        lc_data = json.load(open(lc_path, encoding="utf-8"))
+                        lifecycle_records.extend(lc_data.get("records", []))
+                        lifecycle_outcomes.extend(lc_data.get("outcomes", []))
+                    except (json.JSONDecodeError, UnicodeDecodeError):
+                        continue
+            if lifecycle_records or lifecycle_outcomes:
+                memory._edge_lifecycle.bulk_load(lifecycle_records, lifecycle_outcomes)
+                summary = memory._edge_lifecycle.lifecycle_summary()
+                print(f"  Lifecycle loaded: {summary}")
+
             # Step A: Import pages + transitions (topology layer)
             states, edges, quality = memory.import_exploration_staging(pages_path, trans_path)
             print(f"  Staging: {quality.pages_seen} pages → {quality.canonical_pages} canonical")
@@ -261,7 +277,6 @@ def main() -> int:
                 print(f"  Promoted: {promote_report.transitions_promoted} edges to Neo4j")
             else:
                 print(f"  No edges passed staging — check transition key alignment")
-
 
         except Exception as e:
             print(f"  Import failed: {e}")

@@ -115,3 +115,18 @@ class AMSGOptimConfig:
             enable_heuristic_injection=True,
             edge_promotion_policy="legacy",
         )
+
+    @classmethod
+    def from_env(cls) -> AMSGOptimConfig:
+        """Resolve config preset from AMSG_CONFIG env var (default: legacy)."""
+        import os
+        preset = os.getenv("AMSG_CONFIG", "legacy").lower()
+        presets = {
+            "legacy": cls.legacy,
+            "full": cls.full,
+            "edge_only": cls.edge_only,
+            "belief_only": cls.belief_only,
+            "planner_only": cls.planner_only,
+        }
+        factory = presets.get(preset)
+        return factory() if factory else cls.legacy()

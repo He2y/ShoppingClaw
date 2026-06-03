@@ -1059,6 +1059,7 @@ class GraphStore:
         outcome: str = "success",
         source_metadata: Optional[Dict[str, Any]] = None,
         target_metadata: Optional[Dict[str, Any]] = None,
+        lifecycle: Optional[Dict[str, Any]] = None,
     ):
         """Record a transition and create missing UIState nodes if needed."""
         if not self.driver:
@@ -1121,6 +1122,13 @@ class GraphStore:
             a.reasoning = $reasoning,
             a.source_type = coalesce($source_type, a.source_type),
             a.source_path = coalesce($source_path, a.source_path),
+            a.lifecycle_stage = coalesce($lc_stage, a.lifecycle_stage),
+            a.verification_count = coalesce($lc_verify_count, a.verification_count),
+            a.dominance_ratio = coalesce($lc_dominance, a.dominance_ratio),
+            a.outcome_distribution_json = coalesce($lc_outcome_json, a.outcome_distribution_json),
+            a.outcome_entropy = coalesce($lc_entropy, a.outcome_entropy),
+            a.created_at = coalesce(a.created_at, timestamp()),
+            a.last_traversed = timestamp(),
             a.updated_at = timestamp()
         MERGE (s1)-[r1:NEXT_ACTION]->(a)
         ON CREATE SET r1.confidence = $confidence,
@@ -1183,6 +1191,11 @@ class GraphStore:
                 success_delta=success_delta,
                 fail_delta=fail_delta,
                 task_id=task_id,
+                lc_stage=lifecycle.get("lifecycle_stage") if lifecycle else None,
+                lc_verify_count=lifecycle.get("verification_count") if lifecycle else None,
+                lc_dominance=lifecycle.get("dominance_ratio") if lifecycle else None,
+                lc_outcome_json=lifecycle.get("outcome_distribution_json") if lifecycle else None,
+                lc_entropy=lifecycle.get("outcome_entropy") if lifecycle else None,
             )
 
     def upsert_functionality_graph(self, report: Dict[str, Any]) -> Dict[str, int]:

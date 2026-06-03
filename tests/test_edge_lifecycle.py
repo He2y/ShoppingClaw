@@ -1,8 +1,9 @@
-"""Tests for edge lifecycle management (Definition 8 & 9)."""
+"""Tests for edge lifecycle management (Definition 7 & 8)."""
 
 from phone_agent.spatial.amsg_config import AMSGOptimConfig
 from phone_agent.spatial.edge_lifecycle import (
     EdgeLifecycleManager,
+    EdgeLifecycleRecord,
     OutcomeDistribution,
 )
 
@@ -166,3 +167,161 @@ def test_get_promoted_edges_for_page():
     home_edges = mgr.get_promoted_edges_for_page("home")
     assert len(home_edges) == 1
     assert home_edges[0].target_page_type == "search_input"
+
+
+# ── Serialization (from_dict / to_dict roundtrip) ─────────────────
+
+
+def test_outcome_distribution_from_dict_roundtrip():
+    original = OutcomeDistribution("product_detail", "tap:buy", {"spec_selection": 5, "login": 2})
+    d = original.to_dict()
+    restored = OutcomeDistribution.from_dict(d)
+    assert restored.source_page_type == original.source_page_type
+    assert restored.action_key == original.action_key
+    assert restored.outcomes == original.outcomes
+    assert abs(restored.entropy - original.entropy) < 1e-6
+
+
+def test_edge_lifecycle_record_from_dict_roundtrip():
+    original = EdgeLifecycleRecord(
+        edge_key="home|tap|search|search_input",
+        stage="promoted",
+        source_page_type="home",
+        target_page_type="search_input",
+        intent="tap",
+        action_target="search",
+        outcome_counts={"search_input": 3},
+        total_attempts=3,
+        verification_count=3,
+        dominant_outcome="search_input",
+        dominance_ratio=1.0,
+        risk_level="normal",
+        last_verified_step=10,
+        created_step=1,
+    )
+    d = original.to_dict()
+    restored = EdgeLifecycleRecord.from_dict(d)
+    assert restored.edge_key == original.edge_key
+    assert restored.stage == original.stage
+    assert restored.verification_count == original.verification_count
+    assert restored.dominance_ratio == original.dominance_ratio
+    assert restored.outcome_counts == original.outcome_counts
+
+
+# ── Bulk load / export ─────────────────────────────────────────────
+
+
+def test_bulk_export_import_roundtrip():
+    mgr1 = EdgeLifecycleManager(AMSGOptimConfig.full())
+    mgr1.record_outcome(source_page_type="home", intent="tap", action_target="search", observed_target="search_input")
+    mgr1.record_outcome(source_page_type="search_result", intent="tap", action_target="card", observed_target="product_detail")
+
+    records, outcomes = mgr1.bulk_export()
+    assert len(records) == 2
+    assert len(outcomes) == 2
+
+    mgr2 = EdgeLifecycleManager(AMSGOptimConfig.full())
+    mgr2.bulk_load(records, outcomes)
+
+    assert len(mgr2._records) == 2
+    assert len(mgr2._outcomes) == 2
+    for key in mgr1._records:
+        assert mgr2._records[key].stage == mgr1._records[key].stage
+        assert mgr2._records[key].verification_count == mgr1._records[key].verification_count
+
+
+def test_bulk_load_merges_with_existing():
+    mgr = EdgeLifecycleManager(AMSGOptimConfig.full())
+    mgr.record_outcome(source_page_type="home", intent="tap", action_target="search", observed_target="search_input")
+
+    new_records = [{
+        "edge_key": "home|tap|search|search_input",
+        "stage": "promoted",
+        "source_page_type": "home",
+        "target_page_type": "search_input",
+        "intent": "tap",
+        "action_target": "search",
+        "outcome_counts": {"search_input": 5},
+        "total_attempts": 5,
+        "verification_count": 5,
+        "dominant_outcome": "search_input",
+        "dominance_ratio": 1.0,
+        "risk_level": "normal",
+    }]
+    mgr.bulk_load(new_records, [])
+    record = mgr.get_record("home|tap|search|search_input")
+    assert record is not None
+    assert record.verification_count == 5  # incoming wins (higher count)
+
+
+# ── Demotion ───────────────────────────────────────────────────────
+
+
+def test_check_demotion_demotes_low_dominance():
+    mgr = EdgeLifecycleManager(AMSGOptimConfig.full())
+    mgr.record_outcome(source_page_type="product_detail", intent="tap", action_target="buy", observed_target="spec_selection")
+    mgr.record_outcome(source_page_type="product_detail", intent="tap", action_target="buy", observed_target="login")
+    mgr.record_outcome(source_page_type="product_detail", intent="tap", action_target="buy", observed_target="popup")
+
+    # Each edge key is unique (different observed_target), so individual records have dominance=1.0
+    # But let's test demotion with a manually constructed low-dominance promoted edge
+    from phone_agent.spatial.edge_lifecycle import EdgeLifecycleRecord
+    mgr._records["test|tap|btn|a"] = EdgeLifecycleRecord(
+        edge_key="test|tap|btn|a",
+        stage="promoted",
+        source_page_type="test",
+        target_page_type="a",
+        intent="tap",
+        action_target="btn",
+        outcome_counts={"a": 2, "b": 2, "c": 1},
+        total_attempts=5,
+        verification_count=5,
+        dominant_outcome="a",
+        dominance_ratio=0.4,  # below threshold
+    )
+    demoted = mgr.check_demotion(threshold=0.5)
+    assert len(demoted) == 1
+    assert demoted[0].stage == "demoted"
+    assert mgr.get_record("test|tap|btn|a").stage == "demoted"
+
+
+def test_check_demotion_skips_high_dominance():
+    mgr = EdgeLifecycleManager(AMSGOptimConfig.full())
+    mgr._records["test|tap|btn|a"] = EdgeLifecycleRecord(
+        edge_key="test|tap|btn|a",
+        stage="promoted",
+        source_page_type="test",
+        target_page_type="a",
+        intent="tap",
+        action_target="btn",
+        outcome_counts={"a": 9, "b": 1},
+        total_attempts=10,
+        verification_count=10,
+        dominant_outcome="a",
+        dominance_ratio=0.9,
+    )
+    demoted = mgr.check_demotion(threshold=0.5)
+    assert len(demoted) == 0
+    assert mgr.get_record("test|tap|btn|a").stage == "promoted"
+
+
+# ── Config from_env ────────────────────────────────────────────────
+
+
+def test_amsg_config_from_env_default(monkeypatch):
+    monkeypatch.delenv("AMSG_CONFIG", raising=False)
+    config = AMSGOptimConfig.from_env()
+    assert config.edge_promotion_policy == "legacy"
+
+
+def test_amsg_config_from_env_full(monkeypatch):
+    monkeypatch.setenv("AMSG_CONFIG", "full")
+    config = AMSGOptimConfig.from_env()
+    assert config.edge_promotion_policy == "verified"
+    assert config.planner_backend == "belief_astar"
+
+
+def test_amsg_config_from_env_unknown_falls_back(monkeypatch):
+    monkeypatch.setenv("AMSG_CONFIG", "nonexistent")
+    config = AMSGOptimConfig.from_env()
+    assert config.edge_promotion_policy == "legacy"

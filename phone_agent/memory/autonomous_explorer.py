@@ -801,9 +801,18 @@ class AutonomousExplorer:
             "clusters": [c.to_dict() for c in self._all_clusters],
         })
 
+        lifecycle_path = self.storage_dir / f"{self.app_name}_autonomous_lifecycle_{timestamp}.json"
+        records, outcomes = self.edge_lifecycle.bulk_export()
+        _write_json(lifecycle_path, {
+            "app": self.app_name,
+            "lifecycle_summary": self.edge_lifecycle.lifecycle_summary(),
+            "records": records,
+            "outcomes": outcomes,
+        })
+
         self._last_pages_path = pages_path
         self._last_transitions_path = transitions_path
-        self._log(f"  saved 4 files to {self.storage_dir}/")
+        self._log(f"  saved 5 files to {self.storage_dir}/")
 
     def _maybe_import_graph(self) -> None:
         if not self.policy.auto_import_graph:

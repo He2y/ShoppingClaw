@@ -1,7 +1,7 @@
 """Edge lifecycle management for AMSG verified graph construction.
 
-Implements Definition 8 (Edge Lifecycle) and Definition 9 (Outcome
-Distribution) from FORMALIZATION.md.
+Implements Definition 7 (Edge Lifecycle) and Definition 8 (Outcome
+Distribution) from SYSTEM_DESIGN.md.
 
 Core insight: in dynamic mobile GUIs the same action (e.g. "add to cart")
 can produce multiple outcomes (spec dialog, login page, promotion popup,
@@ -83,8 +83,16 @@ class OutcomeDistribution:
             "dominant_ratio": round(ratio, 4),
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> OutcomeDistribution:
+        return cls(
+            source_page_type=d.get("source_page_type", ""),
+            action_key=d.get("action_key", ""),
+            outcomes=dict(d.get("outcomes") or {}),
+        )
 
-# ── Edge Lifecycle Record (Definition 8) ────────────────────────────
+
+# ── Edge Lifecycle Record (Definition 7) ────────────────────────────
 
 
 LIFECYCLE_STAGES = ("hypothesis", "candidate", "promoted", "demoted")
@@ -138,6 +146,25 @@ class EdgeLifecycleRecord:
             "last_verified_step": self.last_verified_step,
             "created_step": self.created_step,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> EdgeLifecycleRecord:
+        return cls(
+            edge_key=d.get("edge_key", ""),
+            stage=d.get("stage", "hypothesis"),
+            source_page_type=d.get("source_page_type", ""),
+            target_page_type=d.get("target_page_type", ""),
+            intent=d.get("intent", ""),
+            action_target=d.get("action_target", ""),
+            outcome_counts=dict(d.get("outcome_counts") or {}),
+            total_attempts=d.get("total_attempts", 0),
+            verification_count=d.get("verification_count", 0),
+            dominant_outcome=d.get("dominant_outcome", ""),
+            dominance_ratio=d.get("dominance_ratio", 0.0),
+            risk_level=d.get("risk_level", "normal"),
+            last_verified_step=d.get("last_verified_step", 0),
+            created_step=d.get("created_step", 0),
+        )
 
 
 # ── Edge Lifecycle Manager ──────────────────────────────────────────
@@ -285,6 +312,69 @@ class EdgeLifecycleManager:
             counts[record.stage] = counts.get(record.stage, 0) + 1
         counts["total_outcomes"] = sum(d.total for d in self._outcomes.values())
         return counts
+
+    # ── Persistence ─────────────────────────────────────────────────
+
+    def bulk_load(self, records: list[dict[str, Any]], outcomes: list[dict[str, Any]]) -> None:
+        """Load serialized records and outcomes (from Neo4j or JSON).
+
+        Merges with existing in-memory state: incoming records with higher
+        verification_count win; outcome counts are summed.
+        """
+        for d in records:
+            rec = EdgeLifecycleRecord.from_dict(d)
+            existing = self._records.get(rec.edge_key)
+            if existing is None or rec.verification_count > existing.verification_count:
+                self._records[rec.edge_key] = rec
+        for d in outcomes:
+            dist = OutcomeDistribution.from_dict(d)
+            okey = _outcome_key(dist.source_page_type, dist.action_key)
+            existing = self._outcomes.get(okey)
+            if existing is None:
+                self._outcomes[okey] = dist
+            else:
+                merged_counts = dict(existing.outcomes)
+                for k, v in dist.outcomes.items():
+                    merged_counts[k] = max(merged_counts.get(k, 0), v)
+                self._outcomes[okey] = OutcomeDistribution(
+                    source_page_type=dist.source_page_type,
+                    action_key=dist.action_key,
+                    outcomes=merged_counts,
+                )
+
+    def bulk_export(self) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """Export all records and outcomes as dicts for persistence."""
+        return (
+            [r.to_dict() for r in self._records.values()],
+            [d.to_dict() for d in self._outcomes.values()],
+        )
+
+    def check_demotion(self, threshold: float = 0.4) -> list[EdgeLifecycleRecord]:
+        """Demote promoted edges whose dominance has dropped below threshold."""
+        demoted: list[EdgeLifecycleRecord] = []
+        for key, record in list(self._records.items()):
+            if record.stage != "promoted" or record.total_attempts < 2:
+                continue
+            if record.dominance_ratio < threshold:
+                new_record = EdgeLifecycleRecord(
+                    edge_key=record.edge_key,
+                    stage="demoted",
+                    source_page_type=record.source_page_type,
+                    target_page_type=record.target_page_type,
+                    intent=record.intent,
+                    action_target=record.action_target,
+                    outcome_counts=record.outcome_counts,
+                    total_attempts=record.total_attempts,
+                    verification_count=record.verification_count,
+                    dominant_outcome=record.dominant_outcome,
+                    dominance_ratio=record.dominance_ratio,
+                    risk_level=record.risk_level,
+                    last_verified_step=record.last_verified_step,
+                    created_step=record.created_step,
+                )
+                self._records[key] = new_record
+                demoted.append(new_record)
+        return demoted
 
     # ── Internal ────────────────────────────────────────────────────
 

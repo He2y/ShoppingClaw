@@ -526,10 +526,13 @@ class SpatialGraphMemory:
         from phone_agent.spatial.edge_lifecycle import EdgeLifecycleManager
         from phone_agent.spatial.enhanced_planner import EnhancedPlanner
 
-        self._amsg_config: AMSGOptimConfig = config if isinstance(config, AMSGOptimConfig) else AMSGOptimConfig.legacy()
+        self._amsg_config: AMSGOptimConfig = config if isinstance(config, AMSGOptimConfig) else AMSGOptimConfig.from_env()
         self._edge_lifecycle = EdgeLifecycleManager(self._amsg_config)
         self._localizer = MultiSignalLocalizer(self._amsg_config)
         self._enhanced_planner = EnhancedPlanner(self._amsg_config)
+
+        if self.graph_store and getattr(self.graph_store, "driver", None):
+            self._reload_lifecycle_from_graph()
 
     def build_page_state(
         self,
@@ -1185,6 +1188,7 @@ class SpatialGraphMemory:
             if resolved_edge.action_type == "Compound":
                 compound_edges += 1
             if persist and self.graph_store and getattr(self.graph_store, "driver", None):
+                lifecycle_data = self._build_lifecycle_dict(source, resolved_edge, target)
                 self.graph_store.add_state_transition(
                     resolved_edge.source_id,
                     resolved_edge.target_id,
@@ -1192,6 +1196,7 @@ class SpatialGraphMemory:
                     outcome="success" if resolved_edge.success_count >= resolved_edge.fail_count else "failure",
                     source_metadata=source.to_dict(),
                     target_metadata=target.to_dict(),
+                    lifecycle=lifecycle_data,
                 )
         return GraphQualityReport(
             pages_seen=len(canonical_states),
@@ -1651,6 +1656,7 @@ class SpatialGraphMemory:
         )
 
         if persist and self.graph_store and getattr(self.graph_store, "driver", None):
+            lifecycle_data = self._build_lifecycle_dict(before, edge, after) if isinstance(before, PageState) and isinstance(after, PageState) else None
             self.graph_store.add_state_transition(
                 source_id,
                 target_id,
@@ -1658,6 +1664,7 @@ class SpatialGraphMemory:
                 outcome=outcome,
                 source_metadata=before.to_dict() if isinstance(before, PageState) else None,
                 target_metadata=after.to_dict() if isinstance(after, PageState) else None,
+                lifecycle=lifecycle_data,
             )
 
     def flush_staged_graph(self) -> GraphQualityReport:
@@ -1677,8 +1684,66 @@ class SpatialGraphMemory:
             promote_report = self.promote_staging_to_canonical(
                 canonical_states, promoted_edges, persist=True,
             )
+            self._flush_lifecycle_to_graph()
             return promote_report
         return report
+
+    def _flush_lifecycle_to_graph(self) -> None:
+        """Persist all in-memory lifecycle records to Neo4j as a batch."""
+        if not self.graph_store or not getattr(self.graph_store, "driver", None):
+            return
+        try:
+            from .graph_lifecycle_store import GraphLifecycleStore
+            store = GraphLifecycleStore(self.graph_store.driver, self.graph_store.database)
+            self._edge_lifecycle.check_demotion()
+            records, outcomes = self._edge_lifecycle.bulk_export()
+            if not records:
+                return
+            import json as _json
+            batch = []
+            for rec in records:
+                action_key = f"{rec['intent']}:{rec['action_target']}"
+                dist = self._edge_lifecycle.get_outcome_distribution(
+                    rec["source_page_type"], action_key,
+                )
+                batch.append({
+                    "action_id": self._lifecycle_record_to_action_id(rec),
+                    "lifecycle_stage": rec["stage"],
+                    "verification_count": rec["verification_count"],
+                    "dominance_ratio": rec["dominance_ratio"],
+                    "outcome_distribution_json": _json.dumps(dist.to_dict(), ensure_ascii=False) if dist else None,
+                    "outcome_entropy": round(dist.entropy, 4) if dist else 0.0,
+                    "created_at": rec["created_step"],
+                    "last_traversed": rec["last_verified_step"],
+                })
+            batch = [b for b in batch if b["action_id"]]
+            if batch:
+                store.persist_lifecycle_batch(batch)
+                store.demote_stale_edges()
+        except Exception:
+            pass
+
+    def _lifecycle_record_to_action_id(self, rec: dict) -> str:
+        """Best-effort mapping from lifecycle record to Neo4j action_id.
+
+        Action IDs in Neo4j are ``act_{source_state_id}_{target_state_id}_{hash}``.
+        We search local states to find the matching state_ids.
+        """
+        src_pt = rec.get("source_page_type", "")
+        tgt_pt = rec.get("target_page_type", "")
+        src_id = ""
+        tgt_id = ""
+        for sid, state in self._local_states.items():
+            if state.page_type == src_pt and not src_id:
+                src_id = sid
+            if state.page_type == tgt_pt and not tgt_id:
+                tgt_id = sid
+        if not src_id or not tgt_id:
+            return ""
+        import hashlib
+        semantic_key = f"{rec.get('intent', '')}|{rec.get('action_target', '')}|{src_pt}|{tgt_pt}"
+        action_hash = hashlib.md5(semantic_key.encode("utf-8")).hexdigest()[:8]
+        return f"act_{src_id}_{tgt_id}_{action_hash}"
 
     def repair(
         self,
@@ -1876,6 +1941,48 @@ class SpatialGraphMemory:
             screenshot_hash=first.screenshot_hash or second.screenshot_hash,
             semantic_signature=self._semantic_signature(first.app, first.page_type, merged_landmarks, merged_affordances, {}),
         )
+
+    def _reload_lifecycle_from_graph(self) -> None:
+        """Restore edge lifecycle state from Neo4j on startup."""
+        try:
+            from .graph_lifecycle_store import GraphLifecycleStore
+            store = GraphLifecycleStore(self.graph_store.driver, self.graph_store.database)
+            records, outcomes = store.load_lifecycle_records()
+            if records or outcomes:
+                self._edge_lifecycle.bulk_load(records, outcomes)
+        except Exception:
+            pass
+
+    def _build_lifecycle_dict(
+        self,
+        source: Any,
+        edge: Any,
+        target: Any,
+    ) -> dict[str, Any] | None:
+        """Extract lifecycle metadata for an edge from the in-memory manager."""
+        from phone_agent.spatial.edge_lifecycle import _edge_key
+        import json as _json
+
+        src_pt = source.page_type if hasattr(source, "page_type") else ""
+        tgt_pt = target.page_type if hasattr(target, "page_type") else ""
+        action_type = edge.action_type if hasattr(edge, "action_type") else ""
+        action_target = edge.action_target if hasattr(edge, "action_target") else ""
+
+        key = _edge_key(src_pt, action_type, action_target, tgt_pt)
+        record = self._edge_lifecycle.get_record(key)
+        if record is None:
+            return None
+
+        dist = self._edge_lifecycle.get_outcome_distribution(
+            src_pt, f"{action_type}:{action_target}",
+        )
+        return {
+            "lifecycle_stage": record.stage,
+            "verification_count": record.verification_count,
+            "dominance_ratio": round(record.dominance_ratio, 4),
+            "outcome_distribution_json": _json.dumps(dist.to_dict(), ensure_ascii=False) if dist else None,
+            "outcome_entropy": round(dist.entropy, 4) if dist else 0.0,
+        }
 
     def _is_promotable_edge(
         self,
