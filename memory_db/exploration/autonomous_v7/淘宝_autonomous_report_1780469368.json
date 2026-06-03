@@ -1,0 +1,958 @@
+{
+  "app": "淘宝",
+  "explored_at": "2026-06-03T14:49:28.839037",
+  "policy": {
+    "max_total_steps": 30,
+    "max_job_steps": 3,
+    "max_dry_rounds": 4,
+    "job_queue_limit": 20,
+    "settle_delay": 2.0,
+    "use_strong_vlm_extractor": false,
+    "convergence_window": 3,
+    "active_exploration": true,
+    "auto_import_graph": false
+  },
+  "convergence": {
+    "total_rounds": 18,
+    "consecutive_dry_rounds": 1,
+    "dry_round_limit": 4,
+    "converged": false,
+    "history": [
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 1,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 1,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      }
+    ]
+  },
+  "coverage_metrics": {
+    "discovered_functionalities": 49,
+    "discovered_functionality_clusters": 29,
+    "verified_functionality_clusters": 11,
+    "stable_functionality_clusters": 2,
+    "verified_functionality_ratio": 0.3793,
+    "novelty_discovery_rate": 1.1154,
+    "saturation_per_50_screens": [
+      30
+    ],
+    "recovery_functionality_coverage": 0.25,
+    "risk_boundary_coverage": 1.0,
+    "duplicate_screen_compression_ratio": 0.1923,
+    "functionality_semantics_quality": "limited",
+    "quality_gate": {
+      "passed": true,
+      "reasons": [],
+      "metrics": {
+        "discovered_functionalities": 49,
+        "discovered_functionality_clusters": 29,
+        "verified_functionality_clusters": 11,
+        "stable_functionality_clusters": 2,
+        "verified_functionality_ratio": 0.3793,
+        "novelty_discovery_rate": 1.1154,
+        "saturation_per_50_screens": [
+          30
+        ],
+        "recovery_functionality_coverage": 0.25,
+        "risk_boundary_coverage": 1.0,
+        "duplicate_screen_compression_ratio": 0.1923,
+        "functionality_semantics_quality": "limited"
+      }
+    }
+  },
+  "graph_summary": "[cart] 购物车列表\n  元素: 未检测到元素\n[filter_panel] 商品筛选面板\n  元素: 未检测到元素\n[home] 淘宝App首页推荐页，展示搜索栏、功能入口、618活动Ban\n  元素: 顶部标签栏(关注/推荐/闪购), 搜索框(含'耳机'), 88VIP/天猫超市等功能入口, 618开门红活动横幅, 小米耳机商品卡片, 钻石牌空调商品卡片, 底部消息图标(39), 我的淘宝入口\n  跳转:  → settings\n   (已执行1个动作)\n[my_account] 淘宝个人中心/我的淘宝页面，展示会员权益、订单管理、资产信息\n  元素: 设置图标, 我的订单-全部, 收藏入口, 关注店铺, 待收货(4), 购物车图标, 首页图标, 猜你喜欢商品卡片\n  跳转:  → cart\n   (已执行2个动作)\n[product_detail] 商品详情页\n  元素: 未检测到元素\n  跳转:  → spec_selection\n[search_input] 搜索输入页面，包含历史搜索、猜你想搜和淘宝热榜推荐内容\n  元素: 返回按钮, 搜索框(含'头戴式耳机'), 相机图标, 橙色搜索按钮, 历史搜索标签, 猜你想搜列表, 淘宝热榜商品卡片, 语音输入按钮\n  跳转:  → filter_panel\n   (已执行1个动作)\n[search_result] 搜索结果页面，展示'头戴式耳机'的商品列表，含品牌筛选栏、排\n  元素: 搜索框(头戴式耳机), 品牌筛选栏(SONY/BOSE/iKF/雷蛇等), 排序选项(综合/销量/天猫/店铺), 筛选漏斗按钮, 商品卡片(iKF影刺Pro), 商品卡片(恒玄2700YP), AI助手按钮\n  跳转:  → filter_panel, unknown\n   (已执行2个动作)\n[settings] 设置页\n  元素: 未检测到元素\n[spec_selection] 商品规格选择\n  元素: 未检测到元素\n  跳转:  → settings\n[unknown]  ← 当前\n  元素: 未检测到元素\n  跳转:  → cart, filter_panel, product_detail, search_input\n   (已执行3个动作)\n\n统计: 10种页面, 13条跳转, 元素覆盖30/85",
+  "job_results": [
+    {
+      "job_description": "",
+      "steps_taken": 1,
+      "new_page_types_discovered": [
+        "cart"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前位于搜索输入页面，这是电商App的核心功能入口。根据探索进度，已发现购物车页面，现在需要从搜索入口深入探索商品浏览流程。搜索框已预填'头戴式耳机'，可直接执行搜索进入结果页；同时页面展示了热榜商品",
+      "steps_taken": 1,
+      "new_page_types_discovered": [
+        "filter_panel"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为搜索结果页(search_result)，属于新发现的页面类型。页面展示了搜索关键词对应的商品列表，包含品牌横向滚动栏、排序Tab、筛选入口及商品流。当前导航图谱已覆盖搜索输入页和购物车页，但缺",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为空白状态(unknown)，无法识别具体元素。根据导航图谱，已记录5种页面类型但核心流程尚不完整：缺少商品详情页(product_detail)、首页(home)、分类页(category)",
+      "steps_taken": 3,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为全黑空白屏幕，属于异常或过渡状态。图谱中已有search_result、search_input、cart、filter_panel等核心页面。此unknown页面无可交互元素，应立即返回上",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为全黑空白状态(unknown)，无可交互元素。上轮尝试跳转到购物车可能失败或正在加载。图谱缺少关键页面类型：product_detail(商品详情)、spec_selection(规格选择)",
+      "steps_taken": 3,
+      "new_page_types_discovered": [
+        "filter_panel"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "VLM调用失败",
+      "steps_taken": 1,
+      "new_page_types_discovered": [
+        "filter_panel"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为榜单/排行页面(ranking_list)，属于新发现的页面类型，此前未在图谱中记录。该页面展示了基于'回购'维度的商品排名，包含多个可交互的商品卡片。为了完善导航图谱的核心购物流程，需要从",
+      "steps_taken": 1,
+      "new_page_types_discovered": [
+        "product_detail"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前位于商品详情页(product_detail)，这是电商核心流程的关键节点。页面展示了完整的商品信息、多规格选择、价格促销信息和底部操作栏。根据图谱统计，product_detail页面元素尚未详",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "spec_selection"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前位于规格选择页面(spec_selection)，该页面在图谱中已存在但元素未检测到。页面展示了耳机商品的详细规格选项，包括3种颜色分类、3种套餐类型及增值服务。需记录关键交互元素，并通过'加入购",
+      "steps_taken": 1,
+      "new_page_types_discovered": [
+        "settings"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "VLM调用失败",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为空白黑色界面，无任何可见交互元素。根据导航图谱，此页面来自product_detail的跳转，可能是规格选择弹窗的遮罩层或页面加载异常。已探索8种页面类型，覆盖了搜索主流程（搜索输入→搜索结",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前位于手机桌面，导航图谱显示已探索搜索流程（search_input→search_result→product_detail→spec_selection）及购物车、筛选面板等页面，但缺少首页(h",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前位于首页，图谱中缺少home页面记录。已探索了搜索流程（search_input→search_result→filter_panel→product_detail→spec_selection）",
+      "steps_taken": 1,
+      "new_page_types_discovered": [
+        "settings"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前位于'我的淘宝'个人中心页面（my_account），这是非核心辅助页面。根据导航图谱统计，已有9种页面类型但product_detail和cart等核心页面元素覆盖为空（显示'未检测到元素'）。",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "cart"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前位于百亿补贴活动页，这是一个新的页面类型尚未在图谱中记录。页面包含多个功能入口（国家补贴、限时3倍补、多人团等）和商品列表。需要探索此页面的跳转路径，特别是商品详情页和各功能入口。已执行24步，覆",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "cart"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前位于天猫超市频道首页，这是一个新的页面类型未在图谱中记录。页面包含搜索入口、多级分类导航、活动营销模块和底部Tab导航。需优先探索搜索功能和分类体系以完善电商核心流程覆盖。",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为搜索结果页（关键词'耳机蓝牙耳夹式'），与之前'头戴式耳机'结果页属同类但内容不同。图谱中product_detail已有记录但元素未检测到，需通过点击商品卡片完善详情页覆盖；同时可验证筛选面板",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "filter_panel"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": "fn_cluster_tap_cart_cart__unknown___top_left_9258369cf99a",
+      "canonical_name": "tap_cart",
+      "canonical_description": "tap_cart by tap action from unknown to observed postcondition cart. Source summary: unknown; target summary: 购物车列表.",
+      "member_functionality_ids": [
+        "fn_淘宝_unknown_tap_tap_cart_top_left_cart___metadata_9a457169dc47"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [
+        "top_left"
+      ],
+      "verified_edges": [
+        "page_淘宝_unknown_86404500e0ef->cart:top_left"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_from_search_input__search_input_39e47332386f",
+      "canonical_name": "rollback_from_search_input",
+      "canonical_description": "返回按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_search_input_搜索输入页面_包含历史搜索_猜你想搜和淘宝热榜推_e01c6044a54b"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_input"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_submit_search__search_input_73d79510974b",
+      "canonical_name": "submit_search",
+      "canonical_description": "搜索框(含'头戴式耳机')",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_search_input_搜索输入页面_包含历史搜索_猜你想搜和淘宝热榜推_777fee87c4af",
+        "fn_淘宝_page_淘宝_search_input_搜索输入页面_包含历史搜索_猜你想搜和淘宝热榜推_8191977ac968",
+        "fn_淘宝_page_淘宝_search_input_搜索输入页面_包含历史搜索_猜你想搜和淘宝热榜推_064b9c90aeb3"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_input"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.3333,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail__search_input_f601761fa7c3",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "淘宝热榜商品卡片",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_search_input_搜索输入页面_包含历史搜索_猜你想搜和淘宝热榜推_afd5c2dade06"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_input"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_filter_panel_filter_panel__search_input___to_acee5c21ef96",
+      "canonical_name": "tap_filter_panel",
+      "canonical_description": "tap_filter_panel by tap action from search_input to observed postcondition filter_panel. Source summary: 搜索输入页面，包含历史搜索、猜你想搜和淘宝热榜推荐内容; target summary: 商品筛选面板.",
+      "member_functionality_ids": [
+        "fn_淘宝_search_input_tap_tap_filter_panel_top_right_f_6432db60579f"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_input"
+      ],
+      "regions": [
+        "top_right"
+      ],
+      "verified_edges": [
+        "page_淘宝_search_input_搜索输入页面_包含历史搜索_猜你想搜和淘宝热榜推荐内容_731ea98b19cf->filter_panel:top_right"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_submit_search__search_result_fe3f0103c556",
+      "canonical_name": "submit_search",
+      "canonical_description": "搜索框(耳机蓝牙耳夹式)",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_search_result_搜索结果页面_展示_头戴式耳机_的商品列表_含_9113a3ac3bf7",
+        "fn_淘宝_page_淘宝_search_result_搜索结果页_展示_耳机蓝牙耳夹式_的商品列表_f3463e9bef8b"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_result"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_filter_panel__search_result_aa9ec1e1d7ed",
+      "canonical_name": "open_filter_panel",
+      "canonical_description": "品牌筛选栏(SONY/BOSE/iKF/雷蛇等)",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_search_result_搜索结果页面_展示_头戴式耳机_的商品列表_含_5a6e23b8e3cb",
+        "fn_淘宝_page_淘宝_search_result_搜索结果页面_展示_头戴式耳机_的商品列表_含_69bf7d47df07",
+        "fn_淘宝_page_淘宝_search_result_搜索结果页_展示_耳机蓝牙耳夹式_的商品列表_9928a92eb4d5"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_result"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.3333,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail__search_result_b4fe9ac1033e",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "1MORE万魔S20PRO商品卡片",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_search_result_搜索结果页面_展示_头戴式耳机_的商品列表_含_8436c4bf996d",
+        "fn_淘宝_page_淘宝_search_result_搜索结果页面_展示_头戴式耳机_的商品列表_含_209acd46334f",
+        "fn_淘宝_page_淘宝_search_result_搜索结果页_展示_耳机蓝牙耳夹式_的商品列表_7159055739db",
+        "fn_淘宝_page_淘宝_search_result_搜索结果页_展示_耳机蓝牙耳夹式_的商品列表_90e9f8114b63"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_result"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.25,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_to_unknown_unknown__search_result_197e5c31c7a8",
+      "canonical_name": "rollback_to_unknown",
+      "canonical_description": "rollback_to_unknown by back action from search_result to observed postcondition unknown. Source summary: 搜索结果页面，展示'头戴式耳机'的商品列表，含品牌筛选栏、排序选项和多个商品卡片; target summary: 无法识别的空白或黑屏.",
+      "member_functionality_ids": [
+        "fn_淘宝_search_result_back_rollback_to_unknown_unknow_73095e994bf2"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_result"
+      ],
+      "regions": [],
+      "verified_edges": [
+        "page_淘宝_search_result_搜索结果页面_展示_头戴式耳机_的商品列表_含品牌筛选栏_排序_f56718da5b5e->unknown:unknown"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_filter_panel_filter_panel__unknown___top_lef_515232377839",
+      "canonical_name": "tap_filter_panel",
+      "canonical_description": "tap_filter_panel by tap action from unknown to observed postcondition filter_panel. Source summary: 空白或加载中的页面，无可视内容; target summary: 商品筛选面板.",
+      "member_functionality_ids": [
+        "fn_淘宝_unknown_tap_tap_filter_panel_top_left_filter_c1358f5ed9d3",
+        "fn_淘宝_unknown_tap_tap_filter_panel_top_left_filter_78b54c4c8e58"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [
+        "top_left"
+      ],
+      "verified_edges": [
+        "page_淘宝_unknown_86404500e0ef->filter_panel:top_left",
+        "page_淘宝_unknown_空白或加载中的页面_无可视内容_43498a35c092->filter_panel:top_left"
+      ],
+      "success_count": 2,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_from_unknown__unknown_97511d735906",
+      "canonical_name": "rollback_from_unknown",
+      "canonical_description": "返回按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_unknown_主动降噪无线耳机回购榜页面_按回购人数排序展示热门商品排名_e9dec85ae8da",
+        "fn_淘宝_page_淘宝_unknown_百亿补贴活动专区页面_展示国家补贴_限时3倍补等优惠入口及_4819aa5d0d82"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_submit_search__unknown_58f8a523306e",
+      "canonical_name": "submit_search",
+      "canonical_description": "搜索框(主动降噪无线耳机回购榜)",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_unknown_主动降噪无线耳机回购榜页面_按回购人数排序展示热门商品排名_65203ad080bb",
+        "fn_淘宝_page_淘宝_unknown_百亿补贴活动专区页面_展示国家补贴_限时3倍补等优惠入口及_723ee0c494dc",
+        "fn_淘宝_page_淘宝_unknown_天猫超市首页_展示搜索栏_商品分类网格_活动横幅_领券中心_bcd0a81e7ad0",
+        "fn_淘宝_page_淘宝_unknown_天猫超市首页_展示搜索栏_商品分类网格_活动横幅_领券中心_ad75ccc4fdd8"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.25,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_apply_or_close_filter__unknown_281a0a13e3d0",
+      "canonical_name": "apply_or_close_filter",
+      "canonical_description": "筛选漏斗按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_unknown_主动降噪无线耳机回购榜页面_按回购人数排序展示热门商品排名_5e50ed35dac9"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail__unknown_103031d906e8",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "商品卡片(Apple AirPods P)",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_unknown_主动降噪无线耳机回购榜页面_按回购人数排序展示热门商品排名_818b1de6e63f",
+        "fn_淘宝_page_淘宝_unknown_主动降噪无线耳机回购榜页面_按回购人数排序展示热门商品排名_629621ff55a9",
+        "fn_淘宝_page_淘宝_unknown_百亿补贴活动专区页面_展示国家补贴_限时3倍补等优惠入口及_3a5d48421835",
+        "fn_淘宝_page_淘宝_unknown_天猫超市首页_展示搜索栏_商品分类网格_活动横幅_领券中心_c0dc4a9d9eac"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.25,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_product_detail_product_detail__unknown___cen_d51be75c64d8",
+      "canonical_name": "tap_product_detail",
+      "canonical_description": "tap_product_detail by tap action from unknown to observed postcondition product_detail. Source summary: 主动降噪无线耳机回购榜页面，按回购人数排序展示热门商品排名列表; target summary: 商品详情页.",
+      "member_functionality_ids": [
+        "fn_淘宝_unknown_tap_tap_product_detail_center_product_62acb94d1434"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [
+        "center"
+      ],
+      "verified_edges": [
+        "page_淘宝_unknown_主动降噪无线耳机回购榜页面_按回购人数排序展示热门商品排名列表_c16d67af3938->product_detail:center"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_from_product_detail__product_detail_91b41fdac332",
+      "canonical_name": "rollback_from_product_detail",
+      "canonical_description": "返回按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示弱水时砂琉璃mk2蓝牙耳机的_17519735183d"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_cart_from_header__product_detail_c113c5f9888e",
+      "canonical_name": "open_cart_from_header",
+      "canonical_description": "购物车图标(54)",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示弱水时砂琉璃mk2蓝牙耳机的_0608ffea3664",
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示弱水时砂琉璃mk2蓝牙耳机的_57826aa01e51"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_choose_spec__product_detail_e50674af6ebc",
+      "canonical_name": "choose_spec",
+      "canonical_description": "规格选择栏(云峰白/暮山紫)",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示弱水时砂琉璃mk2蓝牙耳机的_031c1434760e"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_open_spec_selector_spec_selection__product_detai_65f108998199",
+      "canonical_name": "open_spec_selector",
+      "canonical_description": "open_spec_selector by tap action from product_detail to observed postcondition spec_selection. Source summary: 商品详情页，展示弱水时砂琉璃MK2蓝牙耳机的详细信息、价格、规格选项和购买操作; target summary: 商品规格选择.",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示弱水时砂琉璃mk2蓝牙耳机的_60b7cebeb496",
+        "fn_淘宝_product_detail_tap_open_spec_selector_center_db58526ad9df"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [
+        "center"
+      ],
+      "verified_edges": [
+        "page_淘宝_product_detail_商品详情页_展示弱水时砂琉璃mk2蓝牙耳机的详细信息_价格_501f7810db95->spec_selection:center"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_from_spec_selection__spec_selection_408a63561bc0",
+      "canonical_name": "rollback_from_spec_selection",
+      "canonical_description": "关闭按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_spec_selection_商品规格选择弹窗_包含颜色分类_套餐类型_优_059b71e46cf0"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "spec_selection"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_settings_settings__spec_selection___bottom_c_0297a5afc691",
+      "canonical_name": "tap_settings",
+      "canonical_description": "tap_settings by tap action from spec_selection to observed postcondition settings. Source summary: 商品规格选择弹窗，包含颜色分类、套餐类型、优选服务和加入购物车功能; target summary: 设置页.",
+      "member_functionality_ids": [
+        "fn_淘宝_spec_selection_tap_tap_settings_bottom_center_09ac627620a2"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "spec_selection"
+      ],
+      "regions": [
+        "bottom_center"
+      ],
+      "verified_edges": [
+        "page_淘宝_spec_selection_商品规格选择弹窗_包含颜色分类_套餐类型_优选服务和加入购物_add5eb5428f2->settings:bottom_center"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_search_input_search_input__unknown___center_d2e394acccd4",
+      "canonical_name": "tap_search_input",
+      "canonical_description": "tap_search_input by tap action from unknown to observed postcondition search_input. Source summary: 手机桌面主屏幕，显示多个应用图标; target summary: 搜索输入页.",
+      "member_functionality_ids": [
+        "fn_淘宝_unknown_tap_tap_search_input_center_search_in_8f249241b375"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [
+        "center"
+      ],
+      "verified_edges": [
+        "page_淘宝_unknown_手机桌面主屏幕_显示多个应用图标_bf9a656c83b0->search_input:center"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_search__home_86c517c2c63a",
+      "canonical_name": "open_search",
+      "canonical_description": "搜索框(含'耳机')",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_home_淘宝app首页推荐页_展示搜索栏_功能入口_618活动banne_4d714a305d8b"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail__home_4a43c22e4181",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "钻石牌空调商品卡片",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_home_淘宝app首页推荐页_展示搜索栏_功能入口_618活动banne_406485b7954f",
+        "fn_淘宝_page_淘宝_home_淘宝app首页推荐页_展示搜索栏_功能入口_618活动banne_c4ce468fc1c3"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_settings_settings__home___bottom_right_aad8c8482cf7",
+      "canonical_name": "tap_settings",
+      "canonical_description": "tap_settings by tap action from home to observed postcondition settings. Source summary: 淘宝App首页推荐页，展示搜索栏、功能入口、618活动Banner及商品推荐列表; target summary: 设置页.",
+      "member_functionality_ids": [
+        "fn_淘宝_home_tap_tap_settings_bottom_right_settings_e68dee99909e"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [
+        "bottom_right"
+      ],
+      "verified_edges": [
+        "page_淘宝_home_淘宝app首页推荐页_展示搜索栏_功能入口_618活动banner及商品推荐列表_4e164579e2dc->settings:bottom_right"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail__my_account_46f6cf00a41b",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "猜你喜欢商品卡片",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_my_account_淘宝个人中心_我的淘宝页面_展示会员权益_订单管理_a2ea1b585818"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "my_account"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_cart_cart__my_account___center_b8f72ef08608",
+      "canonical_name": "tap_cart",
+      "canonical_description": "tap_cart by tap action from my_account to observed postcondition cart. Source summary: 淘宝个人中心/我的淘宝页面，展示会员权益、订单管理、资产信息和个性化推荐; target summary: 购物车列表.",
+      "member_functionality_ids": [
+        "fn_淘宝_my_account_tap_tap_cart_center_cart___metadat_5ed401ff56bf"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "my_account"
+      ],
+      "regions": [
+        "center"
+      ],
+      "verified_edges": [
+        "page_淘宝_my_account_淘宝个人中心_我的淘宝页面_展示会员权益_订单管理_资产信息和个性化_c9a0bcf4cadd->cart:center"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_to_cart_cart__unknown_5a76fb4376df",
+      "canonical_name": "rollback_to_cart",
+      "canonical_description": "rollback_to_cart by back action from unknown to observed postcondition cart. Source summary: 百亿补贴活动专区页面，展示国家补贴、限时3倍补等优惠入口及商品列表; target summary: 购物车列表.",
+      "member_functionality_ids": [
+        "fn_淘宝_unknown_back_rollback_to_cart_unknown_cart_16a8a7b96ad3"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [],
+      "verified_edges": [
+        "page_淘宝_unknown_百亿补贴活动专区页面_展示国家补贴_限时3倍补等优惠入口及商品列表_3a1cf7adc3ba->cart:unknown"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_from_search_result__search_result_268621cd9587",
+      "canonical_name": "rollback_from_search_result",
+      "canonical_description": "返回按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_search_result_搜索结果页_展示_耳机蓝牙耳夹式_的商品列表_01faf57793ca"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_result"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    }
+  ]
+}

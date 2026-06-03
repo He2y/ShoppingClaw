@@ -1,0 +1,257 @@
+{
+  "app": "淘宝",
+  "task": "merged_exploration",
+  "total_pages": 9,
+  "pages": [
+    {
+      "page_type": "cart",
+      "summary": "购物车列表",
+      "elements": {},
+      "screenshot_hash": "fb2e14a63bd38cb98c206d6d944b311d",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "filter_panel",
+      "summary": "Filter panel",
+      "elements": {
+        "close_button": {
+          "text": "Close",
+          "role": "button",
+          "bbox": [
+            980,
+            435,
+            1038,
+            493
+          ]
+        },
+        "back_action": {
+          "text": "System Back",
+          "role": "navigation"
+        },
+        "confirm_button": {
+          "text": "Confirm",
+          "role": "button",
+          "bbox": [
+            550,
+            2150,
+            1050,
+            2260
+          ]
+        },
+        "clear_button": {
+          "text": "Clear selected filters",
+          "role": "button",
+          "bbox": [
+            20,
+            2150,
+            530,
+            2260
+          ]
+        },
+        "data_filters": "logistics discount shop_rating price_range shipping_region brand wearing_style connection_type earphone_type scene interface_type",
+        "address_data": "Shanghai address text visible in location section"
+      },
+      "screenshot_hash": "filter-panel-adb-filter-recovery",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "home",
+      "summary": "淘宝App首页，包含搜索栏、活动入口、商品推荐流和底部导航栏",
+      "elements": {
+        "顶部标签栏(关注/推荐/闪购)": "顶部标签栏(关注/推荐/闪购)",
+        "搜索框(含'耳机')": "搜索框(含'耳机')",
+        "88VIP/天猫超市等功能入口": "88VIP/天猫超市等功能入口",
+        "618开门红活动横幅": "618开门红活动横幅",
+        "小米耳机商品卡片": "小米耳机商品卡片",
+        "钻石牌空调商品卡片": "钻石牌空调商品卡片",
+        "底部消息图标(39)": "底部消息图标(39)",
+        "我的淘宝入口": "我的淘宝入口",
+        "顶部导航标签(关注/推荐/闪购/国补/穿搭/飞猪/618)": "顶部导航标签(关注/推荐/闪购/国补/穿搭/飞猪/618)",
+        "搜索框": "搜索框",
+        "相机图标": "相机图标",
+        "搜索按钮": "搜索按钮",
+        "88VIP入口": "88VIP入口",
+        "天猫超市入口": "天猫超市入口",
+        "领淘金币入口": "领淘金币入口",
+        "红包签到处": "红包签到处",
+        "菜鸟驿站入口": "菜鸟驿站入口",
+        "芭芭入口": "芭芭入口",
+        "淘宝直播卡片": "淘宝直播卡片",
+        "百亿补贴卡片": "百亿补贴卡片",
+        "淘宝秒杀卡片": "淘宝秒杀卡片",
+        "消费券信息条": "消费券信息条",
+        "耳机商品卡片": "耳机商品卡片",
+        "广告卡片": "广告卡片",
+        "底部首页图标": "底部首页图标",
+        "视频图标": "视频图标",
+        "消息图标(带39角标)": "消息图标(带39角标)",
+        "购物车图标": "购物车图标",
+        "我的淘宝图标": "我的淘宝图标"
+      },
+      "screenshot_hash": "8d411db293d05e52cabc6c5fd6c10818",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "my_account",
+      "summary": "淘宝个人中心/我的淘宝页面，展示会员权益、订单管理、资产信息和个性化推荐",
+      "elements": {
+        "设置图标": "设置图标",
+        "我的订单-全部": "我的订单-全部",
+        "收藏入口": "收藏入口",
+        "关注店铺": "关注店铺",
+        "待收货(4)": "待收货(4)",
+        "购物车图标": "购物车图标",
+        "首页图标": "首页图标",
+        "猜你喜欢商品卡片": "猜你喜欢商品卡片"
+      },
+      "screenshot_hash": "68b27c90369cee207e1d88a76a6a298b",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "商品详情页，展示弱水时砂琉璃MK2蓝牙耳机的详细信息、价格、规格选项和购买操作",
+      "elements": {
+        "返回按钮": "返回按钮",
+        "分享按钮": "分享按钮",
+        "购物车图标(54)": "购物车图标(54)",
+        "直播讲解悬浮按钮": "直播讲解悬浮按钮",
+        "规格选择栏(云峰白/暮山紫)": "规格选择栏(云峰白/暮山紫)",
+        "价格信息(¥137.57起)": "价格信息(¥137.57起)",
+        "店铺入口": "店铺入口",
+        "加入购物车按钮": "加入购物车按钮",
+        "领券购买按钮": "领券购买按钮"
+      },
+      "screenshot_hash": "42fb2d7148b80e023269fca99b73f7e3",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_input",
+      "summary": "淘宝App搜索输入页面，包含搜索框、历史搜索记录、猜你想搜推荐和淘宝热榜商品展示",
+      "elements": {
+        "返回按钮": "返回按钮",
+        "搜索框(含'头戴式耳机')": "搜索框(含'头戴式耳机')",
+        "相机图标": "相机图标",
+        "橙色搜索按钮": "橙色搜索按钮",
+        "历史搜索标签": "历史搜索标签",
+        "猜你想搜列表": "猜你想搜列表",
+        "淘宝热榜商品卡片": "淘宝热榜商品卡片",
+        "语音输入按钮": "语音输入按钮",
+        "搜索框": "搜索框",
+        "搜索按钮": "搜索按钮",
+        "历史搜索标签(耳机/弱水时砂/手机/iPhone 17 Pro Max)": "历史搜索标签(耳机/弱水时砂/手机/iPhone 17 Pro Max)",
+        "删除历史按钮": "删除历史按钮",
+        "淘宝热榜标签(手机数码/运动户外/男士穿搭/母婴亲子)": "淘宝热榜标签(手机数码/运动户外/男士穿搭/母婴亲子)",
+        "热榜商品卡片": "热榜商品卡片",
+        "反馈按钮": "反馈按钮",
+        "搜索框(含'耳机')": "搜索框(含'耳机')",
+        "历史搜索标签(头戴式耳机/耳机/弱水时砂/手机/iPhone 17 Pro Max)": "历史搜索标签(头戴式耳机/耳机/弱水时砂/手机/iPhone 17 Pro Max)",
+        "猜你想搜刷新按钮": "猜你想搜刷新按钮",
+        "猜你想搜项目(头戴式耳机/蓝牙耳机/咪帅等)": "猜你想搜项目(头戴式耳机/蓝牙耳机/咪帅等)",
+        "热榜商品卡片(主动降噪耳机/沉浸式听歌/开放式耳机等)": "热榜商品卡片(主动降噪耳机/沉浸式听歌/开放式耳机等)",
+        "语音搜索按钮": "语音搜索按钮"
+      },
+      "screenshot_hash": "7efdc7b2614e68e0fc46ac9243616764",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_result",
+      "summary": "搜索结果页，展示'耳机蓝牙耳夹式'的商品列表，含排序、标签筛选和多款耳机商品",
+      "elements": {
+        "filter_button": {
+          "text": "Filter",
+          "role": "button",
+          "bbox": [
+            873,
+            710,
+            1075,
+            815
+          ]
+        },
+        "sort_tabs": "comprehensive sales all tmall shop flash_delivery",
+        "product_card": "product cards with title price shop payment_count",
+        "query": "headphones",
+        "搜索框(头戴式耳机)": "搜索框(头戴式耳机)",
+        "品牌筛选栏(SONY/BOSE/iKF/雷蛇等)": "品牌筛选栏(SONY/BOSE/iKF/雷蛇等)",
+        "排序选项(综合/销量/天猫/店铺)": "排序选项(综合/销量/天猫/店铺)",
+        "筛选漏斗按钮": "筛选漏斗按钮",
+        "商品卡片(iKF影刺Pro)": "商品卡片(iKF影刺Pro)",
+        "商品卡片(恒玄2700YP)": "商品卡片(恒玄2700YP)",
+        "AI助手按钮": "AI助手按钮",
+        "返回按钮": "返回按钮",
+        "搜索框(耳机蓝牙耳夹式)": "搜索框(耳机蓝牙耳夹式)",
+        "排序选项(最快4小时达/销量/价格)": "排序选项(最快4小时达/销量/价格)",
+        "筛选按钮": "筛选按钮",
+        "国家补贴标签": "国家补贴标签",
+        "1MORE万魔S20PRO商品卡片": "1MORE万魔S20PRO商品卡片",
+        "弱水时砂骨传导耳机商品卡片": "弱水时砂骨传导耳机商品卡片",
+        "购物车图标": "购物车图标"
+      },
+      "screenshot_hash": "df800d5561b6451caa88d81b2f434331",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "settings",
+      "summary": "设置页",
+      "elements": {},
+      "screenshot_hash": "045fe2fffd4927d8573a341456e69da4",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "spec_selection",
+      "summary": "商品规格选择弹窗，包含颜色分类、套餐类型、优选服务和加入购物车功能",
+      "elements": {
+        "关闭按钮": "关闭按钮",
+        "价格信息(¥137.57起)": "价格信息(¥137.57起)",
+        "数量选择器": "数量选择器",
+        "颜色分类(3种)": "颜色分类(3种)",
+        "套餐类型选择": "套餐类型选择",
+        "优选服务区域": "优选服务区域",
+        "加入购物车按钮": "加入购物车按钮"
+      },
+      "screenshot_hash": "28fd49390faebb3213d3e49796f4d063",
+      "app": "淘宝"
+    }
+  ],
+  "quality_report": {
+    "page_types": [
+      "cart",
+      "filter_panel",
+      "home",
+      "my_account",
+      "product_detail",
+      "search_input",
+      "search_result",
+      "settings",
+      "spec_selection"
+    ],
+    "page_count": 9,
+    "total_elements": 99,
+    "pages_with_elements": 7,
+    "transition_count": 16,
+    "edge_types": {
+      "search_result→filter_panel": 2,
+      "filter_panel→search_result": 1,
+      "search_result→product_detail": 1,
+      "product_detail→spec_selection": 1,
+      "spec_selection→product_detail": 1,
+      "home→search_input": 1,
+      "search_input→search_result": 1,
+      "product_detail→cart": 1,
+      "home→product_detail": 1,
+      "spec_selection→cart": 1,
+      "search_input→filter_panel": 1,
+      "spec_selection→settings": 1,
+      "home→settings": 1,
+      "my_account→cart": 1,
+      "home→search_result": 1
+    },
+    "core_edges_found": [
+      "home→search_input",
+      "search_input→search_result",
+      "search_result→product_detail",
+      "product_detail→spec_selection",
+      "spec_selection→cart"
+    ],
+    "core_edges_missing": []
+  }
+}

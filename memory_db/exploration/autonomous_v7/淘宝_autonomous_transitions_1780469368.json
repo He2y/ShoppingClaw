@@ -1,0 +1,201 @@
+{
+  "app": "淘宝",
+  "total_transitions": 13,
+  "transitions": [
+    {
+      "from": "unknown:",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          30,
+          82
+        ]
+      },
+      "to": "cart:购物车列表"
+    },
+    {
+      "from": "search_input:搜索输入页面，包含历史搜索、猜你想搜和淘宝热榜推荐内容",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          893,
+          71
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "search_result:搜索结果页面，展示'头戴式耳机'的商品列表，含品牌筛选栏、排序选项和多个商品卡片",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "unknown:无法识别的空白或黑屏"
+    },
+    {
+      "from": "unknown:空白或加载中的页面，无可视内容",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          181,
+          157
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "unknown:",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          30,
+          82
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "unknown:主动降噪无线耳机回购榜页面，按回购人数排序展示热门商品排名列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          300
+        ]
+      },
+      "to": "product_detail:商品详情页"
+    },
+    {
+      "from": "product_detail:商品详情页，展示弱水时砂琉璃MK2蓝牙耳机的详细信息、价格、规格选项和购买操作",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          386
+        ]
+      },
+      "to": "spec_selection:商品规格选择"
+    },
+    {
+      "from": "spec_selection:商品规格选择弹窗，包含颜色分类、套餐类型、优选服务和加入购物车功能",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          953
+        ]
+      },
+      "to": "settings:设置页"
+    },
+    {
+      "from": "unknown:手机桌面主屏幕，显示多个应用图标",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          380,
+          377
+        ]
+      },
+      "to": "search_input:搜索输入页"
+    },
+    {
+      "from": "home:淘宝App首页推荐页，展示搜索栏、功能入口、618活动Banner及商品推荐列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          897,
+          968
+        ]
+      },
+      "to": "settings:设置页"
+    },
+    {
+      "from": "my_account:淘宝个人中心/我的淘宝页面，展示会员权益、订单管理、资产信息和个性化推荐",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          314
+        ]
+      },
+      "to": "cart:购物车列表"
+    },
+    {
+      "from": "unknown:百亿补贴活动专区页面，展示国家补贴、限时3倍补等优惠入口及商品列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "cart:购物车列表"
+    },
+    {
+      "from": "search_result:搜索结果页，展示'耳机蓝牙耳夹式'的商品列表，含排序、标签筛选和多款耳机商品",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "filter_panel:商品筛选面板"
+    }
+  ],
+  "rejected_transitions": [
+    {
+      "from": "unknown:当前为空白/黑屏页面，无可视内容，可能为加载中或异常状态",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          449
+        ]
+      },
+      "to": "unknown:无法识别的空白或黑屏",
+      "reason": "self-loop"
+    },
+    {
+      "from": "unknown:空白/黑屏页面，无可见UI内容",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "unknown:无法识别的空白或黑屏",
+      "reason": "self-loop"
+    },
+    {
+      "from": "unknown:",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "unknown:手机桌面显示各应用图标",
+      "reason": "self-loop"
+    },
+    {
+      "from": "unknown:当前页面显示为黑色空白，可能是弹窗背景、加载状态或过渡页面",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "unknown:手机桌面主页",
+      "reason": "self-loop"
+    },
+    {
+      "from": "unknown:天猫超市首页，展示搜索栏、商品分类网格、活动横幅、领券中心和超级补贴商品推荐",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "unknown:unnamed-unknown",
+      "reason": "self-loop"
+    }
+  ]
+}

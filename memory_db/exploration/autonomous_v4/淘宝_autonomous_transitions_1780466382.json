@@ -1,0 +1,99 @@
+{
+  "app": "淘宝",
+  "total_transitions": 8,
+  "transitions": [
+    {
+      "from": "home:电商App首页/推荐流，包含顶部搜索栏、功能入口区、618活动横幅及商品瀑布流",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          389,
+          114
+        ]
+      },
+      "to": "unknown:无法解析页面"
+    },
+    {
+      "from": "home:首页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          448,
+          71
+        ]
+      },
+      "to": "product_detail:商品详情页"
+    },
+    {
+      "from": "search_input:搜索输入页面，包含搜索框、历史搜索记录、猜你想搜推荐及淘宝热榜",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          893,
+          71
+        ]
+      },
+      "to": "unknown:unnamed-unknown"
+    },
+    {
+      "from": "search_result:搜索结果/商品列表页，显示'耳机'关键词的搜索结果，包含热门分类标签、筛选栏及商品瀑布流",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          526,
+          955
+        ]
+      },
+      "to": "unknown:选择商品颜色及套餐规格"
+    },
+    {
+      "from": "unknown:选择商品颜色及套餐规格",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "product_detail:商品详情页"
+    },
+    {
+      "from": "unknown:",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          60,
+          72
+        ]
+      },
+      "to": "search_result:耳机搜索结果及商品列表"
+    },
+    {
+      "from": "search_result:耳机搜索结果及商品列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          518,
+          959
+        ]
+      },
+      "to": "unknown:unnamed-unknown"
+    },
+    {
+      "from": "spec_selection:规格选择弹窗页面，展示AI智能耳机的颜色分类(7种)、套餐类型选择及加入购物车按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          848,
+          71
+        ]
+      },
+      "to": "cart:购物车列表"
+    }
+  ],
+  "rejected_transitions": []
+}

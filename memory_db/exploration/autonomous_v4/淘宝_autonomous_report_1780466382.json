@@ -1,0 +1,320 @@
+{
+  "app": "淘宝",
+  "explored_at": "2026-06-03T13:59:42.656352",
+  "policy": {
+    "max_total_steps": 15,
+    "max_job_steps": 3,
+    "max_dry_rounds": 3,
+    "job_queue_limit": 20,
+    "settle_delay": 2.0,
+    "use_strong_vlm_extractor": false,
+    "convergence_window": 3,
+    "active_exploration": true
+  },
+  "convergence": {
+    "total_rounds": 8,
+    "consecutive_dry_rounds": 0,
+    "dry_round_limit": 3,
+    "converged": false,
+    "history": [
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 1,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 2,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 1,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 1,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 1,
+        "new_page_types": 1,
+        "new_transitions": 1
+      }
+    ]
+  },
+  "coverage_metrics": {
+    "discovered_functionalities": 8,
+    "discovered_functionality_clusters": 6,
+    "verified_functionality_clusters": 6,
+    "stable_functionality_clusters": 1,
+    "verified_functionality_ratio": 1.0,
+    "novelty_discovery_rate": 0.5,
+    "saturation_per_50_screens": [
+      7
+    ],
+    "recovery_functionality_coverage": 1.0,
+    "risk_boundary_coverage": 1.0,
+    "duplicate_screen_compression_ratio": 0.0,
+    "functionality_semantics_quality": "limited",
+    "quality_gate": {
+      "passed": true,
+      "reasons": [],
+      "metrics": {
+        "discovered_functionalities": 8,
+        "discovered_functionality_clusters": 6,
+        "verified_functionality_clusters": 6,
+        "stable_functionality_clusters": 1,
+        "verified_functionality_ratio": 1.0,
+        "novelty_discovery_rate": 0.5,
+        "saturation_per_50_screens": [
+          7
+        ],
+        "recovery_functionality_coverage": 1.0,
+        "risk_boundary_coverage": 1.0,
+        "duplicate_screen_compression_ratio": 0.0,
+        "functionality_semantics_quality": "limited"
+      }
+    }
+  },
+  "job_results": [
+    {
+      "job_description": "当前处于探索起始阶段，已识别为首页(home)。根据优先级顺序，下一步应进入搜索输入页(search_input)以补齐核心页面类型。屏幕顶部可见搜索框元素，点击可跳转至搜索输入页。",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success",
+      "deviation_reason": ""
+    },
+    {
+      "job_description": "需要进入搜索",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success",
+      "deviation_reason": ""
+    },
+    {
+      "job_description": "当前位于搜索输入页面（search_input），这是缺失的核心页面之一。根据规则要求，在search_input页必须输入关键词并点击搜索以推进到search_result页面。目前已发现home和",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success",
+      "deviation_reason": ""
+    },
+    {
+      "job_description": "当前位于搜索结果页面，这是缺失的核心页面类型之一。已发现页面包括home、search_input、product_detail，但缺少search_result→product_detail的完整跳",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success",
+      "deviation_reason": ""
+    },
+    {
+      "job_description": "fallback",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success",
+      "deviation_reason": ""
+    },
+    {
+      "job_description": "fallback",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success",
+      "deviation_reason": ""
+    },
+    {
+      "job_description": "当前位于search_result页面，已发现home、search_input、search_result、product_detail四种核心页面类型。仍缺少spec_selection（规格选择",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success",
+      "deviation_reason": ""
+    },
+    {
+      "job_description": "当前处于规格选择页面(spec_selection)，这是缺失的两个核心页面之一。目前已发现home、search_input、search_result、product_detail四个核心页面，仍",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success",
+      "deviation_reason": ""
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": "fn_cluster_tap_unknown_unknown__home___top_center_6743da93552b",
+      "canonical_name": "tap_unknown",
+      "canonical_description": "tap_unknown by tap action from home to observed postcondition unknown. Source summary: 电商App首页/推荐流，包含顶部搜索栏、功能入口区、618活动横幅及商品瀑布流; target summary: 无法解析页面.",
+      "member_functionality_ids": [
+        "fn_淘宝_home_tap_tap_unknown_top_center_unknown___met_9876e1f84177"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [
+        "top_center"
+      ],
+      "verified_edges": [
+        "page_淘宝_home_电商app首页_推荐流_包含顶部搜索栏_功能入口区_618活动横幅及商品瀑布流_01c35d8cda01->unknown:top_center"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_product_detail_product_detail__home___top_ce_42512e69b9e9",
+      "canonical_name": "tap_product_detail",
+      "canonical_description": "tap_product_detail by tap action from home to observed postcondition product_detail. Source summary: 首页; target summary: 商品详情页.",
+      "member_functionality_ids": [
+        "fn_淘宝_home_tap_tap_product_detail_top_center_produc_77bf56f0e6a3"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [
+        "top_center"
+      ],
+      "verified_edges": [
+        "page_淘宝_home_首页_0a4691c09b9f->product_detail:top_center"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_unknown_unknown__search_input___top_right_7cc966702137",
+      "canonical_name": "tap_unknown",
+      "canonical_description": "tap_unknown by tap action from search_input to observed postcondition unknown. Source summary: 搜索输入页面，包含搜索框、历史搜索记录、猜你想搜推荐及淘宝热榜; target summary: unnamed-unknown.",
+      "member_functionality_ids": [
+        "fn_淘宝_search_input_tap_tap_unknown_top_right_unknow_2422d10f5001"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_input"
+      ],
+      "regions": [
+        "top_right"
+      ],
+      "verified_edges": [
+        "page_淘宝_search_input_搜索输入页面_包含搜索框_历史搜索记录_猜你想搜推荐及淘宝热榜_80d28302031f->unknown:top_right"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_unknown_unknown__search_result___bottom_cent_7348de83e56f",
+      "canonical_name": "tap_unknown",
+      "canonical_description": "tap_unknown by tap action from search_result to observed postcondition unknown. Source summary: 搜索结果/商品列表页，显示'耳机'关键词的搜索结果，包含热门分类标签、筛选栏及商品瀑布流; target summary: 选择商品颜色及套餐规格.",
+      "member_functionality_ids": [
+        "fn_淘宝_search_result_tap_tap_unknown_bottom_center_u_dd3031da2f36",
+        "fn_淘宝_search_result_tap_tap_unknown_bottom_center_u_cc4d2e990456"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_result"
+      ],
+      "regions": [
+        "bottom_center"
+      ],
+      "verified_edges": [
+        "page_淘宝_search_result_搜索结果_商品列表页_显示_耳机_关键词的搜索结果_包含热门分_771b2c1a903f->unknown:bottom_center",
+        "page_淘宝_search_result_耳机搜索结果及商品列表_be16a294f175->unknown:bottom_center"
+      ],
+      "success_count": 2,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_to_product_detail_product_detail__unkno_e2d201a780ae",
+      "canonical_name": "rollback_to_product_detail",
+      "canonical_description": "rollback_to_product_detail by back action from unknown to observed postcondition product_detail. Source summary: 选择商品颜色及套餐规格; target summary: 商品详情页.",
+      "member_functionality_ids": [
+        "fn_淘宝_unknown_back_rollback_to_product_detail_unkno_31a33c916abc"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [],
+      "verified_edges": [
+        "page_淘宝_unknown_选择商品颜色及套餐规格_ae9204f40faa->product_detail:unknown"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_search_result_search_result__unknown___top_l_79e62c61dec4",
+      "canonical_name": "tap_search_result",
+      "canonical_description": "tap_search_result by tap action from unknown to observed postcondition search_result. Source summary: unknown; target summary: 耳机搜索结果及商品列表.",
+      "member_functionality_ids": [
+        "fn_淘宝_unknown_tap_tap_search_result_top_left_search_96708b4d2182"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [
+        "top_left"
+      ],
+      "verified_edges": [
+        "page_淘宝_unknown_86404500e0ef->search_result:top_left"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    }
+  ],
+  "edge_lifecycle_summary": {
+    "total_records": 8,
+    "promotable": 8
+  }
+}

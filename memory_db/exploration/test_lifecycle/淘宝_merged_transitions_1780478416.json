@@ -1,0 +1,138 @@
+{
+  "app": "淘宝",
+  "total_transitions": 12,
+  "transitions": [
+    {
+      "from": "search_input:搜索输入页面，展示猜你想搜标签、热榜商品推荐和键盘输入界面",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          893,
+          71
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "product_detail:商品详情页，展示弱水时砂琉璃MK2蓝牙耳机的详细信息、价格、规格选项和购买操作",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          386
+        ]
+      },
+      "to": "spec_selection:商品规格选择弹窗，包含颜色分类、套餐类型、优选服务和加入购物车功能"
+    },
+    {
+      "from": "spec_selection:商品规格选择弹窗，包含颜色分类、套餐类型、优选服务和加入购物车功能",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          953
+        ]
+      },
+      "to": "settings:设置页"
+    },
+    {
+      "from": "home:淘宝App首页推荐页，展示搜索栏、功能入口、618活动Banner及商品推荐列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          897,
+          968
+        ]
+      },
+      "to": "settings:设置页"
+    },
+    {
+      "from": "my_account:个人中心/我的淘宝页面，展示用户会员状态、资产信息（红包/优惠券/积分）、订单管理入口及常用功能快捷方式",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          314
+        ]
+      },
+      "to": "cart:购物车列表"
+    },
+    {
+      "from": "search_result:搜索结果页，展示'耳机蓝牙耳夹式'的商品列表，含排序、标签筛选和多款耳机商品",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "my_account:个人中心/我的淘宝页面，展示用户会员状态、资产信息（红包/优惠券/积分）、订单管理入口及常用功能快捷方式",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          98,
+          966
+        ]
+      },
+      "to": "product_detail:商品详情页，展示弱水时砂琉璃MK2蓝牙耳机的详细信息、价格、规格选项和购买操作"
+    },
+    {
+      "from": "search_result:搜索结果页，展示'耳机蓝牙耳夹式'的商品列表，含排序、标签筛选和多款耳机商品",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          345
+        ]
+      },
+      "to": "product_detail:商品详情页，展示弱水时砂琉璃MK2蓝牙耳机的详细信息、价格、规格选项和购买操作"
+    },
+    {
+      "from": "product_detail:商品详情页，展示弱水时砂琉璃MK2蓝牙耳机的详细信息、价格、规格选项和购买操作",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "spec_selection:商品规格选择弹窗，包含颜色分类、套餐类型、优选服务和加入购物车功能"
+    },
+    {
+      "from": "home:淘宝App首页推荐页，展示搜索栏、功能入口、618活动Banner及商品推荐列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          897,
+          968
+        ]
+      },
+      "to": "product_detail:商品详情页，展示弱水时砂琉璃MK2蓝牙耳机的详细信息、价格、规格选项和购买操作"
+    },
+    {
+      "from": "my_account:个人中心/我的淘宝页面，展示用户会员状态、资产信息（红包/优惠券/积分）、订单管理入口及常用功能快捷方式",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "cart:购物车列表"
+    },
+    {
+      "from": "home:淘宝App首页推荐页，展示搜索栏、功能入口、618活动Banner及商品推荐列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          967
+        ]
+      },
+      "to": "cart:购物车列表"
+    }
+  ]
+}

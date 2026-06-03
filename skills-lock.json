@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "skills": {
+    "ai-ml-skills": {
+      "source": "wentorai/research-plugins",
+      "sourceType": "github",
+      "skillPath": "skills/domains/ai-ml/SKILL.md",
+      "computedHash": "d4d0d5bd1fc6ea6a0e388a817a010c0aaba27506fcee97cc76acb9fc91513ded"
+    },
+    "automation-skills": {
+      "source": "wentorai/research-plugins",
+      "sourceType": "github",
+      "skillPath": "skills/research/automation/SKILL.md",
+      "computedHash": "0353a753805c4db1235145187e86c6039c0b9095dd1bc0315a66d5f3acecc6a7"
+    },
+    "citation-skills": {
+      "source": "wentorai/research-plugins",
+      "sourceType": "github",
+      "skillPath": "skills/writing/citation/SKILL.md",
+      "computedHash": "44f92ef375e098ec10dce1590ddfa3262fba1daafebf237920e8b9090fe95ed8"
+    },
+    "code-exec-skills": {
+      "source": "wentorai/research-plugins",
+      "sourceType": "github",
+      "skillPath": "skills/tools/code-exec/SKILL.md",
+      "computedHash": "bb6e736ccc8d62a92320dc5fd467c61c7c4e1f435d6173ecddb649254115df65"
+    },
+    "cs-skills": {
+      "source": "wentorai/research-plugins",
+      "sourceType": "github",
+      "skillPath": "skills/domains/cs/SKILL.md",
+      "computedHash": "ac46cf2caef66ba156cd03e3fa2215fdc2bc8d1d263ffa6b24b26d3e52f7d177"
+    },
+    "deep-research-skills": {
+      "source": "wentorai/research-plugins",
+      "sourceType": "github",
+      "skillPath": "skills/research/deep-research/SKILL.md",
+      "computedHash": "39a72c037928f3a1a503b9e336ead8b2468fb6314df8c9badd27fe4b7250116d"
+    },
+    "diagram-skills": {
+      "source": "wentorai/research-plugins",
+      "sourceType": "github",
+      "skillPath": "skills/tools/diagram/SKILL.md",
+      "computedHash": "4415c881bc46281c9028bc9a5c331ce24003ee5f57069be32bedd0dafdf5a2e8"
+    },
+    "discovery-skills": {
+      "source": "wentorai/research-plugins",
+      "sourceType": "github",
+      "skillPath": "skills/literature/discovery/SKILL.md",
+      "computedHash": "8200eeb2349a41244e6c38a95d14aac04e6ca53a31bc9e6e2beddbb1c36f1085"
+    },
+    "knowledge-graph-skills": {
+      "source": "wentorai/research-plugins",
+      "sourceType": "github",
+      "skillPath": "skills/tools/knowledge-graph/SKILL.md",
+      "computedHash": "4c604c590b1de47bcf1ef238a081e3631415b487b0def3879e40749d2a8b38e0"
+    },
+    "latex-skills": {
+      "source": "wentorai/research-plugins",
+      "sourceType": "github",
+      "skillPath": "skills/writing/latex/SKILL.md",
+      "computedHash": "0fa6ee9d6e7b5f28c29f80072d3d29256ec87cb0c412790ea59150799c3c4ec5"
+    },
+    "paper-review-skills": {
+      "source": "wentorai/research-plugins",
+      "sourceType": "github",
+      "skillPath": "skills/research/paper-review/SKILL.md",
+      "computedHash": "7655979ad6e63f4eca5731f6b675c0fcf2f8221f67a5ded3ce795afc4898123f"
+    },
+    "polish-skills": {
+      "source": "wentorai/research-plugins",
+      "sourceType": "github",
+      "skillPath": "skills/writing/polish/SKILL.md",
+      "computedHash": "a019b9cdecd9aad178a3a7854adb5fd5f2557f74fa4fefea9d19545699ddaa2b"
+    }
+  }
+}

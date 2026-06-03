@@ -824,14 +824,14 @@
     "content": "用户常用应用: 淘宝",
     "memory_type": "app_usage",
     "created_at": "2026-05-14T23:45:19.221678",
-    "last_accessed": "2026-05-27T21:08:14.165601",
-    "access_count": 200,
+    "last_accessed": "2026-06-03T18:48:34.975839",
+    "access_count": 205,
     "importance": 1.0,
     "metadata": {
       "app_name": "淘宝",
       "source": "auto_extract",
       "context": "用户主动启动了应用: 淘宝",
-      "timestamp": "2026-05-27T20:25:40.289688"
+      "timestamp": "2026-06-03T18:48:20.290252"
     }
   },
   "b01d42d19cdc48a0": {
@@ -898,8 +898,8 @@
     "content": "任务: 去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max，银色，512G | 结果: 任务已完成！我已经成功为您在淘宝苹果官方旗舰店选择了iPhone 17 Pro Max，银色，512GB，并进入了订单确认页面。\n\n订单详情：\n- 商品：Apple/苹果 iPhone 17 Pro Max\n- 颜色：银色\n- 存储容量：512GB\n- 套餐类型：官方标配（需现场激活）\n- 价格：¥11894.8\n- 配送：顺丰包邮，预计明天18点前送达\n- 退货权益：88VIP专享，官方退货可用\n\n订单已准备就绪，您可以点击页面底部的\"立即支付¥11894.8\"按钮来完成支付。 | 成功",
     "memory_type": "task_history",
     "created_at": "2026-05-15T00:08:03.291225",
-    "last_accessed": "2026-05-27T21:08:14.165587",
-    "access_count": 119,
+    "last_accessed": "2026-06-03T18:48:34.975841",
+    "access_count": 123,
     "importance": 1.0,
     "metadata": {
       "task": "去淘宝买一个iPhone 17 pro max，银色 512G，加入购物车",
@@ -1181,8 +1181,8 @@
     "content": "任务执行流程: 去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max 使用了 System Home → 淘宝",
     "memory_type": "task_pattern",
     "created_at": "2026-05-15T00:08:03.904925",
-    "last_accessed": "2026-05-27T21:08:14.165593",
-    "access_count": 116,
+    "last_accessed": "2026-06-03T18:48:34.975838",
+    "access_count": 120,
     "importance": 1.0,
     "metadata": {
       "task_type": "shopping",
@@ -1198,8 +1198,8 @@
     "content": "任务: 打开淘宝，搜索耳机 | 结果: 任务完成！我已经成功打开淘宝并搜索\"耳机\"。现在屏幕上显示了耳机的搜索结果页面，可以看到多个耳机产品，包括科大讯飞、赣特易、唐麦Q6、华为FreeAr等品牌的产品，价格从¥161.49到¥1299不等。页面还提供了多种筛选选项，如综合、销量、天猫、店铺等，以及618抢先购、国家补贴、百亿补贴等优惠活动。 | 成功",
     "memory_type": "task_history",
     "created_at": "2026-05-27T17:28:44.589007",
-    "last_accessed": "2026-05-27T19:09:44.919468",
-    "access_count": 52,
+    "last_accessed": "2026-06-03T18:48:34.975843",
+    "access_count": 56,
     "importance": 1.0,
     "metadata": {
       "task": "打开淘宝，搜索耳机",
@@ -1348,8 +1348,8 @@
     "content": "任务执行流程: 打开淘宝，搜索耳机 使用了 System Home → 淘宝",
     "memory_type": "task_pattern",
     "created_at": "2026-05-27T17:28:45.176424",
-    "last_accessed": "2026-05-27T21:08:14.165599",
-    "access_count": 110,
+    "last_accessed": "2026-06-03T18:48:34.975831",
+    "access_count": 114,
     "importance": 1.0,
     "metadata": {
       "task_type": "shopping",
@@ -1379,8 +1379,8 @@
     "content": "任务: 打开淘宝，搜索耳机并加入购物车 | 结果: 任务完成！我已经成功将耳机加入购物车。具体操作如下：\n\n1. 在淘宝中搜索\"耳机\"\n2. 选择了\"弱水时砂earfeel i7蓝牙耳机\"商品\n3. 选择了规格：\"耀黑/雾影版七仓现货/快至次日达\"\n4. 成功加入购物车\n\n页面右上角显示\"加购成功\"提示，商品已成功添加到购物车中。 | 成功",
     "memory_type": "task_history",
     "created_at": "2026-05-27T17:58:01.174243",
-    "last_accessed": "2026-05-27T21:08:14.165600",
-    "access_count": 95,
+    "last_accessed": "2026-06-03T18:48:34.975837",
+    "access_count": 99,
     "importance": 1.0,
     "metadata": {
       "task": "打开淘宝，搜索耳机并加入购物车",
@@ -1554,8 +1554,8 @@
     "content": "任务: 去淘宝买一个iPhone 17 pro max，银色 512G，加入购物车 | 结果: 已成功在淘宝搜索\"耳机\"！搜索结果已显示，可以看到各种耳机产品，包括弱水时砂耳机（¥338.72）、安克声阔P31i蓝牙耳机（¥198.9）、华为FreeArc蓝牙耳机（¥542.01）等。页面还显示了热门分类（耳机礼盒、耳夹式耳机、头戴耳机、游戏耳机、骨传导耳机等）以及筛选选项（综合、销量、全部、天猫、店铺、闪购等）。 | 成功",
     "memory_type": "task_history",
     "created_at": "2026-05-27T18:49:49.715693",
-    "last_accessed": "2026-05-27T21:08:14.165596",
-    "access_count": 72,
+    "last_accessed": "2026-06-03T18:48:34.975844",
+    "access_count": 76,
     "importance": 1.0,
     "metadata": {
       "task": "去淘宝买一个iPhone 17 pro max，银色 512G，加入购物车",
@@ -1647,8 +1647,8 @@
     "content": "任务: 去淘宝买一个iPhone 17 pro max，银色 512G，加入购物车 | 结果: 我注意到您提到\"你正在商品详情/规格选择页面\"，但当前显示的是淘宝购物车页面，里面有耳机、眼镜等商品，没有看到iPhone 17 Pro Max。\n\n为了帮您完成购买，我需要：\n1. 导航到苹果官方旗舰店\n2. 找到iPhone 17 Pro Max\n3. 选择银色和512G版本\n4. 加入购物车或完成购买\n\n但是，您还没有提供完整的规格信息（比如是512G还是5G版本，是要购买还是加入购物车）。请告诉我：\n- 是512G还是5G版本？\n- 是要购买还是加入购物车？\n- 其他任何需要的规格参数\n\n只有提供完整的规格信息，我才能继续帮您操作。 | 成功",
     "memory_type": "task_history",
     "created_at": "2026-05-27T19:09:55.113533",
-    "last_accessed": "2026-05-27T21:08:14.165595",
-    "access_count": 59,
+    "last_accessed": "2026-06-03T18:48:34.975842",
+    "access_count": 63,
     "importance": 1.0,
     "metadata": {
       "task": "去淘宝买一个iPhone 17 pro max，银色 512G，加入购物车",
@@ -1891,6 +1891,127 @@
           "total_products": 3,
           "cart_items": 1,
           "total_steps": 4,
+          "stagnation_count": 1
+        }
+      }
+    }
+  },
+  "a7f9a754c15149e7": {
+    "id": "a7f9a754c15149e7",
+    "content": "任务: 打开购物车，点击结算按钮进入结算页面，然后返回购物车 | 结果: 任务已完成！我已经成功：\n1. 打开了购物车（已经在购物车页面）\n2. 点击了结算按钮进入结算页面（显示商品总价¥169.99）\n3. 返回到购物车页面\n\n现在您回到了购物车页面，可以看到购物车中的商品列表。 | 成功",
+    "memory_type": "task_history",
+    "created_at": "2026-06-03T18:48:40.391293",
+    "last_accessed": "2026-06-03T18:48:40.391294",
+    "access_count": 1,
+    "importance": 0.6,
+    "metadata": {
+      "task": "打开购物车，点击结算按钮进入结算页面，然后返回购物车",
+      "result": "任务已完成！我已经成功：\n1. 打开了购物车（已经在购物车页面）\n2. 点击了结算按钮进入结算页面（显示商品总价¥169.99）\n3. 返回到购物车页面\n\n现在您回到了购物车页面，可以看到购物车中的商品列表。",
+      "success": true,
+      "duration": 37.717565,
+      "steps": 3,
+      "apps_used": [
+        "淘宝"
+      ],
+      "contacts_mentioned": [],
+      "session_state": {
+        "task": "打开购物车，点击结算按钮进入结算页面，然后返回购物车",
+        "platform": "淘宝",
+        "current_product": {
+          "name": "结算页面",
+          "price": 169.99,
+          "currency": "¥",
+          "specs": {},
+          "source_page": "cart",
+          "status": "added_to_cart",
+          "first_seen_step": 2
+        },
+        "products": [
+          {
+            "name": "这个结算按钮，进入结算页面，然后再返回购物车",
+            "price": null,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "cart",
+            "status": "added_to_cart",
+            "first_seen_step": 1
+          },
+          {
+            "name": "结算页面",
+            "price": 169.99,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "cart",
+            "status": "added_to_cart",
+            "first_seen_step": 2
+          }
+        ],
+        "cart_items": [
+          {
+            "name": "这个结算按钮，进入结算页面，然后再返回购物车",
+            "price": null,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "cart",
+            "status": "added_to_cart",
+            "first_seen_step": 1
+          },
+          {
+            "name": "结算页面",
+            "price": 169.99,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "cart",
+            "status": "added_to_cart",
+            "first_seen_step": 2
+          }
+        ],
+        "steps": [
+          {
+            "step": 1,
+            "action_type": "Tap",
+            "action_target": "[807, 901]",
+            "thinking_short": "用户要求我：\n1. 打开购物车（已经在购物车页面了）\n2. 点击结算按钮进入结算页面\n3. 然后返回购物车\n\n从截图来看，我现在已经在淘宝的购物车页面了。",
+            "page_type": "cart",
+            "app": "淘宝",
+            "timestamp": "2026-06-03T18:48:20.756281"
+          },
+          {
+            "step": 2,
+            "action_type": "Back",
+            "action_target": "",
+            "thinking_short": "好的，我已经进入了结算页面。",
+            "page_type": "cart",
+            "app": "淘宝",
+            "timestamp": "2026-06-03T18:48:30.928818"
+          },
+          {
+            "step": 3,
+            "action_type": "",
+            "action_target": "",
+            "thinking_short": "完美！我已经成功完成了任务：\n1.",
+            "page_type": "cart",
+            "app": "淘宝",
+            "timestamp": "2026-06-03T18:48:39.918415"
+          }
+        ],
+        "constraints": {},
+        "progress": {
+          "completed": [],
+          "remaining": [],
+          "current": ""
+        },
+        "state": {
+          "current_state_id": "state_淘宝_cart_cart_items_select_all_checkout_button_se_5d302fe8",
+          "prev_state_id": "state_淘宝_cart_medium_ab0c51b6ded3",
+          "task_start_state_id": "state_淘宝_cart_medium_ab0c51b6ded3",
+          "task_end_state_id": null,
+          "state_history_size": 5
+        },
+        "statistics": {
+          "total_products": 2,
+          "cart_items": 2,
+          "total_steps": 3,
           "stagnation_count": 1
         }
       }

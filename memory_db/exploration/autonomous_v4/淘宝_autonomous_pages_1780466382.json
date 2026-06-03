@@ -1,0 +1,92 @@
+{
+  "app": "淘宝",
+  "task": "autonomous_exploration",
+  "explored_at": "2026-06-03T13:59:42.653897",
+  "total_pages": 12,
+  "pages": [
+    {
+      "page_type": "home",
+      "summary": "电商App首页/推荐流，包含顶部搜索栏、功能入口区、618活动横幅及商品瀑布流",
+      "elements": {},
+      "screenshot_hash": "2a316977bf9df39a68d19caa73c410dc",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "unknown",
+      "summary": "无法解析页面",
+      "elements": {},
+      "screenshot_hash": "41b3e38c8f324229535adb04c12865b6",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "home",
+      "summary": "首页",
+      "elements": {},
+      "screenshot_hash": "bed0cf1fcb7cf5e10ca1c7fe617f235b",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "商品详情页",
+      "elements": {},
+      "screenshot_hash": "cc6b65c507027a5fa64fbbc44ec46d5b",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_input",
+      "summary": "搜索输入页面，包含搜索框、历史搜索记录、猜你想搜推荐及淘宝热榜",
+      "elements": {},
+      "screenshot_hash": "d414af470fb7a4f93cb2c0ac309fdddd",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "unknown",
+      "summary": "unnamed-unknown",
+      "elements": {},
+      "screenshot_hash": "5c19ff774a35ec02b51ed2bc2c34fac3",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_result",
+      "summary": "搜索结果/商品列表页，显示'耳机'关键词的搜索结果，包含热门分类标签、筛选栏及商品瀑布流",
+      "elements": {},
+      "screenshot_hash": "e0891ae5253bce124fbe5b7a12c58f45",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "unknown",
+      "summary": "选择商品颜色及套餐规格",
+      "elements": {},
+      "screenshot_hash": "0d197444b5fc5aae31f3fc433c9a8029",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "unknown",
+      "summary": "",
+      "elements": {},
+      "screenshot_hash": "9b05bc795ede3af79cd524ffedabfcd9",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_result",
+      "summary": "耳机搜索结果及商品列表",
+      "elements": {},
+      "screenshot_hash": "54eddc9d4133b17be8b3c9d1996a1f41",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "spec_selection",
+      "summary": "规格选择弹窗页面，展示AI智能耳机的颜色分类(7种)、套餐类型选择及加入购物车按钮",
+      "elements": {},
+      "screenshot_hash": "45860d679ba3db8d969fc032c837bc64",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "cart",
+      "summary": "购物车列表",
+      "elements": {},
+      "screenshot_hash": "9ed77b2db51a69f53b5511eb04535ef9",
+      "app": "淘宝"
+    }
+  ]
+}
