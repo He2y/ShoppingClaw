@@ -309,6 +309,32 @@ def direct_neo4j_import(
     return {"nodes": node_count, "edges": edge_count}
 
 
+def _build_functionality_report(
+    pages: list[dict],
+    transitions: list[dict],
+    app: str,
+) -> dict[str, Any]:
+    """Build the report dict expected by GraphStore.upsert_functionality_graph()."""
+    from phone_agent.spatial.functionality import FunctionalityExtractor
+    from phone_agent.spatial.functionality_cluster import FunctionalityClusterer
+
+    extractor = FunctionalityExtractor()
+    all_items = []
+    for page in pages:
+        all_items.extend(extractor.from_page(page))
+    for t in transitions:
+        all_items.append(extractor.from_transition(t, app=app))
+
+    clusterer = FunctionalityClusterer()
+    clustered_items, clusters = clusterer.cluster(all_items)
+
+    return {
+        "app_filter": app,
+        "functionality_items": [item.to_dict() for item in clustered_items],
+        "functionality_clusters": [c.to_dict() for c in clusters],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Merge exploration data and import to Neo4j")
     parser.add_argument("--input-dirs", nargs="+", required=True, help="Exploration directories to merge")
@@ -384,6 +410,8 @@ def main() -> int:
             if graph_store.driver:
                 print(f"  Neo4j: {graph_store.uri} / {graph_store.database}")
             memory = SpatialGraphMemory(graph_store=graph_store)
+
+            # Step A: Import pages + transitions (topology layer)
             states, edges, quality = memory.import_exploration_staging(pages_path, trans_path)
             print(f"  Staging: {quality.pages_seen} pages → {quality.canonical_pages} canonical")
             print(f"  Staging: {quality.transitions_seen} transitions → {len(edges)} promotable")
@@ -393,6 +421,16 @@ def main() -> int:
                 print(f"  Promoted: {promote_report.transitions_promoted} edges to Neo4j")
             else:
                 print(f"  No edges passed staging — check transition key alignment")
+
+            # Step B: Extract + cluster functionalities → semantic layer
+            print(f"\n  [Functionality] Extracting semantic layer...")
+            func_report = _build_functionality_report(merged_pages, merged_transitions, args.app)
+            func_counts = graph_store.upsert_functionality_graph(func_report)
+            print(f"  Clusters: {func_counts['clusters']}, Items: {func_counts['items']}")
+            print(f"  UIState↔Item links: {func_counts['ui_links']}")
+            print(f"  Action↔Item links: {func_counts['action_links']}")
+            print(f"  Cluster→UIState links: {func_counts['postcondition_links']}")
+
         except Exception as e:
             print(f"  Import failed: {e}")
             import traceback
