@@ -103,8 +103,14 @@ def deduplicate_pages(pages: list[dict]) -> list[dict]:
 def deduplicate_transitions(
     transitions: list[dict],
     valid_page_types: set[str],
+    canonical_pages: list[dict],
 ) -> list[dict]:
-    """Deduplicate transitions and validate against known page types."""
+    """Deduplicate transitions, re-keying from/to to match canonical page summaries."""
+    type_to_summary: dict[str, str] = {}
+    for p in canonical_pages:
+        pt = p["page_type"]
+        type_to_summary[pt] = p.get("summary", "")
+
     seen: set[str] = set()
     result: list[dict] = []
     dropped = 0
@@ -129,8 +135,8 @@ def deduplicate_transitions(
             continue
         seen.add(key)
 
-        canonical_from = f"{src_type}:{src.split(':', 1)[1] if ':' in src else ''}"
-        canonical_to = f"{tgt_type}:{tgt.split(':', 1)[1] if ':' in tgt else ''}"
+        canonical_from = f"{src_type}:{type_to_summary.get(src_type, '')}"
+        canonical_to = f"{tgt_type}:{type_to_summary.get(tgt_type, '')}"
         result.append({"from": canonical_from, "action": action, "to": canonical_to})
 
     print(f"  transitions: {len(transitions)} → {len(result)} unique ({dropped} dropped)")
@@ -328,9 +334,9 @@ def main() -> int:
     merged_pages = deduplicate_pages(all_pages)
     valid_types = {p["page_type"] for p in merged_pages}
 
-    # Step 3: Deduplicate transitions
+    # Step 3: Deduplicate transitions (re-key from/to to match canonical summaries)
     print("\n[3/4] Deduplicating transitions...")
-    merged_transitions = deduplicate_transitions(all_transitions, valid_types)
+    merged_transitions = deduplicate_transitions(all_transitions, valid_types, merged_pages)
 
     # Quality report
     report = build_quality_report(merged_pages, merged_transitions)
@@ -370,10 +376,23 @@ def main() -> int:
 
     # Optional: import to Neo4j
     if args.import_graph:
-        print(f"\n[Import] Writing directly to Neo4j...")
+        print(f"\n[Import] SpatialGraphMemory → Neo4j (AMSG pipeline)...")
         try:
-            imported = direct_neo4j_import(merged_pages, merged_transitions, args.app)
-            print(f"  Done: {imported['nodes']} page nodes, {imported['edges']} transition edges")
+            from phone_agent.memory.graph_store import GraphStore
+            from phone_agent.memory.spatial_graph_memory import SpatialGraphMemory
+            graph_store = GraphStore()
+            if graph_store.driver:
+                print(f"  Neo4j: {graph_store.uri} / {graph_store.database}")
+            memory = SpatialGraphMemory(graph_store=graph_store)
+            states, edges, quality = memory.import_exploration_staging(pages_path, trans_path)
+            print(f"  Staging: {quality.pages_seen} pages → {quality.canonical_pages} canonical")
+            print(f"  Staging: {quality.transitions_seen} transitions → {len(edges)} promotable")
+            print(f"  Missing core edges: {quality.missing_edges or 'none'}")
+            if edges:
+                promote_report = memory.promote_staging_to_canonical(states, edges, persist=True)
+                print(f"  Promoted: {promote_report.transitions_promoted} edges to Neo4j")
+            else:
+                print(f"  No edges passed staging — check transition key alignment")
         except Exception as e:
             print(f"  Import failed: {e}")
             import traceback
