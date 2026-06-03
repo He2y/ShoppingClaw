@@ -11,14 +11,15 @@ from phone_agent.memory.autonomous_explorer import (
     AutonomousExplorer,
     ConvergenceTracker,
     ExplorationPolicy,
+    ExplorationSupervisor,
     JobExecutionResult,
+    SupervisorDecision,
     _build_autonomous_system_prompt,
     _generic_transition_rejection,
     _page_info_to_dict,
     is_safe_exploration_action,
 )
 from phone_agent.memory.offline_explorer import PageInfo, ShoppingPageType
-from phone_agent.spatial.exploration_queue import ExplorationJob
 
 
 # ── ExplorationPolicy ────────────────────────────────────────
@@ -125,18 +126,10 @@ class TestSafetyFunctions:
             "payment", {"_metadata": "finish", "message": "done"},
         )
 
-    def test_blocks_unsafe_reasoning(self) -> None:
+    def test_blocks_unsafe_action_text(self) -> None:
         assert not is_safe_exploration_action(
             "home",
-            {"action": "Tap", "element": [500, 500]},
-            reasoning="我将点击支付按钮",
-        )
-
-    def test_allows_negated_unsafe_reasoning(self) -> None:
-        assert is_safe_exploration_action(
-            "home",
-            {"action": "Tap", "element": [500, 500]},
-            reasoning="不要点击支付按钮，我选择返回",
+            {"action": "Tap", "element": [500, 500], "text": "去结算"},
         )
 
 
@@ -178,20 +171,20 @@ class TestTransitionRejection:
 
 
 class TestSystemPrompt:
-    def test_contains_action_syntax(self) -> None:
+    def test_executor_prompt_contains_action_syntax(self) -> None:
         prompt = _build_autonomous_system_prompt()
         assert 'do(action="Tap"' in prompt
         assert 'do(action="Back")' in prompt
-        assert 'finish(message=' in prompt
 
-    def test_contains_safety_constraints(self) -> None:
+    def test_executor_prompt_forbids_finish(self) -> None:
         prompt = _build_autonomous_system_prompt()
-        assert "不要下单" in prompt
-        assert "不要进行支付" in prompt
+        assert "禁止" in prompt
+        assert "finish" in prompt
 
-    def test_contains_autonomous_identity(self) -> None:
-        prompt = _build_autonomous_system_prompt()
-        assert "自主探索" in prompt
+    def test_supervisor_prompt_contains_strategy(self) -> None:
+        assert "核心页面类型" in ExplorationSupervisor._SYSTEM_PROMPT
+        assert "home" in ExplorationSupervisor._SYSTEM_PROMPT
+        assert "search_result" in ExplorationSupervisor._SYSTEM_PROMPT
 
 
 # ── PageInfo Bridge ──────────────────────────────────────────
@@ -217,33 +210,23 @@ class TestPageInfoBridge:
 
 
 class TestJobExecutionResult:
-    def _make_job(self) -> ExplorationJob:
-        return ExplorationJob(
-            job_id="test-job-1",
-            functionality_cluster_id="cluster-1",
-            target_description="Explore search function",
-            reason="unverified cluster",
-            max_steps=3,
-            priority=0.8,
-        )
-
     def test_to_dict(self) -> None:
         result = JobExecutionResult(
-            job=self._make_job(),
+            job_description="Explore search function",
             steps_taken=2,
             new_page_types_discovered=("search_result",),
             new_transitions_discovered=1,
             outcome="success",
         )
         d = result.to_dict()
-        assert d["job_id"] == "test-job-1"
+        assert d["job_description"] == "Explore search function"
         assert d["steps_taken"] == 2
         assert d["outcome"] == "success"
         assert "search_result" in d["new_page_types_discovered"]
 
     def test_deviation_result(self) -> None:
         result = JobExecutionResult(
-            job=self._make_job(),
+            job_description="Navigate to product",
             steps_taken=1,
             outcome="deviation",
             deviation_reason="expected product_detail, got cart",
@@ -251,6 +234,23 @@ class TestJobExecutionResult:
         d = result.to_dict()
         assert d["outcome"] == "deviation"
         assert "product_detail" in d["deviation_reason"]
+
+
+class TestSupervisorDecision:
+    def test_to_dict(self) -> None:
+        d = SupervisorDecision(
+            page_type="home", page_summary="首页",
+            reasoning="需要搜索", plan=("点击搜索框",),
+        )
+        assert d.to_dict()["page_type"] == "home"
+        assert d.plan == ("点击搜索框",)
+        assert not d.should_stop
+
+    def test_fallback(self) -> None:
+        supervisor = ExplorationSupervisor.__new__(ExplorationSupervisor)
+        decision = supervisor._fallback(["home:首页"], ["search_input", "search_result"])
+        assert len(decision.plan) >= 1
+        assert "搜索" in decision.plan[0]
 
 
 # ── AutonomousExplorer._extract_and_cluster ──────────────────

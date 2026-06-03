@@ -1,16 +1,17 @@
 """Model-driven autonomous exploration for mobile apps.
 
-Two-tier VLM architecture for efficiency:
-  - Strong VLM (glm-5v-turbo): page classification + action planning
-  - Action VLM (autoglm-phone): execute specific instructions with minimal prompt
+Supervisor-Executor VLM architecture:
 
-Per-round call pattern (optimized):
-  1. Classify page via PageClassifier           [1 VLM call, cached if unchanged]
-  2. Extract functionalities                    [0 VLM calls, deterministic]
-  3. Plan actions via StrongVLMPlanner          [1 VLM call to glm-5v-turbo]
-  4. Execute each step via action VLM           [1-3 VLM calls, minimal prompt]
-  5. Classify final page via PageClassifier     [1 VLM call]
-  Total: 4-6 calls per round (down from 7+, each faster)
+  Supervisor (glm-5v-turbo) — the brain:
+    Sees screenshot + full exploration progress.
+    Classifies page, reasons about what's missing, outputs a concrete
+    multi-step action plan.  One call per round.
+
+  Executor (autoglm-phone) — the hands:
+    Sees screenshot + one atomic instruction ("点击搜索框").
+    Outputs a single do(action=...) coordinate action.  One call per step.
+
+Per-round: 1 supervisor + 1-3 executor = 2-4 VLM calls.
 """
 
 from __future__ import annotations
@@ -36,21 +37,17 @@ from phone_agent.memory.offline_explorer import (
     ShoppingPageType,
     Trajectory,
 )
-from phone_agent.spatial.active_builder import ActiveGraphBuilder
 from phone_agent.spatial.coverage_metrics import compute_functionality_coverage
 from phone_agent.spatial.edge_lifecycle import EdgeLifecycleManager
 from phone_agent.spatial.exploration_queue import ExplorationJob, ExplorationQueueBuilder
 from phone_agent.spatial.functionality import (
     FunctionalityExtractor,
     FunctionalityItem,
-    StrongVLMFunctionalityExtractor,
     canonical_role_from_transition,
 )
-from phone_agent.spatial.functionality_cluster import FunctionalityCluster, FunctionalityClusterer
-from phone_agent.spatial.hypothesis import EdgeHypothesisGenerator
+from phone_agent.spatial.functionality_cluster import FunctionalityClusterer
 from phone_agent.spatial.quality_gate import FunctionalityQualityGate
-from phone_agent.spatial.semantics import ScreenSemanticsExtractor
-from phone_agent.spatial.task_synthesis import TaskSynthesizer, resolve_strong_vlm_config
+from phone_agent.spatial.task_synthesis import resolve_strong_vlm_config
 
 
 # ── Constants ─────────────────────────────────────────────────
@@ -68,18 +65,20 @@ _UNSAFE_ACTION_TOKENS = (
 
 _SCREEN_CHANGE_HASH_LEN = 2000
 
-_MINIMAL_ACTION_SYSTEM_PROMPT = (
-    "你是手机操作执行器。你必须对当前屏幕执行一个具体操作。\n"
-    "严格按以下格式输出，不要输出其他内容：\n"
+_EXECUTOR_SYSTEM_PROMPT = (
+    "你是手机操作执行器。根据指令在屏幕上执行一个操作。\n"
+    "只输出一个操作，格式：\n"
     "thinking{一句话理由}\n"
     "<answer>do(action=\"Tap\", element=[x,y])</answer>\n\n"
-    "可用操作（只能选一个）：\n"
-    'do(action="Tap", element=[x,y]) 坐标范围0-999\n'
-    'do(action="Type", text="xxx") 输入文本\n'
-    'do(action="Swipe", start=[x1,y1], end=[x2,y2]) 滑动\n'
-    'do(action="Back") 返回\n'
-    "禁止：不要用finish，不要只描述不操作，不要输出多个操作。\n"
+    "可用操作：\n"
+    'do(action="Tap", element=[x,y]) 坐标0-999\n'
+    'do(action="Type", text="xxx")\n'
+    'do(action="Swipe", start=[x1,y1], end=[x2,y2])\n'
+    'do(action="Back")\n'
+    "禁止输出finish。禁止输出多个操作。禁止描述页面。\n"
 )
+
+_CORE_PAGE_TYPES = ("home", "search_input", "search_result", "product_detail", "spec_selection", "cart")
 
 
 # ── Data Structures ───────────────────────────────────────────
@@ -110,7 +109,7 @@ class ExplorationPolicy:
 
 @dataclass(frozen=True)
 class JobExecutionResult:
-    job: ExplorationJob
+    job_description: str
     steps_taken: int
     new_page_types_discovered: tuple[str, ...] = ()
     new_transitions_discovered: int = 0
@@ -120,14 +119,33 @@ class JobExecutionResult:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "job_id": self.job.job_id,
-            "target_description": self.job.target_description,
+            "job_description": self.job_description,
             "steps_taken": self.steps_taken,
             "new_page_types_discovered": list(self.new_page_types_discovered),
             "new_transitions_discovered": self.new_transitions_discovered,
             "new_functionality_clusters": self.new_functionality_clusters,
             "outcome": self.outcome,
             "deviation_reason": self.deviation_reason,
+        }
+
+
+@dataclass(frozen=True)
+class SupervisorDecision:
+    page_type: str
+    page_summary: str
+    reasoning: str
+    plan: tuple[str, ...]
+    should_stop: bool = False
+    stop_reason: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "page_type": self.page_type,
+            "page_summary": self.page_summary,
+            "reasoning": self.reasoning,
+            "plan": list(self.plan),
+            "should_stop": self.should_stop,
+            "stop_reason": self.stop_reason,
         }
 
 
@@ -142,17 +160,8 @@ class ConvergenceTracker:
         self._history: list[dict[str, int]] = []
         self._consecutive_dry: int = 0
 
-    def record_round(
-        self,
-        new_clusters: int,
-        new_page_types: int,
-        new_transitions: int,
-    ) -> None:
-        self._history.append({
-            "new_clusters": new_clusters,
-            "new_page_types": new_page_types,
-            "new_transitions": new_transitions,
-        })
+    def record_round(self, new_clusters: int, new_page_types: int, new_transitions: int) -> None:
+        self._history.append({"new_clusters": new_clusters, "new_page_types": new_page_types, "new_transitions": new_transitions})
         is_dry = new_clusters == 0 and new_page_types == 0
         self._consecutive_dry = self._consecutive_dry + 1 if is_dry else 0
 
@@ -180,12 +189,7 @@ class ConvergenceTracker:
 
 # ── Safety Functions ─────────────────────────────────────────
 
-def is_safe_exploration_action(
-    page_type: str,
-    action: dict[str, Any],
-    reasoning: str = "",
-) -> bool:
-    """Generic safety filter using string page types."""
+def is_safe_exploration_action(page_type: str, action: dict[str, Any], reasoning: str = "") -> bool:
     if action.get("_metadata") == "finish":
         return True
     if page_type in _HIGH_RISK_PAGE_TYPES_STR:
@@ -193,38 +197,10 @@ def is_safe_exploration_action(
     action_text = json.dumps(action, ensure_ascii=False).lower()
     if any(token.lower() in action_text for token in _UNSAFE_ACTION_TOKENS):
         return False
-    if _unsafe_intent_in_reasoning(reasoning, page_type):
-        return False
     return True
 
 
-def _unsafe_intent_in_reasoning(reasoning: str, page_type: str) -> bool:
-    action_markers = ("我将", "我要", "准备", "下一步", "接下来", "现在", "让我", "tap")
-    negation_markers = ("不要", "不能", "禁止", "避免", "不应该", "不会", "不点击")
-    task_markers = ("用户要求", "任务流程", "具体步骤", "根据任务", "给出了", "包括：", "需要：")
-    for raw_line in reasoning.splitlines():
-        line = raw_line.strip().lower()
-        if not line:
-            continue
-        if any(marker in line for marker in task_markers):
-            continue
-        if line[:2].rstrip(".、").isdigit():
-            continue
-        if any(marker in line for marker in negation_markers):
-            continue
-        if not any(marker in line for marker in action_markers):
-            continue
-        if any(token.lower() in line for token in _UNSAFE_ACTION_TOKENS):
-            return True
-    return False
-
-
-def _generic_transition_rejection(
-    source_type: str,
-    action: dict[str, Any],
-    target_type: str,
-) -> str:
-    """Relaxed transition filter — no shopping-specific flow whitelist."""
+def _generic_transition_rejection(source_type: str, action: dict[str, Any], target_type: str) -> str:
     if source_type in _HIGH_RISK_PAGE_TYPES_STR or target_type in _HIGH_RISK_PAGE_TYPES_STR:
         return "high-risk page boundary"
     action_type = str(action.get("action") or action.get("action_type") or "").lower()
@@ -237,29 +213,40 @@ def _generic_transition_rejection(
     return ""
 
 
-# ── Strong VLM Planner ──────────────────────────────────────
+# ── Exploration Supervisor ───────────────────────────────────
 
-class StrongVLMPlanner:
-    """Uses glm-5v-turbo to generate a concrete multi-step action plan.
+class ExplorationSupervisor:
+    """glm-5v-turbo as the exploration brain.
 
-    Called once per round before handing steps to the action VLM.
-    Returns a list of natural-language instructions that the action
-    VLM can execute with minimal context.
+    Sees the full exploration state + current screenshot.
+    Outputs: page classification + reasoning + concrete action plan.
+    One VLM call per round replaces both PageClassifier and Planner.
     """
 
-    _PLAN_SYSTEM_PROMPT = (
-        "你是移动应用UI分析师。分析截屏，根据探索目标生成1-3步具体操作指令。\n"
-        "输出纯JSON，不要其他内容：\n"
-        '{"steps": [\n'
-        '  {"instruction": "具体操作描述，如：点击顶部搜索框", "action_type": "Tap"},\n'
-        '  {"instruction": "在搜索框输入耳机", "action_type": "Type"}\n'
-        "]}\n\n"
-        "规则：\n"
-        "- instruction 必须描述屏幕上可见的具体元素位置\n"
-        "- action_type: Tap/Type/Swipe/Back 之一\n"
-        "- 不要生成支付、结算、登录、地址相关操作\n"
-        "- 在搜索页时必须指定搜索关键词（如'耳机''手机壳'）\n"
-        "- 遇到弹窗时用Back关闭\n"
+    _SYSTEM_PROMPT = (
+        "你是移动应用空间图谱的探索规划师。你的任务是系统性地发现App中所有核心页面类型和页面间的跳转关系。\n\n"
+        "核心页面类型（必须全部发现）：\n"
+        "- home: 首页/推荐流\n"
+        "- search_input: 搜索输入页\n"
+        "- search_result: 搜索结果/商品列表\n"
+        "- product_detail: 商品详情页\n"
+        "- spec_selection: 规格选择弹窗\n"
+        "- cart: 购物车\n\n"
+        "输出严格JSON格式（不要输出其他内容）：\n"
+        "{\n"
+        '  "page_type": "当前页面类型（上述之一或other）",\n'
+        '  "page_summary": "一句话页面描述",\n'
+        '  "reasoning": "分析探索进度，说明为什么选择这个计划",\n'
+        '  "plan": ["第一步操作指令", "第二步操作指令"],\n'
+        '  "should_stop": false\n'
+        "}\n\n"
+        "规划规则：\n"
+        "1. plan中每条指令必须描述屏幕上可见的具体元素（如'点击屏幕顶部搜索框'而非'搜索'）\n"
+        "2. 优先补齐缺失的页面类型，按 home→search_input→search_result→product_detail 顺序推进\n"
+        "3. 在非核心页面（如会员中心、设置页、活动页）时，plan第一步必须是'点击返回按钮'回到主流程\n"
+        "4. 在search_input页时，plan必须包含输入关键词和点击搜索两步，关键词用'耳机'\n"
+        "5. 不要生成支付、结算、登录、地址相关操作\n"
+        "6. 所有核心页面类型都已发现且跳转关系完整时，设should_stop=true\n"
     )
 
     def __init__(self) -> None:
@@ -282,7 +269,7 @@ class StrongVLMPlanner:
             if base_url and model and key:
                 try:
                     from openai import OpenAI
-                    self._client = OpenAI(base_url=base_url, api_key=key, timeout=15.0)
+                    self._client = OpenAI(base_url=base_url, api_key=key, timeout=20.0)
                     self._model = model
                     self._configured = True
                 except Exception:
@@ -293,32 +280,39 @@ class StrongVLMPlanner:
     def configured(self) -> bool:
         return self._configured
 
-    def plan(
+    def analyze_and_plan(
         self,
         screenshot_base64: str,
-        page_type: str,
-        page_elements: dict[str, Any],
-        job_description: str,
-        discovered_types: list[str],
-    ) -> list[dict[str, str]]:
-        if not self._configured or not self._client:
-            return self._fallback_plan(page_type, page_elements)
+        discovered_pages: list[str],
+        recorded_transitions: list[str],
+        current_round: int,
+        total_steps: int,
+        max_steps: int,
+        last_result: str,
+    ) -> SupervisorDecision:
+        discovered_set = {p.split(":")[0] for p in discovered_pages}
+        missing = [t for t in _CORE_PAGE_TYPES if t not in discovered_set]
 
-        elements_str = ", ".join(f"{k}: {v}" for k, v in (page_elements or {}).items())
         user_text = (
-            f"探索目标：{job_description}\n"
-            f"当前页面：{page_type}\n"
-            f"页面元素：{elements_str or '未知'}\n"
-            f"已发现页面类型：{', '.join(discovered_types) or '无'}\n"
-            "生成操作计划（JSON）："
+            f"=== 探索进度 ===\n"
+            f"第{current_round}轮 | 已执行{total_steps}/{max_steps}步\n"
+            f"已发现页面({len(discovered_pages)})：{'; '.join(discovered_pages) or '无'}\n"
+            f"已记录跳转({len(recorded_transitions)})：{'; '.join(recorded_transitions[-8:]) or '无'}\n"
+            f"缺失核心页面：{', '.join(missing) or '全部已发现！'}\n"
+            f"上轮结果：{last_result}\n\n"
+            f"请分析当前截屏，输出JSON规划。"
         )
+
+        if not self._configured or not self._client:
+            return self._fallback(discovered_pages, missing)
+
         try:
             response = self._client.chat.completions.create(
                 model=self._model,
                 temperature=0,
-                max_tokens=500,
+                max_tokens=600,
                 messages=[
-                    {"role": "system", "content": self._PLAN_SYSTEM_PROMPT},
+                    {"role": "system", "content": self._SYSTEM_PROMPT},
                     {"role": "user", "content": [
                         {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_base64}"}},
                         {"type": "text", "text": user_text},
@@ -326,89 +320,53 @@ class StrongVLMPlanner:
                 ],
             )
             content = response.choices[0].message.content or ""
-            return self._parse_plan(content)
+            return self._parse_decision(content, missing)
         except Exception:
-            return self._fallback_plan(page_type, page_elements)
+            return self._fallback(discovered_pages, missing)
 
-    def _parse_plan(self, content: str) -> list[dict[str, str]]:
+    def _parse_decision(self, content: str, missing: list[str]) -> SupervisorDecision:
         content = content.strip()
         if content.startswith("```"):
             content = re.sub(r"^```(?:json)?", "", content).strip()
             content = re.sub(r"```$", "", content).strip()
         match = re.search(r"\{.*\}", content, flags=re.DOTALL)
         if not match:
-            return []
+            return self._fallback([], missing)
         try:
             data = json.loads(match.group(0))
         except json.JSONDecodeError:
-            return []
-        steps = data.get("steps") or []
-        return [
-            {"instruction": str(s.get("instruction", "")), "action_type": str(s.get("action_type", "Tap"))}
-            for s in steps
-            if isinstance(s, dict) and s.get("instruction")
-        ][:3]
+            return self._fallback([], missing)
+
+        plan_raw = data.get("plan") or []
+        plan = tuple(str(s) for s in plan_raw if isinstance(s, str) and s.strip())[:3]
+        if not plan:
+            plan = ("点击返回按钮",)
+
+        return SupervisorDecision(
+            page_type=str(data.get("page_type") or "unknown"),
+            page_summary=str(data.get("page_summary") or ""),
+            reasoning=str(data.get("reasoning") or ""),
+            plan=plan,
+            should_stop=bool(data.get("should_stop")),
+            stop_reason=str(data.get("stop_reason") or ""),
+        )
 
     @staticmethod
-    def _fallback_plan(page_type: str, elements: dict[str, Any]) -> list[dict[str, str]]:
-        if page_type == "home":
-            return [{"instruction": "点击屏幕顶部的搜索框", "action_type": "Tap"}]
-        if page_type == "search_input":
-            return [
-                {"instruction": "在搜索框中输入'耳机'", "action_type": "Type"},
-                {"instruction": "点击右侧橙色搜索按钮", "action_type": "Tap"},
-            ]
-        if page_type == "search_result":
-            return [{"instruction": "点击列表中第一个商品卡片的图片区域", "action_type": "Tap"}]
-        if page_type == "product_detail":
-            return [{"instruction": "点击屏幕底部的'加入购物车'按钮", "action_type": "Tap"}]
-        if page_type == "spec_selection":
-            return [{"instruction": "点击返回按钮关闭规格面板", "action_type": "Back"}]
-        if page_type in ("dialog", "permission"):
-            return [{"instruction": "点击返回键关闭弹窗", "action_type": "Back"}]
-        if page_type in _HIGH_RISK_PAGE_TYPES_STR:
-            return [{"instruction": "点击返回键退出当前页面", "action_type": "Back"}]
-        if page_type == "cart":
-            return [{"instruction": "点击底部导航栏最左侧的首页按钮", "action_type": "Tap"}]
-        return [{"instruction": "点击屏幕中央最大的可点击元素", "action_type": "Tap"}]
-
-
-# ── Prompt Building ──────────────────────────────────────────
-
-def _build_autonomous_system_prompt() -> str:
-    """Full system prompt — used only as legacy fallback."""
-    today = datetime.today()
-    weekday_names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
-    weekday = weekday_names[today.weekday()]
-    formatted_date = today.strftime("%Y年%m月%d日") + " " + weekday
-
-    return (
-        "今天的日期是: " + formatted_date + "\n"
-        "你是一个移动应用自主探索智能体。你的目标是系统性地发现App的页面类型和跳转关系。\n"
-        "你必须严格按照要求输出以下格式：\n"
-        " thinking{think} response\n"
-        "<answer>{action}</answer>\n\n"
-
-        "操作指令及其作用如下：\n"
-        'do(action="Tap", element=[x,y])  点击屏幕上的特定点（0,0到999,999）\n'
-        'do(action="Swipe", start=[x1,y1], end=[x2,y2])  滑动操作\n'
-        'do(action="Back")  导航返回上一个屏幕\n'
-        'do(action="Type", text="xxx")  输入文本\n'
-        'do(action="Wait", duration="x seconds")  等待页面加载\n'
-        'finish(message="xxx")  结束当前探索任务\n\n'
-
-        "=== 重要约束 ===\n"
-        "- 不需要登录，遇到登录界面请Back\n"
-        "- 不要下单购买任何商品\n"
-        "- 不要进行支付、确认地址、结算等不可逆操作\n"
-        "- 遇到广告弹窗点X关闭或用Back跳过\n"
-    )
+    def _fallback(discovered_pages: list[str], missing: list[str]) -> SupervisorDecision:
+        if "search_input" in missing and "home" not in missing:
+            return SupervisorDecision("home", "首页", "需要进入搜索", ("点击屏幕顶部的搜索框",))
+        if "search_result" in missing:
+            return SupervisorDecision("search_input", "搜索页", "需要执行搜索",
+                                      ("在搜索框中输入'耳机'", "点击橙色搜索按钮"))
+        if "product_detail" in missing:
+            return SupervisorDecision("search_result", "搜索结果", "需要进入商品详情",
+                                      ("点击第一个商品卡片的图片",))
+        return SupervisorDecision("unknown", "", "fallback", ("点击返回按钮",))
 
 
 # ── Helpers ──────────────────────────────────────────────────
 
 def _page_info_to_dict(page_info: PageInfo) -> dict[str, Any]:
-    """Bridge PageInfo (dataclass with enum) to functionality extractor dict."""
     return {
         "page_type": page_info.page_type.value,
         "app": page_info.app,
@@ -419,13 +377,15 @@ def _page_info_to_dict(page_info: PageInfo) -> dict[str, Any]:
     }
 
 
+def _build_autonomous_system_prompt() -> str:
+    """Legacy fallback prompt."""
+    return _EXECUTOR_SYSTEM_PROMPT
+
+
 # ── AutonomousExplorer ───────────────────────────────────────
 
 class AutonomousExplorer:
-    """Model-driven autonomous discovery explorer for mobile apps.
-
-    Two-tier VLM: strong model plans, action model executes.
-    """
+    """Supervisor-Executor exploration: strong VLM plans, action VLM executes."""
 
     def __init__(
         self,
@@ -461,20 +421,11 @@ class AutonomousExplorer:
             timeout=classifier_timeout,
             max_image_width=classifier_max_image_width,
         )
-        self.semantics_extractor = ScreenSemanticsExtractor(schema_name="shopping")
-        self.edge_hypothesis_gen = EdgeHypothesisGenerator(schema_name="shopping")
-        self.active_builder = ActiveGraphBuilder()
-        self.planner = StrongVLMPlanner()
+        self.supervisor = ExplorationSupervisor()
 
         self.functionality_extractor = FunctionalityExtractor()
-        self.strong_vlm_extractor: StrongVLMFunctionalityExtractor | None = None
-        if self.policy.use_strong_vlm_extractor:
-            config = resolve_strong_vlm_config()
-            if config.configured:
-                self.strong_vlm_extractor = StrongVLMFunctionalityExtractor(config)
         self.clusterer = FunctionalityClusterer()
         self.queue_builder = ExplorationQueueBuilder()
-        self.task_synthesizer = TaskSynthesizer()
         self.edge_lifecycle = EdgeLifecycleManager()
 
         self._all_items: list[FunctionalityItem] = []
@@ -493,12 +444,10 @@ class AutonomousExplorer:
     # ── Top-Level Entry ──────────────────────────────────────
 
     def explore(self) -> list[Trajectory]:
-        """Run model-driven autonomous exploration."""
         self._log(f"\n{'=' * 60}")
         self._log(f"  Autonomous Explorer: {self.app_name}")
-        self._log(f"  Policy: max_steps={self.policy.max_total_steps}, "
-                   f"max_dry_rounds={self.policy.max_dry_rounds}")
-        self._log(f"  Planner: {'glm-5v-turbo' if self.planner.configured else 'fallback'}")
+        self._log(f"  Supervisor: {'glm-5v-turbo' if self.supervisor.configured else 'fallback'}")
+        self._log(f"  Policy: max_steps={self.policy.max_total_steps}, max_dry={self.policy.max_dry_rounds}")
         self._log(f"{'=' * 60}\n")
 
         package = get_package_name(self.app_name)
@@ -523,39 +472,61 @@ class AutonomousExplorer:
         self._log(f"{'=' * 60}\n")
         return self._trajectories
 
-    # ── Outer Loop (Job-Driven) ──────────────────────────────
+    # ── Main Loop (Supervisor-Driven) ────────────────────────
 
     def _autonomous_loop(self) -> Trajectory:
         trajectory = Trajectory(task="autonomous_exploration", app=self.app_name)
+        last_result = "首次启动"
         current_page: PageInfo | None = None
 
         while (
             not self._convergence.converged
             and self._total_steps < self.policy.max_total_steps
         ):
-            if current_page is None:
-                screenshot = self.device.get_screenshot(self.device_id)
-                current_page = self._classify(screenshot)
+            screenshot = self.device.get_screenshot(self.device_id)
 
+            discovered_keys = list(self._discovered_pages.keys())
+            transition_strs = [f"{t['from'].split(':')[0]}→{t['to'].split(':')[0]}" for t in self._transitions]
+
+            decision = self.supervisor.analyze_and_plan(
+                screenshot_base64=screenshot.base64_data,
+                discovered_pages=discovered_keys,
+                recorded_transitions=transition_strs,
+                current_round=self._convergence.total_rounds + 1,
+                total_steps=self._total_steps,
+                max_steps=self.policy.max_total_steps,
+                last_result=last_result,
+            )
+
+            page_type_enum = _str_to_page_type(decision.page_type)
+            if current_page is None or current_page.page_type != page_type_enum:
+                current_page = PageInfo(
+                    page_type=page_type_enum,
+                    semantic_summary=decision.page_summary,
+                    elements={},
+                    screenshot_hash=hashlib.md5(screenshot.base64_data.encode()).hexdigest(),
+                    app=self.app_name,
+                    width=screenshot.width,
+                    height=screenshot.height,
+                )
             self._record_page(current_page)
+
+            self._log(f"  [round {self._convergence.total_rounds + 1}] "
+                       f"page={decision.page_type} | "
+                       f"plan={[s[:20] for s in decision.plan]}")
+            self._log(f"    reasoning: {decision.reasoning[:80]}")
+
+            if decision.should_stop:
+                self._log(f"    supervisor says stop: {decision.stop_reason}")
+                break
+
             clusters_before = len(self._all_clusters)
             pages_before = len(self._discovered_pages)
             self._extract_and_cluster(current_page)
 
-            jobs = self.queue_builder.build_jobs(
-                self._all_clusters, limit=self.policy.job_queue_limit,
+            result, current_page = self._execute_plan(
+                decision, current_page, trajectory,
             )
-            if jobs:
-                job = jobs[0]
-                self._log(f"  [round {self._convergence.total_rounds + 1}] "
-                           f"job: {job.target_description[:60]} "
-                           f"(priority={job.priority:.2f})")
-            else:
-                job = self._synthesize_fallback_job(current_page)
-                self._log(f"  [round {self._convergence.total_rounds + 1}] "
-                           f"fallback: {job.target_description[:60]}")
-
-            result, current_page = self._execute_job(job, current_page, trajectory)
             self._job_results.append(result)
 
             new_clusters = len(self._all_clusters) - clusters_before
@@ -567,71 +538,48 @@ class AutonomousExplorer:
             )
             self.edge_lifecycle.advance_step()
 
+            last_result = (
+                f"{result.outcome}: "
+                f"+{len(result.new_page_types_discovered)}页面 "
+                f"+{result.new_transitions_discovered}跳转"
+            )
             if result.outcome == "blocked":
-                screenshot = self.device.get_screenshot(self.device_id)
                 self._rollback(screenshot.width, screenshot.height)
                 current_page = None
+                last_result += " (已回退)"
 
-            self._log(f"    result: {result.outcome}, "
-                       f"+{result.new_transitions_discovered} transitions, "
-                       f"dry={self._convergence.dry_rounds}")
+            self._log(f"    result: {last_result}, dry={self._convergence.dry_rounds}")
 
         return trajectory
 
-    # ── Inner Loop (Plan-Then-Execute) ───────────────────────
+    # ── Execute Plan (Executor-Driven) ───────────────────────
 
-    def _execute_job(
+    def _execute_plan(
         self,
-        job: ExplorationJob,
+        decision: SupervisorDecision,
         start_page: PageInfo,
         trajectory: Trajectory,
     ) -> tuple[JobExecutionResult, PageInfo | None]:
-        """Execute a job using plan-then-execute pattern.
-
-        Returns (result, last_classified_page) so the outer loop can
-        reuse the classification without an extra VLM call.
-        """
         current_page = start_page
         steps_taken = 0
         new_pages: list[str] = []
         new_transitions = 0
         outcome = "success"
-        deviation_reason = ""
 
-        screenshot = self.device.get_screenshot(self.device_id)
-        discovered_types = sorted({p.page_type.value for p in self._discovered_pages.values()})
-        action_plan = self.planner.plan(
-            screenshot_base64=screenshot.base64_data,
-            page_type=current_page.page_type.value,
-            page_elements=current_page.elements,
-            job_description=job.target_description,
-            discovered_types=discovered_types,
-        )
-        if not action_plan:
-            action_plan = [{"instruction": "探索页面上可见的按钮", "action_type": "Tap"}]
+        system_msg = MessageBuilder.create_system_message(_EXECUTOR_SYSTEM_PROMPT)
 
-        self._log(f"    plan: {[s['instruction'][:30] for s in action_plan]}")
-
-        system_message = MessageBuilder.create_system_message(_MINIMAL_ACTION_SYSTEM_PROMPT)
-
-        for step_idx, planned_step in enumerate(action_plan):
+        for step_idx, instruction in enumerate(decision.plan):
             if self._total_steps >= self.policy.max_total_steps:
                 break
 
-            instruction = planned_step["instruction"]
             screenshot = self.device.get_screenshot(self.device_id)
-
             user_text = f"执行操作：{instruction}"
-            request_context = [
-                system_message,
-                MessageBuilder.create_user_message(
-                    text=user_text,
-                    image_base64=screenshot.base64_data,
-                ),
-            ]
 
             try:
-                response = self.vlm.request(request_context)
+                response = self.vlm.request([
+                    system_msg,
+                    MessageBuilder.create_user_message(text=user_text, image_base64=screenshot.base64_data),
+                ])
             except Exception as e:
                 self._log(f"    step {step_idx + 1}: VLM error: {e}")
                 outcome = "stalled"
@@ -640,14 +588,15 @@ class AutonomousExplorer:
             try:
                 action = parse_action(response.action)
             except ValueError:
-                action = {"_metadata": "finish", "message": "parse_error"}
+                action = {"_metadata": "do", "action": "Back"}
+
+            if action.get("_metadata") == "finish":
+                action = {"_metadata": "do", "action": "Back"}
+                self._log(f"    step {step_idx + 1}: intercepted finish → Back")
 
             trajectory.add_step(current_page, action, response.thinking)
             self._total_steps += 1
             steps_taken += 1
-
-            if action.get("_metadata") == "finish":
-                break
 
             page_type_str = current_page.page_type.value
             if not is_safe_exploration_action(page_type_str, action, response.thinking):
@@ -668,45 +617,40 @@ class AutonomousExplorer:
 
             time.sleep(self.policy.settle_delay)
 
-        if outcome not in ("blocked", "stalled") or steps_taken > 0:
+        if steps_taken > 0:
             time.sleep(1.0)
             next_screenshot = self.device.get_screenshot(self.device_id)
-            next_page = self._classify(next_screenshot)
+            next_page = self._classify_with_retry(next_screenshot)
             self._record_page(next_page)
-
             self._extract_and_cluster(next_page)
 
-            if steps_taken > 0:
-                last_action = trajectory.steps[-1].action if trajectory.steps else {}
-                recorded = self._record_transition(current_page, last_action or {}, next_page)
-                if recorded:
-                    new_transitions += 1
+            last_action = trajectory.steps[-1].action if trajectory.steps else {}
+            recorded = self._record_transition(current_page, last_action or {}, next_page)
+            if recorded:
+                new_transitions += 1
 
-            if next_page.page_type.value not in {p.page_type.value for p in [start_page]}:
-                if next_page.page_type.value not in {p.page_type.value for p in self._discovered_pages.values()
-                                                      if p.state_key() != next_page.state_key()}:
-                    new_pages.append(next_page.page_type.value)
+            existing_types = {p.page_type.value for p in self._discovered_pages.values()}
+            if next_page.page_type.value not in existing_types:
+                new_pages.append(next_page.page_type.value)
 
             current_page = next_page
 
-        job_result = JobExecutionResult(
-            job=job,
-            steps_taken=steps_taken,
-            new_page_types_discovered=tuple(new_pages),
-            new_transitions_discovered=new_transitions,
-            outcome=outcome,
-            deviation_reason=deviation_reason,
+        return (
+            JobExecutionResult(
+                job_description=decision.reasoning[:100],
+                steps_taken=steps_taken,
+                new_page_types_discovered=tuple(new_pages),
+                new_transitions_discovered=new_transitions,
+                outcome=outcome,
+            ),
+            current_page,
         )
-        return job_result, current_page
 
     # ── Functionality Extraction ─────────────────────────────
 
     def _extract_and_cluster(self, page_info: PageInfo) -> int:
-        """Extract functionalities from page and re-cluster. Returns new cluster count."""
         page_dict = _page_info_to_dict(page_info)
         new_items = self.functionality_extractor.from_page(page_dict)
-        if self.strong_vlm_extractor is not None:
-            new_items.extend(self.strong_vlm_extractor.from_page(page_dict))
 
         existing_ids = {item.functionality_id for item in self._all_items}
         added = [item for item in new_items if item.functionality_id not in existing_ids]
@@ -720,30 +664,20 @@ class AutonomousExplorer:
 
     # ── Transition Recording ─────────────────────────────────
 
-    def _record_transition(
-        self,
-        source: PageInfo,
-        action: dict[str, Any],
-        target: PageInfo,
-    ) -> bool:
+    def _record_transition(self, source: PageInfo, action: dict[str, Any], target: PageInfo) -> bool:
         source_type = source.page_type.value
         target_type = target.page_type.value
         rejection = _generic_transition_rejection(source_type, action, target_type)
         if rejection:
             self._rejected_transitions.append({
-                "from": source.state_key(),
-                "action": action,
-                "to": target.state_key(),
-                "reason": rejection,
+                "from": source.state_key(), "action": action,
+                "to": target.state_key(), "reason": rejection,
             })
             return False
 
-        transition = {
-            "from": source.state_key(),
-            "action": action,
-            "to": target.state_key(),
-        }
-        self._transitions.append(transition)
+        self._transitions.append({
+            "from": source.state_key(), "action": action, "to": target.state_key(),
+        })
 
         action_type = str(action.get("action") or "").lower()
         bbox = action.get("element") or action.get("coordinate")
@@ -755,10 +689,7 @@ class AutonomousExplorer:
             except (TypeError, ValueError, IndexError):
                 pass
 
-        role = canonical_role_from_transition(
-            source_type, target_type, action_type, region, action,
-        )
-
+        role = canonical_role_from_transition(source_type, target_type, action_type, region, action)
         self.edge_lifecycle.record_outcome(
             source_page_type=source_type,
             intent=role or f"{action_type}_to_{target_type}",
@@ -767,47 +698,18 @@ class AutonomousExplorer:
             risk="normal",
         )
 
-        transition_dict = {
-            "from": source.state_key(),
-            "action": action,
-            "to": target.state_key(),
-        }
         transition_item = self.functionality_extractor.from_transition(
-            transition_dict, app=self.app_name,
+            {"from": source.state_key(), "action": action, "to": target.state_key()},
+            app=self.app_name,
         )
-        existing_ids = {item.functionality_id for item in self._all_items}
-        if transition_item.functionality_id not in existing_ids:
+        if transition_item.functionality_id not in {i.functionality_id for i in self._all_items}:
             self._all_items.append(transition_item)
 
         return True
 
-    # ── Job Synthesis ────────────────────────────────────────
-
-    def _synthesize_fallback_job(self, current_page: PageInfo) -> ExplorationJob:
-        from phone_agent.spatial.core import stable_id
-        page_type = current_page.page_type.value
-        discovered = sorted({p.page_type.value for p in self._discovered_pages.values()})
-        missing_hint = ""
-        core_types = {"home", "search_input", "search_result", "product_detail", "spec_selection", "cart"}
-        missing = core_types - set(discovered)
-        if missing:
-            missing_hint = f" 尚未发现的页面类型：{', '.join(missing)}。"
-
-        return ExplorationJob(
-            job_id=stable_id("fallback", self.app_name, str(self._convergence.total_rounds)),
-            functionality_cluster_id="",
-            target_description=(
-                f"在{self.app_name}的{page_type}页面探索新功能。{missing_hint}"
-                f"优先导航到未发现的页面类型。避免重复已访问的页面。"
-            ),
-            reason="no unverified clusters remaining",
-            max_steps=self.policy.max_job_steps,
-            priority=0.1,
-        )
-
     # ── Page Management ──────────────────────────────────────
 
-    def _classify(self, screenshot: Any) -> PageInfo:
+    def _classify_with_retry(self, screenshot: Any) -> PageInfo:
         page_type, summary, elements = self.classifier.classify(
             screenshot.base64_data, screenshot.width, screenshot.height,
         )
@@ -823,7 +725,6 @@ class AutonomousExplorer:
             elements=elements,
             screenshot_hash=hashlib.md5(screenshot.base64_data.encode()).hexdigest(),
             app=self.app_name,
-            screenshot_base64=screenshot.base64_data if self.policy.use_strong_vlm_extractor else "",
             width=screenshot.width,
             height=screenshot.height,
         )
@@ -838,11 +739,9 @@ class AutonomousExplorer:
 
     def _rollback(self, width: int, height: int) -> None:
         try:
-            self.action_handler.execute(
-                {"_metadata": "do", "action": "Back"}, width, height,
-            )
+            self.action_handler.execute({"_metadata": "do", "action": "Back"}, width, height)
             time.sleep(1)
-            self._log("    rollback: backed out from risky page")
+            self._log("    rollback: backed out")
         except Exception as exc:
             self._log(f"    rollback failed: {exc}")
 
@@ -851,57 +750,39 @@ class AutonomousExplorer:
     def _save_results(self, trajectory: Trajectory) -> None:
         timestamp = int(time.time())
 
-        pages_data = {
+        _write_json(self.storage_dir / f"{self.app_name}_autonomous_pages_{timestamp}.json", {
             "app": self.app_name,
             "task": "autonomous_exploration",
             "explored_at": datetime.now().isoformat(),
             "total_pages": len(self._discovered_pages),
             "pages": [
-                {
-                    "page_type": p.page_type.value,
-                    "summary": p.semantic_summary,
-                    "elements": p.elements,
-                    "screenshot_hash": p.screenshot_hash,
-                    "app": p.app,
-                }
+                {"page_type": p.page_type.value, "summary": p.semantic_summary,
+                 "elements": p.elements, "screenshot_hash": p.screenshot_hash, "app": p.app}
                 for p in self._discovered_pages.values()
             ],
-        }
-        pages_path = self.storage_dir / f"{self.app_name}_autonomous_pages_{timestamp}.json"
-        _write_json(pages_path, pages_data)
-        self._log(f"  saved: {pages_path.name}")
+        })
 
-        traj_data = {
-            "task": trajectory.task,
-            "app": trajectory.app,
-            "success": trajectory.success,
-            "total_steps": len(trajectory.steps),
+        _write_json(self.storage_dir / f"{self.app_name}_autonomous_trajectory_{timestamp}.json", {
+            "task": trajectory.task, "app": trajectory.app,
+            "success": trajectory.success, "total_steps": len(trajectory.steps),
             "steps": [
-                {
-                    "step": idx + 1,
-                    "page_type": step.page_info.page_type.value,
-                    "page_summary": step.page_info.semantic_summary[:100],
-                    "action": step.action,
-                    "thinking": (step.action_thinking or "")[:200],
-                    "timestamp": step.timestamp,
-                }
-                for idx, step in enumerate(trajectory.steps)
+                {"step": i + 1, "page_type": s.page_info.page_type.value,
+                 "page_summary": s.page_info.semantic_summary[:100],
+                 "action": s.action, "thinking": (s.action_thinking or "")[:200],
+                 "timestamp": s.timestamp}
+                for i, s in enumerate(trajectory.steps)
             ],
-        }
-        traj_path = self.storage_dir / f"{self.app_name}_autonomous_trajectory_{timestamp}.json"
-        _write_json(traj_path, traj_data)
+        })
 
-        transitions_data = {
+        _write_json(self.storage_dir / f"{self.app_name}_autonomous_transitions_{timestamp}.json", {
             "app": self.app_name,
             "total_transitions": len(self._transitions),
             "transitions": self._transitions,
             "rejected_transitions": self._rejected_transitions,
-        }
-        trans_path = self.storage_dir / f"{self.app_name}_autonomous_transitions_{timestamp}.json"
-        _write_json(trans_path, transitions_data)
+        })
 
         report = self._build_coverage_report()
-        report_data = {
+        _write_json(self.storage_dir / f"{self.app_name}_autonomous_report_{timestamp}.json", {
             "app": self.app_name,
             "explored_at": datetime.now().isoformat(),
             "policy": self.policy.to_dict(),
@@ -913,33 +794,28 @@ class AutonomousExplorer:
                 "total_records": len(self.edge_lifecycle._records),
                 "promotable": len(self.edge_lifecycle.get_promotable_edges()),
             },
-        }
-        report_path = self.storage_dir / f"{self.app_name}_autonomous_report_{timestamp}.json"
-        _write_json(report_path, report_data)
-        self._log(f"  saved: {report_path.name}")
+        })
+        self._log(f"  saved 4 files to {self.storage_dir}/")
 
     def _build_coverage_report(self) -> dict[str, Any]:
         screen_count = len(self._discovered_pages)
         unique_hashes = {p.screenshot_hash for p in self._discovered_pages.values()}
         metrics = compute_functionality_coverage(
-            items=self._all_items,
-            clusters=self._all_clusters,
-            screenshot_count=screen_count,
-            screen_cluster_count=len(unique_hashes),
-            strong_vlm_configured=self.strong_vlm_extractor is not None,
+            items=self._all_items, clusters=self._all_clusters,
+            screenshot_count=screen_count, screen_cluster_count=len(unique_hashes),
         )
         gate = FunctionalityQualityGate()
         quality_result = gate.evaluate(self._all_clusters, metrics.to_dict())
-        return {
-            **metrics.to_dict(),
-            "quality_gate": quality_result.to_dict(),
-        }
-
-    # ── Logging ──────────────────────────────────────────────
+        return {**metrics.to_dict(), "quality_gate": quality_result.to_dict()}
 
     def _log(self, msg: str) -> None:
         if self.verbose:
             print(msg)
+
+
+def _str_to_page_type(value: str) -> ShoppingPageType:
+    mapping = {e.value: e for e in ShoppingPageType}
+    return mapping.get(value, ShoppingPageType.UNKNOWN)
 
 
 def _write_json(path: Path, data: Any) -> None:
