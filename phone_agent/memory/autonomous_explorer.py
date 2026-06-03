@@ -213,14 +213,14 @@ class ExplorationSupervisor:
         "{\n"
         '  "page_type": "当前页面类型（如home/search_input/search_result/product_detail/spec_selection/cart/filter_panel/category/store/my_account/dialog等，根据实际页面自定义命名）",\n'
         '  "page_summary": "一句话页面描述",\n'
-        '  "visible_elements": ["搜索框", "商品卡片", "筛选按钮", "购物车图标"],\n'
+        '  "visible_elements": ["搜索框", "商品卡片", "筛选按钮", "购物车图标"],  // 最多8个关键元素\n'
         '  "reasoning": "分析图谱覆盖度和当前页面，说明规划逻辑",\n'
         '  "plan": ["具体操作指令1", "具体操作指令2"],\n'
         '  "should_stop": false,\n'
         '  "stop_reason": ""\n'
         "}\n\n"
         "规划原则：\n"
-        "1. visible_elements列出当前截屏中所有可交互元素（按钮、链接、输入框、卡片等）\n"
+        "1. visible_elements列出当前截屏中最重要的5-8个可交互元素（按钮、链接、输入框、卡片等），不要超过8个\n"
         "2. plan中每条指令必须描述具体可见元素（如'点击底部购物车图标'而非'去购物车'）\n"
         "3. 优先探索未探索过的元素，尤其是可能通向新页面类型的元素\n"
         "4. 当前页面在图谱中已充分探索时，导航到有未探索元素的页面\n"
@@ -282,7 +282,7 @@ class ExplorationSupervisor:
 
         try:
             response = self._client.chat.completions.create(
-                model=self._model, temperature=0, max_tokens=800,
+                model=self._model, temperature=0, max_tokens=1200,
                 messages=[
                     {"role": "system", "content": self._SYSTEM_PROMPT},
                     {"role": "user", "content": [
@@ -303,11 +303,18 @@ class ExplorationSupervisor:
             content = re.sub(r"```$", "", content).strip()
         match = re.search(r"\{.*\}", content, flags=re.DOTALL)
         if not match:
-            return SupervisorDecision("unknown", "", content[:100], ("点击返回按钮",)), []
+            match = re.search(r"\{.*", content, flags=re.DOTALL)
+            if not match:
+                return SupervisorDecision("unknown", "", content[:100], ("点击返回按钮",)), []
+        raw_json = match.group(0)
         try:
-            data = json.loads(match.group(0))
+            data = json.loads(raw_json)
         except json.JSONDecodeError:
-            return SupervisorDecision("unknown", "", "JSON解析失败", ("点击返回按钮",)), []
+            raw_json = _repair_truncated_json(raw_json)
+            try:
+                data = json.loads(raw_json)
+            except json.JSONDecodeError:
+                return SupervisorDecision("unknown", "", "JSON解析失败", ("点击返回按钮",)), []
 
         plan = tuple(str(s) for s in (data.get("plan") or []) if isinstance(s, str) and s.strip())[:3]
         elements = [str(e) for e in (data.get("visible_elements") or []) if isinstance(e, str)]
@@ -827,6 +834,23 @@ class AutonomousExplorer:
     def _log(self, msg: str) -> None:
         if self.verbose:
             print(msg)
+
+
+def _repair_truncated_json(raw: str) -> str:
+    """Best-effort repair for JSON truncated by max_tokens."""
+    raw = raw.rstrip()
+    open_braces = raw.count("{") - raw.count("}")
+    open_brackets = raw.count("[") - raw.count("]")
+    if raw.endswith(","):
+        raw = raw[:-1]
+    in_string = False
+    for i, ch in enumerate(raw):
+        if ch == '"' and (i == 0 or raw[i-1] != '\\'):
+            in_string = not in_string
+    if in_string:
+        raw += '"'
+    raw += "]" * max(0, open_brackets) + "}" * max(0, open_braces)
+    return raw
 
 
 def _write_json(path: Path, data: Any) -> None:
