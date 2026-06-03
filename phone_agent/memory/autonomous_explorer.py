@@ -1,23 +1,24 @@
 """Model-driven autonomous exploration for mobile apps.
 
-Unlike OfflineExplorer which executes a single human-written task description,
-AutonomousExplorer self-discovers what to explore by extracting functionalities
-from each screen, clustering them, and generating exploration jobs for unverified
-clusters.  The exploration loop is:
+Two-tier VLM architecture for efficiency:
+  - Strong VLM (glm-5v-turbo): page classification + action planning
+  - Action VLM (autoglm-phone): execute specific instructions with minimal prompt
 
-    screenshot -> classify -> extract functionalities -> cluster ->
-    build jobs -> pick highest-priority job -> execute (1-3 steps) ->
-    record transitions -> check convergence -> repeat
-
-No preset task description, coverage target, or page-type enum is required.
-Convergence is detected empirically: N consecutive rounds with no new
-functionality clusters discovered.
+Per-round call pattern (optimized):
+  1. Classify page via PageClassifier           [1 VLM call, cached if unchanged]
+  2. Extract functionalities                    [0 VLM calls, deterministic]
+  3. Plan actions via StrongVLMPlanner          [1 VLM call to glm-5v-turbo]
+  4. Execute each step via action VLM           [1-3 VLM calls, minimal prompt]
+  5. Classify final page via PageClassifier     [1 VLM call]
+  Total: 4-6 calls per round (down from 7+, each faster)
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import os
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -34,7 +35,6 @@ from phone_agent.memory.offline_explorer import (
     PageInfo,
     ShoppingPageType,
     Trajectory,
-    _build_exploration_system_prompt,
 )
 from phone_agent.spatial.active_builder import ActiveGraphBuilder
 from phone_agent.spatial.coverage_metrics import compute_functionality_coverage
@@ -67,6 +67,17 @@ _UNSAFE_ACTION_TOKENS = (
 )
 
 _SCREEN_CHANGE_HASH_LEN = 2000
+
+_MINIMAL_ACTION_SYSTEM_PROMPT = (
+    "你是手机操作执行器。根据指令对当前屏幕执行一个操作。\n"
+    "输出格式：thinking{简短理由} <answer>{操作}</answer>\n"
+    "操作格式：\n"
+    'do(action="Tap", element=[x,y]) 坐标0-999\n'
+    'do(action="Type", text="xxx")\n'
+    'do(action="Swipe", start=[x1,y1], end=[x2,y2])\n'
+    'do(action="Back")\n'
+    'finish(message="xxx")\n'
+)
 
 
 # ── Data Structures ───────────────────────────────────────────
@@ -224,9 +235,144 @@ def _generic_transition_rejection(
     return ""
 
 
+# ── Strong VLM Planner ──────────────────────────────────────
+
+class StrongVLMPlanner:
+    """Uses glm-5v-turbo to generate a concrete multi-step action plan.
+
+    Called once per round before handing steps to the action VLM.
+    Returns a list of natural-language instructions that the action
+    VLM can execute with minimal context.
+    """
+
+    _PLAN_SYSTEM_PROMPT = (
+        "你是移动应用UI分析师。分析截屏，根据探索目标生成1-3步具体操作指令。\n"
+        "输出纯JSON，不要其他内容：\n"
+        '{"steps": [\n'
+        '  {"instruction": "具体操作描述，如：点击顶部搜索框", "action_type": "Tap"},\n'
+        '  {"instruction": "在搜索框输入耳机", "action_type": "Type"}\n'
+        "]}\n\n"
+        "规则：\n"
+        "- instruction 必须描述屏幕上可见的具体元素位置\n"
+        "- action_type: Tap/Type/Swipe/Back 之一\n"
+        "- 不要生成支付、结算、登录、地址相关操作\n"
+        "- 在搜索页时必须指定搜索关键词（如'耳机''手机壳'）\n"
+        "- 遇到弹窗时用Back关闭\n"
+    )
+
+    def __init__(self) -> None:
+        self._client: Any | None = None
+        self._model: str = ""
+        self._configured = False
+        self._init_client()
+
+    def _init_client(self) -> None:
+        from dotenv import load_dotenv
+        load_dotenv()
+        candidates = [
+            ("AMSG_STRONG_VLM_BASE_URL", "AMSG_STRONG_VLM_MODEL", "AMSG_STRONG_VLM_API_KEY"),
+            ("OFFLINE_VLM_BASE_URL", "OFFLINE_VLM_MODEL", "OFFLINE_VLM_API_KEY"),
+        ]
+        for base_key, model_key, api_key in candidates:
+            base_url = os.environ.get(base_key, "")
+            model = os.environ.get(model_key, "")
+            key = os.environ.get(api_key, "")
+            if base_url and model and key:
+                try:
+                    from openai import OpenAI
+                    self._client = OpenAI(base_url=base_url, api_key=key, timeout=15.0)
+                    self._model = model
+                    self._configured = True
+                except Exception:
+                    pass
+                break
+
+    @property
+    def configured(self) -> bool:
+        return self._configured
+
+    def plan(
+        self,
+        screenshot_base64: str,
+        page_type: str,
+        page_elements: dict[str, Any],
+        job_description: str,
+        discovered_types: list[str],
+    ) -> list[dict[str, str]]:
+        if not self._configured or not self._client:
+            return self._fallback_plan(page_type, page_elements)
+
+        elements_str = ", ".join(f"{k}: {v}" for k, v in (page_elements or {}).items())
+        user_text = (
+            f"探索目标：{job_description}\n"
+            f"当前页面：{page_type}\n"
+            f"页面元素：{elements_str or '未知'}\n"
+            f"已发现页面类型：{', '.join(discovered_types) or '无'}\n"
+            "生成操作计划（JSON）："
+        )
+        try:
+            response = self._client.chat.completions.create(
+                model=self._model,
+                temperature=0,
+                max_tokens=500,
+                messages=[
+                    {"role": "system", "content": self._PLAN_SYSTEM_PROMPT},
+                    {"role": "user", "content": [
+                        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{screenshot_base64}"}},
+                        {"type": "text", "text": user_text},
+                    ]},
+                ],
+            )
+            content = response.choices[0].message.content or ""
+            return self._parse_plan(content)
+        except Exception:
+            return self._fallback_plan(page_type, page_elements)
+
+    def _parse_plan(self, content: str) -> list[dict[str, str]]:
+        content = content.strip()
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?", "", content).strip()
+            content = re.sub(r"```$", "", content).strip()
+        match = re.search(r"\{.*\}", content, flags=re.DOTALL)
+        if not match:
+            return []
+        try:
+            data = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return []
+        steps = data.get("steps") or []
+        return [
+            {"instruction": str(s.get("instruction", "")), "action_type": str(s.get("action_type", "Tap"))}
+            for s in steps
+            if isinstance(s, dict) and s.get("instruction")
+        ][:3]
+
+    @staticmethod
+    def _fallback_plan(page_type: str, elements: dict[str, Any]) -> list[dict[str, str]]:
+        if page_type == "home":
+            if any(k for k in (elements or {}) if "search" in k.lower() or "搜索" in str(elements.get(k, ""))):
+                return [{"instruction": "点击搜索框进入搜索页", "action_type": "Tap"}]
+            return [{"instruction": "点击页面中最显眼的功能入口", "action_type": "Tap"}]
+        if page_type == "search_input":
+            return [
+                {"instruction": "在搜索框输入'耳机'", "action_type": "Type"},
+                {"instruction": "点击搜索按钮或键盘搜索键", "action_type": "Tap"},
+            ]
+        if page_type == "search_result":
+            return [{"instruction": "点击第一个商品卡片进入详情", "action_type": "Tap"}]
+        if page_type == "product_detail":
+            return [{"instruction": "点击底部加入购物车或规格选择按钮", "action_type": "Tap"}]
+        if page_type in ("dialog", "permission"):
+            return [{"instruction": "关闭弹窗", "action_type": "Back"}]
+        if page_type in _HIGH_RISK_PAGE_TYPES_STR:
+            return [{"instruction": "返回上一页", "action_type": "Back"}]
+        return [{"instruction": "探索页面上可见的功能按钮", "action_type": "Tap"}]
+
+
 # ── Prompt Building ──────────────────────────────────────────
 
 def _build_autonomous_system_prompt() -> str:
+    """Full system prompt — used only as legacy fallback."""
     today = datetime.today()
     weekday_names = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"]
     weekday = weekday_names[today.weekday()]
@@ -247,19 +393,11 @@ def _build_autonomous_system_prompt() -> str:
         'do(action="Wait", duration="x seconds")  等待页面加载\n'
         'finish(message="xxx")  结束当前探索任务\n\n'
 
-        "=== 页面类型特殊指引 ===\n"
-        "- 搜索输入页（search_input）：用Type输入一个常见关键词（如\"耳机\"\"手机壳\"\"连衣裙\"），"
-        "然后点击搜索按钮或键盘搜索键提交。不要在搜索页停留，输入后立刻提交。\n"
-        "- 商品详情页（product_detail）：观察页面元素，可尝试点击规格选择或加购按钮探索跳转。\n"
-        "- 弹窗/权限页（dialog/permission）：用Back关闭或点击关闭按钮。\n\n"
-
         "=== 重要约束 ===\n"
         "- 不需要登录，遇到登录界面请Back\n"
-        "- 不要下单购买任何商品（可以进入观察，但不要提交订单）\n"
-        "- 不要修改任何个人信息\n"
+        "- 不要下单购买任何商品\n"
         "- 不要进行支付、确认地址、结算等不可逆操作\n"
         "- 遇到广告弹窗点X关闭或用Back跳过\n"
-        "- 每操作完一步等待页面稳定后再截图\n"
     )
 
 
@@ -282,11 +420,7 @@ def _page_info_to_dict(page_info: PageInfo) -> dict[str, Any]:
 class AutonomousExplorer:
     """Model-driven autonomous discovery explorer for mobile apps.
 
-    Composes existing AMSG pipeline components:
-        FunctionalityExtractor -> Clusterer -> QueueBuilder ->
-        TaskSynthesizer -> EdgeLifecycleManager
-    into a self-driving exploration loop that requires no preset
-    task description or coverage target.
+    Two-tier VLM: strong model plans, action model executes.
     """
 
     def __init__(
@@ -326,6 +460,7 @@ class AutonomousExplorer:
         self.semantics_extractor = ScreenSemanticsExtractor(schema_name="shopping")
         self.edge_hypothesis_gen = EdgeHypothesisGenerator(schema_name="shopping")
         self.active_builder = ActiveGraphBuilder()
+        self.planner = StrongVLMPlanner()
 
         self.functionality_extractor = FunctionalityExtractor()
         self.strong_vlm_extractor: StrongVLMFunctionalityExtractor | None = None
@@ -359,6 +494,7 @@ class AutonomousExplorer:
         self._log(f"  Autonomous Explorer: {self.app_name}")
         self._log(f"  Policy: max_steps={self.policy.max_total_steps}, "
                    f"max_dry_rounds={self.policy.max_dry_rounds}")
+        self._log(f"  Planner: {'glm-5v-turbo' if self.planner.configured else 'fallback'}")
         self._log(f"{'=' * 60}\n")
 
         package = get_package_name(self.app_name)
@@ -387,20 +523,15 @@ class AutonomousExplorer:
 
     def _autonomous_loop(self) -> Trajectory:
         trajectory = Trajectory(task="autonomous_exploration", app=self.app_name)
-        system_message = MessageBuilder.create_system_message(_build_autonomous_system_prompt())
         current_page: PageInfo | None = None
-        prev_hash = ""
 
         while (
             not self._convergence.converged
             and self._total_steps < self.policy.max_total_steps
         ):
-            screenshot = self.device.get_screenshot(self.device_id)
-            cur_hash = screenshot.base64_data[:_SCREEN_CHANGE_HASH_LEN]
-
-            if current_page is None or cur_hash != prev_hash:
+            if current_page is None:
+                screenshot = self.device.get_screenshot(self.device_id)
                 current_page = self._classify(screenshot)
-            prev_hash = cur_hash
 
             self._record_page(current_page)
             clusters_before = len(self._all_clusters)
@@ -418,11 +549,9 @@ class AutonomousExplorer:
             else:
                 job = self._synthesize_fallback_job(current_page)
                 self._log(f"  [round {self._convergence.total_rounds + 1}] "
-                           f"fallback job: {job.target_description[:60]}")
+                           f"fallback: {job.target_description[:60]}")
 
-            result = self._execute_job(
-                job, current_page, trajectory, system_message,
-            )
+            result, current_page = self._execute_job(job, current_page, trajectory)
             self._job_results.append(result)
 
             new_clusters = len(self._all_clusters) - clusters_before
@@ -435,6 +564,7 @@ class AutonomousExplorer:
             self.edge_lifecycle.advance_step()
 
             if result.outcome == "blocked":
+                screenshot = self.device.get_screenshot(self.device_id)
                 self._rollback(screenshot.width, screenshot.height)
                 current_page = None
 
@@ -444,35 +574,54 @@ class AutonomousExplorer:
 
         return trajectory
 
-    # ── Inner Loop (Step-Driven per Job) ─────────────────────
+    # ── Inner Loop (Plan-Then-Execute) ───────────────────────
 
     def _execute_job(
         self,
         job: ExplorationJob,
         start_page: PageInfo,
         trajectory: Trajectory,
-        system_message: dict[str, Any],
-    ) -> JobExecutionResult:
+    ) -> tuple[JobExecutionResult, PageInfo | None]:
+        """Execute a job using plan-then-execute pattern.
+
+        Returns (result, last_classified_page) so the outer loop can
+        reuse the classification without an extra VLM call.
+        """
         current_page = start_page
         steps_taken = 0
         new_pages: list[str] = []
         new_transitions = 0
-        new_clusters_in_job = 0
         outcome = "success"
         deviation_reason = ""
-        prev_hash = ""
 
-        for step_idx in range(job.max_steps):
+        screenshot = self.device.get_screenshot(self.device_id)
+        discovered_types = sorted({p.page_type.value for p in self._discovered_pages.values()})
+        action_plan = self.planner.plan(
+            screenshot_base64=screenshot.base64_data,
+            page_type=current_page.page_type.value,
+            page_elements=current_page.elements,
+            job_description=job.target_description,
+            discovered_types=discovered_types,
+        )
+        if not action_plan:
+            action_plan = [{"instruction": "探索页面上可见的按钮", "action_type": "Tap"}]
+
+        self._log(f"    plan: {[s['instruction'][:30] for s in action_plan]}")
+
+        system_message = MessageBuilder.create_system_message(_MINIMAL_ACTION_SYSTEM_PROMPT)
+
+        for step_idx, planned_step in enumerate(action_plan):
             if self._total_steps >= self.policy.max_total_steps:
                 break
 
-            task_text = self._build_job_task_text(job, current_page, step_idx)
+            instruction = planned_step["instruction"]
             screenshot = self.device.get_screenshot(self.device_id)
 
+            user_text = f"执行操作：{instruction}"
             request_context = [
                 system_message,
                 MessageBuilder.create_user_message(
-                    text=task_text,
+                    text=user_text,
                     image_base64=screenshot.base64_data,
                 ),
             ]
@@ -480,7 +629,7 @@ class AutonomousExplorer:
             try:
                 response = self.vlm.request(request_context)
             except Exception as e:
-                self._log(f"    VLM error: {e}")
+                self._log(f"    step {step_idx + 1}: VLM error: {e}")
                 outcome = "stalled"
                 break
 
@@ -498,14 +647,14 @@ class AutonomousExplorer:
 
             page_type_str = current_page.page_type.value
             if not is_safe_exploration_action(page_type_str, action, response.thinking):
-                self._log(f"    step {step_idx + 1}: unsafe action blocked on {page_type_str}")
+                self._log(f"    step {step_idx + 1}: unsafe action blocked")
                 outcome = "blocked"
                 break
 
             try:
                 result = self.action_handler.execute(action, screenshot.width, screenshot.height)
                 if not result.success:
-                    self._log(f"    step {step_idx + 1}: action failed: {result.message}")
+                    self._log(f"    step {step_idx + 1}: action failed")
                     outcome = "stalled"
                     break
             except Exception as e:
@@ -515,51 +664,35 @@ class AutonomousExplorer:
 
             time.sleep(self.policy.settle_delay)
 
+        if outcome not in ("blocked", "stalled") or steps_taken > 0:
             next_screenshot = self.device.get_screenshot(self.device_id)
-            next_hash = next_screenshot.base64_data[:_SCREEN_CHANGE_HASH_LEN]
-            if next_hash == prev_hash:
-                self._log(f"    step {step_idx + 1}: screen unchanged, stalling")
-                outcome = "stalled"
-                break
-            prev_hash = next_hash
-
             next_page = self._classify(next_screenshot)
             self._record_page(next_page)
 
-            clusters_before = len(self._all_clusters)
             self._extract_and_cluster(next_page)
-            new_clusters_in_job += len(self._all_clusters) - clusters_before
 
-            recorded = self._record_transition(current_page, action, next_page)
-            if recorded:
-                new_transitions += 1
+            if steps_taken > 0:
+                last_action = trajectory.steps[-1].action if trajectory.steps else {}
+                recorded = self._record_transition(current_page, last_action or {}, next_page)
+                if recorded:
+                    new_transitions += 1
 
-            if next_page.state_key() not in {p.state_key() for p in [start_page, current_page]}:
-                if next_page.page_type.value not in {p.page_type.value for p in self._discovered_pages.values()}:
+            if next_page.page_type.value not in {p.page_type.value for p in [start_page]}:
+                if next_page.page_type.value not in {p.page_type.value for p in self._discovered_pages.values()
+                                                      if p.state_key() != next_page.state_key()}:
                     new_pages.append(next_page.page_type.value)
-
-            if (
-                step_idx > 0
-                and job.expected_postcondition
-                and next_page.page_type.value != job.expected_postcondition
-            ):
-                deviation_reason = (
-                    f"expected {job.expected_postcondition}, "
-                    f"got {next_page.page_type.value}"
-                )
-                outcome = "deviation"
 
             current_page = next_page
 
-        return JobExecutionResult(
+        job_result = JobExecutionResult(
             job=job,
             steps_taken=steps_taken,
             new_page_types_discovered=tuple(new_pages),
             new_transitions_discovered=new_transitions,
-            new_functionality_clusters=new_clusters_in_job,
             outcome=outcome,
             deviation_reason=deviation_reason,
         )
+        return job_result, current_page
 
     # ── Functionality Extraction ─────────────────────────────
 
@@ -643,95 +776,29 @@ class AutonomousExplorer:
 
         return True
 
-    # ── Job & Prompt Construction ────────────────────────────
+    # ── Job Synthesis ────────────────────────────────────────
 
     def _synthesize_fallback_job(self, current_page: PageInfo) -> ExplorationJob:
-        """Generate an open-ended exploration job when the queue is empty."""
         from phone_agent.spatial.core import stable_id
+        page_type = current_page.page_type.value
+        discovered = sorted({p.page_type.value for p in self._discovered_pages.values()})
+        missing_hint = ""
+        core_types = {"home", "search_input", "search_result", "product_detail", "spec_selection", "cart"}
+        missing = core_types - set(discovered)
+        if missing:
+            missing_hint = f" 尚未发现的页面类型：{', '.join(missing)}。"
+
         return ExplorationJob(
             job_id=stable_id("fallback", self.app_name, str(self._convergence.total_rounds)),
             functionality_cluster_id="",
             target_description=(
-                f"Explore undiscovered functions on the current {current_page.page_type.value} "
-                f"page in {self.app_name}. Try tapping unexplored buttons or navigating to "
-                f"new sections. Avoid repeating previously visited pages."
+                f"在{self.app_name}的{page_type}页面探索新功能。{missing_hint}"
+                f"优先导航到未发现的页面类型。避免重复已访问的页面。"
             ),
             reason="no unverified clusters remaining",
             max_steps=self.policy.max_job_steps,
             priority=0.1,
         )
-
-    def _build_job_task_text(
-        self,
-        job: ExplorationJob,
-        current_page: PageInfo,
-        step_idx: int,
-    ) -> str:
-        discovered_types = sorted({p.page_type.value for p in self._discovered_pages.values()})
-        discovered_summary = (
-            f"已发现 {len(self._discovered_pages)} 个页面 "
-            f"({', '.join(discovered_types)}), "
-            f"{len(self._transitions)} 条有效跳转, "
-            f"{len(self._all_clusters)} 个功能簇"
-        )
-
-        frontier_hint = ""
-        if self.policy.active_exploration:
-            frontier_hint = self._build_frontier_hint(current_page)
-
-        task_text = (
-            f"【当前探索目标】{job.target_description}\n"
-            f"当前页面: {current_page.page_type.value} — {current_page.semantic_summary[:60]}\n"
-            f"探索进度: {discovered_summary}\n"
-        )
-        if job.forbidden_actions:
-            task_text += f"禁止操作: {', '.join(job.forbidden_actions)}\n"
-
-        page_type_str = current_page.page_type.value
-        if page_type_str == "search_input":
-            task_text += (
-                "【搜索页操作指引】你现在在搜索输入页。请执行以下操作：\n"
-                '1. 用 do(action="Type", text="耳机") 输入一个常见商品关键词\n'
-                "2. 然后点击搜索按钮或键盘上的搜索键提交搜索\n"
-                "不要在搜索页停留，输入后立即提交。\n"
-            )
-        elif page_type_str in {"dialog", "permission"}:
-            task_text += "【弹窗处理】请用Back关闭弹窗或点击关闭/取消按钮。\n"
-
-        if step_idx == 0:
-            task_text += "请根据探索目标选择最有信息增益的安全操作。\n"
-        else:
-            task_text += "继续执行当前探索目标，或在目标已达成时 finish。\n"
-        if frontier_hint:
-            task_text += f"\n{frontier_hint}"
-        return task_text
-
-    def _build_frontier_hint(self, page_info: PageInfo) -> str:
-        node = self.semantics_extractor.node_from_exploration_page(
-            _page_info_to_dict(page_info),
-            fallback_app=self.app_name,
-        )
-        uncovered_types = {
-            cluster.canonical_name
-            for cluster in self._all_clusters
-            if not cluster.is_verified
-        }
-        hypotheses = self.edge_hypothesis_gen.generate(node, goal_page_types=uncovered_types)
-        ranked = self.active_builder.rank(hypotheses)[:3]
-        if not ranked:
-            return ""
-        lines = [
-            "[AMSG Active Exploration]",
-            "Prefer validating one safe edge hypothesis that improves graph coverage:",
-        ]
-        for item in ranked:
-            hyp = item.hypothesis
-            lines.append(
-                f"- {hyp.source_page_type} --{hyp.intent}/{hyp.semantic_target}--> "
-                f"{hyp.expected_page_type}; score={item.score:.2f}; risk={hyp.risk}"
-            )
-        lines.append("After action, stop before payment, order submission, or address confirmation.")
-        return "\n".join(lines)
 
     # ── Page Management ──────────────────────────────────────
 
