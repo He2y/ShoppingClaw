@@ -247,6 +247,12 @@ def _build_autonomous_system_prompt() -> str:
         'do(action="Wait", duration="x seconds")  等待页面加载\n'
         'finish(message="xxx")  结束当前探索任务\n\n'
 
+        "=== 页面类型特殊指引 ===\n"
+        "- 搜索输入页（search_input）：用Type输入一个常见关键词（如\"耳机\"\"手机壳\"\"连衣裙\"），"
+        "然后点击搜索按钮或键盘搜索键提交。不要在搜索页停留，输入后立刻提交。\n"
+        "- 商品详情页（product_detail）：观察页面元素，可尝试点击规格选择或加购按钮探索跳转。\n"
+        "- 弹窗/权限页（dialog/permission）：用Back关闭或点击关闭按钮。\n\n"
+
         "=== 重要约束 ===\n"
         "- 不需要登录，遇到登录界面请Back\n"
         "- 不要下单购买任何商品（可以进入观察，但不要提交订单）\n"
@@ -680,6 +686,18 @@ class AutonomousExplorer:
         )
         if job.forbidden_actions:
             task_text += f"禁止操作: {', '.join(job.forbidden_actions)}\n"
+
+        page_type_str = current_page.page_type.value
+        if page_type_str == "search_input":
+            task_text += (
+                "【搜索页操作指引】你现在在搜索输入页。请执行以下操作：\n"
+                '1. 用 do(action="Type", text="耳机") 输入一个常见商品关键词\n'
+                "2. 然后点击搜索按钮或键盘上的搜索键提交搜索\n"
+                "不要在搜索页停留，输入后立即提交。\n"
+            )
+        elif page_type_str in {"dialog", "permission"}:
+            task_text += "【弹窗处理】请用Back关闭弹窗或点击关闭/取消按钮。\n"
+
         if step_idx == 0:
             task_text += "请根据探索目标选择最有信息增益的安全操作。\n"
         else:

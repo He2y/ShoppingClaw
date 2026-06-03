@@ -44,7 +44,7 @@ def main() -> int:
         base_url=os.getenv("PHONE_AGENT_BASE_URL"),
         api_key=os.getenv("PHONE_AGENT_API_KEY"),
         model_name=os.getenv("PHONE_AGENT_MODEL"),
-        max_tokens=9000,
+        max_tokens=4096,
         temperature=0.0,
         top_p=0.85,
         lang=os.getenv("PHONE_AGENT_LANG", "cn"),
