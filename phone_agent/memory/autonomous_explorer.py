@@ -352,23 +352,25 @@ class StrongVLMPlanner:
     @staticmethod
     def _fallback_plan(page_type: str, elements: dict[str, Any]) -> list[dict[str, str]]:
         if page_type == "home":
-            if any(k for k in (elements or {}) if "search" in k.lower() or "搜索" in str(elements.get(k, ""))):
-                return [{"instruction": "点击搜索框进入搜索页", "action_type": "Tap"}]
-            return [{"instruction": "点击页面中最显眼的功能入口", "action_type": "Tap"}]
+            return [{"instruction": "点击屏幕顶部的搜索框", "action_type": "Tap"}]
         if page_type == "search_input":
             return [
-                {"instruction": "在搜索框输入'耳机'", "action_type": "Type"},
-                {"instruction": "点击搜索按钮或键盘搜索键", "action_type": "Tap"},
+                {"instruction": "在搜索框中输入'耳机'", "action_type": "Type"},
+                {"instruction": "点击右侧橙色搜索按钮", "action_type": "Tap"},
             ]
         if page_type == "search_result":
-            return [{"instruction": "点击第一个商品卡片进入详情", "action_type": "Tap"}]
+            return [{"instruction": "点击列表中第一个商品卡片的图片区域", "action_type": "Tap"}]
         if page_type == "product_detail":
-            return [{"instruction": "点击底部加入购物车或规格选择按钮", "action_type": "Tap"}]
+            return [{"instruction": "点击屏幕底部的'加入购物车'按钮", "action_type": "Tap"}]
+        if page_type == "spec_selection":
+            return [{"instruction": "点击返回按钮关闭规格面板", "action_type": "Back"}]
         if page_type in ("dialog", "permission"):
-            return [{"instruction": "关闭弹窗", "action_type": "Back"}]
+            return [{"instruction": "点击返回键关闭弹窗", "action_type": "Back"}]
         if page_type in _HIGH_RISK_PAGE_TYPES_STR:
-            return [{"instruction": "返回上一页", "action_type": "Back"}]
-        return [{"instruction": "探索页面上可见的功能按钮", "action_type": "Tap"}]
+            return [{"instruction": "点击返回键退出当前页面", "action_type": "Back"}]
+        if page_type == "cart":
+            return [{"instruction": "点击底部导航栏最左侧的首页按钮", "action_type": "Tap"}]
+        return [{"instruction": "点击屏幕中央最大的可点击元素", "action_type": "Tap"}]
 
 
 # ── Prompt Building ──────────────────────────────────────────
