@@ -50,7 +50,7 @@ _APP_ALIASES = {
 }
 _APP_MENTION_TOKENS = tuple(sorted({token for tokens in _APP_ALIASES.values() for token in tokens}, key=len, reverse=True))
 
-_HIGH_RISK_PAGE_TYPES = {"checkout", "payment", "address", "login", "confirm"}
+_HIGH_RISK_PAGE_TYPES = {"payment", "address", "login", "confirm"}
 _MEDIUM_RISK_PAGE_TYPES = {"spec_selection", "cart", "order_list", "refund"}
 _TRANSIENT_PAGE_TYPES = {"unknown"}
 _TASK_DAG_PAGE_LIMIT = 64
@@ -1759,7 +1759,7 @@ class SpatialGraphMemory:
         if expected in observed_types or observed.current_state_id == expected:
             return RepairDecision("retry", "expected state already observed", observed.confidence)
 
-        if any(page_type in {"login", "payment", "checkout", "address"} for page_type in observed_types):
+        if any(page_type in {"login", "payment", "address"} for page_type in observed_types):
             return RepairDecision("ask_user", "high risk or user-owned page detected", 0.8)
 
         if plan and plan.steps:

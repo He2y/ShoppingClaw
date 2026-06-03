@@ -87,7 +87,7 @@ def _quality_gate(memory: SpatialGraphMemory, *, app: str = "淘宝") -> dict:
         target = memory._local_states.get(edge.target_id)
         if source and target and source.app != target.app:
             cross_app_edges += 1
-        if edge.risk == "high" or edge.postcondition in {"checkout", "payment", "address", "login"}:
+        if edge.risk == "high" or edge.postcondition in {"payment", "address", "login"}:
             high_risk_edges += 1
 
     transient_nodes = sum(1 for state in states if state.page_type == "unknown")

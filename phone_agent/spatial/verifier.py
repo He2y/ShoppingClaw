@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from .core import BeliefState, VerificationResult
 
 
-HIGH_RISK_PAGE_TYPES = {"payment", "checkout", "address", "login", "permission", "confirmation"}
+HIGH_RISK_PAGE_TYPES = {"payment", "address", "login", "permission", "confirmation"}
 
 
 @dataclass

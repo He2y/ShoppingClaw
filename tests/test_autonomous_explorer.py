@@ -108,17 +108,22 @@ class TestSafetyFunctions:
             "payment", {"action": "Tap", "element": [500, 500]},
         )
 
-    def test_blocks_action_on_checkout_page(self) -> None:
-        assert not is_safe_exploration_action(
+    def test_allows_navigation_on_checkout_page(self) -> None:
+        assert is_safe_exploration_action(
             "checkout", {"action": "Tap", "element": [500, 500]},
+        )
+
+    def test_blocks_payment_on_checkout_page(self) -> None:
+        assert not is_safe_exploration_action(
+            "checkout", {"action": "Tap", "text": "提交订单"},
         )
 
     def test_blocks_unsafe_token_in_action(self) -> None:
         assert not is_safe_exploration_action(
-            "home", {"action": "Tap", "text": "支付"},
+            "home", {"action": "Tap", "text": "立即支付"},
         )
         assert not is_safe_exploration_action(
-            "search_result", {"action": "Tap", "text": "checkout"},
+            "search_result", {"action": "Tap", "text": "确认支付"},
         )
 
     def test_allows_finish_on_risky_page(self) -> None:
@@ -129,7 +134,15 @@ class TestSafetyFunctions:
     def test_blocks_unsafe_action_text(self) -> None:
         assert not is_safe_exploration_action(
             "home",
-            {"action": "Tap", "element": [500, 500], "text": "去结算"},
+            {"action": "Tap", "element": [500, 500], "text": "提交订单"},
+        )
+
+    def test_allows_checkout_navigation(self) -> None:
+        assert is_safe_exploration_action(
+            "cart", {"action": "Tap", "text": "去结算"},
+        )
+        assert is_safe_exploration_action(
+            "checkout", {"action": "Tap", "text": "返回"},
         )
 
 
@@ -153,8 +166,12 @@ class TestTransitionRejection:
         result = _generic_transition_rejection("payment", {"action": "Tap"}, "cart")
         assert "high-risk" in result
 
-    def test_rejects_high_risk_target(self) -> None:
+    def test_allows_checkout_target(self) -> None:
         result = _generic_transition_rejection("cart", {"action": "Tap"}, "checkout")
+        assert result == ""
+
+    def test_rejects_payment_target(self) -> None:
+        result = _generic_transition_rejection("checkout", {"action": "Tap"}, "payment")
         assert "high-risk" in result
 
     def test_rejects_wait_action(self) -> None:
@@ -386,7 +403,7 @@ class TestRecordTransition:
         assert not recorded
         assert len(explorer._rejected_transitions) == 1
 
-    def test_rejects_high_risk_boundary(self) -> None:
+    def test_allows_checkout_boundary(self) -> None:
         explorer = self._make_explorer()
         source = PageInfo(
             page_type=ShoppingPageType.CART,
@@ -398,6 +415,25 @@ class TestRecordTransition:
         target = PageInfo(
             page_type=ShoppingPageType.CHECKOUT,
             semantic_summary="结算页",
+            elements={},
+            screenshot_hash="h2",
+            app="测试App",
+        )
+        recorded = explorer._record_transition(source, {"action": "Tap"}, target)
+        assert recorded
+
+    def test_rejects_payment_boundary(self) -> None:
+        explorer = self._make_explorer()
+        source = PageInfo(
+            page_type=ShoppingPageType.CHECKOUT,
+            semantic_summary="结算页",
+            elements={},
+            screenshot_hash="h1",
+            app="测试App",
+        )
+        target = PageInfo(
+            page_type=ShoppingPageType.PAYMENT,
+            semantic_summary="支付页",
             elements={},
             screenshot_hash="h2",
             app="测试App",

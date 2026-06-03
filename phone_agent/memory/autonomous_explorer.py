@@ -57,13 +57,15 @@ from phone_agent.spatial.quality_gate import FunctionalityQualityGate
 # ── Constants ─────────────────────────────────────────────────
 
 _HIGH_RISK_PAGE_TYPES_STR = frozenset({
-    "checkout", "payment", "address", "login", "permission",
+    "payment", "address", "login", "permission",
 })
 
+# checkout is allowed for graph coverage; only actual payment is blocked.
 _UNSAFE_ACTION_TOKENS = (
-    "支付", "付款", "立即支付", "提交订单", "确认订单", "下单",
-    "结算", "去结算", "pay", "payment", "submit", "checkout",
-    "buy now", "logout", "log out", "switch account",
+    "立即支付", "确认支付", "确认付款", "指纹支付", "面容支付",
+    "pay now", "confirm payment",
+    "提交订单", "确认订单",
+    "logout", "log out", "switch account",
     "退出登录", "切换账号", "注销账号",
 )
 
@@ -225,7 +227,7 @@ class ExplorationSupervisor:
         "3. 优先探索底部导航栏Tab（购物车、我的淘宝、消息等）和顶部分类入口\n"
         "4. 在非核心页面（活动、直播、弹窗等）停留不超过1步，立即返回\n"
         "5. 在搜索输入页时使用具体关键词（如'耳机'）\n"
-        "6. 禁止：支付、结算、登录、地址、确认订单\n"
+        "6. 允许进入结算/下单页面以覆盖购物流程。禁止：立即支付、确认支付、登录、修改地址\n"
         "7. 当图谱中所有页面的元素都已被标记为✓时，设should_stop=true\n"
     )
 
