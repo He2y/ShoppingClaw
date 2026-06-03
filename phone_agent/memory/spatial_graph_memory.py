@@ -1656,7 +1656,7 @@ class SpatialGraphMemory:
         )
 
         if persist and self.graph_store and getattr(self.graph_store, "driver", None):
-            lifecycle_data = self._build_lifecycle_dict(before, edge, after) if isinstance(before, PageState) and isinstance(after, PageState) else None
+            lifecycle_data = self._build_lifecycle_dict(before, edge, after)
             self.graph_store.add_state_transition(
                 source_id,
                 target_id,
@@ -1958,8 +1958,12 @@ class SpatialGraphMemory:
         source: Any,
         edge: Any,
         target: Any,
-    ) -> dict[str, Any] | None:
-        """Extract lifecycle metadata for an edge from the in-memory manager."""
+    ) -> dict[str, Any]:
+        """Extract lifecycle metadata for an edge from the in-memory manager.
+
+        Returns a default dict when no lifecycle record exists — ensures
+        every persisted edge gets at least a lifecycle_stage marker.
+        """
         from phone_agent.spatial.edge_lifecycle import _edge_key
         import json as _json
 
@@ -1971,7 +1975,14 @@ class SpatialGraphMemory:
         key = _edge_key(src_pt, action_type, action_target, tgt_pt)
         record = self._edge_lifecycle.get_record(key)
         if record is None:
-            return None
+            default_stage = "promoted" if self._amsg_config.edge_promotion_policy == "legacy" else "hypothesis"
+            return {
+                "lifecycle_stage": default_stage,
+                "verification_count": 1,
+                "dominance_ratio": 1.0,
+                "outcome_distribution_json": _json.dumps({"outcomes": {tgt_pt: 1}}, ensure_ascii=False),
+                "outcome_entropy": 0.0,
+            }
 
         dist = self._edge_lifecycle.get_outcome_distribution(
             src_pt, f"{action_type}:{action_target}",
