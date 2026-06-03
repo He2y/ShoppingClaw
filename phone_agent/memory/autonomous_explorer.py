@@ -211,19 +211,23 @@ class ExplorationSupervisor:
         "你是移动应用导航图谱的探索规划师。目标：系统性发现App中所有可到达的页面和跳转关系。\n\n"
         "输出严格JSON（不要其他内容）：\n"
         "{\n"
+        '  "page_type": "当前页面类型（如home/search_input/search_result/product_detail/spec_selection/cart/filter_panel/category/store/my_account/dialog等，根据实际页面自定义命名）",\n'
+        '  "page_summary": "一句话页面描述",\n'
+        '  "visible_elements": ["搜索框", "商品卡片", "筛选按钮", "购物车图标"],\n'
         '  "reasoning": "分析图谱覆盖度和当前页面，说明规划逻辑",\n'
         '  "plan": ["具体操作指令1", "具体操作指令2"],\n'
         '  "should_stop": false,\n'
         '  "stop_reason": ""\n'
         "}\n\n"
         "规划原则：\n"
-        "1. plan中每条指令必须描述具体可见元素（如'点击底部购物车图标'而非'去购物车'）\n"
-        "2. 优先探索未探索过的元素，尤其是可能通向新页面类型的元素\n"
-        "3. 当前页面在图谱中已充分探索时，导航到有未探索元素的页面\n"
-        "4. 在非核心页面（会员中心、活动页、设置页等）记录后立即返回主流程\n"
-        "5. 在搜索输入页时，指定具体搜索关键词（如'耳机'）\n"
-        "6. 禁止：支付、结算、登录、地址、确认订单相关操作\n"
-        "7. 当图谱已覆盖主要功能流程且未探索元素很少时，设should_stop=true\n"
+        "1. visible_elements列出当前截屏中所有可交互元素（按钮、链接、输入框、卡片等）\n"
+        "2. plan中每条指令必须描述具体可见元素（如'点击底部购物车图标'而非'去购物车'）\n"
+        "3. 优先探索未探索过的元素，尤其是可能通向新页面类型的元素\n"
+        "4. 当前页面在图谱中已充分探索时，导航到有未探索元素的页面\n"
+        "5. 在非核心页面（会员中心、活动页、设置页等）记录后立即返回主流程\n"
+        "6. 在搜索输入页时，指定具体搜索关键词（如'耳机'）\n"
+        "7. 禁止：支付、结算、登录、地址、确认订单相关操作\n"
+        "8. 当图谱已覆盖主要功能流程且未探索元素很少时，设should_stop=true\n"
     )
 
     def __init__(self) -> None:
@@ -264,7 +268,8 @@ class ExplorationSupervisor:
         total_steps: int,
         max_steps: int,
         last_result: str,
-    ) -> SupervisorDecision:
+    ) -> tuple[SupervisorDecision, list[str]]:
+        """Returns (decision, visible_elements)."""
         user_text = (
             f"=== 探索进度 ===\n"
             f"第{current_round}轮 | 已执行{total_steps}/{max_steps}步 | 上轮: {last_result}\n\n"
@@ -273,11 +278,11 @@ class ExplorationSupervisor:
         )
 
         if not self._configured or not self._client:
-            return SupervisorDecision("unknown", "", "VLM不可用", ("点击返回按钮",))
+            return SupervisorDecision("unknown", "", "VLM不可用", ("点击返回按钮",)), []
 
         try:
             response = self._client.chat.completions.create(
-                model=self._model, temperature=0, max_tokens=600,
+                model=self._model, temperature=0, max_tokens=800,
                 messages=[
                     {"role": "system", "content": self._SYSTEM_PROMPT},
                     {"role": "user", "content": [
@@ -288,29 +293,34 @@ class ExplorationSupervisor:
             )
             return self._parse(response.choices[0].message.content or "")
         except Exception:
-            return SupervisorDecision("unknown", "", "VLM调用失败", ("点击返回按钮",))
+            return SupervisorDecision("unknown", "", "VLM调用失败", ("点击返回按钮",)), []
 
-    def _parse(self, content: str) -> SupervisorDecision:
+    def _parse(self, content: str) -> tuple[SupervisorDecision, list[str]]:
+        """Returns (decision, visible_elements)."""
         content = content.strip()
         if content.startswith("```"):
             content = re.sub(r"^```(?:json)?", "", content).strip()
             content = re.sub(r"```$", "", content).strip()
         match = re.search(r"\{.*\}", content, flags=re.DOTALL)
         if not match:
-            return SupervisorDecision("unknown", "", content[:100], ("点击返回按钮",))
+            return SupervisorDecision("unknown", "", content[:100], ("点击返回按钮",)), []
         try:
             data = json.loads(match.group(0))
         except json.JSONDecodeError:
-            return SupervisorDecision("unknown", "", "JSON解析失败", ("点击返回按钮",))
+            return SupervisorDecision("unknown", "", "JSON解析失败", ("点击返回按钮",)), []
 
         plan = tuple(str(s) for s in (data.get("plan") or []) if isinstance(s, str) and s.strip())[:3]
-        return SupervisorDecision(
-            page_type=str(data.get("page_type") or "unknown"),
-            page_summary=str(data.get("page_summary") or ""),
-            reasoning=str(data.get("reasoning") or ""),
-            plan=plan or ("点击返回按钮",),
-            should_stop=bool(data.get("should_stop")),
-            stop_reason=str(data.get("stop_reason") or ""),
+        elements = [str(e) for e in (data.get("visible_elements") or []) if isinstance(e, str)]
+        return (
+            SupervisorDecision(
+                page_type=str(data.get("page_type") or "unknown"),
+                page_summary=str(data.get("page_summary") or ""),
+                reasoning=str(data.get("reasoning") or ""),
+                plan=plan or ("点击返回按钮",),
+                should_stop=bool(data.get("should_stop")),
+                stop_reason=str(data.get("stop_reason") or ""),
+            ),
+            elements,
         )
 
 
@@ -434,19 +444,14 @@ class AutonomousExplorer:
             not self._convergence.converged
             and self._total_steps < self.policy.max_total_steps
         ):
-            # Classify current page (with elements)
-            if current_page is None:
-                screenshot = self.device.get_screenshot(self.device_id)
-                current_page = self._classify(screenshot)
-                self._record_page(current_page)
-                self._extract_and_cluster(current_page)
+            # Build graph summary for supervisor (using current_page if available)
+            dummy_page = current_page or PageInfo(
+                ShoppingPageType.UNKNOWN, "", {}, "", self.app_name)
+            graph_summary = self._build_graph_summary(dummy_page)
 
-            # Build graph summary for supervisor
-            graph_summary = self._build_graph_summary(current_page)
-
-            # Supervisor plans based on graph coverage
+            # Supervisor: screenshot → classification + elements + plan (one call)
             screenshot = self.device.get_screenshot(self.device_id)
-            decision = self.supervisor.plan(
+            decision, visible_elements = self.supervisor.plan(
                 screenshot_base64=screenshot.base64_data,
                 graph_summary=graph_summary,
                 current_round=self._convergence.total_rounds + 1,
@@ -455,8 +460,22 @@ class AutonomousExplorer:
                 last_result=last_result,
             )
 
+            # Build PageInfo from supervisor classification + elements
+            elements_dict = {e: e for e in visible_elements}
+            current_page = PageInfo(
+                page_type=_str_to_page_type(decision.page_type),
+                semantic_summary=decision.page_summary,
+                elements=elements_dict,
+                screenshot_hash=hashlib.md5(screenshot.base64_data.encode()).hexdigest(),
+                app=self.app_name,
+                width=screenshot.width,
+                height=screenshot.height,
+            )
+            self._record_page(current_page)
+            self._extract_and_cluster(current_page)
+
             self._log(f"  [round {self._convergence.total_rounds + 1}] "
-                       f"page={current_page.page_type.value}")
+                       f"page={decision.page_type} ({len(visible_elements)} elements)")
             self._log(f"    plan: {[s[:25] for s in decision.plan]}")
             self._log(f"    reason: {decision.reasoning[:80]}")
 
@@ -560,12 +579,12 @@ class AutonomousExplorer:
 
             time.sleep(self.policy.settle_delay)
 
-        # Post-execution: classify the landing page (with elements)
+        # Post-execution: classify landing page with PageClassifier (for elements)
         new_page_types: list[str] = []
         if steps_taken > 0:
             time.sleep(1.0)
             next_screenshot = self.device.get_screenshot(self.device_id)
-            next_page = self._classify(next_screenshot)
+            next_page = self._classify_post_action(next_screenshot)
             self._record_page(next_page)
             self._extract_and_cluster(next_page)
 
@@ -689,7 +708,8 @@ class AutonomousExplorer:
 
     # ── Page Management ──────────────────────────────────────
 
-    def _classify(self, screenshot: Any) -> PageInfo:
+    def _classify_post_action(self, screenshot: Any) -> PageInfo:
+        """PageClassifier for post-action classification (returns structured elements)."""
         page_type, summary, elements = self.classifier.classify(
             screenshot.base64_data, screenshot.width, screenshot.height,
         )

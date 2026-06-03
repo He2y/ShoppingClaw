@@ -247,9 +247,14 @@ class TestSupervisorDecision:
 
     def test_parse_valid_json(self) -> None:
         supervisor = ExplorationSupervisor.__new__(ExplorationSupervisor)
-        decision = supervisor._parse('{"reasoning":"test","plan":["点击搜索框"],"should_stop":false}')
+        decision, elements = supervisor._parse(
+            '{"page_type":"home","page_summary":"首页","visible_elements":["搜索框","购物车"],'
+            '"reasoning":"test","plan":["点击搜索框"],"should_stop":false}'
+        )
         assert decision.plan == ("点击搜索框",)
+        assert decision.page_type == "home"
         assert not decision.should_stop
+        assert "搜索框" in elements
 
 
 # ── AutonomousExplorer._extract_and_cluster ──────────────────
