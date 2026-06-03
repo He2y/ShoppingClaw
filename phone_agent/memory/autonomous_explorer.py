@@ -69,14 +69,16 @@ _UNSAFE_ACTION_TOKENS = (
 _SCREEN_CHANGE_HASH_LEN = 2000
 
 _MINIMAL_ACTION_SYSTEM_PROMPT = (
-    "你是手机操作执行器。根据指令对当前屏幕执行一个操作。\n"
-    "输出格式：thinking{简短理由} <answer>{操作}</answer>\n"
-    "操作格式：\n"
-    'do(action="Tap", element=[x,y]) 坐标0-999\n'
-    'do(action="Type", text="xxx")\n'
-    'do(action="Swipe", start=[x1,y1], end=[x2,y2])\n'
-    'do(action="Back")\n'
-    'finish(message="xxx")\n'
+    "你是手机操作执行器。你必须对当前屏幕执行一个具体操作。\n"
+    "严格按以下格式输出，不要输出其他内容：\n"
+    "thinking{一句话理由}\n"
+    "<answer>do(action=\"Tap\", element=[x,y])</answer>\n\n"
+    "可用操作（只能选一个）：\n"
+    'do(action="Tap", element=[x,y]) 坐标范围0-999\n'
+    'do(action="Type", text="xxx") 输入文本\n'
+    'do(action="Swipe", start=[x1,y1], end=[x2,y2]) 滑动\n'
+    'do(action="Back") 返回\n'
+    "禁止：不要用finish，不要只描述不操作，不要输出多个操作。\n"
 )
 
 
@@ -665,6 +667,7 @@ class AutonomousExplorer:
             time.sleep(self.policy.settle_delay)
 
         if outcome not in ("blocked", "stalled") or steps_taken > 0:
+            time.sleep(1.0)
             next_screenshot = self.device.get_screenshot(self.device_id)
             next_page = self._classify(next_screenshot)
             self._record_page(next_page)
@@ -806,6 +809,12 @@ class AutonomousExplorer:
         page_type, summary, elements = self.classifier.classify(
             screenshot.base64_data, screenshot.width, screenshot.height,
         )
+        if page_type == ShoppingPageType.UNKNOWN and "error" in summary.lower():
+            time.sleep(1.5)
+            screenshot = self.device.get_screenshot(self.device_id)
+            page_type, summary, elements = self.classifier.classify(
+                screenshot.base64_data, screenshot.width, screenshot.height,
+            )
         return PageInfo(
             page_type=page_type,
             semantic_summary=summary,
