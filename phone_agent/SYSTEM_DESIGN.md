@@ -23,7 +23,7 @@ Existing GUI agent frameworks (PG-Agent, MobiAgent, AgentRR, WebNavigator) treat
 
 ## 2. Formal Definitions
 
-The system is built on 9 formal definitions. Each maps to a concrete code module.
+The system is built on 8 formal definitions. Each maps to a concrete code module.
 
 ### Definition 1: Active Mobile Spatial Graph
 
@@ -75,7 +75,7 @@ $J(\cdot)$ denotes Jaccard similarity. When a channel returns $\text{None}$ (una
 
 $$\hat{P}(v' \mid v, a) = \frac{n(v, a, v')}{\sum_{v''} n(v, a, v'')}$$
 
-Purely observation-driven. Feeds the temporal channel (Def 3) and the outcome distribution (Def 9).
+Purely observation-driven. Feeds the temporal channel (Def 3) and the outcome distribution (Def 8).
 
 ### Definition 5: Planning Objective
 
@@ -94,25 +94,14 @@ $$C'(e) = \underbrace{1 + 3\,r_{\text{fail}} + p_{\text{risk}} - 0.3\,c_{\text{c
 
 Three pluggable backends: Dijkstra (legacy), A\* (schema heuristic), Belief-A\* (full optimization).
 
-### Definition 6: Functionality Discovery
-
-$$\mathcal{C}: (\text{element},\; \tau,\; \text{context}) \to (\text{role},\; \text{type})$$
-
-Two implementations behind a `RoleClassifier` protocol:
-
-| Variant | Method | Learning |
-|---------|--------|----------|
-| $\mathcal{C}_K$ (Keyword) | Deterministic rule matching | None (legacy) |
-| $\mathcal{C}_E$ (Embedding) | $\text{role} = \arg\min_j d(\phi(\text{element}), \mu_j)$ | Online: verified postconditions grow prototypes |
-
-### Definition 7: Bayesian Belief Update
+### Definition 6: Bayesian Belief Update
 
 $$\mathcal{B}_t(v) = \eta \cdot P(o_t \mid v) \cdot \sum_{v'} P(v \mid v', a_{t-1}) \cdot \mathcal{B}_{t-1}(v')$$
 
 - Shannon entropy $H(\mathcal{B}) = -\sum_v \mathcal{B}(v) \log \mathcal{B}(v)$ feeds the planner's information-gain term.
 - MAP estimate $v^* = \arg\max_v \mathcal{B}(v)$ is used for action grounding.
 
-### Definition 8: Edge Lifecycle
+### Definition 7: Edge Lifecycle
 
 $$e: \text{hypothesis} \xrightarrow{n \geq k,\; \text{dom} \geq \theta} \text{candidate} \xrightarrow{\text{gate}} \text{promoted} \xrightarrow{\text{fail\_rate} > \delta} \text{demoted}$$
 
@@ -125,7 +114,7 @@ $$e: \text{hypothesis} \xrightarrow{n \geq k,\; \text{dom} \geq \theta} \text{ca
 
 Default parameters: $k = 1$, $\theta = 0.6$, $\delta$ = configurable.
 
-### Definition 9: Outcome Distribution
+### Definition 8: Outcome Distribution
 
 $$\mathcal{O}(v, a) = \{(v'_1, p_1), \ldots, (v'_m, p_m)\}$$
 
@@ -148,22 +137,19 @@ Replaces hardcoded VLM verification lists with a **data-driven decision boundary
 phone_agent/
   spatial/                           # AMSG core modules
     amsg_config.py                   # AMSGOptimConfig (13 fields, 5 presets)
-    edge_lifecycle.py                # Def 8-9: EdgeLifecycleManager, OutcomeDistribution
-    belief_localizer.py              # Def 3,7: MultiSignalLocalizer, BeliefDistribution
+    edge_lifecycle.py                # Def 7-8: EdgeLifecycleManager, OutcomeDistribution
+    belief_localizer.py              # Def 3,6: MultiSignalLocalizer, BeliefDistribution
     enhanced_planner.py              # Def 5: EnhancedPlanner (3 backends)
-    role_classifier.py               # Def 6: RoleClassifier protocol + 2 implementations
+    role_classifier.py               # RoleClassifier protocol (UI element classification)
     core.py                          # PageNode, BeliefState, AffordanceEdge
     semantics.py                     # ScreenSemanticsExtractor
     hypothesis.py                    # EdgeHypothesisGenerator
     active_builder.py                # ActiveGraphBuilder (frontier scoring)
     schema_registry.py               # MobileSchema, SchemaRegistry
-    functionality.py                 # FunctionalityExtractor
-    functionality_cluster.py         # FunctionalityClusterer + EmbeddingFunctionalityClusterer
-    runtime_controller.py            # GraphRuntimeController (Def 9 VLM verification)
+    runtime_controller.py            # GraphRuntimeController (Def 8 VLM verification)
     verifier.py                      # PostconditionVerifier
-    coverage_metrics.py              # FunctionalityCoverageMetrics
     reporting.py                     # Report builders and formatters
-    FORMALIZATION.md                 # 9 formal definitions
+    FORMALIZATION.md                 # 8 formal definitions
 
   memory/                            # Persistence and integration
     spatial_graph_memory.py          # SpatialGraphMemory (wires all AMSG modules)
@@ -183,33 +169,33 @@ phone_agent/
 
 ```
 Screenshot ──> Belief Localization ──> Goal Inference ──> Route Planning ──> Action Selection
-    ^               (Def 3,7)            (Def 6)          (Def 5,8,9)          |
+    ^               (Def 3,6)                              (Def 5,7,8)          |
     |                                                                          v
     └───────── Postcondition Verification <── Action Execution <── Edge Lifecycle Update
-                     (Def 8,9)                                        (Def 4)
+                     (Def 7,8)                                        (Def 4)
 ```
 
 Each agent step:
 
 1. **Screenshot** --- capture current screen from device (ADB/HDC/XCTest).
 2. **Belief Localization** --- `MultiSignalLocalizer.update()` fuses 4 observation channels into a probability distribution over known page states (Def 3, 7).
-3. **Goal Inference** --- `GoalSpec.from_task()` extracts target page types and task slots from the natural language instruction (Def 6).
+3. **Goal Inference** --- `GoalSpec.from_task()` extracts target page types and task slots from the natural language instruction.
 4. **Route Planning** --- `EnhancedPlanner.plan()` searches for the lowest-cost path through the graph. Cost incorporates edge staleness, exploration bonus, and outcome entropy (Def 5). Only promoted edges ($E^c$) from `EdgeLifecycleManager` are trusted; hypothesis edges carry a penalty.
-5. **Action Selection** --- `next_planned_action()` emits the first step from the route. High-entropy transitions trigger VLM co-pilot verification (Def 9).
+5. **Action Selection** --- `next_planned_action()` emits the first step from the route. High-entropy transitions trigger VLM co-pilot verification (Def 8).
 6. **Action Execution** --- `ActionHandler.execute()` converts the abstract action to device-specific commands.
-7. **Edge Lifecycle Update** --- `EdgeLifecycleManager.record_outcome()` records the observed postcondition. The edge advances through the lifecycle state machine (Def 8). `OutcomeDistribution` updates the entropy for future planning (Def 9).
+7. **Edge Lifecycle Update** --- `EdgeLifecycleManager.record_outcome()` records the observed postcondition. The edge advances through the lifecycle state machine (Def 7). `OutcomeDistribution` updates the entropy for future planning (Def 8).
 
 ### 3.3 Configuration and Ablation
 
 `AMSGOptimConfig` is a frozen dataclass with 13 fields controlling all optimization targets. Five preset constructors support ablation experiments:
 
-| Preset | Belief | Planner | Edge Policy | Functionality | Heuristic Injection |
-|--------|--------|---------|-------------|--------------|---------------------|
-| `legacy()` | fixed | dijkstra | legacy | keyword | ON |
-| `full()` | bayesian | belief\_a\* | verified | embedding | OFF |
-| `edge_only()` | fixed | dijkstra | verified | keyword | OFF |
-| `belief_only()` | bayesian | dijkstra | legacy | keyword | ON |
-| `planner_only()` | fixed | belief\_a\* | legacy | keyword | ON |
+| Preset | Belief | Planner | Edge Policy | Heuristic Injection |
+|--------|--------|---------|-------------|---------------------|
+| `legacy()` | fixed | dijkstra | legacy | ON |
+| `full()` | bayesian | belief\_a\* | verified | OFF |
+| `edge_only()` | fixed | dijkstra | verified | OFF |
+| `belief_only()` | bayesian | dijkstra | legacy | ON |
+| `planner_only()` | fixed | belief\_a\* | legacy | ON |
 
 The `legacy()` preset reproduces exact pre-optimization behavior. The `full()` preset enables all academic contributions. Each intermediate preset isolates a single optimization target for ablation.
 
@@ -217,7 +203,7 @@ The `legacy()` preset reproduces exact pre-optimization behavior. The `full()` p
 
 ## 4. Key Modules
 
-### 4.1 Edge Lifecycle Manager (`edge_lifecycle.py`, Def 8-9)
+### 4.1 Edge Lifecycle Manager (`edge_lifecycle.py`, Def 7-8)
 
 **This is the primary differentiator from prior work.**
 
@@ -242,7 +228,7 @@ class OutcomeDistribution:
     outcomes: dict[str, int]         # page_type -> observation count
 
     @property
-    def entropy(self) -> float:      # Shannon entropy (Def 9)
+    def entropy(self) -> float:      # Shannon entropy (Def 8)
         ...
 ```
 
@@ -291,17 +277,7 @@ where $d_\Sigma$ is the BFS distance in the domain schema. This accelerates sear
 - **Information gain**: $\lambda \cdot H(\mathcal{B}) \cdot s(e)$. When belief entropy is high (agent is lost), stale edges become even less attractive because they offer no localization value.
 - **Outcome entropy penalty**: $\gamma \cdot H_{\mathcal{O}}(v, a)$. Edges whose outcomes are unpredictable are penalized, steering the planner toward deterministic paths.
 
-### 4.4 Role Classifier (`role_classifier.py`, Def 6)
-
-Classifies UI elements into functional roles (e.g., "search\_box", "add\_to\_cart\_button", "price\_display").
-
-**KeywordRoleClassifier**: deterministic rule matching from `DATA_HINTS` and `FUNCTION_HINTS` tables. Zero behavior change from legacy. Used when `use_embedding_role_classifier=False`.
-
-**EmbeddingRoleClassifier**: prototype-based classification with online learning.
-- `classify()`: computes cosine similarity to known role prototypes. Falls back to keyword classifier below threshold.
-- `register_verified_role()`: when a postcondition verification confirms a role, the embedding is added as a new prototype. Deduplication at cosine similarity > 0.95.
-
-### 4.5 Runtime Controller (`runtime_controller.py`)
+### 4.4 Runtime Controller (`runtime_controller.py`)
 
 Orchestrates the full locate-plan-execute cycle. Key integration points:
 
@@ -309,7 +285,7 @@ Orchestrates the full locate-plan-execute cycle. Key integration points:
 - **`locate_and_get_context()`**: full orchestration pipeline. Tries RuntimeDAG hint first (fast path), then locate + plan + enrich.
 - **`compile_task_dag()`**: compiles a task-local in-memory DAG for multi-step execution without repeated localization.
 
-### 4.6 Offline Explorer (`offline_explorer.py`)
+### 4.5 Offline Explorer (`offline_explorer.py`)
 
 VLM-driven app exploration with coverage-guided task generation:
 
@@ -320,7 +296,7 @@ VLM-driven app exploration with coverage-guided task generation:
 - **Coverage targets**: tracks discovered page types and transitions against a target set. Stops exploration when coverage is complete.
 - **Active exploration mode**: uses `EdgeHypothesisGenerator` and `ActiveGraphBuilder` to score frontier hypotheses and suggest the most coverage-valuable next action.
 
-### 4.7 SpatialGraphMemory (`spatial_graph_memory.py`)
+### 4.6 SpatialGraphMemory (`spatial_graph_memory.py`)
 
 Central integration layer that wires all AMSG modules:
 
@@ -344,7 +320,7 @@ Key responsibilities:
 
 ## 5. Key Innovations (vs Prior Work)
 
-### 5.1 Edge Lifecycle with Postcondition Verification (Def 8)
+### 5.1 Edge Lifecycle with Postcondition Verification (Def 7)
 
 | Aspect | PG-Agent / AgentRR | AMSG |
 |--------|-------------------|------|
@@ -353,7 +329,7 @@ Key responsibilities:
 | Edge demotion | Never | Fail rate exceeds $\delta$ after promotion |
 | Same-action multiple outcomes | Not modeled | `OutcomeDistribution` tracks per-action outcome entropy |
 
-### 5.2 Data-Driven VLM Verification (Def 9)
+### 5.2 Data-Driven VLM Verification (Def 8)
 
 | Aspect | Prior work | AMSG |
 |--------|-----------|------|
@@ -456,10 +432,10 @@ OfflineExplorer.explore()
 
 | Module | Tests | Test File |
 |--------|-------|-----------|
-| Edge Lifecycle (Def 8, 9) | 10 | `tests/test_edge_lifecycle.py` |
+| Edge Lifecycle (Def 7, 8) | 10 | `tests/test_edge_lifecycle.py` |
 | Belief Localizer (Def 3, 7) | 13 | `tests/test_belief_localizer.py` |
 | Enhanced Planner (Def 5) | 11 | `tests/test_enhanced_planner.py` |
-| Role Classifier (Def 6) | 8 | `tests/test_role_classifier.py` |
+| Role Classifier | 8 | `tests/test_role_classifier.py` |
 | Spatial Graph Memory | 32+ | `tests/test_spatial_graph_memory.py` |
 | AMSG Integration | 20+ | `tests/test_amsg_spatial.py` |
 | V4 Functionality | 10+ | `tests/test_amsg_v4_functionality.py` |

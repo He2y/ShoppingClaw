@@ -23,7 +23,7 @@
 
 ## 2. 形式化定义
 
-系统建立在 9 个形式化定义之上，每个定义都映射到具体的代码模块。
+系统建立在 8 个形式化定义之上，每个定义都映射到具体的代码模块。
 
 ### 定义 1：主动移动空间图
 
@@ -75,7 +75,7 @@ $J(\cdot)$ 表示 Jaccard 相似度。当某通道返回 $\text{None}$（不可�
 
 $$\hat{P}(v' \mid v, a) = \frac{n(v, a, v')}{\sum_{v''} n(v, a, v'')}$$
 
-纯观测驱动。为时序通道（定义 3）和结果分布（定义 9）提供输入。
+纯观测驱动。为时序通道（定义 3）和结果分布（定义 8）提供输入。
 
 ### 定义 5：规划目标
 
@@ -94,25 +94,14 @@ $$C'(e) = \underbrace{1 + 3\,r_{\text{fail}} + p_{\text{risk}} - 0.3\,c_{\text{c
 
 三个可插拔后端：Dijkstra（传统）、A\*（模式启发式）、Belief-A\*（完整优化）。
 
-### 定义 6：功能发现
-
-$$\mathcal{C}: (\text{element},\; \tau,\; \text{context}) \to (\text{role},\; \text{type})$$
-
-`RoleClassifier` 协议下的两种实现：
-
-| 变体 | 方法 | 学习方式 |
-|------|------|---------|
-| $\mathcal{C}_K$（关键词） | 确定性规则匹配 | 无（传统方式） |
-| $\mathcal{C}_E$（嵌入） | $\text{role} = \arg\min_j d(\phi(\text{element}), \mu_j)$ | 在线学习：通过已验证的后置条件增长原型 |
-
-### 定义 7：贝叶斯置信更新
+### 定义 6：贝叶斯置信更新
 
 $$\mathcal{B}_t(v) = \eta \cdot P(o_t \mid v) \cdot \sum_{v'} P(v \mid v', a_{t-1}) \cdot \mathcal{B}_{t-1}(v')$$
 
 - 香农熵 $H(\mathcal{B}) = -\sum_v \mathcal{B}(v) \log \mathcal{B}(v)$ 输入规划器的信息增益项。
 - MAP 估计 $v^* = \arg\max_v \mathcal{B}(v)$ 用于动作锚定。
 
-### 定义 8：边生命周期
+### 定义 7：边生命周期
 
 $$e: \text{hypothesis} \xrightarrow{n \geq k,\; \text{dom} \geq \theta} \text{candidate} \xrightarrow{\text{gate}} \text{promoted} \xrightarrow{\text{fail\_rate} > \delta} \text{demoted}$$
 
@@ -125,7 +114,7 @@ $$e: \text{hypothesis} \xrightarrow{n \geq k,\; \text{dom} \geq \theta} \text{ca
 
 默认参数：$k = 1$，$\theta = 0.6$，$\delta$ = 可配置。
 
-### 定义 9：结果分布
+### 定义 8：结果分布
 
 $$\mathcal{O}(v, a) = \{(v'_1, p_1), \ldots, (v'_m, p_m)\}$$
 
@@ -148,22 +137,19 @@ $$H_{\mathcal{O}}(v, a) = -\sum_{i=1}^{m} p_i \log p_i$$
 phone_agent/
   spatial/                           # AMSG 核心模块
     amsg_config.py                   # AMSGOptimConfig（13 个字段，5 个预设）
-    edge_lifecycle.py                # 定义 8-9：EdgeLifecycleManager, OutcomeDistribution
-    belief_localizer.py              # 定义 3,7：MultiSignalLocalizer, BeliefDistribution
+    edge_lifecycle.py                # 定义 7-8：EdgeLifecycleManager, OutcomeDistribution
+    belief_localizer.py              # 定义 3,6：MultiSignalLocalizer, BeliefDistribution
     enhanced_planner.py              # 定义 5：EnhancedPlanner（3 个后端）
-    role_classifier.py               # 定义 6：RoleClassifier 协议 + 2 种实现
+    role_classifier.py               # RoleClassifier 协议（辅助页面元素分类）
     core.py                          # PageNode, BeliefState, AffordanceEdge
     semantics.py                     # ScreenSemanticsExtractor
     hypothesis.py                    # EdgeHypothesisGenerator
     active_builder.py                # ActiveGraphBuilder（前沿评分）
     schema_registry.py               # MobileSchema, SchemaRegistry
-    functionality.py                 # FunctionalityExtractor
-    functionality_cluster.py         # FunctionalityClusterer + EmbeddingFunctionalityClusterer
-    runtime_controller.py            # GraphRuntimeController（定义 9 VLM 验证）
+    runtime_controller.py            # GraphRuntimeController（定义 8 VLM 验证）
     verifier.py                      # PostconditionVerifier
-    coverage_metrics.py              # FunctionalityCoverageMetrics
     reporting.py                     # 报告构建器与格式化器
-    FORMALIZATION.md                 # 9 个形式化定义
+    FORMALIZATION.md                 # 8 个形式化定义
 
   memory/                            # 持久化与集成
     spatial_graph_memory.py          # SpatialGraphMemory（串联所有 AMSG 模块）
@@ -183,33 +169,33 @@ phone_agent/
 
 ```
 截图 ──> 置信定位 ──> 目标推理 ──> 路径规划 ──> 动作选择
-  ^        (定义 3,7)    (定义 6)    (定义 5,8,9)     |
+  ^        (定义 3,6)                 (定义 5,7,8)     |
   |                                                   v
   └───────── 后置条件验证 <── 动作执行 <── 边生命周期更新
-                (定义 8,9)                    (定义 4)
+                (定义 7,8)                    (定义 4)
 ```
 
 每个智能体步骤：
 
 1. **截图** --- 从设备（ADB/HDC/XCTest）捕获当前屏幕。
-2. **置信定位** --- `MultiSignalLocalizer.update()` 融合 4 个观测通道，生成已知页面状态上的概率分布（定义 3、7）。
-3. **目标推理** --- `GoalSpec.from_task()` 从自然语言指令中提取目标页面类型和任务槽位（定义 6）。
+2. **置信定位** --- `MultiSignalLocalizer.update()` 融合 4 个观测通道，生成已知页面状态上的概率分布（定义 3、6）。
+3. **目标推理** --- `GoalSpec.from_task()` 从自然语言指令中提取目标页面类型和任务槽位。
 4. **路径规划** --- `EnhancedPlanner.plan()` 搜索图中代价最小的路径。代价综合了边的时效衰减、探索奖励和结果熵（定义 5）。仅信任来自 `EdgeLifecycleManager` 的已提升边（$E^c$）；假设边带有惩罚。
-5. **动作选择** --- `next_planned_action()` 发出路径的第一步。高熵跳转触发 VLM 协同验证（定义 9）。
+5. **动作选择** --- `next_planned_action()` 发出路径的第一步。高熵跳转触发 VLM 协同验证（定义 8）。
 6. **动作执行** --- `ActionHandler.execute()` 将抽象动作转换为设备特定命令。
-7. **边生命周期更新** --- `EdgeLifecycleManager.record_outcome()` 记录观测到的后置条件。边在生命周期状态机中推进（定义 8）。`OutcomeDistribution` 更新熵值供未来规划使用（定义 9）。
+7. **边生命周期更新** --- `EdgeLifecycleManager.record_outcome()` 记录观测到的后置条件。边在生命周期状态机中推进（定义 7）。`OutcomeDistribution` 更新熵值供未来规划使用（定义 8）。
 
 ### 3.3 配置与消融实验
 
 `AMSGOptimConfig` 是一个冻结数据类，包含 13 个字段控制所有优化目标。五个预设构造器支持消融实验：
 
-| 预设 | 置信模型 | 规划器 | 边策略 | 功能分类 | 启发式注入 |
-|------|---------|--------|--------|---------|-----------|
-| `legacy()` | 固定 | dijkstra | 传统 | 关键词 | 开启 |
-| `full()` | 贝叶斯 | belief\_a\* | 已验证 | 嵌入 | 关闭 |
-| `edge_only()` | 固定 | dijkstra | 已验证 | 关键词 | 关闭 |
-| `belief_only()` | 贝叶斯 | dijkstra | 传统 | 关键词 | 开启 |
-| `planner_only()` | 固定 | belief\_a\* | 传统 | 关键词 | 开启 |
+| 预设 | 置信模型 | 规划器 | 边策略 | 启发式注入 |
+|------|---------|--------|--------|-----------|
+| `legacy()` | 固定 | dijkstra | 传统 | 开启 |
+| `full()` | 贝叶斯 | belief\_a\* | 已验证 | 关闭 |
+| `edge_only()` | 固定 | dijkstra | 已验证 | 关闭 |
+| `belief_only()` | 贝叶斯 | dijkstra | 传统 | 开启 |
+| `planner_only()` | 固定 | belief\_a\* | 传统 | 开启 |
 
 `legacy()` 预设精确复现优化前的行为。`full()` 预设启用所有学术贡献。每个中间预设隔离单一优化目标用于消融实验。
 
@@ -217,7 +203,7 @@ phone_agent/
 
 ## 4. 核心模块
 
-### 4.1 边生命周期管理器（`edge_lifecycle.py`，定义 8-9）
+### 4.1 边生命周期管理器（`edge_lifecycle.py`，定义 7-8）
 
 **这是与先前工作的主要差异点。**
 
@@ -242,7 +228,7 @@ class OutcomeDistribution:
     outcomes: dict[str, int]         # page_type -> 观测次数
 
     @property
-    def entropy(self) -> float:      # 香农熵（定义 9）
+    def entropy(self) -> float:      # 香农熵（定义 8）
         ...
 ```
 
@@ -291,17 +277,7 @@ $$h(v) = \min_{\tau \in \text{goals}} d_\Sigma(\tau(v), \tau)$$
 - **信息增益**：$\lambda \cdot H(\mathcal{B}) \cdot s(e)$。当置信熵较高（智能体迷失）时，陈旧的边变得更不吸引，因为它们无法提供定位价值。
 - **结果熵惩罚**：$\gamma \cdot H_{\mathcal{O}}(v, a)$。结果不可预测的边受到惩罚，引导规划器走向确定性路径。
 
-### 4.4 角色分类器（`role_classifier.py`，定义 6）
-
-将 UI 元素分类为功能角色（例如"search\_box"、"add\_to\_cart\_button"、"price\_display"）。
-
-**KeywordRoleClassifier**：基于 `DATA_HINTS` 和 `FUNCTION_HINTS` 表的确定性规则匹配。与传统方式行为完全一致。在 `use_embedding_role_classifier=False` 时使用。
-
-**EmbeddingRoleClassifier**：基于原型的分类，支持在线学习。
-- `classify()`：计算与已知角色原型的余弦相似度。低于阈值时回退到关键词分类器。
-- `register_verified_role()`：当后置条件验证确认了某个角色时，将嵌入添加为新原型。余弦相似度 > 0.95 时去重。
-
-### 4.5 运行时控制器（`runtime_controller.py`）
+### 4.4 运行时控制器（`runtime_controller.py`）
 
 编排完整的定位-规划-执行循环。关键集成点：
 
@@ -309,7 +285,7 @@ $$h(v) = \min_{\tau \in \text{goals}} d_\Sigma(\tau(v), \tau)$$
 - **`locate_and_get_context()`**：完整的编排流水线。先尝试 RuntimeDAG 提示（快速路径），然后执行定位 + 规划 + 充实。
 - **`compile_task_dag()`**：编译任务局部的内存 DAG，用于多步执行而无需重复定位。
 
-### 4.6 离线探索器（`offline_explorer.py`）
+### 4.5 离线探索器（`offline_explorer.py`）
 
 VLM 驱动的应用探索，支持覆盖引导的任务生成：
 
@@ -320,7 +296,7 @@ VLM 驱动的应用探索，支持覆盖引导的任务生成：
 - **覆盖目标**：对照目标集合追踪已发现的页面类型和跳转。覆盖完成时停止探索。
 - **主动探索模式**：使用 `EdgeHypothesisGenerator` 和 `ActiveGraphBuilder` 评分前沿假设，建议覆盖价值最高的下一个动作。
 
-### 4.7 SpatialGraphMemory（`spatial_graph_memory.py`）
+### 4.6 SpatialGraphMemory（`spatial_graph_memory.py`）
 
 串联所有 AMSG 模块的中心集成层：
 
@@ -344,7 +320,7 @@ class SpatialGraphMemory:
 
 ## 5. 核心创新（对比先前工作）
 
-### 5.1 带后置条件验证的边生命周期（定义 8）
+### 5.1 带后置条件验证的边生命周期（定义 7）
 
 | 方面 | PG-Agent / AgentRR | AMSG |
 |------|-------------------|------|
@@ -353,7 +329,7 @@ class SpatialGraphMemory:
 | 边降级 | 从不 | 提升后失败率超过 $\delta$ |
 | 同一操作多种结果 | 未建模 | `OutcomeDistribution` 追踪每个操作的结果熵 |
 
-### 5.2 数据驱动的 VLM 验证（定义 9）
+### 5.2 数据驱动的 VLM 验证（定义 8）
 
 | 方面 | 先前工作 | AMSG |
 |------|---------|------|
@@ -456,10 +432,10 @@ OfflineExplorer.explore()
 
 | 模块 | 测试数 | 测试文件 |
 |------|--------|---------|
-| 边生命周期（定义 8、9） | 10 | `tests/test_edge_lifecycle.py` |
+| 边生命周期（定义 7、8） | 10 | `tests/test_edge_lifecycle.py` |
 | 置信定位器（定义 3、7） | 13 | `tests/test_belief_localizer.py` |
 | 增强规划器（定义 5） | 11 | `tests/test_enhanced_planner.py` |
-| 角色分类器（定义 6） | 8 | `tests/test_role_classifier.py` |
+| 角色分类器 | 8 | `tests/test_role_classifier.py` |
 | SpatialGraphMemory | 32+ | `tests/test_spatial_graph_memory.py` |
 | AMSG 集成 | 20+ | `tests/test_amsg_spatial.py` |
 | V4 功能 | 10+ | `tests/test_amsg_v4_functionality.py` |
