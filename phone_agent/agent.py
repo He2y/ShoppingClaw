@@ -25,6 +25,10 @@ from phone_agent.model.adapters import ModelType, detect_model_type, get_adapter
 from phone_agent.model.client import MessageBuilder
 from phone_agent.memory.core import ProductStatus
 from phone_agent.memory.offline_explorer import PageClassifier, ShoppingPageType
+from phone_agent.verification_detector import (
+    detect_verification,
+    detect_verification_from_vlm,
+)
 
 
 @dataclass
@@ -249,6 +253,7 @@ class PhoneAgent:
         self._last_user_reply: str | None = None
         self._graph_fail_count: int = 0
         self._graph_fail_page: str = ""
+        self._verification_consecutive: int = 0
 
         # Clear action history for QwenVL handler/adapter
         if self._specialized_handler is not None and hasattr(self._specialized_handler, 'clear_history'):
@@ -342,6 +347,63 @@ class PhoneAgent:
     # SpecGuard is now in phone_agent.core.spec_guard — initialized in __init__
 
     _NON_COORDINATE_ACTIONS = frozenset({"Compound", "Type", "Launch", "Back", "Wait", "Home"})
+
+    def _handle_verification_takeover(
+        self,
+        screenshot: Any,
+        current_app: str | None,
+        message: str,
+        verification_type: str,
+    ) -> StepResult:
+        """Auto-trigger Take_over when a verification page is detected.
+
+        Constructs a Take_over action and routes it through the existing
+        action handler, which blocks until the user completes the manual
+        operation (``input()`` in CLI, ``Event.wait()`` in WebUI).
+        """
+        if self.agent_config.verbose:
+            print(f"\n{'=' * 50}")
+            print(f"🔒 人机验证检测 (类型: {verification_type})")
+            print(f"   {message}")
+            print(f"   连续检测次数: {self._verification_consecutive}")
+            print(f"{'=' * 50}")
+
+        action = do(action="Take_over", message=message)
+
+        # Execute through the default handler (has the takeover_callback)
+        self.action_handler.execute(action, screenshot.width, screenshot.height)
+
+        # Brief pause for the post-verification page transition
+        time.sleep(2)
+
+        thinking = (
+            f"[自动检测] 页面类型: {verification_type}，"
+            f"检测到需要人工操作，已暂停等待用户完成"
+        )
+
+        # Record in memory
+        if self.memory_manager:
+            self.memory_manager.add_step(
+                thinking=thinking, action=action, screenshot_app=current_app,
+            )
+
+        # Record in tracer
+        if self.tracer:
+            self.tracer.record_step(
+                step=self._step_count,
+                screenshot_base64=screenshot.base64_data,
+                model_raw_output=f"[Auto-detected: {verification_type}]",
+                action=action,
+                finished=False,
+            )
+
+        return StepResult(
+            success=True,
+            finished=False,
+            action=action,
+            thinking=thinking,
+            message=message,
+        )
 
     def _try_graph_shortcut(
         self,
@@ -743,6 +805,28 @@ class PhoneAgent:
             # Keep semantic_layout variable for backward compatibility
             semantic_layout = screen_dict["semantic_layout"]
 
+            # --- Verification detection (Layer 1): before VLM ---
+            if used_page_classifier:
+                _verification = detect_verification(page_type, summary, elements)
+                if _verification is not None:
+                    self._verification_consecutive += 1
+                    if self._verification_consecutive <= 3:
+                        return self._handle_verification_takeover(
+                            screenshot, current_app,
+                            _verification.message,
+                            _verification.verification_type,
+                        )
+                    # After 3 consecutive detections, let VLM try once
+                    # in case the classifier is giving false positives.
+                    if self._verification_consecutive > 5:
+                        return StepResult(
+                            success=False, finished=True,
+                            action=None, thinking="",
+                            message="验证页面持续出现，任务无法继续。请手动完成验证后重新运行。",
+                        )
+                else:
+                    self._verification_consecutive = 0
+
             # Pass to memory manager with complete semantics
             context_data = self.memory_manager.locate_and_get_context(
                 ui_hash,
@@ -968,6 +1052,21 @@ class PhoneAgent:
                     success=False, finished=True,
                     action=None, thinking="",
                     message=f"模型错误: {e}",
+                )
+
+        # --- Verification detection (Layer 2): VLM-output fallback ---
+        # Triggers when PageClassifier was skipped (RuntimeDAG hint) but VLM
+        # recognized a login/verification page in its thinking.
+        _vlm_verification = detect_verification_from_vlm(
+            response.thinking or "", response.raw_content or "",
+        )
+        if _vlm_verification is not None:
+            self._verification_consecutive += 1
+            if self._verification_consecutive <= 3:
+                return self._handle_verification_takeover(
+                    screenshot, current_app,
+                    _vlm_verification.message,
+                    _vlm_verification.verification_type,
                 )
 
         # Parse action and execute based on model type

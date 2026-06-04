@@ -58,6 +58,7 @@ from phone_agent.model.adapters import ModelType, get_adapter, detect_model_type
 from phone_agent.actions.handler_uitars import UITarsActionHandler, UITarsAction
 from phone_agent.actions.handler_qwenvl import QwenVLActionHandler, QwenVLAction
 from phone_agent.actions.handler_guiowl import GUIOwlActionHandler, GUIOwlAction
+from phone_agent.verification_detector import detect_verification_from_vlm
 
 # 导入记忆模块
 try:
@@ -1132,12 +1133,18 @@ class StreamingAgent:
             except ValueError:
                 action = finish(message=action_str)
             
+            # Auto-detect verification when VLM fails to output Take_over
+            _vlm_v = detect_verification_from_vlm(thinking, raw_content)
+            if _vlm_v is not None and action.get("action") != "Take_over":
+                action = {"_metadata": "do", "action": "Take_over", "message": _vlm_v.message}
+                action_log += f"\n🔒 **自动检测到人机验证** ({_vlm_v.verification_type})\n"
+
             action_log += f"\n### 🎯 执行动作\n```json\n{json.dumps(action, ensure_ascii=False, indent=2)}\n```\n"
             yield thinking_log, action_log, screenshot_img
-            
+
             # 移除上下文中的图片
             self._context[-1] = MessageBuilder.remove_images_from_message(self._context[-1])
-            
+
             # 检查是否是 Take_over 动作（需要人工介入）
             is_takeover = action.get("action") == "Take_over"
             if is_takeover:
