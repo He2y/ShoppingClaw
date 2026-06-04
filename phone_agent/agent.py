@@ -451,6 +451,7 @@ class PhoneAgent:
         current_app: str | None,
         ui_hash: str,
         semantic_layout: str,
+        source_page_type: str = "",
     ) -> StepResult | None:
         """Execute a Grounded Action without VLM call (~0.5s).
 
@@ -506,6 +507,8 @@ class PhoneAgent:
                     expected_postcondition=hint.target_page,
                 )
 
+        self._record_and_evolve(source_page_type, action, new_page_type or hint.target_page)
+
         if self.tracer:
             self.tracer.record_step(
                 step=self._step_count,
@@ -527,46 +530,35 @@ class PhoneAgent:
         self,
         source_page_type: str,
         action: dict[str, Any],
-        current_app: str | None,
+        observed_page_type: str | None = None,
     ) -> None:
         """Feed execution result to EdgeLifecycleManager for self-evolution.
 
         Called after every action execution (both Fast Path and Full Path).
-        The lifecycle manager tracks outcome distributions and promotes
-        hypothesis → candidate → promoted as edges get verified.
+        If ``observed_page_type`` is provided (e.g. from Fast Path postcondition
+        check), it is used directly. Otherwise the method is a no-op — the
+        next step's PageClassifier result will provide the observation.
         """
+        if not observed_page_type:
+            return
         if not self.memory_manager:
             return
-        sgm = getattr(self.memory_manager, "spatial_graph_memory", None)
-        if not sgm:
-            return
-        lifecycle = getattr(sgm, "_edge_lifecycle", None)
+        lifecycle = getattr(
+            getattr(self.memory_manager, "spatial_graph_memory", None),
+            "_edge_lifecycle", None,
+        )
         if not lifecycle:
             return
 
         action_type = str(action.get("action", ""))
         action_target = str(action.get("element", action.get("text", "")))
 
-        # Observe actual postcondition from fresh screenshot
-        try:
-            device_factory = get_device_factory()
-            new_screenshot = device_factory.get_screenshot(self.agent_config.device_id)
-            if self.page_classifier and new_screenshot and not new_screenshot.is_sensitive:
-                pt, _, _ = self.page_classifier.classify(
-                    new_screenshot.base64_data, new_screenshot.width, new_screenshot.height,
-                )
-                observed_target = pt.value
-            else:
-                return
-        except Exception:
-            return
-
         try:
             lifecycle.record_outcome(
                 source_page_type=source_page_type or "",
                 intent=action_type,
                 action_target=action_target,
-                observed_target=observed_target,
+                observed_target=observed_page_type,
             )
             lifecycle.advance_step()
         except Exception:
@@ -1149,6 +1141,7 @@ class PhoneAgent:
                 if fast_hint is not None:
                     fast_result = self._execute_fast_path(
                         fast_hint, screenshot, current_app, ui_hash, semantic_layout,
+                        source_page_type=page_type or "",
                     )
                     if fast_result is not None:
                         return fast_result
@@ -1564,8 +1557,9 @@ class PhoneAgent:
                     expected_postcondition=action.get("_expected_postcondition"),
                 )
 
-        # Feed self-evolution lifecycle (outside memory_manager block)
-        self._record_and_evolve(page_type, action, current_app)
+        # Self-evolution for Full Path: postcondition observation happens in the
+        # NEXT step's PageClassifier → record_observation → EdgeLifecycle chain.
+        # No extra screenshot needed here (Fast Path handles its own evolve above).
 
 
         # Capture interact reply

@@ -107,7 +107,8 @@ class ActionAdvisor:
             except Exception:
                 pass
 
-        return hints
+        hints.sort(key=lambda h: (-h.confidence, h.grounded is False))
+        return hints[:8]
 
     def try_ground(
         self,
