@@ -928,8 +928,20 @@ class PhoneAgent:
             "JSON:"
         )
         try:
-            response = self.model_client.client.chat.completions.create(
-                model=self.model_config.model_name,
+            import os
+            from dotenv import load_dotenv
+            load_dotenv()
+            plan_key = os.getenv("AMSG_STRONG_VLM_API_KEY", "")
+            plan_url = os.getenv("AMSG_STRONG_VLM_BASE_URL", "")
+            plan_model = os.getenv("AMSG_STRONG_VLM_MODEL", "")
+            if plan_key and plan_url and plan_model:
+                from openai import OpenAI
+                plan_client = OpenAI(api_key=plan_key, base_url=plan_url)
+            else:
+                plan_client = self.model_client.client
+                plan_model = self.model_config.model_name
+            response = plan_client.chat.completions.create(
+                model=plan_model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=512,
                 temperature=0.0,
