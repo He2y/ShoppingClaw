@@ -219,6 +219,17 @@ class PhoneAgent:
             if self.agent_config.verbose:
                 print(f"⚠️ 澄清子代理初始化失败: {e}")
 
+        # Initialize Action Advisor (graph as navigation advisor)
+        self.action_advisor: ActionAdvisor | None = None
+        if self.memory_manager:
+            try:
+                from phone_agent.spatial.action_advisor import ActionAdvisor
+                sgm = self.memory_manager.spatial_graph_memory
+                lifecycle = getattr(sgm, "_edge_lifecycle", None)
+                self.action_advisor = ActionAdvisor(sgm, lifecycle)
+            except Exception:
+                pass
+
     def _resolve_model_type(self) -> ModelType:
         """Resolve model type from config or auto-detect from model name."""
         model_type_str = self.agent_config.model_type.lower()
@@ -394,7 +405,140 @@ class PhoneAgent:
                 pass
         return content[:80] if content else ""
 
+    def _needs_vlm(
+        self,
+        available_actions: list | None,
+    ) -> bool:
+        """Decide whether this step requires VLM (Full Path) or can use Fast Path.
+
+        Fast Path is allowed only when a Grounded Action with high confidence
+        matches the current plan step's target page.
+        """
+        if not self._task_plan or not available_actions:
+            return True
+        plan_step = self._task_plan.current_step()
+        if plan_step is None:
+            return True
+        for hint in available_actions:
+            if (
+                hint.target_page == plan_step.target_page
+                and hint.is_fast_executable()
+            ):
+                return False
+        return True
+
+    def _select_fast_action(self, available_actions: list) -> Any | None:
+        """Pick the best Grounded Action matching the current plan step."""
+        plan_step = self._task_plan.current_step() if self._task_plan else None
+        if plan_step is None:
+            return None
+        best = None
+        for hint in available_actions:
+            if (
+                hint.target_page == plan_step.target_page
+                and hint.is_fast_executable()
+                and (best is None or hint.confidence > best.confidence)
+            ):
+                best = hint
+        return best
+
     _NON_COORDINATE_ACTIONS = frozenset({"Compound", "Type", "Launch", "Back", "Wait", "Home"})
+
+    def _execute_fast_path(
+        self,
+        hint: Any,
+        screenshot: Any,
+        current_app: str | None,
+        ui_hash: str,
+        semantic_layout: str,
+    ) -> StepResult | None:
+        """Execute a Grounded Action without VLM call (~0.5s).
+
+        Returns StepResult on success, or None if postcondition
+        verification fails (caller falls through to Full Path).
+        """
+        action = self.action_advisor.get_fast_action(hint)
+
+        # Fill slots for Compound actions (e.g. <query> → "无线耳机")
+        if self._task_plan and self._task_plan.goal_slots:
+            action = self._fill_action_slots(action, self._task_plan.goal_slots)
+
+        if self.agent_config.verbose:
+            print(f"🚀 Fast Path: {hint.action_type} → {hint.target_page} (conf={hint.confidence:.2f})")
+
+        result = self.action_handler.execute(action, screenshot.width, screenshot.height)
+
+        # Postcondition verification
+        device_factory = get_device_factory()
+        new_screenshot = device_factory.get_screenshot(self.agent_config.device_id)
+
+        new_page_type = None
+        if self.page_classifier and new_screenshot and not new_screenshot.is_sensitive:
+            try:
+                pt, _, _ = self.page_classifier.classify(
+                    new_screenshot.base64_data, new_screenshot.width, new_screenshot.height,
+                )
+                new_page_type = pt.value
+            except Exception:
+                pass
+
+        if new_page_type and new_page_type != hint.target_page:
+            if self.agent_config.verbose:
+                print(f"⚠️ Fast Path postcondition mismatch: expected={hint.target_page}, actual={new_page_type}")
+            return None  # Fall through to Full Path
+
+        # Success — update state
+        desc = f"[Fast] {hint.description}"
+        self._step_summaries.append(desc)
+        if self._task_plan:
+            self._task_plan.try_advance(desc)
+
+        if self.memory_manager:
+            self.memory_manager.add_step(
+                thinking=desc, action=action, screenshot_app=current_app,
+            )
+            if hasattr(self.memory_manager, "update_state_and_transition"):
+                self.memory_manager.update_state_and_transition(
+                    screenshot_hash=ui_hash,
+                    semantic_layout=semantic_layout,
+                    action=action,
+                    task=self._current_task,
+                    expected_postcondition=hint.target_page,
+                )
+
+        if self.tracer:
+            self.tracer.record_step(
+                step=self._step_count,
+                screenshot_base64=screenshot.base64_data,
+                model_raw_output=f"[Fast Path: {hint.action_type} → {hint.target_page}]",
+                action=action,
+                finished=False,
+            )
+
+        return StepResult(
+            success=True,
+            finished=False,
+            action=action,
+            thinking=desc,
+            message=desc,
+        )
+
+    @staticmethod
+    def _fill_action_slots(action: dict, slots: dict[str, str]) -> dict:
+        """Fill <placeholder> slots in Compound action steps."""
+        if action.get("action") != "Compound":
+            return action
+        steps = action.get("steps", [])
+        filled_steps = []
+        for step in steps:
+            step = dict(step)
+            text = step.get("text", "")
+            if isinstance(text, str) and text.startswith("<") and text.endswith(">"):
+                slot_name = text[1:-1]
+                if slot_name in slots:
+                    step["text"] = slots[slot_name]
+            filled_steps.append(step)
+        return {**action, "steps": filled_steps}
 
     def _handle_verification_takeover(
         self,
@@ -782,6 +926,7 @@ class PhoneAgent:
         mode = "explore"
         current_state_id = None
         context_data = {"mode": "explore", "semantic_context": "", "next_actions": [], "current_state_id": None}
+        _available_actions: list | None = None
 
         # Initialize page_type for SpecGuard
         page_type = None
@@ -939,13 +1084,36 @@ class PhoneAgent:
                     mode = context_data.get("mode", "explore")
                     current_state_id = context_data.get("current_state_id")
 
-            graph_result = self._try_graph_shortcut(
-                context_data, mode, screenshot, current_app, ui_hash, semantic_layout,
-            )
-            if graph_result is not None:
-                return graph_result
+            # ── Action Library advisory ──
+            _available_actions: list | None = None
+            if self.action_advisor:
+                try:
+                    _available_actions = self.action_advisor.query(
+                        page_type or "", current_app or "",
+                    )
+                except Exception:
+                    _available_actions = None
 
-        # Get model response
+            # ── Dual-speed dispatch: Fast Path for Grounded Actions ──
+            if _available_actions and not self._needs_vlm(_available_actions):
+                fast_hint = self._select_fast_action(_available_actions)
+                if fast_hint is not None:
+                    fast_result = self._execute_fast_path(
+                        fast_hint, screenshot, current_app, ui_hash, semantic_layout,
+                    )
+                    if fast_result is not None:
+                        return fast_result
+                    # Fast Path failed postcondition → fall through to Full Path
+
+            # ── Legacy graph shortcut (kept as fallback, will be removed in Phase 3) ──
+            if not _available_actions:
+                graph_result = self._try_graph_shortcut(
+                    context_data, mode, screenshot, current_app, ui_hash, semantic_layout,
+                )
+                if graph_result is not None:
+                    return graph_result
+
+        # Get model response (Full Path)
         is_non_autoglm = self._model_type in (
             ModelType.UITARS, ModelType.QWENVL,
             ModelType.MAIUI, ModelType.GUIOWL,
@@ -1019,6 +1187,13 @@ class PhoneAgent:
                     for i, s in enumerate(self._step_summaries[-8:], 1):
                         history_lines.append(f"Step {i}: {s}")
                     parts.append("【执行历史】\n" + "\n".join(history_lines))
+
+                # Action Library hints (navigation advisory)
+                if _available_actions and self.action_advisor:
+                    hints_text = self.action_advisor.format_for_vlm(_available_actions)
+                    if hints_text:
+                        page_label = page_type or "unknown"
+                        parts.append(f"【可用操作】(当前: {page_label})\n{hints_text}")
 
                 screen_info = MessageBuilder.build_screen_info(current_app)
                 parts.append(f"** Screen Info **\n\n{screen_info}")
@@ -1222,8 +1397,11 @@ class PhoneAgent:
             # Remove image from context to save space
             self._context[-1] = MessageBuilder.remove_images_from_message(self._context[-1])
 
+            # Action Library grounding: enhance VLM coords with graph coords
+            if self.action_advisor and _available_actions:
+                action = self.action_advisor.try_ground(action, _available_actions)
+
             # SpecGuard: prevent model from skipping Interact on spec pages
-            # Only triggers on spec-related pages (spec_selection, product_detail, checkout)
             guarded = self._spec_guard.check(
                 action=action,
                 thinking=thinking,
