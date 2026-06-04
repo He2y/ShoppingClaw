@@ -16,7 +16,6 @@ from .exploration_queue import ExplorationJob, ExplorationQueueBuilder, Function
 from .functionality import FunctionalityExtractor, FunctionalityItem, StrongVLMFunctionalityExtractor
 from .functionality_cluster import FunctionalityCluster, FunctionalityClusterer
 from .hypothesis import EdgeHypothesis, EdgeHypothesisGenerator
-from .planner import SpatialPlanner, SpatialRoutePlan
 from .quality_gate import FunctionalityQualityGate, FunctionalityQualityResult
 from .reporting import (
     build_amsg_dry_run_report,
@@ -77,8 +76,6 @@ __all__ = [
     "ScreenSemanticsExtractor",
     "RuntimeObservation",
     "SemanticActionIR",
-    "SpatialPlanner",
-    "SpatialRoutePlan",
     "TaskSynthesizer",
     "VerificationResult",
     "AMSGModelConfig",
