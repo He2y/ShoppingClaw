@@ -1195,6 +1195,17 @@ class PhoneAgent:
                         page_label = page_type or "unknown"
                         parts.append(f"【可用操作】(当前: {page_label})\n{hints_text}")
 
+                # SpecGuard safety hints (critical for spec/payment pages)
+                if self.memory_manager:
+                    critical_hints = self._spec_guard.get_context_hints(
+                        current_app=current_app,
+                        page_type=page_type,
+                        task=self._current_task,
+                        vlm_plan=getattr(self, "_vlm_plan", None),
+                    )
+                    if critical_hints:
+                        parts.append("\n".join(critical_hints))
+
                 screen_info = MessageBuilder.build_screen_info(current_app)
                 parts.append(f"** Screen Info **\n\n{screen_info}")
 
@@ -1210,16 +1221,14 @@ class PhoneAgent:
                 )
 
         # =============================================
-        # Phase ⑥: Memory Decoupling Context (UI-Copilot paradigm)
-        # MINIMAL by default — only progress + on-demand retrieval.
-        # Detailed observations live in KnowledgeBase, not in VLM context.
+        # Phase ⑥: Memory context injection (lightweight)
+        # Task plan, action hints, and spec guard are already in the per-step
+        # user message (built above).  Here we only inject on-demand retrieval
+        # and graph semantic context as supplementary information.
         # =============================================
         extra_context_parts: list[str] = []
-        if context_data.get("semantic_context"):
-            extra_context_parts.append(str(context_data["semantic_context"]))
 
         if self.memory_manager and current_app:
-            # Core: lightweight progress + on-demand retrieval
             last_thinking = getattr(self, "_last_thinking", "")
             injection_ctx = self.memory_manager.get_injection_context(
                 thinking=last_thinking,
@@ -1229,31 +1238,15 @@ class PhoneAgent:
             if injection_ctx:
                 extra_context_parts.append(injection_ctx)
 
-        # Critical scenario detection (spec-guard — keep, it prevents bad purchases)
-        if self.memory_manager:
-            critical_hints = self._spec_guard.get_context_hints(
-                current_app=current_app,
-                page_type=page_type,
-                task=self._current_task,
-                vlm_plan=getattr(self, "_vlm_plan", None),
-            )
-            if critical_hints:
-                extra_context_parts.append("\n\n".join(critical_hints))
-                if self.agent_config.verbose:
-                    print("🎯 检测到关键场景，注入强提示")
-
-        extra_context = "\n\n".join(extra_context_parts) if extra_context_parts else ""
-
-        if extra_context and self._context:
+        if extra_context_parts and self._context:
+            extra_context = "\n\n".join(extra_context_parts)
             last_msg = self._context[-1]
             if isinstance(last_msg.get("content"), list):
                 for item in last_msg["content"]:
                     if item.get("type") == "text":
-                        # Inject at text beginning, not end
                         item["text"] = f"{extra_context}\n\n{item['text']}"
                         break
             elif isinstance(last_msg.get("content"), str):
-                # Inject at text beginning, not end
                 last_msg["content"] = f"{extra_context}\n\n{last_msg['content']}"
 
         # Get model response (with smart retry)
