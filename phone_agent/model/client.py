@@ -33,6 +33,7 @@ class ModelResponse:
     thinking: str
     action: str
     raw_content: str
+    summary: str = ""
     # Performance metrics
     time_to_first_token: float | None = None  # Time to first token (seconds)
     time_to_thinking_end: float | None = None  # Time to thinking end (seconds)
@@ -159,8 +160,9 @@ class ModelClient:
         # Calculate total time
         total_time = time.time() - start_time
 
-        # Parse thinking and action from response
+        # Parse thinking, action, and summary from response
         thinking, action = self._parse_response(raw_content)
+        summary = self._extract_summary(raw_content)
 
         # Print performance metrics
         lang = self.config.lang
@@ -185,10 +187,28 @@ class ModelClient:
             thinking=thinking,
             action=action,
             raw_content=raw_content,
+            summary=summary,
             time_to_first_token=time_to_first_token,
             time_to_thinking_end=time_to_thinking_end,
             total_time=total_time,
         )
+
+    @staticmethod
+    def _extract_summary(content: str) -> str:
+        """Extract <summary>...</summary> from VLM output.
+
+        Returns the summary text, or an empty string if not present.
+        Graceful fallback: the system works fine without summaries
+        (older models or failed format compliance).
+        """
+        if "<summary>" not in content:
+            return ""
+        try:
+            start = content.index("<summary>") + len("<summary>")
+            end = content.index("</summary>", start)
+            return content[start:end].strip()
+        except ValueError:
+            return ""
 
     def _parse_response(self, content: str) -> tuple[str, str]:
         """

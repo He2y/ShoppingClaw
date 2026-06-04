@@ -25,6 +25,7 @@ from phone_agent.model.adapters import ModelType, detect_model_type, get_adapter
 from phone_agent.model.client import MessageBuilder
 from phone_agent.memory.core import ProductStatus
 from phone_agent.memory.offline_explorer import PageClassifier, ShoppingPageType
+from phone_agent.task_plan import TaskPlan
 from phone_agent.verification_detector import (
     detect_verification,
     detect_verification_from_vlm,
@@ -254,6 +255,8 @@ class PhoneAgent:
         self._graph_fail_count: int = 0
         self._graph_fail_page: str = ""
         self._verification_consecutive: int = 0
+        self._task_plan: TaskPlan | None = None
+        self._step_summaries: list[str] = []
 
         # Clear action history for QwenVL handler/adapter
         if self._specialized_handler is not None and hasattr(self._specialized_handler, 'clear_history'):
@@ -265,16 +268,18 @@ class PhoneAgent:
         if self.tracer:
             self.tracer.start_task(task, model=self.model_config.model_name)
 
-        # Start memory tracking
+        # Start memory tracking + task planning
         self._vlm_plan: dict[str, Any] = {}
         if self.memory_manager:
             self.memory_manager.start_task(task)
-            # VLM pre-planning: decompose task before graph execution so the
-            # graph router uses accurate target page types and spec slots
-            # instead of relying solely on regex-based heuristics.
             self._vlm_plan = self._vlm_pre_plan(task)
             if self._vlm_plan:
                 self.memory_manager.set_vlm_plan(self._vlm_plan)
+                self._task_plan = TaskPlan.from_vlm_output(task, self._vlm_plan)
+            else:
+                self._task_plan = TaskPlan(original_task=task)
+        else:
+            self._task_plan = TaskPlan(original_task=task)
 
         # First step with user prompt
         result = self._execute_step(task, is_first=True)
@@ -345,6 +350,49 @@ class PhoneAgent:
 
 
     # SpecGuard is now in phone_agent.core.spec_guard — initialized in __init__
+
+    def _compress_history(self) -> None:
+        """Replace old assistant messages with their summaries.
+
+        Keeps the last ``_KEEP_FULL`` assistant messages in full detail;
+        older ones are collapsed to ``[执行摘要] ...`` one-liners.
+        This mirrors UI-Copilot's memory decoupling: detailed traces are
+        stored in the tracer, only summaries remain in the dialogue.
+        """
+        _KEEP_FULL = 2
+        assistant_indices = [
+            i for i, m in enumerate(self._context) if m.get("role") == "assistant"
+        ]
+        if len(assistant_indices) <= _KEEP_FULL:
+            return
+        for idx in assistant_indices[:-_KEEP_FULL]:
+            msg = self._context[idx]
+            content = msg.get("content", "")
+            if isinstance(content, str) and not content.startswith("[执行摘要]"):
+                summary = self._extract_summary_from_content(content)
+                msg["content"] = f"[执行摘要] {summary}" if summary else "[执行摘要] (步骤已压缩)"
+
+    @staticmethod
+    def _extract_summary_from_content(content: str) -> str:
+        """Extract summary from an assistant message's content string."""
+        if "<summary>" in content:
+            try:
+                start = content.index("<summary>") + len("<summary>")
+                end = content.index("</summary>", start)
+                return content[start:end].strip()
+            except ValueError:
+                pass
+        # Fallback: use last line of thinking
+        if "<think>" in content:
+            try:
+                start = content.index("<think>") + len("<think>")
+                end = content.index("</think>", start)
+                thinking = content[start:end].strip()
+                lines = [l.strip() for l in thinking.split("\n") if l.strip()]
+                return lines[-1] if lines else ""
+            except ValueError:
+                pass
+        return content[:80] if content else ""
 
     _NON_COORDINATE_ACTIONS = frozenset({"Compound", "Type", "Launch", "Back", "Wait", "Home"})
 
@@ -655,28 +703,43 @@ class PhoneAgent:
         Returns empty dict on failure (caller falls back to rule-based path).
         """
         prompt = (
-            "You are a mobile shopping task planner. Extract structured "
-            "information from the user's task.\n\n"
+            "You are a mobile shopping task planner. Decompose the task into "
+            "ordered execution steps and extract structured information.\n\n"
             f'Task: "{task}"\n\n'
-            "Return ONLY valid JSON (no other text):\n"
-            '{"search_query": "...", "product": "...",'
-            ' "specs": {"color": "...", "storage": "...", "size": "..."},'
-            ' "target_action": "add_to_cart|buy_now|checkout|view_cart",'
-            ' "target_page": "search_input|search_result|product_detail|spec_selection|cart|checkout",'
-            ' "steps": ["step1", "step2", ...]}\n\n'
+            "Return ONLY valid JSON:\n"
+            "{\n"
+            '  "search_query": "best search keywords",\n'
+            '  "product": "target product name",\n'
+            '  "specs": {"color": "...", "storage": "...", "size": "..."},\n'
+            '  "target_action": "add_to_cart|buy_now|checkout|view_cart",\n'
+            '  "target_page": "search_input|search_result|product_detail|spec_selection|cart|checkout",\n'
+            '  "steps": [\n'
+            '    {"description": "step description", "target_page": "page_type"},\n'
+            "    ...\n"
+            "  ]\n"
+            "}\n\n"
             "Rules:\n"
-            "- search_query: best search keywords for finding the product\n"
-            "- product: target product name\n"
-            "- specs: ONLY attributes the user explicitly mentioned. Omit keys with no value.\n"
-            "- target_action: what the user wants to do at the end\n"
-            "- target_page: the page type where target_action is performed\n"
-            "- steps: 3-5 ordered steps to complete the task\n\n"
+            "- steps: 3-8 ordered steps. Each step has description + target_page.\n"
+            "  target_page is the expected page type AFTER completing that step.\n"
+            "  Valid page types: home, search_input, search_result, product_detail,\n"
+            "  spec_selection, cart, checkout, store, my_account, filter_panel\n"
+            "- search_query: best keywords for product search\n"
+            "- specs: ONLY explicitly mentioned attributes. Omit unmentioned keys.\n\n"
             'Example for "去淘宝买iPhone 17 pro max，银色 512G，加入购物车":\n'
-            '{"search_query": "iPhone 17 pro max", "product": "iPhone 17 pro max",'
-            ' "specs": {"color": "银色", "storage": "512G"},'
-            ' "target_action": "add_to_cart", "target_page": "spec_selection",'
-            ' "steps": ["搜索iPhone 17 pro max", "从搜索结果选择合适商品",'
-            ' "选择银色和512G规格", "点击加入购物车"]}\n\n'
+            "{\n"
+            '  "search_query": "iPhone 17 pro max",\n'
+            '  "product": "iPhone 17 pro max",\n'
+            '  "specs": {"color": "银色", "storage": "512G"},\n'
+            '  "target_action": "add_to_cart",\n'
+            '  "target_page": "spec_selection",\n'
+            '  "steps": [\n'
+            '    {"description": "搜索iPhone 17 pro max", "target_page": "search_result"},\n'
+            '    {"description": "从搜索结果选择合适商品", "target_page": "product_detail"},\n'
+            '    {"description": "确认商品参数符合要求", "target_page": "product_detail"},\n'
+            '    {"description": "选择银色和512G规格", "target_page": "spec_selection"},\n'
+            '    {"description": "点击加入购物车", "target_page": "cart"}\n'
+            "  ]\n"
+            "}\n\n"
             "JSON:"
         )
         try:
@@ -692,8 +755,11 @@ class PhoneAgent:
             if json_match:
                 plan = json.loads(json_match.group())
                 if self.agent_config.verbose:
-                    print(f"[VLM Pre-Plan] target={plan.get('target_page')}, "
+                    steps = plan.get("steps", [])
+                    step_count = len(steps)
+                    print(f"[VLM Pre-Plan] {step_count} steps, "
                           f"query={plan.get('search_query', '')[:30]}, "
+                          f"target={plan.get('target_page')}, "
                           f"specs={plan.get('specs', {})}")
                 return plan
         except Exception:
@@ -940,12 +1006,28 @@ class PhoneAgent:
                     )
                 )
             else:
+                # Build structured per-step context
+                parts: list[str] = []
+
+                # Task plan with progress markers
+                if self._task_plan and self._task_plan.steps:
+                    parts.append(f"【任务计划】\n{self._task_plan.status_text()}")
+
+                # Execution history (compressed summaries)
+                if self._step_summaries:
+                    history_lines = []
+                    for i, s in enumerate(self._step_summaries[-8:], 1):
+                        history_lines.append(f"Step {i}: {s}")
+                    parts.append("【执行历史】\n" + "\n".join(history_lines))
+
                 screen_info = MessageBuilder.build_screen_info(current_app)
-                text_content = f"** Screen Info **\n\n{screen_info}"
+                parts.append(f"** Screen Info **\n\n{screen_info}")
+
                 if getattr(self, "_last_user_reply", None):
-                    text_content += f"\n\n[用户补充约束]: {self._last_user_reply}"
+                    parts.append(f"[用户补充约束]: {self._last_user_reply}")
                     self._last_user_reply = None
 
+                text_content = "\n\n".join(parts)
                 self._context.append(
                     MessageBuilder.create_user_message(
                         text=text_content, image_base64=screenshot.base64_data
@@ -1220,7 +1302,10 @@ class PhoneAgent:
                     params_str = ", ".join(f"{k}={repr(v)}" for k, v in action.items() if k not in ("_metadata", "action"))
                     action_str_to_save = f'do(action={repr(action.get("action", ""))}' + (f', {params_str}' if params_str else "") + ')'
 
-            assistant_content = f"<think>{thinking}</think><answer>{action_str_to_save}</answer>"
+            summary_tag = ""
+            if response.summary:
+                summary_tag = f"<summary>{response.summary}</summary>"
+            assistant_content = f"<think>{thinking}</think><answer>{action_str_to_save}</answer>{summary_tag}"
             self._context.append(
                 MessageBuilder.create_assistant_message(assistant_content)
             )
@@ -1289,6 +1374,14 @@ class PhoneAgent:
                 f"✅ {msgs['task_completed']}: {result.message or action.get('message', msgs['done'])}"
             )
             print("=" * 50 + "\n")
+
+        # Update task plan + step summaries + compress history
+        step_summary = response.summary if response.summary else ""
+        if step_summary:
+            self._step_summaries.append(step_summary)
+            if self._task_plan:
+                self._task_plan.try_advance(step_summary)
+        self._compress_history()
 
         # Save last thinking for retrieval trigger detection
         self._last_thinking = thinking
