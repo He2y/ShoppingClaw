@@ -408,17 +408,24 @@ class PhoneAgent:
     def _needs_vlm(
         self,
         available_actions: list | None,
+        page_type: str = "",
     ) -> bool:
         """Decide whether this step requires VLM (Full Path) or can use Fast Path.
 
         Fast Path is allowed only when a Grounded Action with high confidence
-        matches the current plan step's target page.
+        matches the current plan step's target page AND no pending semantic
+        input is required.
         """
         if not self._task_plan or not available_actions:
             return True
         plan_step = self._task_plan.current_step()
         if plan_step is None:
             return True
+
+        # search_input with pending query → VLM must type the search term
+        if page_type == "search_input" and self._task_plan.goal_slots.get("query"):
+            return True
+
         for hint in available_actions:
             if (
                 hint.target_page == plan_step.target_page
@@ -1160,7 +1167,7 @@ class PhoneAgent:
                     _available_actions = None
 
             # ── Dual-speed dispatch: Fast Path for Grounded Actions ──
-            if _available_actions and not self._needs_vlm(_available_actions):
+            if _available_actions and not self._needs_vlm(_available_actions, page_type or ""):
                 fast_hint = self._select_fast_action(_available_actions)
                 if fast_hint is not None:
                     fast_result = self._execute_fast_path(
