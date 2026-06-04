@@ -1250,13 +1250,17 @@ class PhoneAgent:
                 # Key constraints (price, specs) — prominent reminder
                 if self._task_plan and self._task_plan.goal_slots:
                     constraints = []
-                    if self._task_plan.goal_slots.get("price"):
-                        constraints.append(f"价格要求: {self._task_plan.goal_slots['price']}")
-                    for k in ("color", "storage", "size"):
-                        if self._task_plan.goal_slots.get(k):
-                            constraints.append(f"{k}: {self._task_plan.goal_slots[k]}")
+                    slots = self._task_plan.goal_slots
+                    for pk in ("price", "price_range", "price_min", "price_max"):
+                        if slots.get(pk):
+                            constraints.append(f"价格要求: {slots[pk]}")
+                            break
+                    for k in ("color", "storage", "size", "brand"):
+                        if slots.get(k):
+                            constraints.append(f"{k}: {slots[k]}")
                     if constraints:
-                        parts.append("【关键约束】⚠️ " + "，".join(constraints))
+                        parts.append("【关键约束】⚠️ " + "，".join(constraints)
+                                     + "\n请严格按照约束选择商品，不符合价格要求的商品不要加入购物车")
 
                 # Execution history (compressed summaries)
                 if self._step_summaries:
