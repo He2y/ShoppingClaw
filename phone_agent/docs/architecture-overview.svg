@@ -1,0 +1,176 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 860">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    .title { font-size: 18px; font-weight: 600; fill: #111827; }
+    .label { font-size: 13px; font-weight: 500; fill: #111827; }
+    .sublabel { font-size: 11px; fill: #6b7280; }
+    .layer-label { font-size: 12px; font-weight: 600; fill: #6b7280; letter-spacing: 1px; }
+    .arrow-label { font-size: 10.5px; fill: #374151; }
+  </style>
+  <defs>
+    <marker id="ab" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#2563eb"/></marker>
+    <marker id="ag" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#059669"/></marker>
+    <marker id="ao" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#ea580c"/></marker>
+    <marker id="ap" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#7c3aed"/></marker>
+    <filter id="sh"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.08"/></filter>
+  </defs>
+  <rect width="1100" height="860" fill="#ffffff"/>
+  <text x="550" y="32" text-anchor="middle" class="title">ClawGUI-Agent Architecture: VLM-Primary + Action Library</text>
+
+  <!-- ===== User Task ===== -->
+  <rect x="440" y="50" width="220" height="40" rx="20" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="550" y="75" text-anchor="middle" class="label">User Task</text>
+  <line x1="550" y1="90" x2="550" y2="118" stroke="#2563eb" stroke-width="2" marker-end="url(#ab)"/>
+
+  <!-- ===== STRATEGIC LAYER ===== -->
+  <rect x="30" y="116" width="1040" height="260" rx="10" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1" stroke-dasharray="6,3"/>
+  <text x="50" y="136" class="layer-label">STRATEGIC LAYER (VLM)</text>
+
+  <!-- Clarify Agent -->
+  <rect x="60" y="150" width="150" height="46" rx="8" fill="#ede9fe" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="135" y="170" text-anchor="middle" class="label">Clarify Agent</text>
+  <text x="135" y="185" text-anchor="middle" class="sublabel">Ambiguity Detection</text>
+
+  <!-- VLM Pre-Plan -->
+  <rect x="400" y="150" width="180" height="46" rx="8" fill="#ede9fe" stroke="#a78bfa" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="490" y="170" text-anchor="middle" class="label">VLM Pre-Plan</text>
+  <text x="490" y="185" text-anchor="middle" class="sublabel">Strong VLM Task Decomposition</text>
+
+  <!-- TaskPlan -->
+  <rect x="640" y="150" width="160" height="46" rx="8" fill="#ede9fe" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="720" y="170" text-anchor="middle" class="label">TaskPlan</text>
+  <text x="720" y="185" text-anchor="middle" class="sublabel">Steps + Goal Slots</text>
+
+  <!-- Arrow Pre-Plan → TaskPlan -->
+  <line x1="580" y1="173" x2="638" y2="173" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#ap)"/>
+
+  <!-- Decision Diamond -->
+  <polygon points="550,225 630,260 550,295 470,260" fill="#fff7ed" stroke="#f97316" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="550" y="256" text-anchor="middle" style="font-size:12px;font-weight:500;fill:#111827">_needs_vlm?</text>
+  <text x="550" y="270" text-anchor="middle" class="sublabel">Dual-Speed</text>
+
+  <!-- Fast Path (left) -->
+  <rect x="60" y="240" width="200" height="52" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="160" y="261" text-anchor="middle" class="label" style="fill:#059669">Fast Path ~0.5s</text>
+  <text x="160" y="277" text-anchor="middle" class="sublabel">Grounded Action Direct Execute</text>
+
+  <!-- Full Path (right) -->
+  <rect x="840" y="240" width="200" height="52" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="940" y="261" text-anchor="middle" class="label" style="fill:#2563eb">Full Path ~5s</text>
+  <text x="940" y="277" text-anchor="middle" class="sublabel">VLM Screenshot + Action Grounding</text>
+
+  <!-- Decision → Fast Path -->
+  <line x1="470" y1="260" x2="262" y2="260" stroke="#059669" stroke-width="2" marker-end="url(#ag)"/>
+  <rect x="340" y="247" width="68" height="16" rx="3" fill="#fff"/>
+  <text x="374" y="259" text-anchor="middle" class="arrow-label" style="fill:#059669">Grounded</text>
+
+  <!-- Decision → Full Path -->
+  <line x1="630" y1="260" x2="838" y2="260" stroke="#2563eb" stroke-width="2" marker-end="url(#ab)"/>
+  <rect x="700" y="247" width="68" height="16" rx="3" fill="#fff"/>
+  <text x="734" y="259" text-anchor="middle" class="arrow-label" style="fill:#2563eb">Semantic</text>
+
+  <!-- SpecGuard -->
+  <rect x="870" y="300" width="120" height="30" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
+  <text x="930" y="320" text-anchor="middle" class="sublabel" style="fill:#dc2626">SpecGuard Safety</text>
+
+  <!-- TaskPlan → Decision (dashed) -->
+  <path d="M720,196 L720,225 Q720,235 660,235 L632,250" fill="none" stroke="#6b7280" stroke-width="1" stroke-dasharray="4,2"/>
+
+  <!-- ===== TACTICAL LAYER ===== -->
+  <rect x="30" y="390" width="1040" height="155" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1" stroke-dasharray="6,3"/>
+  <text x="50" y="410" class="layer-label">TACTICAL LAYER (Action Library)</text>
+
+  <!-- Action Advisor -->
+  <rect x="60" y="425" width="220" height="50" rx="8" fill="#dcfce7" stroke="#4ade80" stroke-width="1.5" filter="url(#sh)"/>
+  <text x="170" y="447" text-anchor="middle" class="label">Action Advisor</text>
+  <text x="170" y="462" text-anchor="middle" class="sublabel">query() · try_ground() · format_for_vlm()</text>
+
+  <!-- Neo4j -->
+  <path d="M420,425 Q420,420 480,420 Q540,420 540,425 L540,468 Q540,473 480,473 Q420,473 420,468 Z" fill="#dcfce7" stroke="#4ade80" stroke-width="1.5" filter="url(#sh)"/>
+  <ellipse cx="480" cy="425" rx="60" ry="5" fill="#dcfce7" stroke="#4ade80" stroke-width="1.5"/>
+  <text x="480" y="450" text-anchor="middle" class="label">Neo4j</text>
+  <text x="480" y="465" text-anchor="middle" class="sublabel">Action Library (Graph DB)</text>
+
+  <!-- Edge Lifecycle -->
+  <rect x="620" y="425" width="200" height="50" rx="8" fill="#dcfce7" stroke="#4ade80" stroke-width="1.5"/>
+  <text x="720" y="447" text-anchor="middle" class="label">Edge Lifecycle</text>
+  <text x="720" y="462" text-anchor="middle" class="sublabel">hypothesis → promoted → demoted</text>
+
+  <!-- Graph Schema mini -->
+  <rect x="60" y="485" width="80" height="30" rx="15" fill="#fff" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="100" y="505" text-anchor="middle" class="sublabel" style="fill:#7c3aed">UIState</text>
+  <line x1="140" y1="500" x2="185" y2="500" stroke="#ea580c" stroke-width="1.5" marker-end="url(#ao)"/>
+  <rect x="188" y="485" width="70" height="30" rx="6" fill="#fff" stroke="#f97316" stroke-width="1.5"/>
+  <text x="223" y="505" text-anchor="middle" class="sublabel" style="fill:#ea580c">Action</text>
+  <line x1="258" y1="500" x2="303" y2="500" stroke="#ea580c" stroke-width="1.5" marker-end="url(#ao)"/>
+  <rect x="306" y="485" width="80" height="30" rx="15" fill="#fff" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="346" y="505" text-anchor="middle" class="sublabel" style="fill:#7c3aed">UIState</text>
+
+  <!-- Advisory Arrow: ActionAdvisor → Fast Path -->
+  <path d="M170,425 L170,360 Q170,345 160,340 L160,294" fill="none" stroke="#059669" stroke-width="1.5" marker-end="url(#ag)"/>
+  <rect x="115" y="340" width="75" height="16" rx="3" fill="#fff"/>
+  <text x="152" y="351" text-anchor="middle" class="arrow-label" style="fill:#059669">ActionHints</text>
+
+  <!-- Advisory Arrow: ActionAdvisor → Full Path (try_ground) -->
+  <path d="M280,445 Q920,445 920,335 L920,294" fill="none" stroke="#059669" stroke-width="1" stroke-dasharray="5,3" marker-end="url(#ag)"/>
+  <rect x="860" y="340" width="65" height="16" rx="3" fill="#fff"/>
+  <text x="892" y="351" text-anchor="middle" class="arrow-label" style="fill:#059669">try_ground</text>
+
+  <!-- ===== EXECUTION LAYER ===== -->
+  <rect x="30" y="560" width="1040" height="95" rx="10" fill="#fff7ed" stroke="#fdba74" stroke-width="1" stroke-dasharray="6,3"/>
+  <text x="50" y="580" class="layer-label">EXECUTION LAYER (Device)</text>
+
+  <rect x="60" y="595" width="150" height="42" rx="8" fill="#fed7aa" stroke="#f97316" stroke-width="1.5"/>
+  <text x="135" y="614" text-anchor="middle" class="label">Screenshot</text>
+  <text x="135" y="628" text-anchor="middle" class="sublabel">ADB / HDC / iOS</text>
+
+  <rect x="250" y="595" width="150" height="42" rx="8" fill="#fed7aa" stroke="#f97316" stroke-width="1.5"/>
+  <text x="325" y="614" text-anchor="middle" class="label">Action Execute</text>
+  <text x="325" y="628" text-anchor="middle" class="sublabel">Tap · Type · Swipe</text>
+
+  <rect x="440" y="595" width="170" height="42" rx="8" fill="#fed7aa" stroke="#f97316" stroke-width="1.5"/>
+  <text x="525" y="614" text-anchor="middle" class="label">PageClassifier</text>
+  <text x="525" y="628" text-anchor="middle" class="sublabel">VLM Page Type Detection</text>
+
+  <rect x="650" y="595" width="170" height="42" rx="8" fill="#fed7aa" stroke="#f97316" stroke-width="1.5"/>
+  <text x="735" y="614" text-anchor="middle" class="label">Verification Detect</text>
+  <text x="735" y="628" text-anchor="middle" class="sublabel">CAPTCHA / Login</text>
+
+  <!-- ===== MEMORY LAYER ===== -->
+  <rect x="30" y="675" width="700" height="100" rx="10" fill="#f0fdfa" stroke="#5eead4" stroke-width="1" stroke-dasharray="6,3"/>
+  <text x="50" y="695" class="layer-label">MEMORY LAYER</text>
+
+  <path d="M60,710 Q60,705 110,705 Q160,705 160,710 L160,748 Q160,753 110,753 Q60,753 60,748 Z" fill="#ccfbf1" stroke="#2dd4bf" stroke-width="1.5"/>
+  <ellipse cx="110" cy="710" rx="50" ry="5" fill="#ccfbf1" stroke="#2dd4bf" stroke-width="1.5"/>
+  <text x="110" y="733" text-anchor="middle" class="label">FAISS</text>
+  <text x="110" y="747" text-anchor="middle" class="sublabel">User Preferences</text>
+
+  <rect x="200" y="708" width="160" height="44" rx="8" fill="#ccfbf1" stroke="#2dd4bf" stroke-width="1.5"/>
+  <text x="280" y="728" text-anchor="middle" class="label">Session State</text>
+  <text x="280" y="742" text-anchor="middle" class="sublabel">Products · Steps · Progress</text>
+
+  <rect x="400" y="708" width="150" height="44" rx="8" fill="#ccfbf1" stroke="#2dd4bf" stroke-width="1.5"/>
+  <text x="475" y="728" text-anchor="middle" class="label">Step Summaries</text>
+  <text x="475" y="742" text-anchor="middle" class="sublabel">Compressed History</text>
+
+  <rect x="590" y="708" width="130" height="44" rx="8" fill="#ccfbf1" stroke="#2dd4bf" stroke-width="1.5"/>
+  <text x="655" y="728" text-anchor="middle" class="label">Retrieval GW</text>
+  <text x="655" y="742" text-anchor="middle" class="sublabel">On-Demand Context</text>
+
+  <!-- Self-evolution arrow: Execute → Neo4j -->
+  <path d="M325,637 L325,665 Q325,675 380,675 L480,675 L480,550 L480,475" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#ap)"/>
+  <rect x="402" y="538" width="110" height="16" rx="3" fill="#fff"/>
+  <text x="457" y="549" text-anchor="middle" class="arrow-label" style="fill:#7c3aed">record_observation</text>
+
+  <!-- ===== LEGEND ===== -->
+  <rect x="770" y="680" width="290" height="95" rx="8" fill="#f9fafb" stroke="#d1d5db" stroke-width="1"/>
+  <text x="785" y="700" style="font-size:12px;font-weight:600;fill:#374151">Legend</text>
+  <line x1="785" y1="715" x2="815" y2="715" stroke="#2563eb" stroke-width="2" marker-end="url(#ab)"/>
+  <text x="822" y="719" class="sublabel">VLM Decision / Full Path</text>
+  <line x1="785" y1="733" x2="815" y2="733" stroke="#059669" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="822" y="737" class="sublabel">Graph Advisory / Fast Path</text>
+  <line x1="785" y1="751" x2="815" y2="751" stroke="#ea580c" stroke-width="1.5" marker-end="url(#ao)"/>
+  <text x="822" y="755" class="sublabel">Graph Schema / Execution</text>
+  <line x1="785" y1="769" x2="815" y2="769" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#ap)"/>
+  <text x="822" y="773" class="sublabel">Self-Evolution / Lifecycle</text>
+</svg>

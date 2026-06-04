@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 360">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    .title { font-size: 16px; font-weight: 600; fill: #111827; }
+    .label { font-size: 13px; font-weight: 600; fill: #fff; }
+    .sublabel { font-size: 11px; fill: #6b7280; }
+    .cond { font-size: 10px; fill: #374151; font-style: italic; }
+  </style>
+  <defs>
+    <marker id="a1" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0,10 3.5,0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="a2" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0,10 3.5,0 7" fill="#dc2626"/>
+    </marker>
+    <filter id="s"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-opacity="0.1"/></filter>
+  </defs>
+  <rect width="960" height="360" fill="#fff"/>
+  <text x="480" y="28" text-anchor="middle" class="title">Edge Lifecycle State Machine (Self-Evolution)</text>
+
+  <!-- hypothesis -->
+  <rect x="60" y="80" width="160" height="50" rx="25" fill="#9ca3af" stroke="#6b7280" stroke-width="1.5" filter="url(#s)"/>
+  <text x="140" y="110" text-anchor="middle" class="label">hypothesis</text>
+
+  <!-- candidate -->
+  <rect x="300" y="80" width="160" height="50" rx="25" fill="#f59e0b" stroke="#d97706" stroke-width="1.5" filter="url(#s)"/>
+  <text x="380" y="110" text-anchor="middle" class="label">candidate</text>
+
+  <!-- promoted -->
+  <rect x="540" y="80" width="160" height="50" rx="25" fill="#059669" stroke="#047857" stroke-width="1.5" filter="url(#s)"/>
+  <text x="620" y="110" text-anchor="middle" class="label">promoted</text>
+
+  <!-- demoted -->
+  <rect x="780" y="80" width="130" height="50" rx="25" fill="#dc2626" stroke="#b91c1c" stroke-width="1.5" filter="url(#s)"/>
+  <text x="845" y="110" text-anchor="middle" class="label">demoted</text>
+
+  <!-- hypothesis → candidate -->
+  <line x1="220" y1="105" x2="298" y2="105" stroke="#2563eb" stroke-width="2" marker-end="url(#a1)"/>
+  <text x="259" y="98" text-anchor="middle" class="cond">verifications ≥ min</text>
+
+  <!-- candidate → promoted -->
+  <line x1="460" y1="105" x2="538" y2="105" stroke="#2563eb" stroke-width="2" marker-end="url(#a1)"/>
+  <text x="499" y="98" text-anchor="middle" class="cond">dominance ≥ 80%</text>
+
+  <!-- promoted → demoted -->
+  <line x1="700" y1="105" x2="778" y2="105" stroke="#dc2626" stroke-width="2" marker-end="url(#a2)"/>
+  <text x="739" y="98" text-anchor="middle" class="cond">dominance &lt; 40%</text>
+
+  <!-- demoted → hypothesis (re-explore loop) -->
+  <path d="M845,130 L845,180 Q845,200 780,200 L140,200 Q60,200 60,180 L60,132" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#a1)"/>
+  <text x="450" y="216" text-anchor="middle" class="cond" style="fill:#7c3aed">VLM re-explores → new observations restart cycle</text>
+
+  <!-- Annotations -->
+  <rect x="60" y="245" width="210" height="75" rx="6" fill="#f9fafb" stroke="#d1d5db" stroke-width="0.5"/>
+  <text x="75" y="265" class="sublabel" style="font-weight:600">hypothesis (1-2 observations)</text>
+  <text x="75" y="280" class="sublabel">Not visible to ActionAdvisor</text>
+  <text x="75" y="295" class="sublabel">VLM explores independently</text>
+  <text x="75" y="310" class="sublabel">Stored in memory only</text>
+
+  <rect x="300" y="245" width="210" height="75" rx="6" fill="#f9fafb" stroke="#d1d5db" stroke-width="0.5"/>
+  <text x="315" y="265" class="sublabel" style="font-weight:600">candidate (unstable outcomes)</text>
+  <text x="315" y="280" class="sublabel">Low-confidence advisory hint</text>
+  <text x="315" y="295" class="sublabel">Multiple observed targets</text>
+  <text x="315" y="310" class="sublabel">Shannon entropy &gt; threshold</text>
+
+  <rect x="540" y="245" width="210" height="75" rx="6" fill="#f9fafb" stroke="#d1d5db" stroke-width="0.5"/>
+  <text x="555" y="265" class="sublabel" style="font-weight:600">promoted (verified, reliable)</text>
+  <text x="555" y="280" class="sublabel">Grounded → Fast Path eligible</text>
+  <text x="555" y="295" class="sublabel">Ungrounded → VLM hint only</text>
+  <text x="555" y="310" class="sublabel">Persisted to Neo4j</text>
+
+  <rect x="780" y="245" width="140" height="75" rx="6" fill="#f9fafb" stroke="#d1d5db" stroke-width="0.5"/>
+  <text x="795" y="265" class="sublabel" style="font-weight:600">demoted (UI changed)</text>
+  <text x="795" y="280" class="sublabel">Removed from hints</text>
+  <text x="795" y="295" class="sublabel">VLM re-explores</text>
+  <text x="795" y="310" class="sublabel">New cycle starts</text>
+</svg>

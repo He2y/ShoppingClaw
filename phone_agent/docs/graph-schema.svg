@@ -1,0 +1,98 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 520">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    .title { font-size: 16px; font-weight: 600; fill: #111827; }
+    .label { font-size: 13px; font-weight: 500; fill: #111827; }
+    .sublabel { font-size: 11px; fill: #6b7280; }
+    .prop { font-size: 10.5px; fill: #374151; font-family: 'Courier New', monospace; }
+    .layer-label { font-size: 11px; font-weight: 600; fill: #6b7280; letter-spacing: 1px; }
+  </style>
+  <defs>
+    <marker id="arr-b" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0,10 3.5,0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arr-o" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0,10 3.5,0 7" fill="#ea580c"/>
+    </marker>
+    <marker id="arr-g" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0,10 3.5,0 7" fill="#059669"/>
+    </marker>
+    <filter id="sh"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.08"/></filter>
+  </defs>
+  <rect width="960" height="520" fill="#fff"/>
+  <text x="480" y="30" text-anchor="middle" class="title">Neo4j Graph Schema: UIState → Action → UIState</text>
+
+  <!-- ===== UIState (Source) ===== -->
+  <rect x="40" y="60" width="240" height="200" rx="12" fill="#faf5ff" stroke="#a78bfa" stroke-width="2" filter="url(#sh)"/>
+  <rect x="40" y="60" width="240" height="32" rx="12" fill="#a78bfa" stroke="none"/>
+  <rect x="40" y="80" width="240" height="12" fill="#a78bfa" stroke="none"/>
+  <text x="160" y="82" text-anchor="middle" style="font-size:14px;font-weight:600;fill:#fff">UIState (Source)</text>
+  <text x="55" y="112" class="prop">state_id: string</text>
+  <text x="55" y="128" class="prop">app: "淘宝" | "京东" | ...</text>
+  <text x="55" y="144" class="prop">page_type: ShoppingPageType</text>
+  <text x="55" y="160" class="prop">summary: string (≤15 chars)</text>
+  <text x="55" y="176" class="prop">landmarks: string[]</text>
+  <text x="55" y="192" class="prop">affordances: string[]</text>
+  <text x="55" y="208" class="prop">risk_level: normal|medium|high</text>
+  <text x="55" y="224" class="prop">screenshot_hash: string</text>
+  <text x="55" y="240" class="prop">semantic_signature: string</text>
+
+  <!-- ===== Action Node ===== -->
+  <rect x="370" y="60" width="240" height="240" rx="12" fill="#fff7ed" stroke="#f97316" stroke-width="2" filter="url(#sh)"/>
+  <rect x="370" y="60" width="240" height="32" rx="12" fill="#f97316" stroke="none"/>
+  <rect x="370" y="80" width="240" height="12" fill="#f97316" stroke="none"/>
+  <text x="490" y="82" text-anchor="middle" style="font-size:14px;font-weight:600;fill:#fff">Action</text>
+  <text x="385" y="112" class="prop">type: Tap|Type|Swipe|Back|...</text>
+  <text x="385" y="128" class="prop">region: top_center|bottom_right</text>
+  <text x="385" y="144" class="prop">semantic_target: string</text>
+  <text x="385" y="160" class="prop">target_locator: {element:[x,y]}</text>
+  <text x="385" y="176" class="prop">expected_postcondition: string</text>
+  <text x="385" y="192" class="prop">confidence: float</text>
+  <text x="385" y="208" class="prop">lifecycle_stage: string</text>
+  <text x="385" y="224" class="prop">verification_count: int</text>
+  <text x="385" y="240" class="prop">dominance_ratio: float</text>
+  <text x="385" y="256" class="prop">outcome_entropy: float</text>
+  <text x="385" y="272" class="prop">outcome_distribution_json: {}</text>
+  <text x="385" y="288" class="prop">risk_level: normal|medium|high</text>
+
+  <!-- ===== UIState (Target) ===== -->
+  <rect x="700" y="60" width="220" height="200" rx="12" fill="#faf5ff" stroke="#a78bfa" stroke-width="2" filter="url(#sh)"/>
+  <rect x="700" y="60" width="220" height="32" rx="12" fill="#a78bfa" stroke="none"/>
+  <rect x="700" y="80" width="220" height="12" fill="#a78bfa" stroke="none"/>
+  <text x="810" y="82" text-anchor="middle" style="font-size:14px;font-weight:600;fill:#fff">UIState (Target)</text>
+  <text x="715" y="112" class="prop">state_id: string</text>
+  <text x="715" y="128" class="prop">app: string</text>
+  <text x="715" y="144" class="prop">page_type: string</text>
+  <text x="715" y="160" class="prop">...</text>
+
+  <!-- ===== Relationships ===== -->
+  <line x1="280" y1="130" x2="368" y2="130" stroke="#2563eb" stroke-width="2.5" marker-end="url(#arr-b)"/>
+  <rect x="296" y="116" width="56" height="16" rx="3" fill="#fff"/>
+  <text x="324" y="128" text-anchor="middle" style="font-size:10px;font-weight:600;fill:#2563eb">NEXT_ACTION</text>
+
+  <line x1="610" y1="130" x2="698" y2="130" stroke="#ea580c" stroke-width="2.5" marker-end="url(#arr-o)"/>
+  <rect x="628" y="116" width="48" height="16" rx="3" fill="#fff"/>
+  <text x="652" y="128" text-anchor="middle" style="font-size:10px;font-weight:600;fill:#ea580c">PRODUCES</text>
+
+  <!-- ===== Grounded vs Ungrounded ===== -->
+  <rect x="40" y="320" width="430" height="180" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1" stroke-dasharray="5,3"/>
+  <text x="55" y="342" class="layer-label">GROUNDED ACTIONS (Fast Path)</text>
+  <text x="55" y="365" class="sublabel">Coordinates fully resolved, auto-executable</text>
+  <text x="55" y="388" class="prop">home → search_input    (Tap search bar)</text>
+  <text x="55" y="404" class="prop">search_input → search_result (Compound: Type+Submit)</text>
+  <text x="55" y="420" class="prop">any → home             (Home button)</text>
+  <text x="55" y="436" class="prop">any → previous         (Back button)</text>
+  <text x="55" y="452" class="prop">product_detail → home  (Home nav)</text>
+  <text x="55" y="468" class="prop">cart → checkout         (Tap checkout button)</text>
+  <text x="55" y="488" class="sublabel">Condition: lifecycle=promoted AND confidence ≥ 0.9</text>
+
+  <rect x="500" y="320" width="420" height="180" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1" stroke-dasharray="5,3"/>
+  <text x="515" y="342" class="layer-label">UNGROUNDED ACTIONS (Full Path)</text>
+  <text x="515" y="365" class="sublabel">VLM must decide which element to interact with</text>
+  <text x="515" y="388" class="prop">search_result → product_detail  (which product?)</text>
+  <text x="515" y="404" class="prop">search_result → store           (which store?)</text>
+  <text x="515" y="420" class="prop">product_detail → spec_selection (buy or cart?)</text>
+  <text x="515" y="436" class="prop">spec_selection → cart           (which specs?)</text>
+  <text x="515" y="452" class="prop">spec_selection → checkout       (which specs?)</text>
+  <text x="515" y="488" class="sublabel">Condition: transition in _UNGROUNDED_TRANSITIONS set</text>
+</svg>
