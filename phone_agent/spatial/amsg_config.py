@@ -117,6 +117,22 @@ class AMSGOptimConfig:
         )
 
     @classmethod
+    def sava(cls) -> AMSGOptimConfig:
+        """VLM-Primary architecture with real lifecycle verification.
+
+        Actions must be verified >=3 times with >=80% dominance to be promoted.
+        Promoted Grounded Actions can auto-execute on the Fast Path.
+        Demoted Actions (dominance <40%) are removed from the Action Library.
+        """
+        return cls(
+            edge_promotion_policy="verified",
+            min_verification_count=3,
+            outcome_dominance_threshold=0.8,
+            outcome_entropy_vlm_threshold=0.5,
+            enable_heuristic_injection=False,
+        )
+
+    @classmethod
     def from_env(cls) -> AMSGOptimConfig:
         """Resolve config preset from AMSG_CONFIG env var (default: legacy)."""
         import os
@@ -127,6 +143,7 @@ class AMSGOptimConfig:
             "edge_only": cls.edge_only,
             "belief_only": cls.belief_only,
             "planner_only": cls.planner_only,
+            "sava": cls.sava,
         }
         factory = presets.get(preset)
         return factory() if factory else cls.legacy()

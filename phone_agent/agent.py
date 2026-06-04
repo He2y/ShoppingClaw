@@ -523,6 +523,55 @@ class PhoneAgent:
             message=desc,
         )
 
+    def _record_and_evolve(
+        self,
+        source_page_type: str,
+        action: dict[str, Any],
+        current_app: str | None,
+    ) -> None:
+        """Feed execution result to EdgeLifecycleManager for self-evolution.
+
+        Called after every action execution (both Fast Path and Full Path).
+        The lifecycle manager tracks outcome distributions and promotes
+        hypothesis → candidate → promoted as edges get verified.
+        """
+        if not self.memory_manager:
+            return
+        sgm = getattr(self.memory_manager, "spatial_graph_memory", None)
+        if not sgm:
+            return
+        lifecycle = getattr(sgm, "_edge_lifecycle", None)
+        if not lifecycle:
+            return
+
+        action_type = str(action.get("action", ""))
+        action_target = str(action.get("element", action.get("text", "")))
+
+        # Observe actual postcondition from fresh screenshot
+        try:
+            device_factory = get_device_factory()
+            new_screenshot = device_factory.get_screenshot(self.agent_config.device_id)
+            if self.page_classifier and new_screenshot and not new_screenshot.is_sensitive:
+                pt, _, _ = self.page_classifier.classify(
+                    new_screenshot.base64_data, new_screenshot.width, new_screenshot.height,
+                )
+                observed_target = pt.value
+            else:
+                return
+        except Exception:
+            return
+
+        try:
+            lifecycle.record_outcome(
+                source_page_type=source_page_type or "",
+                intent=action_type,
+                action_target=action_target,
+                observed_target=observed_target,
+            )
+            lifecycle.advance_step()
+        except Exception:
+            pass
+
     @staticmethod
     def _fill_action_slots(action: dict, slots: dict[str, str]) -> dict:
         """Fill <placeholder> slots in Compound action steps."""
@@ -1481,7 +1530,7 @@ class PhoneAgent:
                 MessageBuilder.create_assistant_message(assistant_content)
             )
         
-        # Track step in memory
+        # Track step in memory + feed self-evolution
         if self.memory_manager:
             self.memory_manager.add_step(
                 thinking=thinking,
@@ -1505,7 +1554,7 @@ class PhoneAgent:
                         parts.append(f"已看{product_count}件")
                     print(f"📦 [UnifiedState] {' | '.join(parts)}")
 
-            # Phase 4: Online Dynamic Graph construction - 使用统��接口
+            # Phase 4: Online Dynamic Graph construction
             if current_state_id:
                 self.memory_manager.update_state_and_transition(
                     screenshot_hash=ui_hash,
@@ -1514,6 +1563,9 @@ class PhoneAgent:
                     task=self._current_task,
                     expected_postcondition=action.get("_expected_postcondition"),
                 )
+
+        # Feed self-evolution lifecycle (outside memory_manager block)
+        self._record_and_evolve(page_type, action, current_app)
 
 
         # Capture interact reply
