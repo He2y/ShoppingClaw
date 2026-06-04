@@ -404,7 +404,20 @@ class GraphRuntimeController:
         app = current_page_state.app if current_page_state else semantic_layout
         goal_spec = self.spatial_graph_memory.infer_goal(task, app=app)
         vlm_plan = getattr(self.manager, "_vlm_plan", {}) or {}
+
         if not vlm_plan:
+            if goal_spec.slots.get("query"):
+                overridden = self._search_first_targets(
+                    list(goal_spec.target_page_types), current_page_state,
+                )
+                if overridden != list(goal_spec.target_page_types):
+                    return GoalSpec(
+                        domain=goal_spec.domain,
+                        target_page_types=tuple(overridden),
+                        slots=goal_spec.slots,
+                        forbidden_actions=goal_spec.forbidden_actions,
+                        missing_info_policy=goal_spec.missing_info_policy,
+                    )
             return goal_spec
 
         enriched_slots = dict(goal_spec.slots)
@@ -420,6 +433,13 @@ class GraphRuntimeController:
         vlm_target = str(vlm_plan.get("target_page") or "")
         if vlm_target and vlm_target not in targets:
             targets.insert(0, vlm_target)
+
+        has_search_query = bool(
+            vlm_plan.get("search_query") or enriched_slots.get("query")
+        )
+        if has_search_query:
+            targets = self._search_first_targets(targets, current_page_state)
+
         return GoalSpec(
             domain=goal_spec.domain,
             target_page_types=tuple(dict.fromkeys(targets)),
@@ -427,6 +447,28 @@ class GraphRuntimeController:
             forbidden_actions=goal_spec.forbidden_actions,
             missing_info_policy=goal_spec.missing_info_policy,
         )
+
+    @staticmethod
+    def _search_first_targets(
+        original_targets: list[str],
+        current_page_state: PageState | None,
+    ) -> list[str]:
+        """Override routing targets for search tasks on pre-search pages.
+
+        Prevents Dijkstra from finding shortcuts (home → product_detail)
+        that bypass search and open random products instead of what the
+        user actually wants.  The target is advanced progressively:
+
+            home         → force ["search_input"]
+            search_input → force ["search_result"]
+            anything else → keep original targets (search is done)
+        """
+        current_type = current_page_state.page_type if current_page_state else ""
+        if current_type in ("home", "unknown", ""):
+            return ["search_input"]
+        if current_type == "search_input":
+            return ["search_result"]
+        return original_targets
 
     def _runtime_dag_from_route(self, belief: PageBelief, goal_spec: GoalSpec, route_plan: Any) -> RuntimeDAG:
         app = belief.candidates[0].state.app if belief.candidates else ""

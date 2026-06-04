@@ -662,7 +662,7 @@ class PhoneAgent:
             '{"search_query": "...", "product": "...",'
             ' "specs": {"color": "...", "storage": "...", "size": "..."},'
             ' "target_action": "add_to_cart|buy_now|checkout|view_cart",'
-            ' "target_page": "spec_selection|cart|checkout|product_detail|search_result",'
+            ' "target_page": "search_input|search_result|product_detail|spec_selection|cart|checkout",'
             ' "steps": ["step1", "step2", ...]}\n\n'
             "Rules:\n"
             "- search_query: best search keywords for finding the product\n"
