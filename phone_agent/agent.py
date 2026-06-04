@@ -486,6 +486,9 @@ class PhoneAgent:
         if new_page_type and new_page_type != hint.target_page:
             if self.agent_config.verbose:
                 print(f"⚠️ Fast Path postcondition mismatch: expected={hint.target_page}, actual={new_page_type}")
+            # Clear stale RuntimeDAG to force PageClassifier on next step
+            if self.memory_manager and hasattr(self.memory_manager, "_runtime_dag"):
+                self.memory_manager._runtime_dag = None
             return None  # Fall through to Full Path
 
         # Success — update state
@@ -909,7 +912,9 @@ class PhoneAgent:
             "  Valid page types: home, search_input, search_result, product_detail,\n"
             "  spec_selection, cart, checkout, store, my_account, filter_panel\n"
             "- search_query: best keywords for product search\n"
-            "- specs: ONLY explicitly mentioned attributes. Omit unmentioned keys.\n\n"
+            "- specs: ONLY explicitly mentioned attributes. Omit unmentioned keys.\n"
+            "- If user specified a price range, include a filter step (target_page: filter_panel)\n"
+            "  BEFORE browsing products. Also put the price in specs.\n\n"
             'Example for "去淘宝买iPhone 17 pro max，银色 512G，加入购物车":\n'
             "{\n"
             '  "search_query": "iPhone 17 pro max",\n'
@@ -1003,13 +1008,20 @@ class PhoneAgent:
                     current_app=current_app or "",
                 )
                 if not use_page_classifier:
-                    runtime_hint_used = True
                     hint = self.memory_manager.runtime_screen_hint(current_app or "")
-                    page_type = hint.get("page_type")
-                    summary = hint.get("summary", "")
-                    elements = hint.get("elements")
-                    if self.agent_config.verbose:
-                        print(f"⚡ RuntimeDAG hint: type={page_type}, skipping PageClassifier")
+                    hint_page_type = hint.get("page_type")
+                    if hint_page_type:
+                        runtime_hint_used = True
+                        page_type = hint_page_type
+                        summary = hint.get("summary", "")
+                        elements = hint.get("elements")
+                        if self.agent_config.verbose:
+                            print(f"⚡ RuntimeDAG hint: type={page_type}, skipping PageClassifier")
+                    else:
+                        # Hint returned None — DAG is stale, force PageClassifier
+                        use_page_classifier = True
+                        if self.agent_config.verbose:
+                            print("⚠️ RuntimeDAG hint is None, falling back to PageClassifier")
 
             used_page_classifier = bool(use_page_classifier and self.page_classifier and not screenshot.is_sensitive)
             if self.memory_manager and hasattr(self.memory_manager, "record_page_classifier_decision"):
@@ -1234,6 +1246,17 @@ class PhoneAgent:
                 # Task plan with progress markers
                 if self._task_plan and self._task_plan.steps:
                     parts.append(f"【任务计划】\n{self._task_plan.status_text()}")
+
+                # Key constraints (price, specs) — prominent reminder
+                if self._task_plan and self._task_plan.goal_slots:
+                    constraints = []
+                    if self._task_plan.goal_slots.get("price"):
+                        constraints.append(f"价格要求: {self._task_plan.goal_slots['price']}")
+                    for k in ("color", "storage", "size"):
+                        if self._task_plan.goal_slots.get(k):
+                            constraints.append(f"{k}: {self._task_plan.goal_slots[k]}")
+                    if constraints:
+                        parts.append("【关键约束】⚠️ " + "，".join(constraints))
 
                 # Execution history (compressed summaries)
                 if self._step_summaries:
@@ -1605,11 +1628,19 @@ class PhoneAgent:
             print("=" * 50 + "\n")
 
         # Update task plan + step summaries + compress history
-        step_summary = response.summary if response.summary else ""
+        step_summary = response.summary or ""
+        if not step_summary and thinking:
+            # Fallback: model didn't output <summary>, extract from thinking
+            lines = [l.strip() for l in thinking.replace("\n", ". ").split(". ") if l.strip()]
+            step_summary = lines[-1][:100] if lines else ""
         if step_summary:
             self._step_summaries.append(step_summary)
-            if self._task_plan:
-                self._task_plan.try_advance(step_summary)
+        # Advance plan based on actual page transition (not just summary text)
+        if self._task_plan and self._task_plan.current_step():
+            expected = self._task_plan.current_step().target_page
+            actual = page_type or ""
+            if expected and actual and expected == actual:
+                self._task_plan.try_advance(step_summary or f"到达 {actual}")
         self._compress_history()
 
         # Save last thinking for retrieval trigger detection
