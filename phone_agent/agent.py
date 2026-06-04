@@ -247,6 +247,8 @@ class PhoneAgent:
         self._current_task = task
         self._last_state_hash: str | None = None
         self._last_user_reply: str | None = None
+        self._graph_fail_count: int = 0
+        self._graph_fail_page: str = ""
 
         # Clear action history for QwenVL handler/adapter
         if self._specialized_handler is not None and hasattr(self._specialized_handler, 'clear_history'):
@@ -372,6 +374,34 @@ class PhoneAgent:
                 print("🧭 图谱: 无路由，VLM 探索模式")
             return None
 
+        # Check if the same graph action failed too many times on this page.
+        # After 2 consecutive failures, clear the RuntimeDAG and let the VLM
+        # handle this page — the graph coordinates may not match the device.
+        current_page = context_data.get("belief", {})
+        current_page_type = ""
+        if current_page and current_page.get("candidates"):
+            current_page_type = current_page["candidates"][0].get("page_type", "")
+        repair_hint = context_data.get("repair_hint")
+        if repair_hint and repair_hint.get("action") in ("rollback", "replan"):
+            if current_page_type == self._graph_fail_page:
+                self._graph_fail_count += 1
+            else:
+                self._graph_fail_count = 1
+                self._graph_fail_page = current_page_type
+            if self._graph_fail_count >= 2:
+                if self.agent_config.verbose:
+                    print(
+                        f"⚠️ 图谱动作在 {current_page_type} 连续失败 {self._graph_fail_count} 次，"
+                        f"切换到 VLM 探索模式"
+                    )
+                if self.memory_manager and self.memory_manager._runtime_dag:
+                    self.memory_manager._runtime_dag = None
+                self._graph_fail_count = 0
+                return None
+        else:
+            self._graph_fail_count = 0
+            self._graph_fail_page = ""
+
         if next_action.get("_requires_vlm_verification"):
             if self.agent_config.verbose:
                 print(
@@ -414,6 +444,20 @@ class PhoneAgent:
         # Build executable action dict
         action = self._build_executable_action(next_action, screenshot)
         postcondition = next_action.get("postcondition", "")
+
+        # Validate: Compound actions must have sub-actions with filled slots
+        if action.get("action") == "Compound":
+            sub_actions = action.get("actions", [])
+            if not sub_actions:
+                if self.agent_config.verbose:
+                    print("⚠️ 图谱: Compound 动作缺少子动作列表，VLM 探索")
+                return None
+            for sub in sub_actions:
+                text = sub.get("text", "")
+                if isinstance(text, str) and text.startswith("<") and text.endswith(">"):
+                    if self.agent_config.verbose:
+                        print(f"⚠️ 图谱: Compound 子动作槽位未填充 ({text})，VLM 探索")
+                    return None
 
         if self.agent_config.verbose:
             print(
