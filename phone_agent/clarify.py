@@ -45,12 +45,20 @@ class ClarificationAgent:
     """
 
     def __init__(self):
-        model_name = os.getenv("PHONE_AGENT_MODEL", "autoglm-phone-9b")
-        base_url = os.getenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1")
-        api_key = os.getenv("PHONE_AGENT_API_KEY", "EMPTY")
-
-        self.model_name = model_name
-        self.client = OpenAI(base_url=base_url, api_key=api_key)
+        from dotenv import load_dotenv
+        load_dotenv()
+        # Prefer strong VLM for text reasoning; fall back to phone agent model
+        strong_key = os.getenv("AMSG_STRONG_VLM_API_KEY", "")
+        strong_url = os.getenv("AMSG_STRONG_VLM_BASE_URL", "")
+        strong_model = os.getenv("AMSG_STRONG_VLM_MODEL", "")
+        if strong_key and strong_url and strong_model:
+            self.model_name = strong_model
+            self.client = OpenAI(base_url=strong_url, api_key=strong_key)
+        else:
+            self.model_name = os.getenv("PHONE_AGENT_MODEL", "autoglm-phone-9b")
+            base_url = os.getenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1")
+            api_key = os.getenv("PHONE_AGENT_API_KEY", "EMPTY")
+            self.client = OpenAI(base_url=base_url, api_key=api_key)
         self._extractor = TaskSpecExtractor()
 
     def check_and_clarify(
@@ -125,10 +133,21 @@ class ClarificationAgent:
             fills = ", ".join(f"{k}←{v}" for k, v in filled_from_memory.items())
             print(f"[i] [clarify] Memory 命中: {fills}")
 
-        # If memory filled all gaps, enrich the task and return clear
-        if not missing or (slots.query and not missing):
-            # All spec gaps filled by memory OR we have a query + partial specs
-            # (the VLM can figure out remaining details from the product page)
+        # If memory filled all gaps OR task has a *specific* search query,
+        # skip VLM ambiguity check (remaining specs resolved on product page).
+        # Vague/generic queries need clarification.
+        _VAGUE_TERMS = (
+            "东西", "商品", "物品", "玩意", "礼物",
+            "衣服", "裤子", "鞋", "鞋子", "包", "外卖", "吃的",
+        )
+        import re as _re
+        query_clean = _re.sub(r"^[一二三四五六七八九十\d]*[个件双条台部款副把只]", "", slots.query or "")
+        has_specific_query = (
+            query_clean
+            and len(query_clean) >= 3
+            and query_clean not in _VAGUE_TERMS
+        )
+        if not missing or has_specific_query:
             if filled_from_memory:
                 enriched = self._enrich_task_with_preferences(task, filled_from_memory)
                 if verbose:
