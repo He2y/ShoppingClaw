@@ -16,7 +16,7 @@ from phone_agent.memory.spatial_graph_memory import GoalSpec, PageBelief, PageSt
 
 
 V4_GRAPH_CONTRACT_VERSION = "amsg-v4-runtime"
-DEFAULT_RUNTIME_GRAPH_DATABASE = "shopping-spatial-v4-pipeline-test"
+DEFAULT_RUNTIME_GRAPH_DATABASE = "shopping-spatial-v4"
 HIGH_RISK_PAGE_TYPES = {"payment", "address", "login"}
 VLM_VERIFY_TRANSITIONS: frozenset[tuple[str, str]] = frozenset(
     {
