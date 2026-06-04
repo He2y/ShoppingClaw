@@ -158,9 +158,6 @@ class GraphRuntimeController:
         context_data["belief"] = belief.to_dict()
 
         current_page_state = belief.candidates[0].state if belief.candidates else None
-        functionality_context = self._load_functionality_context(observation, belief, current_page_state)
-        if functionality_context:
-            context_data["_v4_functionality"] = functionality_context
 
         repair_hint = self._verify_pending_transition(belief, current_page_state)
         goal_spec = self._infer_goal_spec(task, current_page_state, semantic_layout)
@@ -194,8 +191,6 @@ class GraphRuntimeController:
             next_action = dict(route_plan.next_action)
             if goal_spec.slots:
                 next_action = self.spatial_graph_memory._fill_runtime_slots(next_action, goal_spec.slots)
-            if functionality_context:
-                next_action = self._enrich_next_action_with_functionality(next_action, functionality_context)
             if self.manager._runtime_dag:
                 next_action["_runtime_plan_id"] = self.manager._runtime_dag.plan_id
             source_pt = current_page_state.page_type if current_page_state else ""
@@ -206,7 +201,6 @@ class GraphRuntimeController:
             else:
                 context_data["mode"] = "navigate"
             context_data["next_actions"] = [next_action]
-            self._inject_v4_hint(context_data, functionality_context)
             if self.verbose:
                 print(
                     "[GraphRuntime] Navigation Mode "
@@ -221,9 +215,6 @@ class GraphRuntimeController:
             return context_data
 
         context_data["mode"] = "explore"
-        self._inject_v4_hint(context_data, functionality_context)
-        if not functionality_context:
-            context_data["coverage_gap"] = "v4 functionality context unavailable for current page"
         return context_data
 
     def _base_context(self, task: str) -> dict[str, Any]:
