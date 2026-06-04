@@ -339,6 +339,167 @@ class PhoneAgent:
 
     # SpecGuard is now in phone_agent.core.spec_guard — initialized in __init__
 
+    _NON_COORDINATE_ACTIONS = frozenset({"Compound", "Type", "Launch", "Back", "Wait", "Home"})
+
+    def _try_graph_shortcut(
+        self,
+        context_data: dict[str, Any],
+        mode: str,
+        screenshot: Any,
+        current_app: str | None,
+        ui_hash: str,
+        semantic_layout: str,
+    ) -> StepResult | None:
+        """Try to execute a graph-planned action directly, skipping VLM.
+
+        Returns StepResult if the graph shortcut was executed, or None to
+        fall through to VLM inference.
+
+        Three outcomes:
+        1. Direct execution — high-confidence structural action (navigate,
+           compound search, back). Returns StepResult.
+        2. VLM co-pilot — graph provides direction but the VLM must verify
+           the screenshot (product/spec selection). Returns None, but graph
+           hint is already in context_data["semantic_context"].
+        3. Explore mode — no graph route found. Returns None.
+        """
+        next_action = (
+            context_data.get("next_actions", [None])[0]
+            if context_data.get("next_actions") else None
+        )
+        if not next_action or mode not in {"navigate", "verify_with_vlm"}:
+            if self.agent_config.verbose:
+                print("🧭 图谱: 无路由，VLM 探索模式")
+            return None
+
+        if next_action.get("_requires_vlm_verification"):
+            if self.agent_config.verbose:
+                print(
+                    f"🤝 [VLM-Graph Co-pilot] 图谱建议 {next_action.get('type')}"
+                    f"→{next_action.get('postcondition', '')}，转交 VLM 验证"
+                )
+            return None
+
+        confidence = next_action.get("confidence", 1.0)
+        action_type = next_action.get("type", "")
+        if confidence < 0.7:
+            if self.agent_config.verbose:
+                print(f"🧭 图谱: 置信度 {confidence:.2f} < 0.7，VLM 探索")
+            return None
+
+        can_compile = (
+            action_type in self._NON_COORDINATE_ACTIONS
+            or self._compile_spatial_shortcut_action(
+                next_action,
+                screen_width=screenshot.width,
+                screen_height=screenshot.height,
+            )[0] is not None
+        )
+        if not can_compile:
+            if self.agent_config.verbose:
+                print(f"🧭 图谱: 动作 {action_type} 无法编译，VLM 探索")
+            return None
+
+        # Fill runtime slots (e.g. <query> → actual search term)
+        goal_slots = context_data.get("goal_spec", {}).get("slots", {})
+        if goal_slots and self.memory_manager:
+            next_action = self.memory_manager.spatial_graph_memory._fill_runtime_slots(
+                next_action, goal_slots
+            )
+        if next_action.get("confidence", 1.0) < 0.7:
+            if self.agent_config.verbose:
+                print(f"🧭 图谱: 槽位填充后置信度不足，VLM 探索")
+            return None
+
+        # Build executable action dict
+        action = self._build_executable_action(next_action, screenshot)
+        postcondition = next_action.get("postcondition", "")
+
+        if self.agent_config.verbose:
+            print(
+                f"🚀 图谱导航: {action_type} → {postcondition} "
+                f"(conf={next_action.get('confidence', 0):.2f})"
+            )
+
+        # Execute
+        try:
+            result = self.action_handler.execute(
+                action, screenshot.width, screenshot.height
+            )
+        except Exception as e:
+            result = self.action_handler.execute(
+                finish(message=str(e)), screenshot.width, screenshot.height
+            )
+
+        # Record
+        finished = action.get("_metadata") == "finish" or result.should_finish
+        self._last_thinking = f"[Graph: {action_type}→{postcondition}]"
+        if self.memory_manager:
+            if hasattr(self.memory_manager, "mark_planned_action_executed"):
+                self.memory_manager.mark_planned_action_executed(action, success=result.success)
+            self.memory_manager.add_step(
+                thinking=self._last_thinking,
+                action=action,
+                screenshot_app=current_app,
+            )
+            self.memory_manager.update_state_and_transition(
+                screenshot_hash=ui_hash,
+                semantic_layout=semantic_layout,
+                action=action,
+                task=self._current_task,
+                expected_postcondition=postcondition,
+            )
+        return StepResult(
+            success=result.success,
+            finished=finished,
+            action=action,
+            thinking=self._last_thinking,
+            message=result.message or action.get("message"),
+        )
+
+    def _build_executable_action(
+        self,
+        graph_action: dict[str, Any],
+        screenshot: Any,
+    ) -> dict[str, Any]:
+        """Convert a graph next_action into an executable action dict.
+
+        For Compound actions: parses target_desc to extract the sub-actions
+        list. For coordinate-based actions: compiles through SpatialModelBridge.
+        """
+        import ast as _ast
+
+        action = {
+            "_metadata": "do",
+            "action": graph_action["type"],
+        }
+        sanitized = self.memory_manager.spatial_graph_memory.sanitize_action_for_context(
+            graph_action
+        ) if self.memory_manager else graph_action
+        if sanitized.get("target"):
+            action["semantic_target"] = sanitized["target"]
+        if graph_action.get("postcondition"):
+            action["_expected_postcondition"] = graph_action["postcondition"]
+
+        # Merge params from target_desc (contains sub-actions for Compound)
+        try:
+            params = _ast.literal_eval(graph_action.get("target_desc", "{}"))
+            if isinstance(params, dict):
+                action.update(params)
+        except (SyntaxError, ValueError):
+            pass
+
+        compiled, _ = self._compile_spatial_shortcut_action(
+            graph_action,
+            screen_width=screenshot.width,
+            screen_height=screenshot.height,
+        )
+        if compiled is not None:
+            compiled["_expected_postcondition"] = graph_action.get("postcondition", "")
+            return compiled
+
+        return action
+
     def _compile_spatial_shortcut_action(
         self,
         best_action: dict,
@@ -584,134 +745,11 @@ class PhoneAgent:
                     mode = context_data.get("mode", "explore")
                     current_state_id = context_data.get("current_state_id")
 
-            if mode == "navigate" and context_data.get("next_actions"):
-                _, grounding_hint = self._compile_spatial_shortcut_action(
-                    context_data["next_actions"][0],
-                    screen_width=screenshot.width,
-                    screen_height=screenshot.height,
-                )
-                if grounding_hint:
-                    context_data["semantic_context"] = "\n\n".join(
-                        part for part in (context_data.get("semantic_context", ""), grounding_hint) if part
-                    )
-
-            _next_action = context_data.get("next_actions", [None])[0] if context_data.get("next_actions") else None
-            _action_type = _next_action.get("type", "") if _next_action else ""
-            # Actions that don't need coordinate compilation (compound macros,
-            # text input, app launch, system navigation).
-            _NON_COORDINATE_ACTIONS = frozenset({"Compound", "Type", "Launch", "Back", "Wait", "Home"})
-            # VLM verification gate: when the graph action involves a semantic
-            # choice (e.g. picking the right product from search results), the
-            # graph only provides a spatial suggestion — the VLM must verify
-            # the screenshot matches the user's task before acting.
-            if (
-                mode in {"navigate", "verify_with_vlm"}
-                and _next_action
-                and _next_action.get("confidence", 1.0) >= 0.7
-                and not _next_action.get("_requires_vlm_verification")
-                and (
-                    _action_type in _NON_COORDINATE_ACTIONS
-                    or self._compile_spatial_shortcut_action(
-                        _next_action,
-                        screen_width=screenshot.width,
-                        screen_height=screenshot.height,
-                    )[0] is not None
-                )
-            ):
-                # Debug: log graph navigation attempt
-                if self.agent_config.verbose:
-                    print(f"[Graph Nav] mode={mode}, confidence={_next_action.get('confidence', 1.0):.2f}, action={_next_action.get('type', 'unknown')}")
-                # Fast track: return the highest confidence action directly without VLM inference
-                best_action = _next_action
-
-                # Fill runtime slots for compound actions with task-specific values
-                goal_slots = context_data.get("goal_spec", {}).get("slots", {})
-                if goal_slots and self.memory_manager:
-                    best_action = self.memory_manager.spatial_graph_memory._fill_runtime_slots(
-                        best_action, goal_slots
-                    )
-
-                # Check confidence threshold before executing
-                action_confidence = best_action.get("confidence", 1.0)
-                if action_confidence < 0.7:  # Lowered from 0.8 to allow graph navigation
-                    # Confidence too low, fall back to explore mode
-                    mode = "explore"
-                    print(f"[Navigate] Confidence {action_confidence:.2f} < 0.7, falling back to explore mode")
-                else:
-                    action = {
-                        "_metadata": "do",
-                        "action": best_action["type"],
-                    }
-                    if best_action.get("target"):
-                        action["semantic_target"] = best_action["target"]
-                    if best_action.get("postcondition"):
-                        action["_expected_postcondition"] = best_action["postcondition"]
-
-                    # Quick parse params
-                    try:
-                        import ast
-                        params = ast.literal_eval(best_action.get("target_desc", "{}"))
-                        action.update(params)
-                    except:
-                        pass
-                    compiled_action, _ = self._compile_spatial_shortcut_action(
-                        best_action,
-                        screen_width=screenshot.width,
-                        screen_height=screenshot.height,
-                    )
-                    if compiled_action is not None:
-                        action = compiled_action
-
-                print(f"🚀 Navigation Mode Triggered: Found Graph Shortcut: {best_action['type']}")
-
-                # Execute it directly
-                try:
-                    if self._specialized_handler:
-                        # Convert back to parsed action format if needed, simplistic execution here
-                        pass
-                    result = self.action_handler.execute(
-                        action, screenshot.width, screenshot.height
-                    )
-                except Exception as e:
-                    result = self.action_handler.execute(
-                        finish(message=str(e)), screenshot.width, screenshot.height
-                    )
-
-                finished = action.get("_metadata") == "finish" or result.should_finish
-                self._last_thinking = "[Graph Shortcut Navigated]"
-                if self.memory_manager:
-                    if hasattr(self.memory_manager, "mark_planned_action_executed"):
-                        self.memory_manager.mark_planned_action_executed(action, success=result.success)
-                    self.memory_manager.add_step(
-                        thinking="[Graph Shortcut Navigated]",
-                        action=action,
-                        screenshot_app=current_app,
-                    )
-                    self.memory_manager.update_state_and_transition(
-                        screenshot_hash=ui_hash,
-                        semantic_layout=semantic_layout,
-                        action=action,
-                        task=self._current_task,
-                        expected_postcondition=action.get("_expected_postcondition"),
-                    )
-                return StepResult(
-                    success=result.success,
-                    finished=finished,
-                    action=action,
-                    thinking="[Graph Shortcut Navigated]",
-                    message=result.message or action.get("message"),
-                )
-            elif (
-                mode in {"navigate", "verify_with_vlm"}
-                and _next_action
-                and _next_action.get("_requires_vlm_verification")
-            ):
-                if self.agent_config.verbose:
-                    print(f"🤝 [VLM-Graph Co-pilot] 图谱建议 {_next_action.get('type')}"
-                          f"→{_next_action.get('postcondition','')}，转交VLM验证确认")
-            else:
-                if self.agent_config.verbose:
-                    print(f"🧭 知识图谱查询: 未匹配到可信历史动作，使用视觉大模型进行推理 (Explore Mode)")
+            graph_result = self._try_graph_shortcut(
+                context_data, mode, screenshot, current_app, ui_hash, semantic_layout,
+            )
+            if graph_result is not None:
+                return graph_result
 
         # Get model response
         is_non_autoglm = self._model_type in (

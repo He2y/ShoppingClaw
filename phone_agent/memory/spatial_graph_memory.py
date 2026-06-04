@@ -1772,6 +1772,52 @@ class SpatialGraphMemory:
 
         return RepairDecision("replan", "route deviated without rollback edge", 0.5)
 
+    @staticmethod
+    def sanitize_action_for_context(action: dict[str, Any]) -> dict[str, Any]:
+        """Strip product-specific data from a graph action for VLM context injection.
+
+        Graph actions carry navigational structure (action_type, region,
+        postcondition) that is reusable across tasks, BUT may also carry
+        content-specific data (product names, prices, SKU codes) from past
+        sessions that must NOT leak into the current task's VLM context.
+
+        Returns a new dict with structural info preserved and content stripped.
+        """
+        import re as _re
+
+        sanitized = dict(action)
+
+        _STRUCTURAL_TARGETS = frozenset({
+            "open_search", "submit_search", "open_product_detail",
+            "open_filter_panel", "open_spec_selector", "open_cart_from_header",
+            "confirm_spec_add_to_cart", "confirm_add_to_cart_success",
+            "rollback_to_product_detail", "rollback_to_search_result",
+            "apply_or_close_filter", "加入购物车按钮", "立即购买按钮",
+        })
+
+        target = str(sanitized.get("target") or "")
+        if target and target not in _STRUCTURAL_TARGETS:
+            if target.endswith("affordance") or target.endswith("af"):
+                pass
+            elif _re.search(r'[一-龥]{3,}', target) and not any(
+                kw in target for kw in ("搜索", "购物车", "筛选", "返回", "首页", "导航")
+            ):
+                page_hint = sanitized.get("postcondition", "")
+                sanitized["target"] = f"navigate_to_{page_hint}" if page_hint else "navigate"
+
+        if "target_locator" in sanitized:
+            source_pt = str(
+                sanitized.get("source_state_id", "")
+            )
+            target_pt = str(sanitized.get("postcondition", ""))
+            if (source_pt, target_pt) in {
+                ("search_result", "product_detail"),
+                ("product_detail", "spec_selection"),
+            } or sanitized.get("_requires_vlm_verification"):
+                del sanitized["target_locator"]
+
+        return sanitized
+
     def context_summary(
         self,
         belief: PageBelief,

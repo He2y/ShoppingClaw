@@ -498,14 +498,18 @@ class GraphRuntimeController:
         target_page_type: str,
         context_data: dict[str, Any],
     ) -> None:
-        if hasattr(self.manager, "_inject_vlm_verification_hint"):
-            self.manager._inject_vlm_verification_hint(
-                next_action,
-                source_page_type,
-                target_page_type,
-                context_data,
-            )
         next_action["_requires_vlm_verification"] = True
+        action_type = next_action.get("type", "")
+        hint = (
+            f"[图谱路径参考] 当前页面: {source_page_type}，下一步目标页面: {target_page_type}\n"
+            f"图谱建议动作类型: {action_type}\n"
+            f"⚠️ 此步骤涉及商品/规格选择——图谱仅提供页面导航方向，"
+            f"你必须根据当前截图内容和用户任务自行判断点击哪个元素。"
+            f"绝不要复用图谱中的历史商品信息！"
+        )
+        context_data["semantic_context"] = (
+            f"{hint}\n{context_data.get('semantic_context', '')}"
+        ).strip()
 
     def _enrich_next_action_with_functionality(
         self,
