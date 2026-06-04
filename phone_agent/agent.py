@@ -498,11 +498,9 @@ class PhoneAgent:
                 self.memory_manager._runtime_dag = None
             return None  # Fall through to Full Path
 
-        # Success — update state
+        # Success — record summary (plan advancement handled at next step start)
         desc = f"[Fast] {hint.description}"
         self._step_summaries.append(desc)
-        if self._task_plan:
-            self._task_plan.try_advance(desc)
 
         if self.memory_manager:
             self.memory_manager.add_step(
@@ -1156,6 +1154,26 @@ class PhoneAgent:
                     mode = context_data.get("mode", "explore")
                     current_state_id = context_data.get("current_state_id")
 
+            # ── Sync plan with current page state ──
+            # Skip plan steps whose target_page we've already passed through.
+            # This handles transitions completed by Fast Path in previous steps.
+            if self._task_plan and page_type:
+                while (self._task_plan.current_step()
+                       and self._task_plan.current_step().target_page
+                       and self._task_plan.current_step().target_page != page_type
+                       and self._task_plan.current_step().status == "done"):
+                    pass  # already done, move on
+                # If current page matches a FUTURE step (Fast Path jumped ahead),
+                # advance past completed intermediate steps.
+                for i, step in enumerate(self._task_plan.steps):
+                    if step.status == "pending" and step.target_page == page_type:
+                        # Mark all steps before this one as done
+                        for j in range(self._task_plan.current_index, i):
+                            self._task_plan.steps[j].status = "done"
+                        self._task_plan.current_index = i
+                        self._task_plan.steps[i].status = "current"
+                        break
+
             # ── Action Library advisory ──
             _available_actions: list | None = None
             if self.action_advisor:
@@ -1646,12 +1664,12 @@ class PhoneAgent:
             step_summary = lines[-1][:100] if lines else ""
         if step_summary:
             self._step_summaries.append(step_summary)
-        # Advance plan based on actual page transition (not just summary text)
-        if self._task_plan and self._task_plan.current_step():
-            expected = self._task_plan.current_step().target_page
-            actual = page_type or ""
-            if expected and actual and expected == actual:
-                self._task_plan.try_advance(step_summary or f"到达 {actual}")
+        # Plan advancement for Full Path: only when the VLM action clearly
+        # completed a plan step (e.g. finish a search, select a product).
+        # We do NOT auto-advance based on page_type match because the VLM
+        # might still need to perform actions on the current page (like
+        # typing a query on search_input before the step is truly done).
+        # Fast Path handles its own advancement in _execute_fast_path.
         self._compress_history()
 
         # Save last thinking for retrieval trigger detection
