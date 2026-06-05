@@ -194,22 +194,46 @@ class TrajectoryReviewer:
 
     # ── Step 2: Check existence ─────────────────────────────────────
 
+    # Page types that PageClassifier may confuse with each other.
+    # If a transition exists for any equivalent type, treat it as existing.
+    _EQUIVALENT_PAGE_TYPES = {
+        "store": ("store", "category"),
+        "category": ("store", "category"),
+        "home": ("home",),
+        "search_input": ("search_input",),
+        "search_result": ("search_result",),
+        "product_detail": ("product_detail",),
+        "spec_selection": ("spec_selection",),
+        "cart": ("cart",),
+        "checkout": ("checkout",),
+        "dialog": ("dialog", "permission"),
+        "permission": ("dialog", "permission"),
+    }
+
     def _transition_exists(self, candidate: TransitionCandidate, app: str) -> bool:
-        """Check if this transition already exists in Neo4j."""
+        """Check if this transition (or a semantically equivalent one) exists."""
         if not self._graph_store or not getattr(self._graph_store, "driver", None):
             return False
+
+        src_variants = self._EQUIVALENT_PAGE_TYPES.get(
+            candidate.source_page, (candidate.source_page,)
+        )
+        tgt_variants = self._EQUIVALENT_PAGE_TYPES.get(
+            candidate.target_page, (candidate.target_page,)
+        )
+
         try:
             with self._graph_store.driver.session(database=self._graph_store.database) as s:
                 result = s.run(
                     """
                     MATCH (src:UIState)-[:NEXT_ACTION]->(a:Action)-[:PRODUCES]->(tgt:UIState)
-                    WHERE src.page_type = $src AND tgt.page_type = $tgt
+                    WHERE src.page_type IN $src_list AND tgt.page_type IN $tgt_list
                       AND a.type = $atype
                       AND ($app = '' OR src.app CONTAINS $app)
                     RETURN count(*) AS cnt
                     """,
-                    src=candidate.source_page,
-                    tgt=candidate.target_page,
+                    src_list=list(src_variants),
+                    tgt_list=list(tgt_variants),
                     atype=candidate.action_type,
                     app=app,
                 )

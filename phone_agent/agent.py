@@ -1312,6 +1312,21 @@ class PhoneAgent:
                     if critical_hints:
                         parts.append("\n".join(critical_hints))
 
+                # Price red-line on decision pages — last text before screenshot
+                if page_type in ("search_result", "product_detail", "spec_selection"):
+                    price_slot = ""
+                    if self._task_plan:
+                        for pk in ("price", "price_range", "price_min", "price_max"):
+                            price_slot = self._task_plan.goal_slots.get(pk, "")
+                            if price_slot:
+                                break
+                    if price_slot:
+                        parts.append(
+                            f"⛔ 价格红线: {price_slot}。"
+                            f"超出此范围的商品不要选择、不要加入购物车。"
+                            f"如果当前商品超出预算，立即 Back 返回。"
+                        )
+
                 screen_info = MessageBuilder.build_screen_info(current_app)
                 parts.append(f"** Screen Info **\n\n{screen_info}")
 
