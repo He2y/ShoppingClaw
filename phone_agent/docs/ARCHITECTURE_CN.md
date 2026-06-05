@@ -119,79 +119,140 @@ flowchart TD
 
 ---
 
-## 3  Agent 执行模型
+## 3  Agent 设计
 
-### 3.1  闭环执行
+本节按时间顺序描述一个任务从接收到完成的完整过程。入口是 `PhoneAgent.run(task)`，主循环是 `_execute_step()`，出口是 `MemoryManager.end_task()`。
 
-主控制循环由 `PhoneAgent._execute_step()` 实现，这是一个 729 行的方法，在六阶段架构中集成了所有子系统。每步遵循相同的闭环，但通过循环的路径根据图谱置信度、页面风险和语义需求而变化。
+### 3.1  任务接收：从自然语言到可执行状态
 
-```mermaid
-flowchart LR
-    A["1. 观测\n截图"] --> B["2. 分类\n页面语义"]
-    B --> C{"3. 验证\n门控"}
-    C -->|"登录/验证码"| T["Take_over\n(人工接管)"]
-    C -->|"正常"| D["4. 图谱\n定位 + 规划"]
-    D --> E{"5. 调度\n门控"}
-    E -->|"锚定动作\n~0.5s"| F["快速路径"]
-    E -->|"语义动作\n~5s"| G["完整 VLM 路径"]
-    F --> H["6. 执行\n+ 验证"]
-    G --> H
-    H --> I["记忆 &\n图谱更新"]
-    I --> A
+用户输入 `"帮我在淘宝搜索 iPhone 16 银色 256G，加入购物车"` 后，`run()` 依次做四件事：
 
-    style F fill:#2E9E44,color:#fff,stroke:none
-    style G fill:#0F4D92,color:#fff,stroke:none
-    style T fill:#B64342,color:#fff,stroke:none
-    style E fill:#E8873D,color:#fff,stroke:none
+**① 状态重置**。清空上一个任务的对话上下文、步数计数器、RuntimeDAG 缓存、验证计数器和模型适配器历史。这确保任务之间完全隔离。
+
+**② 任务槽位提取**。`TaskSpecExtractor.extract(task)` 用正则从任务文本中提取结构化约束：`query="iPhone 16"`, `color="银色"`, `storage="256G"`, `domain="shopping"`。这些槽位被三个下游模块消费：
+- `GoalSpec`：告诉图谱规划器目标是 `spec_selection` 或 `cart`
+- `SpecGuard`：在结算页面验证颜色和存储是否被正确选择
+- `ClarificationAgent`：判断是否需要追问用户
+
+**③ VLM 预规划**。调用 `_vlm_pre_plan(task)` 让 VLM 将任务分解为有序步骤（如 "打开淘宝 → 搜索 → 选商品 → 选规格 → 加购"），每步标注目标 page_type。预规划是脚手架——后续每步仍由当前截图和安全门控决定实际行为。
+
+**④ 记忆会话启动**。`MemoryManager.start_task()` 重置 `UnifiedSessionState`，从 FAISS 加载相关用户偏好（如"历史偏好银色"），清空 RuntimeDAG 缓存。
+
+### 3.2  步骤循环：_execute_step() 的完整流程
+
+`run()` 在循环中反复调用 `_execute_step()`，每次执行一步操作。以下是一步的完整流程，按实际代码顺序：
+
+```
+用户任务: "帮我在淘宝搜索 iPhone 16 银色 256G，加入购物车"
+当前步骤: 第 3 步（已完成搜索，正在看搜索结果）
+
+─── Phase 1: 感知 ───────────────────────────────────
+│
+│  DeviceFactory.get_screenshot()    → 截图 base64
+│  DeviceFactory.get_current_app()   → "taobao"
+│  MD5(截图)                         → ui_hash
+│  PageClassifier.classify(截图)     → page_type="search_result"
+│    或 RuntimeDAG 提供 hint（跳过分类器，省一次 VLM 调用）
+│
+─── Phase 2: 安全门控 ──────────────────────────────
+│
+│  detect_verification(page_type, summary)
+│    → 检测登录/验证码/短信验证页面
+│    → 命中 → Take_over（暂停，等人工处理）
+│    → 未命中 → 继续
+│
+─── Phase 3: 图谱协同 + 澄清 ─────────────────────
+│
+│  memory_manager.locate_and_get_context(ui_hash, layout, task)
+│    → GraphRuntimeController.locate_and_get_context()
+│      ① 如果 RuntimeDAG 可用 → 直接取下一步（~10ms）
+│      ② 否则：(app, page_type) 匹配 Neo4j → 定位
+│      ③ 验证上一步的 pending transition（成功/失败）
+│      ④ Dijkstra 规划路径 → 缓存为新 RuntimeDAG
+│      ⑤ 返回 mode + next_actions + semantic_context
+│
+│  [仅第 1 步] ClarificationAgent.check_and_clarify()
+│    第一层：规则检查，槽位已完整 → 跳过
+│    第二层：记忆偏好填充缺失槽位
+│    第三层：仅在模糊时调用强 VLM 追问用户
+│
+─── Phase 4: 上下文组装 ────────────────────────────
+│
+│  memory_manager.get_injection_context(thinking, app, step)
+│    → 始终注入：进度摘要（1-2 行）+ 当前焦点
+│    → 按需注入：RetrievalGateway 检测到 VLM 思考中的
+│      回忆/比较/计算信号时，注入商品列表或历史步骤
+│    → 条件注入：价格/颜色/存储约束（在决策页面）
+│
+│  组装 VLM 消息：
+│    系统提示 + 任务 + 截图 + 图谱上下文 + 记忆注入
+│    + TaskPlan 进度标记 + SpecGuard 约束提醒
+│    + ActionAdvisor 的动作提示（如果 mode=navigate）
+│
+─── Phase 5: 调度与执行 ────────────────────────────
+│
+│  if mode == "navigate" 且图谱返回锚定动作:
+│    → 快速路径：ActionAdvisor.get_fast_action()
+│      槽位替换（<query> → "iPhone 16"）
+│      ActionHandler.execute() → 设备操作（~0.5s）
+│      截取新截图 → 检查 page_type 是否匹配预期
+│      不匹配 → 回退到 VLM 路径
+│
+│  else（explore / verify_with_vlm / 快速路径回退）:
+│    → VLM 路径：ModelClient.request(messages)
+│      模型返回 thinking + action
+│      ModelProtocolBridge.normalize_action() → DeviceActionIR
+│      SpecGuard.check()：购买提交动作被拦截？
+│        → 是：替换为 Interact（问用户）
+│        → 否：放行
+│      ActionHandler.execute() → 设备操作（~5s 含推理）
+│
+─── Phase 6: 状态更新 ──────────────────────────────
+│
+│  memory_manager.update_state_and_transition()
+│    → 构建当前 PageState
+│    → 暂存 pending transition:
+│      (当前页面, 执行的动作, 预期目标页面)
+│    → 下一步的 Phase 3 会验证这个 pending
+│
+│  memory_manager.add_step(thinking, action)
+│    → UnifiedSessionState.record_step()
+│    → 检测停滞（连续 3 次相同动作+页面+目标 → 触发检索）
+│    → 提取商品信息（价格、规格）存入会话状态
+│
+│  历史压缩：保留最近 2 条完整 VLM 对话，其余压缩为摘要
+│
+└── 返回 StepResult → run() 判断是否继续循环
 ```
 
-> 推荐图例：`figures/agent-execution-flow-nature-image2.png`
+### 3.3  上下文管理：每步注入什么
 
-### 3.2  任务初始化与预规划
+VLM 的上下文窗口是稀缺资源。系统按优先级分层注入：
 
-在执行循环开始之前，`PhoneAgent.run(task)` 执行初始化：
+| 优先级 | 内容 | 来源 | 注入条件 |
+|---|---|---|---|
+| 1（最高） | 系统提示 + 任务描述 + 当前截图 | Agent 配置 | 每步 |
+| 2 | 任务计划进度标记 | `TaskPlan.status_text()` | 第 2 步起 |
+| 3 | 图谱导航上下文 | `GraphRuntimeController` | mode != explore |
+| 4 | 关键约束（⚠️价格/颜色/存储） | `TaskSlots` + `SpecGuard` | 决策页面 |
+| 5 | 最近 8 步操作摘要 | 历史压缩 | 每步 |
+| 6 | 按需记忆检索 | `RetrievalGateway` | VLM 思考中出现回忆/比较/停滞信号 |
+| 7（最低） | ActionAdvisor 动作提示 | 图谱 promoted 边 | mode = navigate |
 
-1. **状态重置**：清除对话上下文、步数计数器、图谱失败计数器、验证计数器、步骤摘要和模型适配器动作历史。
-2. **VLM 预规划**：调用 `_vlm_pre_plan(task)` 使用更强的 VLM（通过 `AMSG_STRONG_VLM_*`）。预规划提取 `search_query`、`product`、`specs`、`target_action`、`target_page` 和带目标页面类型的有序步骤。
-3. **TaskPlan 创建**：`TaskPlan.from_vlm_output()` 将预规划转换为带目标槽位的步骤列表。此计划是脚手架而非事实——当前截图和安全门控仍然决定实际可执行的内容。
-4. **记忆会话启动**：记忆管理器初始化会话状态并加载相关用户偏好。
+关键设计：**不是所有记忆都注入每次调用**。进度摘要始终注入（2-3 行），但详细的商品对比、购物车计算等只在 VLM 的思考文本表现出需要时才触发。典型 30 步任务中，完整检索触发 3-5 次。
 
-预规划有两个超越任务分解的作用：它为图谱路由填充 `GoalSpec`（让规划器知道目标页面类型），并为 SpecGuard 填充 `TaskSlots`（让安全系统在结算时验证规格选择）。
+### 3.4  任务结束：结果处理与图谱持久化
 
-### 3.3  双速调度
+循环结束条件：VLM 输出 `terminate`/`answer` 动作，或达到 `max_steps`。
 
-调度门控是双速执行的架构核心。Agent 维护三条实际执行路径：
+`MemoryManager.end_task(success, result)` 执行：
 
-| 路径 | 触发条件 | VLM 开销 | 延迟 |
-|---|---|---:|---|
-| **快速路径** | `ActionAdvisor` 返回置信度 >= 0.9 的锚定已提升动作，且与当前计划步骤对齐 | 无 | ~0.5s |
-| **图谱协助** | `GraphRuntimeController` 返回需要 VLM 验证的高置信度结构性动作 | 1 次调用 | ~3s |
-| **完整 VLM 路径** | 无安全图谱动作、需要语义目标选择、低置信度、修复失败或安全守卫激活 | 1 次调用 | ~5s |
+1. **轨迹保存**（无论成败）：完整步骤序列写入 `trajectories/{timestamp}_{ok|fail}_{slug}.json`
+2. **学习模式**（仅成功）：记录联系人-应用绑定、应用使用频率等偏好到 FAISS
+3. **图谱刷新**（仅成功）：`flush_staged_graph()` 执行规范化 → 质量过滤 → Neo4j 写入
+4. **VLM 轨迹审核**（仅成功）：`TrajectoryReviewer` 提取新转移 → VLM 验证 → 以 hypothesis 导入
 
-快速路径通过 `ActionAdvisor.get_fast_action()` 立即执行，并进行槽位替换（用目标槽位值替换 `<query>`、`<color>` 占位符）。执行后，后条件检查会截取新截图并验证页面类型。如果后条件不匹配，该步回退到完整 VLM 路径——图谱快捷方式不会被盲目信任。
-
-完整 VLM 路径是刻意宽泛的。在购物任务中，图谱不应选择具体的商品、店铺、SKU 或结算决策，除非该转移已知为锚定且安全。这是根本性的"图谱作为顾问而非控制器"原则。
-
-### 3.4  三层澄清机制
-
-`ClarificationAgent` 在购物和外卖任务的第一步运行，使用三层短路设计最小化不必要的用户交互：
-
-- **第一层（规则，0ms）**：`TaskSpecExtractor.extract()` 检查任务规格完整性。非购物域或规格已完整时直接跳过。
-- **第二层（记忆偏好）**：查询 `MemoryStore` 中的用户偏好（如"喜欢银色"），填补缺失的规格。
-- **第三层（强 VLM 歧义判断）**：仅当仍有空缺且查询模糊时运行。VLM 输出"CLEAR"或"CLARIFY: [问题]"。
-
-这种分层设计直接连接到记忆系统：第二层查询用户偏好可填补规格缺口而无需提问。结果反馈到 `TaskSlots`，SpecGuard 后续用于验证购买安全。
-
-### 3.5  SpecGuard 与购买安全
-
-`SpecGuard` 位于 VLM 输出和动作执行之间，保护规格选择、结算和支付相邻页面：
-
-- **`get_context_hints()`**：在规格/结算/支付页面注入约束提醒（预防性）。
-- **`check()`**：在执行前拦截购买提交动作，可替换为 `Interact`（反应性）。
-
-区分*选择*（选择可见选项）和*提交*（加购、立即购买、结算、支付）。选择被允许；提交被守护：如果 VLM 不能在其思考中证明请求的规格已被选择，结算或支付将被阻止。
-
-这连接回 `TaskSlots`：用户的原始规格需求（由 `TaskSpecExtractor` 提取一次并由 ClarificationAgent 丰富）作为一等状态贯穿整个执行过程，而非偶然的提示文本。
+失败任务只保存轨迹文件，不触发图谱写入——这是防止噪声污染图谱的第一道门。
 
 ---
 

@@ -66,101 +66,75 @@ Key properties of this loop:
 
 ---
 
-## 3  Agent Execution Model
+## 3  Agent Design
 
-### 3.1  Closed-Loop Execution
+This section describes a task's complete lifecycle in chronological order: from receiving user input to graph persistence after completion. Entry point: `PhoneAgent.run(task)`. Main loop: `_execute_step()`. Exit: `MemoryManager.end_task()`.
 
-The main control loop is implemented by `PhoneAgent._execute_step()`, a 729-line method that integrates all subsystems in a six-phase architecture. Each step follows the same closed loop, but the path through the loop varies based on graph confidence, page risk, and semantic requirements.
+### 3.1  Task Reception: From Natural Language to Executable State
 
-```mermaid
-flowchart LR
-    A["1. Observe\nScreenshot"] --> B["2. Classify\nPage Semantics"]
-    B --> C{"3. Verification\nGate"}
-    C -->|"login / captcha"| T["Take_over\n(human)"]
-    C -->|"clear"| D["4. Graph\nLocalize + Plan"]
-    D --> E{"5. Dispatch\nGate"}
-    E -->|"Grounded\n~0.5s"| F["Fast Path"]
-    E -->|"Semantic\n~5s"| G["Full VLM Path"]
-    F --> H["6. Execute\n+ Verify"]
-    G --> H
-    H --> I["Memory &\nGraph Update"]
-    I --> A
+When the user inputs `"Search iPhone 16 silver 256G on Taobao, add to cart"`, `run()` performs four steps:
 
-    style F fill:#2E9E44,color:#fff,stroke:none
-    style G fill:#0F4D92,color:#fff,stroke:none
-    style T fill:#B64342,color:#fff,stroke:none
-    style E fill:#E8873D,color:#fff,stroke:none
-```
+**① State reset.** Clears previous task's dialogue context, step counter, RuntimeDAG cache, verification counters, and model adapter history. Tasks are fully isolated.
 
-> Recommended figure: `figures/agent-execution-flow-nature-image2.png`
+**② Task slot extraction.** `TaskSpecExtractor.extract(task)` uses regex to extract structured constraints: `query="iPhone 16"`, `color="silver"`, `storage="256G"`, `domain="shopping"`. These slots feed three downstream consumers: `GoalSpec` (graph routing target), `SpecGuard` (purchase safety checks), and `ClarificationAgent` (whether to ask the user).
 
-### 3.2  Task Initialization and Pre-Planning
+**③ VLM pre-plan.** `_vlm_pre_plan(task)` asks a VLM to decompose the task into ordered steps (e.g., "open Taobao → search → select product → select specs → add to cart"), each annotated with a target page_type. The pre-plan is scaffolding — each step is still governed by the current screenshot and safety gates.
 
-Before the execution loop begins, `PhoneAgent.run(task)` performs initialization:
+**④ Memory session start.** `MemoryManager.start_task()` resets `UnifiedSessionState`, loads relevant user preferences from FAISS (e.g., "prefers silver"), and clears the RuntimeDAG cache.
 
-1. **State reset**: Clears dialogue context, step counter, graph failure counters, verification counters, step summaries, and model adapter action history.
-2. **VLM pre-plan**: Calls `_vlm_pre_plan(task)` using the stronger VLM (via `AMSG_STRONG_VLM_*`) if configured. The pre-plan extracts `search_query`, `product`, `specs`, `target_action`, `target_page`, and ordered steps with target page types.
-3. **TaskPlan creation**: `TaskPlan.from_vlm_output()` converts the pre-plan into a step list with goal slots. This plan is a scaffold, not ground truth — the current screenshot and safety gates still decide what can actually be executed.
-4. **Memory session start**: The memory manager initializes session state and loads relevant user preferences.
+### 3.2  Step Loop: The Complete _execute_step() Flow
 
-The pre-plan serves two purposes beyond task decomposition: it populates `GoalSpec` for graph routing (so the planner knows what page types to target) and it fills `TaskSlots` for SpecGuard (so the safety system can verify spec selections at checkout).
+`run()` calls `_execute_step()` in a loop. Each step, in actual code order:
 
-### 3.3  Verification and Human Takeover
+**Phase 1 — Perception.** Capture screenshot via `DeviceFactory.get_screenshot()`, get current app, compute `ui_hash` (MD5). Classify page via `PageClassifier` → `page_type`, or use RuntimeDAG hint (skip classifier, save one VLM call).
 
-Two verification-detection layers prevent the model from inventing actions on authentication or verification screens:
+**Phase 2 — Safety gate.** `detect_verification(page_type, summary)` checks for login/CAPTCHA/SMS pages. Hit → `Take_over` (pause for human). Miss → continue. Adaptive counter: 0-3 consecutive hits → auto-takeover; 4-5 → let VLM try once; >5 → task fails.
 
-1. **Before VLM call**: `detect_verification(page_type, summary, elements)` checks PageClassifier output with keyword banks for login (confidence 0.92), CAPTCHA (0.88), SMS (0.85), and dialog+login (0.80).
-2. **After VLM call**: `detect_verification_from_vlm(thinking, raw_content)` catches verification pages recognized by the model when the PageClassifier was skipped due to RuntimeDAG optimization.
+**Phase 3 — Graph coordination + clarification.** `memory_manager.locate_and_get_context()` delegates to `GraphRuntimeController`:
+- If RuntimeDAG exists and valid → advance cursor, return next action (~10ms)
+- Otherwise → `(app, page_type)` match in Neo4j → verify previous pending transition → Dijkstra route → cache as new RuntimeDAG
+- Returns `mode` + `next_actions` + `semantic_context`
 
-An adaptive consecutive counter manages recovery: 0-3 consecutive detections trigger auto-takeover; at 4-5, the VLM is allowed one attempt (to recover from a false positive); above 5, the task fails. This design acknowledges that detection is imperfect and provides a graceful degradation path.
+On the first step only, `ClarificationAgent.check_and_clarify()` runs a three-layer short-circuit: Layer 1 (rule check — specs already complete? skip), Layer 2 (fill gaps from FAISS user preferences), Layer 3 (only if still vague — ask strong VLM whether to clarify with user).
 
-### 3.4  Three-Layer Clarification
+**Phase 4 — Context assembly.** `memory_manager.get_injection_context()` builds layered VLM context:
+- Always: progress summary (1-2 lines) + current focus
+- On demand: `RetrievalGateway` detects recall/comparison/stagnation signals in VLM thinking → inject product list or history steps
+- Conditional: price/color/storage constraints on decision pages
+- Graph context, TaskPlan progress markers, SpecGuard constraint reminders, ActionAdvisor action hints
 
-`ClarificationAgent` runs on the first step for shopping and food-delivery tasks, using a three-layer short-circuit that minimizes unnecessary user interaction:
+**Phase 5 — Dispatch and execution.**
+- If `mode=navigate` and graph returns grounded action → **Fast Path**: `ActionAdvisor.get_fast_action()` with slot substitution (`<query>` → "iPhone 16"), `ActionHandler.execute()` (~0.5s). Take new screenshot, check page_type matches expected postcondition. Mismatch → fall through to VLM Path.
+- Otherwise → **VLM Path**: `ModelClient.request(messages)`, parse response, `ModelProtocolBridge.normalize_action()` → `DeviceActionIR`. `SpecGuard.check()` intercepts purchase-commit actions (replaces with user prompt if specs unverified). `ActionHandler.execute()` (~5s including inference).
 
-```mermaid
-flowchart LR
-    T["User Task"] --> L1{"Layer 1\nRule-based\n0ms"}
-    L1 -->|"specs complete\nor non-shopping"| SKIP["Skip"]
-    L1 -->|"shopping +\nmissing specs"| L2{"Layer 2\nMemory\npreferences"}
-    L2 -->|"gaps filled\nfrom history"| ENRICH["Enrich"]
-    L2 -->|"specific\nquery"| SKIP
-    L2 -->|"vague task"| L3{"Layer 3\nStrong VLM\nambiguity check"}
-    L3 -->|"CLEAR"| SKIP
-    L3 -->|"CLARIFY"| ASK["Ask user\ntargeted question"]
+**Phase 6 — State update.** `memory_manager.update_state_and_transition()` builds current `PageState`, caches `(current_page, action, expected_postcondition)` as pending transition for next step's verification. `add_step()` records to `UnifiedSessionState`, detects stagnation (3+ identical actions), extracts product info. Context history compressed: keep last 2 full VLM conversations, summarize the rest.
 
-    style L1 fill:#42949E,color:#fff,stroke:none
-    style L2 fill:#E8873D,color:#fff,stroke:none
-    style L3 fill:#7B61A0,color:#fff,stroke:none
-    style SKIP fill:#2E9E44,color:#fff,stroke:none
-```
+### 3.3  Context Management: What Gets Injected Per Step
 
-This layered design connects directly to the memory system: Layer 2 consults `MemoryStore` for user preferences (e.g., "prefers silver color"), which can fill spec gaps without asking the user. Layer 3 uses the stronger VLM for ambiguity judgment, not the task-execution model. The result feeds back into `TaskSlots`, which the SpecGuard later uses to verify purchase safety.
+| Priority | Content | Source | When injected |
+|---|---|---|---|
+| 1 (highest) | System prompt + task + screenshot | Agent config | Every step |
+| 2 | Task plan progress markers | `TaskPlan.status_text()` | Step 2 onward |
+| 3 | Graph navigation context | `GraphRuntimeController` | mode != explore |
+| 4 | Critical constraints (price/color/storage) | `TaskSlots` + `SpecGuard` | Decision pages |
+| 5 | Last 8 step summaries | History compression | Every step |
+| 6 | On-demand memory retrieval | `RetrievalGateway` | VLM thinking shows recall/compare/stall |
+| 7 (lowest) | ActionAdvisor action hints | Graph promoted edges | mode = navigate |
 
-### 3.5  Dual-Speed Dispatch
+Key design: **not all memory enters every call.** Progress summary is always injected (2-3 lines). Detailed product comparisons, cart calculations, etc. are triggered only when the VLM's thinking text signals a need. In a typical 30-step task, full retrieval triggers 3-5 times.
 
-The dispatch gate is the architectural heart of dual-speed execution. The agent maintains three practical execution paths:
+### 3.4  Task End: Result Handling and Graph Persistence
 
-| Path | Trigger | VLM cost | Latency |
-|---|---|---:|---|
-| **Fast Path** | `ActionAdvisor` returns a grounded promoted action with confidence >= 0.9, aligned with the current plan step. | None | ~0.5s |
-| **Graph Co-pilot** | `GraphRuntimeController` returns a high-confidence structural action that needs VLM verification. | 1 call | ~3s |
-| **Full VLM Path** | No safe graph action, semantic target choice required, low confidence, failed repair, or safety guard active. | 1 call | ~5s |
+Loop terminates when VLM outputs `terminate`/`answer`, or `max_steps` is reached.
 
-The Fast Path executes immediately through `ActionAdvisor.get_fast_action()` with slot substitution (replacing `<query>`, `<color>` placeholders with goal slot values). After execution, a postcondition check takes a new screenshot and verifies the page type. If the postcondition mismatches, the step falls through to the Full VLM Path — the graph shortcut is not blindly trusted.
+`MemoryManager.end_task(success, result)` performs:
 
-The Full VLM Path is intentionally broad. In shopping tasks, the graph should not choose a concrete product, store, SKU, or checkout decision unless the transition is known to be grounded and safe. This is the fundamental "graph as advisor, not controller" principle.
+1. **Save trajectory** (always): Full step sequence → `trajectories/{timestamp}_{ok|fail}_{slug}.json`
+2. **Learn patterns** (success only): Contact-app bindings, app usage frequency → FAISS
+3. **Flush graph** (success only): `flush_staged_graph()` → canonicalization → quality filter → Neo4j
+4. **VLM trajectory review** (success only): `TrajectoryReviewer` extracts new transitions → VLM validates → import as hypothesis
 
-### 3.6  SpecGuard and Purchase Safety
-
-`SpecGuard` sits between VLM output and action execution, protecting spec-selection, checkout, and payment-adjacent pages. It has two complementary entry points:
-
-1. **`get_context_hints()`**: Injects constraint reminders into VLM context on spec/checkout/payment pages (preventative).
-2. **`check()`**: Intercepts a purchase-commit action before execution and can replace it with `Interact` (reactive).
-
-The guard distinguishes *selection* (choosing a visible option) from *commit* (add-to-cart, buy-now, checkout, payment). Selection is allowed because the VLM may choose options matching explicit user constraints. Commit is guarded: if the VLM cannot prove (in its thinking) that the requested specs were selected, checkout or payment is blocked and the user is prompted.
-
-This connects back to `TaskSlots`: the user's original spec requirements (extracted once by `TaskSpecExtractor` and enriched by ClarificationAgent) are carried as first-class state throughout execution, not as incidental prompt text. The SpecGuard checks these slots against the VLM's reasoning at the exact point of purchase commitment.
+Failed tasks save trajectory files only — no graph writes. This is the first gate against noise pollution.
 
 ---
 
