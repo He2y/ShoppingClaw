@@ -455,20 +455,17 @@ class MemoryManager:
     def _save_pending_trajectory(self, task: str, success: bool, result: str,
                                  steps: list, apps: list, start_state: str | None,
                                  end_state: str | None):
-        """Save completed trajectory to pending file for manual review."""
+        """Save completed trajectory as a named file for review.
+
+        Each trajectory gets its own file in ``trajectories/`` with a
+        human-readable name: ``{timestamp}_{status}_{task_slug}.json``
+        """
         import json
+        import re
         from pathlib import Path
 
-        pending_file = Path(self.store.storage_dir) / "pending_trajectories.json"
-        pending_file.parent.mkdir(parents=True, exist_ok=True)
-
-        existing = []
-        if pending_file.exists():
-            try:
-                with open(pending_file, "r", encoding="utf-8") as f:
-                    existing = json.load(f)
-            except Exception:
-                existing = []
+        traj_dir = Path(self.store.storage_dir) / "trajectories"
+        traj_dir.mkdir(parents=True, exist_ok=True)
 
         entry = {
             "task": task,
@@ -491,14 +488,18 @@ class MemoryManager:
             "end_state_id": end_state,
             "saved_at": datetime.now().isoformat(),
         }
-        existing.insert(0, entry)  # newest first
-        existing = existing[:20]   # keep last 20
+
+        # Build filename: 20260605_103058_success_买iPhone17银色512G.json
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        status = "ok" if success else "fail"
+        slug = re.sub(r"[^\w一-鿿]", "", task)[:30]
+        filename = f"{ts}_{status}_{slug}.json"
+        filepath = traj_dir / filename
 
         try:
-            with open(pending_file, "w", encoding="utf-8") as f:
-                json.dump(existing, f, ensure_ascii=False, indent=2)
-            if success:
-                print(f"📝 轨迹已保存至 pending_trajectories.json（共 {len(steps)} 步）")
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(entry, f, ensure_ascii=False, indent=2)
+            print(f"📝 轨迹已保存: trajectories/{filename}（{len(steps)} 步）")
         except Exception as e:
             print(f"Warning: failed to save pending trajectory: {e}")
 
