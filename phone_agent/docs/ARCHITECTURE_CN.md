@@ -27,50 +27,95 @@ Shopping-Agent 是一个**以 VLM 为主、图谱引导的移动 GUI 智能体**
 
 ## 2  系统架构
 
-系统组织为六个功能层。各层解决不同的关注点，但并不孤立：记忆层向策略层上行供给上下文，战术层从记忆层读取定位和规划证据，反馈环路将验证后的观测写回图谱记忆和会话记忆。这种闭环耦合使系统能够自演进。
+系统由三个逻辑区域组成，通过一条闭环数据流连接。理解架构的关键不是"有哪些层"，而是**数据怎么流动、谁决定什么**。
 
-| 层 | 组件 | 职责 |
-|---|---|---|
-| **策略层**（VLM） | `PhoneAgent`、`TaskPlan`、`ClarificationAgent`、`SpecGuard`、`VerificationDetector` | 解释自然语言任务，规划子任务，检测歧义，保障购买安全，检测登录/验证码页面 |
-| **战术层**（图谱） | `GraphRuntimeController`、`ActionAdvisor`、`EdgeLifecycleManager`、`MultiSignalLocalizer`、`EnhancedPlanner` | 在图谱中定位当前页面，推断图谱目标，规划路径，暴露已提升的动作，决定是否跳过或调用 VLM |
-| **记忆层** | `MemoryManager`、`UnifiedSessionState`、`RetrievalGateway`、`SpatialGraphMemory`、`MemoryStore` | 存储用户偏好、会话状态、图谱记忆和轨迹文件；每步注入轻量上下文，按需触发详细检索 |
-| **持久化层** | `GraphStore`、`GraphLifecycleStore`、`TrajectoryReviewer` | 将 UIState/Action/TransitionEdge 数据、生命周期统计和 VLM 审核的轨迹证据持久化到 Neo4j |
-| **模型协议层** | `ModelClient`、5 族模型适配器、`ModelProtocolBridge`、`SpatialModelBridge` | 将 AutoGLM、UI-TARS、Qwen-VL、MAI-UI 和 GUI-Owl 的 VLM 输出归一化为统一的设备动作 IR |
-| **设备执行层** | `ActionHandler`、平台特定处理器、`DeviceFactory`、`ADB/HDC/XCTest` 后端 | 在 Android、HarmonyOS 和 iOS 上执行 Tap、Type、Swipe、Back、Launch、Compound、Interact 和 Take_over |
-
-```mermaid
-block-beta
-    columns 1
-    block:strategic["策略层 — 以 VLM 为主的控制"]
-        A["任务规划\n与预规划"] B["澄清\nAgent"] C["验证\n检测器"] D["SpecGuard\n安全守卫"]
-    end
-    block:tactical["战术层 — 图谱引导的动作库"]
-        E["运行时图谱\n控制器"] F["动作\n顾问"] G["边\n生命周期"] H["信念\n定位器"]
-    end
-    block:memory["记忆层 — 四个记忆面"]
-        I["FAISS\n向量存储"] J["统一\n会话状态"] K["检索\n网关"] L["轨迹\n审核器"]
-    end
-    block:execution["执行层 — 设备抽象"]
-        M["ADB\nAndroid"] N["HDC\nHarmonyOS"] O["XCTest\niOS"] P["模型适配器 (5)"]
-    end
-
-    style strategic fill:#F3E8FD,stroke:#C4A8E0
-    style tactical fill:#E8F5E9,stroke:#81C784
-    style memory fill:#E0F2F1,stroke:#80CBC4
-    style execution fill:#FFF3E0,stroke:#FFB74D
+```
+用户任务 (自然语言)
+    │
+    ▼
+┌─────────────────────────────────────────────────────┐
+│  决策区域：决定"做什么"                                │
+│                                                     │
+│  PhoneAgent ← 闭环主控，每步编排所有子系统              │
+│    ├── TaskPlan          任务分解 + 进度追踪           │
+│    ├── ClarificationAgent 三层短路澄清（规则→记忆→VLM）│
+│    ├── VerificationDetector 登录/验证码检测 → 人工接管  │
+│    └── SpecGuard          购买安全守卫                 │
+│                                                     │
+│  两条决策路径：                                       │
+│    快速路径 ← 图谱提供锚定动作，跳过 VLM (~0.5s)       │
+│    VLM 路径 ← 图谱提供提示，VLM 做语义决策 (~5s)       │
+└──────────────┬──────────────────────────┬────────────┘
+               │ "在哪？走哪？"           │ "这步结果如何？"
+               ▼                         │
+┌──────────────────────────┐             │
+│  图谱区域：加速导航         │             │
+│                          │             │
+│  GraphRuntimeController  │             │
+│    ├── 定位：(app, page_type) 匹配 Neo4j │
+│    ├── 规划：Dijkstra 加权最短路径        │
+│    ├── RuntimeDAG 缓存路径，后续步免重规划 │
+│    ├── ActionAdvisor 返回已提升的动作     │
+│    └── EdgeLifecycle 追踪成功率 + 提升/降级│
+│                          │             │
+│  数据存储：                │             │
+│    Neo4j (UIState→Action→UIState)      │
+│    FAISS (用户偏好/联系人)  │             │
+│    JSON (任务轨迹)         │             │
+└──────────────────────────┘             │
+               │ 编译后的设备动作           │
+               ▼                         │
+┌──────────────────────────┐             │
+│  执行区域：操作设备         │             │
+│                          │             │
+│  ModelProtocolBridge      │             │
+│    坐标归一化 (5种VLM坐标系) │            │
+│  ActionHandler            │             │
+│    Tap / Type / Swipe / Compound       │
+│  DeviceFactory            │             │
+│    ADB(Android) HDC(鸿蒙) XCTest(iOS)  │
+│                          │             │
+│  执行后：截取新截图 ────────┼─────────────┘
+│    → 后条件验证（t+1步确认t步结果）
+│    → 成功率更新 → 边生命周期推进
+│    → 任务结束时：暂存 → 质量门 → Neo4j
+└──────────────────────────┘
 ```
 
-> 推荐图例：`figures/system-architecture-nature-image2.png`
+### 2.1  三个区域的职责边界
 
-### 2.1  跨层集成
+**决策区域**回答"做什么"。`PhoneAgent._execute_step()` 是唯一的编排入口，每步调用图谱区域获取定位和动作建议，然后选择快速路径或 VLM 路径执行。决策区域不直接操作图谱或设备。
 
-六层通过三条主要数据流连接，每条服务于不同的角色：
+**图谱区域**回答"在哪、走哪"。`GraphRuntimeController.locate_and_get_context()` 在一次调用中完成定位、验证上步后条件、规划路径、缓存 RuntimeDAG。它返回的 `mode` 字段（`navigate` / `explore` / `verify_with_vlm` / `goal_reached`）直接驱动决策区域的调度选择。图谱区域不做语义判断（哪个商品、哪个 SKU），只做结构性导航。
 
-1. **下行流（任务 → 动作）**：用户的自然语言任务依次通过 TaskPlan 提取、ClarificationAgent 短路、图谱定位、路径规划、VLM 推理、动作编译和设备执行。每个阶段都在收窄上下文：完整任务变为计划步骤，计划步骤变为图谱目标，目标变为路径，路径变为设备动作。
+**执行区域**回答"怎么操作设备"。`ModelProtocolBridge` 将图谱的语义动作或 VLM 的模型原生输出归一化为 `DeviceActionIR`，`ActionHandler` 编译为设备指令。执行后的新截图和页面分类结果**反馈**到图谱区域，形成闭环：后条件验证更新边的成功/失败计数，成功任务结束时触发图谱持久化。
 
-2. **上行流（观测 → 记忆）**：每个设备动作产生新的截图观测。该观测向上流经页面分类、后条件验证和结果记录。成功的任务轨迹触发图谱持久化；失败的任务产生轨迹文件但不污染图谱。
+### 2.2  闭环数据流
 
-3. **横向流（图谱 ↔ VLM）**：图谱向 VLM 提示中提供导航提示、已提升动作和路径计划。VLM 的思考和动作输出反馈到图谱中作为转移证据。这种双向耦合使 VLM 受益于图谱结构，同时图谱从 VLM 决策中学习。
+三个区域通过一条闭环连接，每步数据按以下顺序流动：
+
+```mermaid
+flowchart TD
+    A["截图 + 页面分类"] -->|"(app, page_type)"| B["图谱定位\n+ 验证上步后条件"]
+    B -->|"mode + next_action"| C{"调度门控"}
+    C -->|"锚定 + promoted"| D["快速路径\n跳过 VLM"]
+    C -->|"非锚定 / 未知"| E["VLM 推理\n+ 图谱提示"]
+    D --> F["设备执行"]
+    E --> F
+    F -->|"新截图"| G["后条件验证\n成功率更新"]
+    G -->|"反馈"| A
+    G -->|"任务结束"| H["暂存 → 质量门 → Neo4j"]
+
+    style D fill:#2E9E44,color:#fff,stroke:none
+    style E fill:#0F4D92,color:#fff,stroke:none
+    style H fill:#7B61A0,color:#fff,stroke:none
+```
+
+这条闭环的关键特性：
+
+- **每步都有反馈**：不是任务结束才更新图谱，而是每步的后条件验证结果都实时更新边的成功率
+- **持久化是延迟的**：实时更新的是内存中的 `EdgeLifecycleManager` 计数器，Neo4j 写入只在任务成功结束时触发
+- **快速路径有保护**：后条件不匹配时自动回退到 VLM 路径，最坏情况是多花一次 VLM 调用
 
 ---
 
@@ -371,17 +416,10 @@ Shopping-Agent 解决了当前 GUI 智能体领域的三个具体缺口：
 - Belief-A* 增强规划器（默认 Dijkstra；增强项在当前图谱规模下贡献 < 0.1）
 - 熵驱动的 VLM 验证边界（已实现但硬编码转移集合仍为主要机制）
 
----
 
-## 10  推荐论文图例
-
-1. **系统架构**：`figures/system-architecture-nature-image2.png` — 六层架构与跨层数据流
-2. **Agent 执行流程**：`figures/agent-execution-flow-nature-image2.png` — 五阶段闭环执行与双速调度
-3. **AMSG 图谱模式**：`figures/amsg-graph-schema-nature-image2.png` — UIState-Action-UIState 模体、生命周期证据、结果分布
-4. **图谱持久化管线**：`figures/graph-persistence-pipeline-nature-image2.png` — 三条持久化路径收敛到质量门控的 Neo4j 写入
 
 ---
 
-## 11  论文方法摘要
+## 10  论文方法摘要
 
 > Shopping-Agent 是一个以 VLM 为主的移动 GUI 智能体，通过自演进的主动移动空间图谱（AMSG）增强。系统将截图抽象为语义页面状态，在 Neo4j 中持久化经过验证的导航转移。每个执行步骤通过 `(app, page_type)` 匹配定位当前页面，用 Dijkstra 在加权图上规划路径，路径缓存为 RuntimeDAG 供后续步骤直接推进。锚定且已提升的转移走快速路径（~0.5s，跳过 VLM），非锚定转移由 VLM 选择具体目标（~5s），带后条件保护——不匹配时自动回退。延迟后条件验证在 t+1 步确认 t 步的动作结果，使边的成功率追踪基于真实观测。在线观测暂存在内存中，仅成功任务触发 Neo4j 写入，新转移需经 VLM 轨迹审核——没有原始动作直接写入图谱。用户约束作为一等任务槽位提取，由 SpecGuard 在购买提交点强制执行。

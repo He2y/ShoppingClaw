@@ -27,52 +27,42 @@ These four responses produce a system best described as **VLM-primary graph-guid
 
 ## 2  System Architecture
 
-The system is organized into six functional layers. Each layer addresses a distinct concern, but the layers are not isolated: the Memory Layer feeds context upward to the Strategic Layer, the Tactical Layer reads the Memory Layer for localization and planning evidence, and the Feedback Loop writes verified observations back into both graph and session memory. This closed-loop coupling is what allows the system to self-evolve.
+The system has three logical areas connected by a closed-loop data flow. The key to understanding the architecture is not "what layers exist" but **how data flows and who decides what**.
 
-| Layer | Components | Responsibility |
-|---|---|---|
-| **Strategic** (VLM) | `PhoneAgent`, `TaskPlan`, `ClarificationAgent`, `SpecGuard`, `VerificationDetector` | Interpret the natural-language task, plan subtasks, detect ambiguity, guard purchase safety, and detect login/CAPTCHA pages. |
-| **Tactical** (Graph) | `GraphRuntimeController`, `ActionAdvisor`, `EdgeLifecycleManager`, `MultiSignalLocalizer`, `EnhancedPlanner` | Localize the current page in the graph, infer the graph goal, plan routes, expose promoted actions, and decide whether to skip or invoke the VLM. |
-| **Memory** | `MemoryManager`, `UnifiedSessionState`, `RetrievalGateway`, `SpatialGraphMemory`, `MemoryStore` | Store user preferences, session state, graph memory, and trajectory files. Inject lightweight context per step and detailed retrieval on demand. |
-| **Persistence** | `GraphStore`, `GraphLifecycleStore`, `TrajectoryReviewer` | Persist UIState/Action/TransitionEdge data, lifecycle statistics, and VLM-reviewed trajectory evidence into Neo4j. |
-| **Model Protocol** | `ModelClient`, Model Adapters (5 families), `ModelProtocolBridge`, `SpatialModelBridge` | Normalize VLM outputs from AutoGLM, UI-TARS, Qwen-VL, MAI-UI, and GUI-Owl into a unified device action IR. |
-| **Device Execution** | `ActionHandler`, platform-specific handlers, `DeviceFactory`, `ADB/HDC/XCTest` backends | Execute Tap, Type, Swipe, Back, Launch, Compound, Interact, and Take_over on Android, HarmonyOS, and iOS. |
+### 2.1  Three Areas and Their Responsibilities
 
-**Figure 1** illustrates the inter-layer data flow. The key observation is that information flows in a closed loop: the Feedback Loop (postcondition verification, graph update, lifecycle promotion) feeds back into the Tactical Layer for the next step. This is what transforms AMSG from a static knowledge base into a self-evolving action library.
+**Decision Area** — answers "what to do". `PhoneAgent._execute_step()` is the sole orchestration entry point. Each step, it calls the Graph Area for localization and action suggestions, then selects Fast Path or VLM Path for execution. Components: `TaskPlan`, `ClarificationAgent`, `VerificationDetector`, `SpecGuard`.
 
-> Recommended figure: `figures/system-architecture-nature-image2.png`
+**Graph Area** — answers "where am I, where to go". `GraphRuntimeController.locate_and_get_context()` performs localization, postcondition verification, route planning, and RuntimeDAG caching in a single call. It returns a `mode` field (`navigate` / `explore` / `verify_with_vlm` / `goal_reached`) that directly drives the Decision Area's dispatch. The Graph Area does not make semantic judgments (which product, which SKU) — only structural navigation. Components: `SpatialGraphMemory`, `ActionAdvisor`, `EdgeLifecycleManager`, Neo4j, FAISS.
+
+**Execution Area** — answers "how to operate the device". `ModelProtocolBridge` normalizes semantic actions or VLM outputs into `DeviceActionIR` across five coordinate systems. `ActionHandler` compiles device commands. After execution, the new screenshot and page classification **feed back** into the Graph Area: postcondition verification updates edge success/failure counts, and successful task completion triggers graph persistence. Components: `ModelClient`, 5 model adapters, `ActionHandler`, `DeviceFactory` (ADB/HDC/XCTest).
+
+### 2.2  Closed-Loop Data Flow
+
+The three areas connect through a single closed loop. Each step, data flows in this order:
 
 ```mermaid
-block-beta
-    columns 1
-    block:strategic["Strategic Layer — VLM-Primary Control"]
-        A["Task Planning\n& Pre-Plan"] B["Clarification\nAgent"] C["Verification\nDetector"] D["SpecGuard\nSafety"]
-    end
-    block:tactical["Tactical Layer — Graph-Guided Action Library"]
-        E["Runtime Graph\nController"] F["Action\nAdvisor"] G["Edge\nLifecycle"] H["Belief\nLocalizer"]
-    end
-    block:memory["Memory Layer — Four Surfaces"]
-        I["FAISS\nVector Store"] J["Unified\nSession State"] K["Retrieval\nGateway"] L["Trajectory\nReviewer"]
-    end
-    block:execution["Execution Layer — Device Abstraction"]
-        M["ADB\nAndroid"] N["HDC\nHarmonyOS"] O["XCTest\niOS"] P["Model\nAdapters (5)"]
-    end
+flowchart TD
+    A["Screenshot + Page Classification"] -->|"(app, page_type)"| B["Graph Localization\n+ Verify Previous Postcondition"]
+    B -->|"mode + next_action"| C{"Dispatch Gate"}
+    C -->|"grounded + promoted"| D["Fast Path\nskip VLM"]
+    C -->|"ungrounded / unknown"| E["VLM Reasoning\n+ graph hints"]
+    D --> F["Device Execution"]
+    E --> F
+    F -->|"new screenshot"| G["Postcondition Verify\n+ Success Rate Update"]
+    G -->|"feedback"| A
+    G -->|"task end"| H["Stage -> Quality Gates -> Neo4j"]
 
-    style strategic fill:#F3E8FD,stroke:#C4A8E0
-    style tactical fill:#E8F5E9,stroke:#81C784
-    style memory fill:#E0F2F1,stroke:#80CBC4
-    style execution fill:#FFF3E0,stroke:#FFB74D
+    style D fill:#2E9E44,color:#fff,stroke:none
+    style E fill:#0F4D92,color:#fff,stroke:none
+    style H fill:#7B61A0,color:#fff,stroke:none
 ```
 
-### 2.1  Cross-Layer Integration
+Key properties of this loop:
 
-The layers are connected by three primary data flows, each serving a distinct role in the agent's operation:
-
-1. **Downward (task → action)**: The user's natural-language task flows through TaskPlan extraction, ClarificationAgent short-circuit, graph localization, route planning, VLM reasoning, action compilation, and device execution. At each stage, context is narrowed: the full task becomes a plan step, the plan step becomes a graph goal, the goal becomes a route, and the route becomes a device action.
-
-2. **Upward (observation → memory)**: Each device action produces a new screenshot observation. This observation flows upward through page classification, postcondition verification, and outcome recording. Successful task trajectories trigger graph persistence; failed tasks produce trajectory files but do not pollute the graph.
-
-3. **Lateral (graph ↔ VLM)**: The graph provides navigation hints, promoted actions, and route plans to the VLM prompt. The VLM's thinking and action outputs feed back into the graph as transition evidence. This bidirectional coupling allows the VLM to benefit from graph structure while the graph learns from VLM decisions.
+- **Per-step feedback**: Edge success rates update in memory after every step, not just at task end
+- **Deferred persistence**: In-memory `EdgeLifecycleManager` counters update in real time; Neo4j writes only on successful task completion
+- **Fast Path protection**: Postcondition mismatch triggers automatic fallback to VLM Path — worst case is one extra VLM call, not a wrong action
 
 ---
 
@@ -621,17 +611,10 @@ The following are implemented but require ablation experiments to validate as co
 | Device abstraction | `phone_agent/device_factory.py` |
 | Trajectory reviewer | `phone_agent/spatial/trajectory_reviewer.py` |
 
----
 
-## 12  Recommended Paper Figures
-
-1. **System architecture**: `figures/system-architecture-nature-image2.png` — Six-layer architecture with inter-layer data flows.
-2. **Agent execution flow**: `figures/agent-execution-flow-nature-image2.png` — Five-phase closed-loop execution with dual-speed dispatch.
-3. **AMSG graph schema**: `figures/amsg-graph-schema-nature-image2.png` — UIState-Action-UIState motif, lifecycle evidence, outcome distributions.
-4. **Graph persistence pipeline**: `figures/graph-persistence-pipeline-nature-image2.png` — Three persistence paths converging on quality-gated Neo4j writes.
 
 ---
 
-## 13  Paper Method Summary
+## 12  Paper Method Summary
 
 > Shopping-Agent is a VLM-primary mobile GUI agent augmented by a self-evolving Active Mobile Spatial Graph (AMSG). The system abstracts screenshots into semantic page states and persists verified navigation transitions in Neo4j. Each step locates the current page via `(app, page_type)` matching, plans a route with Dijkstra on the weighted graph, and caches the route as a RuntimeDAG for subsequent steps to advance directly. Grounded, promoted transitions execute via Fast Path (~0.5s, no VLM call); ungrounded transitions require VLM to choose the specific target (~5s), with postcondition protection — mismatch triggers automatic fallback. Delayed postcondition verification at step t+1 confirms step t's outcome, ensuring edge success-rate tracking is based on ground-truth observations. Online observations are staged in memory; only successful tasks trigger Neo4j writes, and new transitions require VLM trajectory review — no raw actions write directly to the graph. User constraints are extracted as first-class task slots and enforced by SpecGuard at the point of purchase commitment.
