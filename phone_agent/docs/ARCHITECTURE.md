@@ -1,629 +1,697 @@
 # ClawGUI-Agent Architecture
 
-> Version: 2026-06-04
-> Scope: `phone_agent/agent.py`, `phone_agent/memory/`, `phone_agent/spatial/`, `phone_agent/model/`, `phone_agent/actions/`
+> Version: 2026-06-05  
+> Scope: current checkout under `phone_agent/`, with emphasis on `agent.py`, `core/`, `memory/`, `spatial/`, `model/`, `actions/`, `device_factory.py`, and the AMSG v4 Neo4j runtime contract.  
+> Purpose: provide a paper-ready architecture and method reference for later academic writing.
 
-ClawGUI-Agent is a VLM-primary mobile GUI agent augmented by an Active Mobile Spatial Graph (AMSG). The core design is deliberately asymmetric:
+ClawGUI-Agent is a VLM-primary mobile GUI agent with a self-evolving Active Mobile Spatial Graph, abbreviated as AMSG. The central design is not "replace the VLM with a graph planner". The design is:
 
-- The VLM is responsible for semantic decisions: choosing a product, interpreting a screenshot, matching user constraints, deciding whether an item satisfies a task, and handling ambiguous or novel screens.
-- The graph is responsible for reusable spatial and procedural knowledge: locating the current page state, proposing verified navigation actions, compiling safe grounded actions, tracking transition reliability, and injecting concise context into the VLM prompt.
-- The memory system separates personalized memory, session state, graph memory, and trace history so that the prompt carries only task-relevant evidence instead of the entire execution log.
+1. Let the VLM handle semantic judgement, such as product choice, task constraint interpretation, visual ambiguity, dialog understanding, and user-facing decisions.
+2. Let AMSG handle reusable structure, such as page localization, safe navigation priors, verified transitions, postcondition statistics, action grounding evidence, and graph-based context.
+3. Let the memory system inject only the evidence needed at the current step, rather than pushing the entire history into every prompt.
+4. Let graph persistence be earned by verification, not by raw trajectory replay.
 
-This document rewrites the architecture from the current codebase rather than from the older graph-as-controller design. It is intended to be usable as source material for a paper method section.
+This creates an asymmetric agent: the graph accelerates and constrains the loop, while the VLM remains the semantic authority whenever a decision depends on current screen content or user intent.
 
-![System overview](architecture-system-overview.svg)
+![System architecture generated with image-2](figures/system-architecture-image2.png)
 
-## 1. Research-Level Design Problem
+## 1. Design Philosophy
 
-Mobile GUI agents face three coupled uncertainties:
+Mobile GUI automation is difficult because the agent must control a changing visual system without a stable DOM. The codebase addresses four uncertainty sources:
 
-1. **Perceptual uncertainty**: the screenshot must be mapped to a stable page abstraction despite dynamic layouts, popups, ad slots, device resolution changes, and app version drift.
-2. **Semantic uncertainty**: the same action class may require a different concrete target for each user task. For example, tapping a product card is a navigation pattern, but choosing which card is a semantic decision.
-3. **Transition uncertainty**: the same control can lead to several outcomes. A product detail "add to cart" button may open a spec selector, a login page, a promotion popup, or do nothing.
+| Uncertainty | Concrete failure mode | Design response | User impact |
+|---|---|---|---|
+| Perceptual uncertainty | The same page looks different across app versions, devices, ads, popups, and scroll positions. | Convert screenshots into `PageState` using app, page type, landmarks, affordances, slots, risk, and semantic signature. | The agent can reuse knowledge across layouts without blindly replaying pixels. |
+| Semantic uncertainty | Historical "tap product card" does not say which product is correct for the current task. | Mark ungrounded transitions as VLM-required; strip content-specific targets from graph hints. | The agent avoids buying or selecting the wrong item because of stale history. |
+| Transition uncertainty | The same button may open SKU selection, login, a promotion dialog, checkout, or do nothing. | `EdgeLifecycleManager` tracks outcome distributions, dominance ratio, entropy, and lifecycle stage. | Shortcuts are only used when they are empirically predictable. |
+| Context uncertainty | Long histories confuse VLM calls and hide the current task. | `UnifiedSessionState` plus `RetrievalGateway` inject progress every step and detailed memory only on demand. | The agent stays focused without losing prior observations when it needs them. |
 
-The architecture addresses these uncertainties with a division of labor:
+The resulting system is best described as **VLM-primary graph-guided control**. AMSG is not an autonomous controller. It is a verified action library, state localizer, route planner, and persistence substrate.
 
-| Problem | Primary module | Mechanism |
+## 2. System Layers
+
+| Layer | Main files | Responsibility |
 |---|---|---|
-| Page identity | `SpatialGraphMemory.locate()` | `PageState` abstraction, graph candidate lookup, optional Bayesian belief localization |
-| Task decomposition | `PhoneAgent._vlm_pre_plan()` and `TaskPlan` | VLM extracts query, product, specs, target pages, ordered steps |
-| Navigation reuse | `GraphRuntimeController`, `ActionAdvisor` | Route planning, RuntimeDAG, promoted Action hints |
-| Semantic selection | VLM full path | Current screenshot plus task constraints and graph hints |
-| Transition reliability | `EdgeLifecycleManager` | Outcome distribution, promotion/demotion, entropy-based verification |
-| User/session context | `MemoryManager`, `UnifiedSessionState`, `RetrievalGateway` | Lightweight progress/focus/constraints plus on-demand retrieval |
+| Task and reasoning | `phone_agent/agent.py`, `phone_agent/task_plan.py`, `phone_agent/core/task_spec.py` | Interpret the natural-language task, create a VLM pre-plan, keep task progress visible, and decide the current control mode. |
+| User-facing safety | `phone_agent/clarify.py`, `phone_agent/core/spec_guard.py`, `phone_agent/verification_detector.py`, `phone_agent/core/status.py` | Ask only when the task is genuinely ambiguous, block unsafe SKU/payment commits, detect login/CAPTCHA/SMS pages, and expose structured status events. |
+| Runtime graph guidance | `phone_agent/spatial/runtime_controller.py`, `phone_agent/spatial/action_advisor.py` | Locate the current page, infer graph goal, plan routes, expose promoted actions, and decide whether to skip or call the VLM. |
+| AMSG memory | `phone_agent/memory/spatial_graph_memory.py`, `phone_agent/spatial/edge_lifecycle.py`, `phone_agent/spatial/belief_localizer.py`, `phone_agent/spatial/enhanced_planner.py` | Maintain page states, transition edges, lifecycle metadata, Bayesian belief localization, and enhanced planning. |
+| Persistence | `phone_agent/memory/graph_store.py`, `phone_agent/memory/graph_lifecycle_store.py`, `phone_agent/spatial/trajectory_reviewer.py` | Persist UIState/Action/TaskTarget/Functionality graph data into Neo4j and review completed trajectories before importing new edges. |
+| Session memory | `phone_agent/memory/memory_manager.py`, `phone_agent/memory/core/unified_state.py`, `phone_agent/memory/retrieval_gateway.py`, `phone_agent/memory/memory_store.py` | Store preferences, contacts, task history, products, cart state, current focus, trajectory JSON, and on-demand retrieval results. |
+| Model protocol | `phone_agent/model/client.py`, `phone_agent/model/adapters.py`, `phone_agent/model/protocol_bridge.py`, `phone_agent/spatial/model_bridge.py` | Support AutoGLM, UI-TARS, Qwen-VL, MAI-UI, and GUI-Owl while normalizing model outputs into device actions. |
+| Device execution | `phone_agent/actions/handler.py`, `phone_agent/actions/handler_*.py`, `phone_agent/device_factory.py`, `phone_agent/{adb,hdc,xctest}/` | Execute Launch, Tap, Type, Swipe, Back, Compound, Interact, and Take_over on Android, HarmonyOS, and iOS-style backends. |
 
-The resulting agent is not a pure reactive VLM loop and not a pure graph planner. It is a closed-loop policy where the graph narrows the action space and the VLM remains the final authority whenever the action requires semantic understanding.
+The runtime database defaults to `shopping-spatial-v4` through `AMSG_RUNTIME_GRAPH_DATABASE`. `GraphRuntimeController` advertises the runtime contract as `amsg-v4-runtime` and disables legacy fallback by default in `MemoryManager._ensure_graph_runtime_controller()`.
 
-## 2. Runtime Architecture
+## 3. Agent Execution Model
 
-The runtime contains five interacting layers.
+![Agent execution flow generated with image-2](figures/agent-execution-flow-image2.png)
 
-| Layer | Main code | Responsibility |
-|---|---|---|
-| Task and VLM reasoning | `PhoneAgent`, `ModelClient`, model adapters | Build prompts, call VLM, parse model-native actions, maintain compressed dialogue |
-| Runtime graph guidance | `GraphRuntimeController`, `ActionAdvisor` | Locate state, infer goal, plan route, propose safe next actions |
-| Memory | `MemoryManager`, `MemoryStore`, `UnifiedSessionState`, `RetrievalGateway` | User preferences, task history, session facts, on-demand retrieval |
-| AMSG graph | `SpatialGraphMemory`, `GraphStore`, `GraphLifecycleStore` | Page states, transitions, lifecycle metadata, functionality graph, Neo4j persistence |
-| Device execution | `ActionHandler`, device factories, ADB/HDC/XCTest backends | Convert canonical actions to real device operations and collect screenshots |
-
-The execution loop is implemented in `PhoneAgent._execute_step()`. The graph runtime is entered through `MemoryManager.locate_and_get_context()`, which delegates to `GraphRuntimeController.locate_and_get_context()`. The graph controller owns the v4 runtime contract and returns:
-
-- `mode`: `navigate`, `verify_with_vlm`, `explore`, or `goal_reached`
-- `belief`: current state posterior
-- `goal_spec`: target page types and runtime slots
-- `route_plan`: selected route and cost
-- `next_actions`: graph-proposed next action
-- `semantic_context`: text injected into the VLM prompt
-- `repair_hint`: result of pending postcondition verification
-
-## 3. Single-Step Agent Execution
-
-![Agent execution loop](architecture-agent-loop.svg)
-
-A single step follows this sequence:
+The main control loop is implemented by `PhoneAgent._execute_step()`. Each step follows the same closed loop:
 
 ```text
-Input: user task T, dialogue context C, current device D
-
-1. Observe
-   screenshot <- D.get_screenshot()
-   app <- D.get_current_app()
-   page semantics <- PageClassifier(screenshot), unless RuntimeDAG can provide a valid hint
-
-2. Detect interruptions
-   if page is login/captcha/permission:
-       execute Take_over and wait for user
-
-3. Localize graph state
-   page_state <- build PageState(app, page_type, summary, elements, slots)
-   belief <- locate page_state against local state and Neo4j candidates
-
-4. Verify previous transition
-   if pending source/action exists:
-       compare current page against expected postcondition
-       record success/failure in SpatialGraphMemory and EdgeLifecycleManager
-       repair if needed
-
-5. Infer goal and plan
-   goal_spec <- GoalSpec(task) enriched by VLM pre-plan
-   route_plan <- shortest path from belief to target page types
-   runtime_dag <- cached route if route is usable
-
-6. Dispatch
-   if ActionAdvisor finds a promoted grounded action matching current plan:
-       execute Fast Path
-   else if graph runtime has a safe next action:
-       execute graph shortcut or inject VLM verification hint
-   else:
-       build VLM prompt and call model
-
-7. Execute
-   action <- canonical action from VLM or graph
-   action <- SpecGuard / ActionAdvisor grounding if applicable
-   result <- ActionHandler.execute(action)
-
-8. Record
-   MemoryManager.add_step(thinking, action, app)
-   MemoryManager.update_state_and_transition(...)
-   compress history and append step summary
+Observe -> Page Semantics -> Verification Gate -> Graph Runtime
+        -> Fast Path or Full VLM Path -> SpecGuard -> Execute
+        -> Postcondition Verification -> Memory and Graph Update
+        -> Observe next screen
 ```
 
 ### 3.1 Task Initialization
 
-At `PhoneAgent.run(task)`:
+`PhoneAgent.run(task)` resets per-task state:
 
-1. The agent clears the dialogue context, graph failure counters, verification counters, step summaries, and task plan state.
-2. `MemoryManager.start_task(task)` resets session memory and initializes task-level tracking.
-3. `_vlm_pre_plan(task)` asks a VLM to extract a structured plan:
-   - `search_query`
-   - `product`
-   - `specs`
-   - `target_action`
-   - `target_page`
-   - ordered `steps`
-4. `TaskPlan.from_vlm_output()` turns the VLM plan into a runtime plan used by `ActionAdvisor` and prompt construction.
-5. The first `_execute_step()` begins with the original user task.
+- dialogue context
+- step count
+- graph failure counters
+- verification counters
+- step summaries
+- `TaskPlan`
+- model adapter action history
+- memory manager session state
 
-This pre-plan is not treated as ground truth. It is a high-level scaffold for search-first routing, slot filling, and constraint reminders. The current screenshot still controls what the agent may safely execute.
+The agent then calls `_vlm_pre_plan(task)`, preferably through `AMSG_STRONG_VLM_*` if configured, otherwise through the normal model client. The pre-plan extracts:
+
+- `search_query`
+- `product`
+- `specs`
+- `target_action`
+- `target_page`
+- ordered steps with target page types
+
+`TaskPlan.from_vlm_output()` turns this into a step list and goal slots. This is a scaffold, not ground truth. The current screenshot and safety gates still decide what can actually be executed.
 
 ### 3.2 Observation and Page Semantics
 
-The observation stage creates a structured `screen_dict`:
+The observation stage reads:
 
-| Field | Source | Use |
-|---|---|---|
-| `ui_hash` | MD5 of screenshot base64 | observation identity and fallback state id |
-| `app` | device backend | app consistency and graph filtering |
-| `page_type` | `PageClassifier` or RuntimeDAG hint | graph node type and risk policy |
-| `summary` | `PageClassifier` | node metadata and prompt context |
-| `elements` | `PageClassifier` | landmarks, affordances, functionality extraction |
-| `semantic_layout` | `app + page_type` | legacy compatibility and memory search |
+- screenshot from `DeviceFactory.get_screenshot()`
+- current app from `DeviceFactory.get_current_app()`
+- screenshot hash as `ui_hash`
+- page semantics from `PageClassifier`, unless `RuntimeDAG` can safely provide a hint
 
-`GraphRuntimeController.should_use_page_classifier()` can skip the classifier only when a valid `RuntimeDAG` is active, no pending postcondition requires verification, the next edge is not high-risk, and the current app still matches the DAG app. This is a latency optimization, not a semantic replacement for perception.
+The resulting `screen_dict` contains:
 
-### 3.3 Dispatch Modes
+| Field | Meaning |
+|---|---|
+| `ui_hash` | MD5 identity of the current screenshot payload. |
+| `semantic_layout` | Lightweight app and page-type description for legacy compatibility. |
+| `app` | Current app name from the backend. |
+| `page_type` | Classifier or RuntimeDAG page type. |
+| `summary` | Short page description. |
+| `elements` | Structured visible-element metadata when available. |
+| `_runtime_hint` | Whether the page semantics came from a RuntimeDAG hint. |
 
-The agent dispatches along three practical paths.
+`GraphRuntimeController.should_use_page_classifier()` skips the classifier only when all of the following are true:
+
+- an active `RuntimeDAG` exists and is usable
+- no pending postcondition needs verification
+- the next edge is not high-risk
+- the current app still matches the DAG app
+
+This is a latency optimization. It is not a replacement for perception.
+
+### 3.3 Verification and Human Takeover
+
+There are two verification-detection layers:
+
+1. Before the VLM call, `detect_verification(page_type, summary, elements)` checks PageClassifier output.
+2. After the VLM call, `detect_verification_from_vlm(thinking, raw_content)` catches verification pages recognized by the model when PageClassifier was skipped.
+
+When login, CAPTCHA, SMS code, slider verification, or similar user-owned pages are detected, the agent executes a `Take_over` action through `ActionHandler._handle_takeover()`. This prevents the model from inventing actions on authentication or verification screens.
+
+### 3.4 Clarification Before Action
+
+`ClarificationAgent` runs on the first step for shopping and food-delivery tasks. It uses a three-layer short-circuit:
+
+1. `TaskSpecExtractor` checks whether the task already has enough slots.
+2. Memory preferences fill missing slots when possible.
+3. A VLM ambiguity check asks a targeted user question only when the task is still underspecified.
+
+This is important for user experience. The system should not ask users for every missing field. It should ask only when the missing field blocks safe execution.
+
+### 3.5 Runtime Graph Contract
+
+`MemoryManager.locate_and_get_context()` delegates to `GraphRuntimeController.locate_and_get_context()`. The controller owns the v4 graph contract and returns:
+
+| Key | Meaning |
+|---|---|
+| `mode` | `navigate`, `verify_with_vlm`, `explore`, or `goal_reached`. |
+| `belief` | Current page posterior or deterministic fallback belief. |
+| `goal_spec` | Target page types and runtime slots. |
+| `route_plan` | Planned graph route and confidence. |
+| `next_actions` | Candidate graph action for the current step. |
+| `semantic_context` | Prompt context with graph, task-plan, and optional v4 knowledge hints. |
+| `repair_hint` | Decision after pending postcondition verification. |
+| `runtime_metrics` | Classifier calls, DAG skips, DAG hits/misses, and coverage gaps. |
+
+The controller also caches `RuntimeDAG` when a route exists. RuntimeDAG allows cheap page hints and next planned action lookup across consecutive steps, but it is invalidated by risk, app mismatch, postcondition requirements, or repeated graph failure.
+
+### 3.6 Three Dispatch Paths
+
+The agent has three practical execution paths:
 
 | Path | Trigger | VLM call | Safety boundary |
-|---|---|---:|---|
-| Fast Path | `ActionAdvisor` returns a promoted grounded hint with confidence >= 0.9 and matching current plan step | No | Must pass postcondition check |
-| Graph shortcut | `GraphRuntimeController` returns `mode=navigate` and compilable action with confidence >= 0.7 | No | Blocked on high-risk or VLM-required transitions |
-| Full VLM Path | Missing graph route, low confidence, ungrounded transition, semantic choice, failed postcondition, or explicit safety guard | Yes | VLM sees graph hints but must ground on current screenshot |
+|---|---:|---:|---|
+| Fast Path | `ActionAdvisor` returns a grounded promoted action with confidence at least `0.9` and aligned with the current plan step. | No | Must pass postcondition check; otherwise falls through to Full VLM Path. |
+| Graph shortcut | `GraphRuntimeController` returns a high-confidence compilable structural action. | No | Disabled for high-risk, low-confidence, ungrounded, or uncompiled actions. |
+| Full VLM Path | No safe graph action, semantic target choice required, low confidence, failed repair, or safety guard active. | Yes | VLM sees graph hints but must ground on current screenshot. |
 
-The Full VLM Path is intentionally broad. It prevents historical graph actions from being over-applied to new task content.
+The Full VLM Path is intentionally broad. In shopping tasks, the graph should not choose a concrete product, store, SKU, or checkout decision unless the transition is known to be grounded and safe.
 
-## 4. Memory System and Context Injection
+## 4. Structured Task Constraints
 
-The memory system has four distinct storage surfaces.
+`phone_agent/core/task_spec.py` is the single source of truth for extracting task slots. The extracted `TaskSlots` include:
 
-| Surface | Code | Persistence | Role |
-|---|---|---|---|
-| User memory | `MemoryStore` | local FAISS-like store under `memory_db/<user>` | preferences, corrections, task history, app/contact bindings |
-| Session state | `UnifiedSessionState` | in-memory during task | current progress, constraints, product observations, cart status |
-| Graph memory | `SpatialGraphMemory` + `GraphStore` | local staging plus Neo4j | page graph, transition reliability, functionality graph |
-| Trace history | `GUITracer` and dialogue summaries | optional trace files and compressed messages | debug/replay without bloating prompt |
+- `query`
+- `product`
+- `price`
+- `color`
+- `storage`
+- `size`
+- `contact`
+- `app`
+- `domain`
 
-### 4.1 Lightweight Prompt Memory
+These slots are consumed by:
 
-`MemoryManager.get_injection_context()` follows a memory-decoupled design:
+- `ClarificationAgent`, to decide whether to ask before execution
+- `SpecGuard`, to block unsafe purchase commits
+- `GoalSpec`, to guide graph routing
+- `MemoryManager`, to learn preferences and constraints
+- `TaskPlan`, to fill runtime placeholders such as `<query>`
 
-1. Always inject a short progress summary from `UnifiedSessionState`.
-2. Always inject the current focus if available.
-3. Trigger `RetrievalGateway.check_and_retrieve()` only when the previous VLM thinking indicates a need for recall, comparison, calculation, or product details.
-4. Inject constraints when session slots exist.
+The key decision is to treat task constraints as first-class state, not as incidental prompt text. This makes the shopping flow safer: a requested color, storage size, clothing size, or price range can be checked again at the exact point where the model tries to commit an action.
 
-This avoids pushing all memory into every prompt. User preferences and task history are still available through `get_relevant_context(task)`, but they are formatted as bounded contextual evidence rather than raw logs.
+## 5. SpecGuard and Purchase Safety
 
-### 4.2 Graph Context Injection
+`SpecGuard` protects spec-selection, checkout, and payment-adjacent pages. It has two entry points:
 
-Graph context enters the prompt through two routes:
+- `get_context_hints()`: injects constraint reminders on spec, checkout, and payment pages.
+- `check()`: intercepts a purchase-commit action before execution and can replace it with `Interact`.
 
-- `GraphRuntimeController` injects `[SpatialGraph]`, `[SpatialGraph Route]`, `[Task Plan]`, and `[V4 Knowledge]` summaries.
-- `ActionAdvisor.format_for_vlm()` injects a compact list of currently available promoted actions.
+The guard activates only on shopping apps and only for commit-like actions, such as add-to-cart, buy-now, checkout, submit-order, or payment. It does not block selection actions that are still choosing a SKU.
 
-For semantically underdetermined transitions, `sanitize_action_for_context()` removes product-specific targets and locators. For example, a historical product card coordinate is not shown to the VLM when the current task asks for a different product.
+The design distinction is:
 
-### 4.3 Pending Transition Memory
+- **Selection is allowed**: the VLM may choose visible options matching explicit user constraints.
+- **Commit is guarded**: if the VLM cannot prove the requested specs were selected, checkout or payment is stopped.
 
-After action execution, `MemoryManager.update_state_and_transition()` does not immediately know the target page. It caches:
+This is a UX decision as much as a safety decision. The user should not be asked again when their original task already specified the required SKU. The system should carry that constraint forward automatically.
 
-- source `PageState`
-- executed action
-- expected postcondition
+## 6. Memory System
 
-At the next observation, `GraphRuntimeController._verify_pending_transition()` compares the actual page type against the expectation, records the outcome, and chooses a repair action if the route deviated. This delayed verification is essential: transition truth is defined by the next screen, not by the model's predicted action.
+`MemoryManager` separates four memory surfaces:
 
-## 5. Active Mobile Spatial Graph Design
+| Surface | Storage | Role |
+|---|---|---|
+| User memory | `MemoryStore` under `memory_db/<user>` | Preferences, contacts, app usage, corrections, task history. |
+| Session state | `UnifiedSessionState` | Current task, products, cart state, constraints, current focus, state IDs, reasoning archive. |
+| Graph memory | `SpatialGraphMemory` plus Neo4j | Page graph, action graph, lifecycle metadata, v4 functionality graph. |
+| Trajectory files | `memory_db/<user>/trajectories/*.json` | Per-task step details for review, audit, and graph evolution. |
 
-![AMSG graph schema](graph-schema.svg)
+### 6.1 Lightweight Context Injection
 
-The graph is a typed directed multigraph:
+`MemoryManager.get_injection_context()` implements memory decoupling:
+
+1. Always inject a short progress summary.
+2. Always inject the current focus.
+3. Trigger retrieval only when the previous thinking indicates recall, comparison, calculation, product lookup, or stagnation.
+4. Inject constraints only when they exist.
+
+`RetrievalGateway` is the inference-time equivalent of a retriever tool. It uses heuristic intent detection over model thinking and queries `UnifiedSessionState`. This avoids stuffing full task history into every VLM call.
+
+### 6.2 Session State as One Write Path
+
+`UnifiedSessionState` merges the older KnowledgeBase, SessionMemory, and StateManager roles. Each step writes once through `record_step()`, then optional product and constraint extraction updates the same state object. This reduces state drift across components.
+
+### 6.3 Task Trajectory Persistence
+
+At task end, `MemoryManager._save_pending_trajectory()` writes a named trajectory JSON file with:
+
+- task text
+- success/failure
+- result
+- app list
+- step count
+- step details: action type, action params, thinking snippet, page type, app
+- start and end state IDs
+- saved timestamp
+
+This file is both a debug artifact and a graph-evolution input.
+
+## 7. AMSG Graph Design
+
+![AMSG graph schema generated with image-2](figures/amsg-graph-schema-image2.png)
+
+AMSG is a typed directed graph:
 
 ```text
-G = (V, E_c, E_h, F, C, T)
+G = (V, E_c, E_h, F, C, T, Sigma, B, Pi)
 
-V   : UIState nodes
-E_c : committed/promoted transition edges represented by UIState -> Action -> UIState
-E_h : hypothesis/candidate transition observations tracked by lifecycle metadata
-F   : FunctionalityItem nodes discovered from pages and transitions
-C   : FunctionalityCluster nodes grouping reusable roles
-T   : TaskTarget nodes for task-level trajectory retrieval
+V      UIState nodes
+E_c    committed/promoted transitions
+E_h    hypothesis/candidate transitions
+F      FunctionalityItem nodes
+C      FunctionalityCluster nodes
+T      TaskTarget nodes
+Sigma  domain schema
+B      belief distribution over UIState
+Pi     planner
 ```
 
-The graph is stored in Neo4j, but `SpatialGraphMemory` also keeps local staging dictionaries:
-
-- `_local_states: dict[state_id, PageState]`
-- `_local_edges: dict[source_id, list[TransitionEdge]]`
-- `_edge_lifecycle: EdgeLifecycleManager`
-
-### 5.1 UIState Node
-
-`UIState` represents a page-level abstraction, not a pixel-perfect screenshot. Its identity is produced from app, page type, risk bucket, landmarks, affordances, and optional slots.
-
-| Field | Meaning |
-|---|---|
-| `state_id` | stable id; online observations may include screenshot hash, canonical graph nodes use semantic identity |
-| `app` | app identifier or alias-normalized app name |
-| `page_type` | page category such as `home`, `search_result`, `product_detail`, `spec_selection` |
-| `summary` | concise page description |
-| `landmarks` | stable visual anchors such as search bar, product cards, spec options |
-| `affordances` | possible interactions such as `tap_search`, `open_product`, `confirm_spec` |
-| `slots` | runtime task slots extracted from text, stored as JSON |
-| `risk_level` | `normal`, `medium`, or `high` |
-| `semantic_signature` | deterministic signature for localization |
-| `screenshot_hash` | raw screenshot evidence when available |
-
-The canonical page key is currently `(app, page_type, risk_level)`. Landmarks and affordances are merged as metadata rather than used to split every layout variant into a separate node.
-
-### 5.2 Action Node
-
-An `Action` is the reusable transition affordance between two page states. It is not merely a low-level tap coordinate.
-
-| Field | Meaning |
-|---|---|
-| `action_id` | deterministic id from source, target, and semantic edge key |
-| `type` | action type: `Tap`, `Type`, `Swipe`, `Back`, `Compound`, etc. |
-| `intent` | normalized action intent, such as `tap`, `type_text`, `compound`, `go_back` |
-| `semantic_target` | reusable target label, such as `open_search`, `submit_search`, `open_spec_selector` |
-| `target_locator` | coordinate or bbox evidence, stored as JSON |
-| `region` | normalized UI region, e.g. `top_center`, `bottom_right` |
-| `expected_postcondition` | target page type expected after execution |
-| `source_page_type`, `target_page_type` | denormalized page type metadata |
-| `confidence` | relation-level execution confidence |
-| `summary`, `reasoning` | natural-language evidence for prompt injection and debugging |
-| `lifecycle_stage` | `hypothesis`, `candidate`, `promoted`, or `demoted` |
-| `verification_count` | number of verified observations |
-| `dominance_ratio` | empirical probability of dominant outcome |
-| `outcome_distribution_json` | serialized outcome counts |
-| `outcome_entropy` | Shannon entropy of the outcome distribution |
-
-The persisted motif is:
+The canonical persisted motif is:
 
 ```text
 (source:UIState)-[:NEXT_ACTION]->(action:Action)-[:PRODUCES]->(target:UIState)
 ```
 
-`NEXT_ACTION` tracks frequency, fail count, and confidence. `PRODUCES` tracks success/failure counts and success rate for the action's postcondition.
+### 7.1 UIState
 
-### 5.3 Functionality Nodes
+`PageState` in `spatial_graph_memory.py` maps to Neo4j `UIState`. It is a page abstraction, not a screenshot identity.
 
-AMSG v4 adds a functionality layer so the graph can represent what a page exposes, not only where it can navigate.
-
-| Node | Role |
+| Field | Meaning |
 |---|---|
-| `FunctionalityItem` | one discovered UI function or data item from page elements, VLM extraction, or verified transitions |
-| `FunctionalityCluster` | cluster of semantically equivalent functionality items across screenshots/pages/apps |
+| `state_id` | Observation or semantic state identifier. |
+| `app` | App name or canonical alias. |
+| `page_type` | Examples: `home`, `search_input`, `search_result`, `product_detail`, `spec_selection`, `cart`, `checkout`, `filter_panel`. |
+| `summary` | Short page summary. |
+| `landmarks` | Stable visual anchors. |
+| `affordances` | Possible interactions. |
+| `slots` | Runtime slots detected from task and page text. |
+| `risk_level` | `normal`, `medium`, or `high`. |
+| `screenshot_hash` | Raw screenshot evidence. |
+| `semantic_signature` | Deterministic semantic signature. |
 
-Relationships:
+`SpatialGraphMemory.build_page_state()` derives these fields from the screen dict, task text, page classifier output, and element metadata.
 
-| Relationship | Meaning |
-|---|---|
-| `UIState -[:EXPOSES_FUNCTION]-> FunctionalityItem` | page exposes a function or data field |
-| `FunctionalityItem -[:MEMBER_OF]-> FunctionalityCluster` | item belongs to reusable role cluster |
-| `Action -[:IMPLEMENTS_FUNCTION]-> FunctionalityItem/Cluster` | verified action implements a function |
-| `FunctionalityCluster -[:LEADS_TO]-> UIState` | cluster tends to produce a postcondition page |
+### 7.2 Action
 
-`FunctionalityExtractor` separates actionable controls from data fields. `FunctionalityClusterer` groups promotable items using canonical role, source page type, region, and observed postcondition; `EmbeddingFunctionalityClusterer` can use embeddings with deterministic fallback.
+`Action` nodes are semantic transition affordances, not just coordinates. `GraphStore.add_state_transition()` enriches actions with:
 
-### 5.4 TaskTarget Nodes
+- `type`
+- `intent`
+- `semantic_target`
+- `semantic_edge_key`
+- `expected_postcondition`
+- `source_page_type`
+- `target_page_type`
+- `region`
+- `risk_level`
+- `target_locator`
+- `summary`
+- `reasoning`
+- lifecycle fields
 
-`TaskTarget` nodes are used for task-level retrieval and trajectory replay. They link a completed task to start and end states:
+`GraphStore._semantic_action_key()` intentionally ignores tiny coordinate jitter. Coordinates are treated as evidence for grounding, not identity.
+
+### 7.3 Transition Reliability
+
+The edge lifecycle is:
+
+```text
+hypothesis -> candidate -> promoted -> demoted
+```
+
+`EdgeLifecycleManager.record_outcome()` tracks both concrete edge records and outcome distributions for `(source_page_type, action_key)`.
+
+Promotion is based on:
+
+- enough postcondition verifications
+- dominant outcome ratio above threshold
+- low enough risk
+- lifecycle configuration from `AMSGOptimConfig`
+
+Demotion occurs when a promoted edge later loses dominance. High outcome entropy causes VLM verification instead of direct shortcut execution.
+
+### 7.4 Functionality Layer
+
+`GraphStore` implements a v4 Functionality persistence and query layer:
+
+```text
+(UIState)-[:EXPOSES_FUNCTION]->(FunctionalityItem)
+(FunctionalityItem)-[:MEMBER_OF]->(FunctionalityCluster)
+(Action)-[:IMPLEMENTS_FUNCTION]->(FunctionalityItem or FunctionalityCluster)
+(FunctionalityCluster)-[:LEADS_TO]->(UIState)
+```
+
+The runtime query API is `GraphStore.get_v4_functionality_context()`, which returns:
+
+- `available_roles`
+- `data_items`
+- `verified_clusters`
+- `implemented_actions`
+- `semantic_hint`
+
+The write API is `GraphStore.upsert_functionality_graph(report)`. In the current checkout, the persistence/query surface exists, but local extractor and clusterer modules are not present under `phone_agent/spatial/`. If a paper claims functionality discovery as an implemented method, the extraction pipeline should be restored or described as an external artifact source.
+
+### 7.5 TaskTarget
+
+`TaskTarget` nodes support trajectory-level retrieval:
 
 ```text
 (TaskTarget)-[:STARTS_AT]->(UIState)
 (TaskTarget)-[:ENDS_AT]->(UIState)
 ```
 
-This is a GraphRAG surface for similar-task references. It is separate from the runtime AMSG route planner, which uses page-state transitions.
+This is separate from runtime route planning. Runtime uses page transitions; TaskTarget is a GraphRAG surface for similar-task context.
 
-## 6. State Localization and Action Navigation
+## 8. Localization and Planning
 
-### 6.1 Page Abstraction
+### 8.1 Page Localization
 
-`SpatialGraphMemory.build_page_state()` maps an observation into:
+`SpatialGraphMemory.locate()` builds a current `PageState`, searches for graph candidates, and returns a `PageBelief`.
 
-```text
-PageState = (
-  state_id,
-  app,
-  page_type,
-  summary,
-  landmarks,
-  affordances,
-  slots,
-  risk_level,
-  screenshot_hash,
-  semantic_signature
-)
-```
+In legacy mode, localization uses fixed scores:
 
-The abstraction uses both VLM/PageClassifier output and deterministic page-type priors. If the classifier fails, the system can fall back to heuristic page inference, but those states are often `unknown` and receive limited routing trust.
+- graph candidate: `0.92`
+- current observation signature: `0.82`
+- novel observation: `1.0`
 
-### 6.2 Belief Localization
-
-The localizer first tries exact/semantic graph lookup:
-
-1. Query `GraphStore.get_state_by_semantic()`.
-2. Query `find_v4_page_candidates(app, page_type, semantic_signature)`.
-3. Score candidates using app match, page type match, landmark Jaccard, and affordance Jaccard.
-4. Accept the best graph candidate when similarity is at least 0.65.
-
-When `AMSG_CONFIG` enables multi-signal belief, `MultiSignalLocalizer` maintains a posterior:
+When `AMSG_CONFIG` enables multi-signal belief, `MultiSignalLocalizer` uses:
 
 ```text
 P(o | v) = sum_c w_c * phi_c(o, v)
-
-B_t(v) = eta * P(o_t | v) * sum_{v'} P(v | v', a_{t-1}) * B_{t-1}(v')
+B_t(v) = eta * P(o_t | v) * sum_v' P(v | v', a_t-1) * B_t-1(v')
 ```
 
-Channels:
+Signals include:
 
-| Channel | Signal | Availability |
+- visual similarity, optional
+- semantic similarity, optional
+- structural similarity, always available
+- temporal transition prior, optional after action history
+
+Unavailable signals are dropped and weights are redistributed.
+
+### 8.2 Goal Inference
+
+`GoalSpec.from_task()` extracts target page types and slots. `GraphRuntimeController._infer_goal_spec()` enriches this with VLM pre-plan fields:
+
+- `search_query` -> `query`
+- `product` -> `product`
+- `specs` -> slot values
+- `target_page` -> prioritized target when useful
+
+For search-first tasks, `_search_first_targets()` forces the route to progress through:
+
+```text
+home or unknown -> search_input
+search_input    -> search_result
+later pages     -> original targets
+```
+
+This prevents the graph from taking a historical shortcut from home to a random product detail page.
+
+### 8.3 Route Planning
+
+`SpatialGraphMemory.plan()` returns:
+
+| Mode | Condition | Runtime behavior |
 |---|---|---|
-| Visual | screenshot embedding cosine similarity | optional |
-| Semantic | text embedding cosine similarity | optional |
-| Structural | app, page type, landmarks, affordances | always |
-| Temporal | frequency-estimated transition probability | optional after previous action |
+| `goal_reached` | Current page type satisfies target. | No navigation action needed. |
+| `navigate` | A graph route exists. | Return next action and cache RuntimeDAG. |
+| `explore` | No route exists. | Full VLM Path explores, while graph records new observations. |
+| `verify_with_vlm` | Runtime controller marks next action as semantic or uncertain. | VLM must inspect screenshot and choose concrete target. |
 
-Unavailable channels are dropped and their weights are redistributed across available channels. This lets the same implementation run in lightweight environments while supporting richer experiments.
-
-### 6.3 Goal Inference
-
-`GoalSpec.from_task()` extracts target page types and slots from the user task. `GraphRuntimeController._infer_goal_spec()` then enriches it with VLM pre-plan fields:
-
-- `search_query` becomes `query`
-- `product` becomes `product`
-- explicit `specs` become slots such as `color`, `storage`, `size`, `price`
-- `target_page` is inserted ahead of inferred targets when useful
-
-For search tasks, `_search_first_targets()` forces progressive routing:
-
-| Current page | Forced target |
-|---|---|
-| `home`, `unknown`, empty | `search_input` |
-| `search_input` | `search_result` |
-| later pages | original target list |
-
-This prevents the planner from taking a historical shortcut from home to a random product detail page when the user actually asked to search for a new product.
-
-### 6.4 Route Planning
-
-`SpatialGraphMemory.plan()` chooses one of four modes:
-
-| Mode | Condition | Agent behavior |
-|---|---|---|
-| `goal_reached` | current page type already satisfies target | no graph action needed |
-| `navigate` | graph route exists | propose `next_action` and cache RuntimeDAG |
-| `explore` | no usable route | VLM explores with graph/functionality context |
-| `verify_with_vlm` | next transition is semantically underdetermined | VLM must inspect screenshot and decide concrete target |
-
-The default planner is Dijkstra over `TransitionEdge.weighted_cost`:
+Default planning is Dijkstra over `TransitionEdge.weighted_cost`:
 
 ```text
 cost = base + 3 * fail_rate + risk_penalty - 0.3 * confidence
 ```
 
-When `planner_backend` is `astar` or `belief_astar`, `EnhancedPlanner` adds:
+When `AMSG_CONFIG` selects `astar` or `belief_astar`, `EnhancedPlanner` adds:
 
 - schema-distance heuristic
-- temporal decay for stale edges
-- exploration bonus for under-visited states
-- outcome entropy penalty for unpredictable transitions
-- belief entropy term for information gain
+- temporal decay
+- exploration bonus
+- outcome entropy penalty
+- belief entropy term
 
-### 6.5 From Route to Executable Action
+### 8.4 Action Compilation
 
-A route edge is converted to `next_action` through `TransitionEdge.to_next_action()`. If a locator exists, `SpatialModelBridge` compiles it into a model-agnostic `DeviceActionIR`, then `ModelProtocolBridge` converts it into the canonical AutoGLM-style action consumed by `ActionHandler`.
+Graph-native actions are compiled through:
 
-Coordinates are treated as evidence, not truth. A graph action can execute directly only when:
+```text
+next_action -> SemanticActionIR -> DeviceActionIR -> AutoGLM-style action dict
+```
 
-- it is not high-risk
-- it does not require semantic target selection
-- its confidence is high enough
-- slots are resolved
-- it can be compiled into a valid device action
+The bridge files are:
 
-Otherwise the graph provides a grounding instruction or structural hint for the VLM.
+- `phone_agent/spatial/model_bridge.py`
+- `phone_agent/model/protocol_bridge.py`
 
-## 7. Grounded and Ungrounded Transitions
+This keeps AMSG model-agnostic. The graph stores semantic intent and locator evidence, while adapters handle model-native syntax and coordinate systems.
 
-`ActionAdvisor` explicitly separates grounded and ungrounded transitions.
+## 9. Grounded and Ungrounded Actions
 
-Grounded transitions can be reused mechanically, for example:
+`ActionAdvisor` reads promoted actions from:
 
-- open search bar from home
-- submit a search from a known search input template
-- tap a stable back button
-- execute a slot-filled `Compound` search macro
+1. Neo4j persisted edges
+2. current-session lifecycle-promoted records
+
+It returns `ActionHint` objects. An action is fast-executable only when:
+
+- it is grounded
+- confidence is at least `0.9`
+- it has coordinates, compound steps, or a safe non-coordinate action type
 
 Ungrounded transitions require VLM semantics:
 
-| Source | Target | Why VLM is required |
+| Source | Target | Reason |
 |---|---|---|
-| `search_result` | `product_detail` | must choose the product matching current task |
-| `search_result` | `store` | must choose the relevant store |
-| `product_detail` | `spec_selection` | must judge product page and target action |
-| `spec_selection` | `cart` or `checkout` | must select current user's specified SKU |
+| `search_result` | `product_detail` | Must choose the product matching the current task. |
+| `search_result` | `store` | Must choose the correct store. |
+| `product_detail` | `spec_selection` | Must judge product page and target action. |
+| `spec_selection` | `cart` or `checkout` | Must select the user's current SKU safely. |
 
-For these transitions, the graph may provide direction such as "the next page should be product_detail", but it must not reuse historical product names, prices, SKU values, or coordinates.
+This is the core "graph as advisor, not controller" decision.
 
-## 8. Edge Lifecycle and Self-Evolution
+## 10. Automatic Graph Persistence
 
-Mobile GUI graphs become unsafe if every observed transition is immediately promoted. AMSG therefore uses an empirical lifecycle.
+![AMSG automatic persistence pipeline generated with image-2](figures/graph-persistence-pipeline-image2.png)
 
-```text
-hypothesis -> candidate -> promoted -> demoted
-```
+The graph persistence pipeline is staging-first. The graph does not immediately persist every observed action as an executable edge.
 
-The central object is an outcome distribution:
+### 10.1 Online Runtime Path
 
-```text
-O(source_page_type, action_key) = {target_page_type_i: count_i}
-H(O) = - sum_i p_i log p_i
-```
+During task execution:
 
-`EdgeLifecycleManager.record_outcome()` updates both:
+1. `PhoneAgent` observes a page and executes an action.
+2. `MemoryManager.update_state_and_transition()` caches source `PageState`, action, and expected postcondition.
+3. On the next observation, `GraphRuntimeController._verify_pending_transition()` compares actual page type to expected postcondition.
+4. `SpatialGraphMemory.record_observation()` records success or failure locally.
+5. `EdgeLifecycleManager.record_outcome()` updates lifecycle and outcome distribution.
+6. If the task succeeds, `MemoryManager.end_task(success=True)` calls `flush_staged_graph()`.
+7. `SpatialGraphMemory.flush_staged_graph()` canonicalizes states and edges, promotes valid transitions, writes Neo4j, and flushes lifecycle metadata.
 
-- the lifecycle record for the concrete observed edge
-- the outcome distribution for the `(source, action)` pair
+Failed tasks still produce trajectory files but do not automatically promote executable graph edges.
 
-Promotion requires:
+### 10.2 Offline Exploration Path
 
-- enough postcondition verifications
-- dominant outcome ratio above threshold
-- non-high-risk target
+`SpatialGraphMemory.import_exploration_files()` imports pages and transitions through `import_exploration_staging()`. Staging performs:
 
-Demotion occurs when a promoted edge's dominance ratio drops below the demotion threshold after more evidence arrives. High entropy transitions trigger VLM verification rather than direct graph execution.
+- conversion from raw page JSON to `PageState`
+- canonicalization by app, page type, and risk
+- transient `unknown` page filtering
+- app mismatch filtering
+- transition mapping from raw keys into canonical states
+- search macro synthesis from trajectories
+- same-page action compaction
+- edge quality filtering
+- coverage reporting for core shopping-flow edges
 
-Configuration presets:
+Only after staging passes does `promote_staging_to_canonical()` merge local memory and optionally persist to Neo4j.
 
-| `AMSG_CONFIG` | Belief | Planner | Edge policy | Heuristic injection | Intended use |
-|---|---|---|---|---|---|
-| `legacy` | fixed | Dijkstra | legacy | on | regression compatibility |
-| `edge_only` | fixed | Dijkstra | verified | off | edge lifecycle ablation |
-| `belief_only` | Bayesian | Dijkstra | legacy | on | localization ablation |
-| `planner_only` | fixed | belief-aware A* | legacy | on | planning ablation |
-| `full` | Bayesian | belief-aware A* | verified | off | paper-style full system |
-| `sava` | fixed by default | Dijkstra by default | verified with stricter thresholds | off | VLM-primary action-library mode |
+### 10.3 TrajectoryReviewer Path
 
-`sava()` uses `min_verification_count=3`, `outcome_dominance_threshold=0.8`, and `outcome_entropy_vlm_threshold=0.5`. This is the strict setting for promoted grounded actions.
+`TrajectoryReviewer` is a second self-evolution path triggered after successful tasks:
 
-## 9. Graph Construction Pipeline
+1. Read the saved trajectory JSON.
+2. Extract page transitions from consecutive step details.
+3. Drop same-page, unknown, finish, and wait pseudo-transitions.
+4. Check whether equivalent transitions already exist in Neo4j.
+5. Ask a strong VLM to validate new candidates.
+6. Import approved transitions as Neo4j `UIState -> Action -> UIState` motifs.
+7. Write review counts back into the trajectory file.
 
-![AMSG construction pipeline](architecture-amsg-pipeline.svg)
+This is a quality gate against graph pollution from dialogs, ads, classifier mistakes, and transient screens.
 
-AMSG construction has two input channels: online runtime learning and offline exploration.
+### 10.4 Lifecycle Persistence
 
-### 9.1 Online Runtime Learning
+`SpatialGraphMemory._flush_lifecycle_to_graph()` exports lifecycle records and outcome distributions, then `GraphLifecycleStore.persist_lifecycle_batch()` writes:
 
-During normal task execution:
+- `lifecycle_stage`
+- `verification_count`
+- `dominance_ratio`
+- `outcome_distribution_json`
+- `outcome_entropy`
+- timestamps
 
-1. The agent observes the current page and builds a `PageState`.
-2. After executing an action, `MemoryManager.update_state_and_transition()` caches source/action/expected postcondition.
-3. On the next step, `GraphRuntimeController._verify_pending_transition()` compares the actual page against the expectation.
-4. `SpatialGraphMemory.record_observation()` stages a `TransitionEdge`.
-5. `EdgeLifecycleManager.record_outcome()` updates empirical outcome counts.
-6. At successful task completion, `MemoryManager.end_task(success=True)` calls `flush_staged_graph()`.
-7. `flush_staged_graph()` canonicalizes states and transitions, promotes safe edges, persists to Neo4j, and writes lifecycle metadata.
-
-Failed tasks are still saved as pending trajectories for review, but they do not automatically flush executable graph edges.
-
-### 9.2 Offline Exploration
-
-The codebase provides two exploration modes.
-
-| Tool | Role |
-|---|---|
-| `offline_explorer.py` | VLM-autonomous exploration with page classification and optional active frontier hints |
-| `autonomous_explorer.py` | supervisor-executor exploration that plans around graph coverage gaps |
-
-The autonomous explorer uses:
-
-- `PageClassifier` to identify pages and visible elements
-- `ExplorationSupervisor` to choose coverage-improving plans
-- `ActionHandler` to execute one atomic action at a time
-- safety filters to avoid payment, login, destructive account actions, and unsafe checkout operations
-- `FunctionalityExtractor` and `FunctionalityClusterer` to construct v4 functionality evidence
-- `EdgeLifecycleManager` to record transition outcomes
-
-It saves page, transition, trajectory, lifecycle, and report artifacts. With `--auto-import-graph`, those artifacts are passed into `SpatialGraphMemory.import_exploration_files()`.
-
-### 9.3 Canonical Staging
-
-`SpatialGraphMemory.import_exploration_staging()` is the correct staging entry point. It performs:
-
-1. Page conversion from raw JSON to `PageState`.
-2. Page canonicalization by app, page type, and risk.
-3. Filtering of transient `unknown` pages and app-mismatch pages.
-4. Transition mapping from raw `from/to/action` keys into canonical states.
-5. Search macro synthesis: reconstructs reusable `Compound` actions such as `Type <query> -> submit`.
-6. Same-page action compaction: folds multiple self-loop operations into one transition that exits the page.
-7. Edge quality filtering using risk, confidence, app consistency, page plausibility, and lifecycle policy.
-8. Coverage reporting, including missing core shopping flow edges.
-
-The output is a staging graph, not yet the final executable graph.
-
-### 9.4 Promotion and Persistence
-
-`promote_staging_to_canonical()` merges staging states into local memory and optionally persists them:
-
-- existing Neo4j page candidates are merged by page type
-- slot-aware compound edges are preferred over coordinate-only submit taps
-- generic "affordance" edges are filtered when explicit semantic edges exist
-- action metadata is enriched with `intent`, `semantic_target`, `target_locator`, page types, region, and risk
-- `GraphStore.add_state_transition()` upserts `UIState`, `Action`, `NEXT_ACTION`, and `PRODUCES`
-- `_flush_lifecycle_to_graph()` persists lifecycle fields through `GraphLifecycleStore`
-
-`rebuild_spatial_graph.py` provides a reproducible rebuild pipeline. In canonical mode, it can stage manual and exploration data, run quality gates, and write a target Neo4j database only when the graph passes safety checks.
-
-### 9.5 Functionality Graph Build
-
-The v4 functionality report and persistence path is:
-
-1. `FunctionalityExtractor.from_page()` extracts page elements and data fields.
-2. `FunctionalityExtractor.from_transition()` creates verified functionality items from observed transitions.
-3. `FunctionalityClusterer.cluster()` groups promotable items.
-4. `build_amsg_v4_functionality_report()` summarizes coverage and quality.
-5. `GraphStore.upsert_functionality_graph()` writes `FunctionalityItem`, `FunctionalityCluster`, `EXPOSES_FUNCTION`, `MEMBER_OF`, `IMPLEMENTS_FUNCTION`, and `LEADS_TO` relationships.
-
-At runtime, `GraphRuntimeController._load_functionality_context()` queries this layer and injects available roles, observable data fields, verified clusters, and implemented actions.
-
-## 10. Safety Boundaries
-
-The graph may accelerate navigation, but it is constrained by explicit safety policies.
-
-| Boundary | Implementation | Effect |
-|---|---|---|
-| High-risk pages | risk inference and route checks | payment, login, address, and confirmation pages are not promoted as direct shortcuts |
-| Verification pages | `detect_verification()` and `detect_verification_from_vlm()` | triggers `Take_over` and waits for user |
-| SKU/spec constraints | `SpecGuard` | prevents skipping user-specified specs on spec, checkout, or payment-adjacent pages |
-| Ungrounded transitions | `ActionAdvisor` and graph runtime | VLM must choose concrete product/spec targets |
-| Historical data leakage | `sanitize_action_for_context()` | strips content-specific targets and locators from graph hints |
-| Failed graph actions | graph fail counters and repair decisions | after repeated failures, RuntimeDAG is cleared and VLM explores |
-| Failed tasks | `end_task(success=False)` | do not flush staged executable graph observations |
-
-These boundaries are central to the architecture. Without them, a spatial graph would quickly become brittle or unsafe in dynamic shopping apps.
+`GraphLifecycleStore.demote_stale_edges()` demotes promoted edges whose dominance ratio drops below threshold.
 
 ## 11. Model and Action Protocols
 
-The graph layer is model-agnostic. Model-specific action formats are normalized through `ModelProtocolBridge`:
+`ModelClient` streams OpenAI-compatible VLM responses and records:
 
-| Model type | Native coordinate/action convention | Runtime bridge |
-|---|---|---|
-| AutoGLM | normalized `[0, 1000]` element coordinates | AutoGLM action dict |
-| UI-TARS | absolute / smart-resize coordinates | normalized `DeviceActionIR` |
-| Qwen-VL | tool-call style, usually `[0, 999]` | `mobile_use` normalization |
-| MAI-UI | tool-call style, usually `[0, 999]` | `mobile_use` normalization |
-| GUI-Owl | normalized `[0, 1]`, with `coordinate` and `coordinate2` for swipe | `DeviceActionIR` conversion |
+- time to first token
+- time to thinking end
+- total inference time
+- parsed `thinking`
+- parsed `action`
+- optional `<summary>`
 
-`SpatialModelBridge` compiles graph-native `SemanticActionIR` into `DeviceActionIR`, and `ModelProtocolBridge.to_autoglm_action()` converts the result into the canonical action dictionary used by `ActionHandler`.
+The parser supports:
 
-This separation is important for paper claims: the graph stores semantic actions and locator evidence, not model-specific syntax.
+- `<tool_call>...</tool_call>`
+- `<answer>...</answer>`
+- `finish(message=...)`
+- `do(action=...)`
+- bare action calls such as `Tap(...)`, `Type(...)`, `Swipe(...)`
 
-## 12. Implementation Map
+Adapters support:
 
-| Concept | File |
+| Model family | Runtime handling |
 |---|---|
-| Main execution loop | `phone_agent/agent.py` |
-| VLM pre-plan and prompt construction | `phone_agent/agent.py`, `phone_agent/task_plan.py` |
-| Model adapters and protocol bridge | `phone_agent/model/adapters.py`, `phone_agent/model/protocol_bridge.py` |
-| Action execution | `phone_agent/actions/handler*.py` |
+| AutoGLM | Native canonical action format. |
+| UI-TARS | Absolute or smart-resize action parsing. |
+| Qwen-VL | Tool-call style `mobile_use` actions and compact action history. |
+| MAI-UI | Tool-call style actions and limited recent image context. |
+| GUI-Owl | Tool-call style actions with normalized coordinate conventions. |
+
+`ModelProtocolBridge` normalizes these into `DeviceActionIR`, then compiles canonical actions for `ActionHandler`.
+
+## 12. Device and UI Surfaces
+
+`DeviceFactory` abstracts device operations:
+
+- screenshot
+- current app
+- tap
+- double tap
+- long press
+- swipe
+- back
+- home
+- launch app
+- type text
+- clear text
+- keyboard setup
+- device listing
+
+Backends include:
+
+- `phone_agent/adb/` for Android
+- `phone_agent/hdc/` for HarmonyOS
+- `phone_agent/xctest/` and `phone_agent/agent_ios.py` for iOS-style control
+
+`webui.py` wraps the loop as a Gradio streaming UI with memory inspection, Neo4j status, pending trajectory listing, manual commit, and task execution controls.
+
+`nanobot/` is a separate chat-platform gateway. Its `gui-mobile` and `clawgui-eval` skills can bridge chat channels and evaluation workflows into the phone agent, but they are not part of the core `PhoneAgent._execute_step()` loop.
+
+## 13. Innovation Claims for a Paper
+
+The implementation supports the following method claims:
+
+1. **VLM-primary graph guidance**  
+   The graph narrows and grounds action space but does not replace visual semantic reasoning.
+
+2. **Page-state abstraction for mobile GUI agents**  
+   Screenshots are collapsed into reusable page states based on page type, landmarks, affordances, slots, risk, and semantic signature.
+
+3. **Dual-speed execution**  
+   Mechanical, grounded, high-confidence actions use Fast Path. Semantic or risky actions use Full VLM Path.
+
+4. **Lifecycle-verified graph self-evolution**  
+   Transitions are promoted only after postcondition verification and outcome dominance, then demoted when reliability decays.
+
+5. **Outcome-entropy decision boundary**  
+   High-entropy transitions automatically require VLM verification, replacing purely hardcoded graph/VLM boundaries.
+
+6. **Staging-first graph persistence**  
+   Online execution and offline exploration both pass through canonicalization and quality gates before Neo4j persistence.
+
+7. **Trajectory-review quality gate**  
+   Successful task trajectories are reviewed by a strong VLM before new transitions are imported.
+
+8. **Structured task constraints as runtime state**  
+   Task specs are extracted once and reused by clarification, graph routing, prompt construction, SpecGuard, and runtime slot filling.
+
+9. **Memory-decoupled prompt injection**  
+   Progress and focus are always injected; costly retrieval occurs only when reasoning signals show need.
+
+10. **Model-agnostic action IR**  
+    The graph stores semantic actions and locator evidence, while model-specific adapters normalize coordinates and syntax.
+
+## 14. Ablation Knobs
+
+`AMSGOptimConfig` exposes paper-ready presets through `AMSG_CONFIG`:
+
+| Preset | Belief | Planner | Edge policy | Heuristic injection | Use |
+|---|---|---|---|---|---|
+| `legacy` | fixed | Dijkstra | legacy | on | Backward compatibility. |
+| `edge_only` | fixed | Dijkstra | verified | off | Edge lifecycle ablation. |
+| `belief_only` | Bayesian | Dijkstra | legacy | on | Localization ablation. |
+| `planner_only` | fixed | belief-aware A* | legacy | on | Planning ablation. |
+| `full` | Bayesian | belief-aware A* | verified | off | Full method setting. |
+| `sava` | fixed by default | Dijkstra by default | verified with stricter thresholds | off | VLM-primary action-library mode. |
+
+The strict `sava()` preset requires at least three verifications and a dominance ratio of at least `0.8` before an edge is promoted, with entropy threshold `0.5` for VLM verification.
+
+## 15. Implementation Map
+
+| Concept | Current file |
+|---|---|
+| Main loop | `phone_agent/agent.py` |
+| Task plan | `phone_agent/task_plan.py` |
+| Slot extraction | `phone_agent/core/task_spec.py` |
+| Clarification | `phone_agent/clarify.py` |
+| SKU and purchase safety | `phone_agent/core/spec_guard.py` |
+| Verification detection | `phone_agent/verification_detector.py` |
+| Status events | `phone_agent/core/status.py` |
 | Memory manager | `phone_agent/memory/memory_manager.py` |
-| Session memory | `phone_agent/memory/core/unified_state.py` |
-| Retrieval gateway | `phone_agent/memory/retrieval_gateway.py` |
-| Page classifier and offline explorer | `phone_agent/memory/offline_explorer.py` |
-| Autonomous explorer | `phone_agent/memory/autonomous_explorer.py` |
+| Unified session state | `phone_agent/memory/core/unified_state.py` |
+| On-demand retrieval | `phone_agent/memory/retrieval_gateway.py` |
 | Spatial graph memory | `phone_agent/memory/spatial_graph_memory.py` |
-| Neo4j graph store | `phone_agent/memory/graph_store.py` |
+| Neo4j store | `phone_agent/memory/graph_store.py` |
 | Lifecycle persistence | `phone_agent/memory/graph_lifecycle_store.py` |
 | Runtime graph controller | `phone_agent/spatial/runtime_controller.py` |
-| Action advisor | `phone_agent/spatial/action_advisor.py` |
+| Action library/advisor | `phone_agent/spatial/action_advisor.py` |
 | Edge lifecycle | `phone_agent/spatial/edge_lifecycle.py` |
-| Belief localizer | `phone_agent/spatial/belief_localizer.py` |
-| Enhanced planner | `phone_agent/spatial/enhanced_planner.py` |
-| Functionality graph | `phone_agent/spatial/functionality.py`, `phone_agent/spatial/functionality_cluster.py` |
-| Schema and hypotheses | `phone_agent/spatial/schema_registry.py`, `phone_agent/spatial/hypothesis.py`, `phone_agent/spatial/active_builder.py` |
-| Rebuild/import pipeline | `phone_agent/memory/import_exploration.py`, `phone_agent/memory/rebuild_spatial_graph.py` |
+| Belief localization | `phone_agent/spatial/belief_localizer.py` |
+| Enhanced planning | `phone_agent/spatial/enhanced_planner.py` |
+| Schema registry | `phone_agent/spatial/schema_registry.py` |
+| Spatial model bridge | `phone_agent/spatial/model_bridge.py` |
+| Model protocol bridge | `phone_agent/model/protocol_bridge.py` |
+| Model client | `phone_agent/model/client.py` |
+| Model adapters | `phone_agent/model/adapters.py` |
+| Action execution | `phone_agent/actions/handler.py`, `phone_agent/actions/handler_*.py` |
+| Device abstraction | `phone_agent/device_factory.py` |
+| Trajectory review | `phone_agent/spatial/trajectory_reviewer.py` |
 
-## 13. Paper-Oriented Summary
+## 16. Paper Method Summary
 
-The current ClawGUI-Agent can be summarized as:
+A compact method description:
 
-> A VLM-primary mobile GUI agent that augments closed-loop screenshot reasoning with a self-maintaining Active Mobile Spatial Graph. The graph abstracts screenshots into page states, records action-conditioned transitions with empirical outcome distributions, promotes only verified low-risk transitions, and provides graph-grounded navigation hints or direct actions when confidence and safety constraints permit. Personalized memory and session state are injected through a lightweight, on-demand mechanism, while semantic target selection remains delegated to the VLM.
+> ClawGUI-Agent is a VLM-primary mobile GUI agent augmented by a self-maintaining Active Mobile Spatial Graph. Each step observes the current screen, classifies page semantics, localizes a page-state belief, verifies the previous transition, and chooses between a fast graph-grounded action and a full VLM reasoning path. The graph stores page abstractions, semantic action nodes, empirical outcome distributions, lifecycle metadata, and optional functionality roles in Neo4j. Online observations and offline exploration artifacts are staged, canonicalized, filtered, and persisted only after postcondition verification or VLM trajectory review. User constraints and session memory are injected through a lightweight, on-demand mechanism, while high-risk or semantically underdetermined transitions remain under VLM or human control.
 
-The main methodological contributions implied by the implementation are:
+Recommended paper figures:
 
-1. **VLM-primary graph guidance**: the graph narrows and grounds actions but does not replace semantic reasoning.
-2. **Page-state abstraction**: dynamic screenshots are collapsed into reusable page nodes using app, page type, landmarks, affordances, slots, and risk.
-3. **Belief-aware localization and planning**: the system can use multi-signal Bayesian localization and enhanced A* while retaining legacy deterministic behavior for ablation.
-4. **Lifecycle-verified graph construction**: transition promotion is based on postcondition verification and outcome distributions rather than raw trajectory replay.
-5. **Functionality-level graph semantics**: the v4 graph links pages and actions to discovered functionality roles, enabling richer runtime context than page transitions alone.
-6. **Safety-bounded shortcut execution**: direct graph execution is limited to promoted, grounded, low-risk, slot-resolved actions; semantic or high-risk transitions return control to the VLM or user.
+1. System architecture: `figures/system-architecture-image2.png`
+2. Agent execution flow: `figures/agent-execution-flow-image2.png`
+3. AMSG graph schema: `figures/amsg-graph-schema-image2.png`
+4. Automatic graph persistence pipeline: `figures/graph-persistence-pipeline-image2.png`
 
-Known limitations to state explicitly in a paper:
+Editable companion diagrams are kept as `figures/amsg-graph-schema.svg` and `figures/graph-persistence-pipeline.svg` for precise paper layout work.
 
-- The page classifier remains a source of upstream error; RuntimeDAG skipping reduces latency but can amplify stale route assumptions if not verified.
-- Functionality extraction is partly deterministic and partly VLM-dependent; embedding-based role classification is available but not always enabled.
-- The graph is strongest for stable navigational affordances and weaker for content-specific decisions.
-- The default `legacy` configuration is optimized for backward compatibility; paper experiments should report the exact `AMSG_CONFIG` preset.
+## 17. Current Implementation Boundaries
+
+These points should be handled before making final paper claims:
+
+1. The v4 Functionality persistence/query layer exists in `GraphStore`, but local functionality extractor, clusterer, coverage, and reporting modules are not present in the current `phone_agent/spatial/` checkout. Older tests and documents still reference them.
+2. Several source files contain mojibake in Chinese comments, prompts, and log strings. The architecture is still understandable, but camera-ready code and paper artifacts should normalize UTF-8 text before release.
+3. Some tests still target old APIs. For example, `tests/test_agent_graph_runtime.py` calls removed `PhoneAgent._spec_guard_check`, while the current implementation routes through `agent._spec_guard.check(...)`.
+4. Page classification remains an upstream dependency. RuntimeDAG skipping improves latency, but any paper evaluation should report classifier usage, skip count, and failure recovery metrics.
+5. Graph shortcuts are strongest for stable navigation affordances. Product, store, SKU, and checkout choices should be measured separately because they require VLM semantics.
+6. Paper experiments must report the exact `AMSG_CONFIG`, Neo4j database name, strong VLM configuration, and whether trajectory review was enabled.
+
+These limitations do not weaken the core architecture. They define the honest boundary between implemented method, experimental configuration, and future functionality-discovery work.
