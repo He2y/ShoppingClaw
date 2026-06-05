@@ -1593,6 +1593,7 @@ class PhoneAgent:
                 thinking=thinking,
                 action=action,
                 screenshot_app=current_app,
+                page_type=page_type or "",
             )
 
             # Unified state verbose logging
@@ -1612,7 +1613,12 @@ class PhoneAgent:
                     print(f"📦 [UnifiedState] {' | '.join(parts)}")
 
             # Phase 4: Online Dynamic Graph construction
-            if current_state_id:
+            # When graph can't locate current state, build a synthetic state_id
+            # from page_type so the transition still gets recorded.
+            effective_state_id = current_state_id
+            if not effective_state_id and page_type and current_app:
+                effective_state_id = f"state_{current_app}_{page_type}_runtime_{ui_hash[:8]}"
+            if effective_state_id:
                 self.memory_manager.update_state_and_transition(
                     screenshot_hash=ui_hash,
                     semantic_layout=semantic_layout,

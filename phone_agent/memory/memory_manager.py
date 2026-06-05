@@ -299,6 +299,41 @@ class MemoryManager:
                 if self._verbose:
                     print(f"[!] [graph] 图谱提交失败: {e}")
 
+        # VLM-powered trajectory review → auto-import new transitions
+        if success and self.session_history and self.runtime_graph_store:
+            try:
+                from phone_agent.spatial.trajectory_reviewer import TrajectoryReviewer
+                reviewer = TrajectoryReviewer(
+                    graph_store=self.runtime_graph_store,
+                    verbose=self._verbose,
+                )
+                trajectory_entry = {
+                    "task": self.current_task,
+                    "success": success,
+                    "step_details": [
+                        {
+                            "page_type": s.get("page_type", ""),
+                            "action_type": s.get("action", {}).get("action", ""),
+                            "action_params": {k: v for k, v in s.get("action", {}).items()
+                                             if k not in ("action", "_metadata")},
+                            "thinking": s.get("thinking", "")[:100],
+                            "app": s.get("screenshot_app", s.get("app", "")),
+                        }
+                        for s in self.session_history
+                    ],
+                }
+                apps = list(self._session_apps)
+                app = apps[0] if apps else ""
+                review = reviewer.review_and_import(trajectory_entry, app=app)
+                if self._verbose and review.imported > 0:
+                    print(
+                        f"[i] [graph-evolve] 自进化: {review.imported} 条新转换导入 "
+                        f"(VLM审核通过 {review.vlm_approved}/{review.new_candidates})"
+                    )
+            except Exception as e:
+                if self._verbose:
+                    print(f"[!] [graph-evolve] 轨迹审核失败: {e}")
+
         self.current_task = ""
         self.task_start_time = ""
 
@@ -447,6 +482,8 @@ class MemoryManager:
                     "action_params": {k: v for k, v in s.get("action", {}).items()
                                      if k not in ("action", "_metadata")},
                     "thinking": s.get("thinking", "")[:200],
+                    "page_type": s.get("page_type", ""),
+                    "app": s.get("screenshot_app", ""),
                 }
                 for s in steps
             ],
@@ -638,7 +675,8 @@ class MemoryManager:
         
         return "general"
     
-    def add_step(self, thinking: str, action: dict, screenshot_app: str = ""):
+    def add_step(self, thinking: str, action: dict, screenshot_app: str = "",
+                 page_type: str = ""):
         """
         Record a step in the current task and auto-learn from it.
 
@@ -653,6 +691,8 @@ class MemoryManager:
             "thinking": thinking,
             "action": action,
             "app": screenshot_app,
+            "screenshot_app": screenshot_app,
+            "page_type": page_type,
         }
         self.session_history.append(step)
 
