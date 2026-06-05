@@ -1,0 +1,63 @@
+<mxfile host="app.diagrams.net" agent="Claude" version="26.0">
+  <diagram name="Lifecycle" id="life-1">
+    <mxGraphModel dx="1100" dy="680" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="520" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Title -->
+        <mxCell id="title" value="&lt;b&gt;Edge Lifecycle: Self-Evolution State Machine&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;fontSize=14;fontFamily=Arial;fontColor=#1a1a2e;" vertex="1" parent="1">
+          <mxGeometry x="300" y="15" width="400" height="25" as="geometry"/>
+        </mxCell>
+
+        <!-- States -->
+        <mxCell id="s_hyp" value="&lt;b style=&quot;font-size:13px&quot;&gt;hypothesis&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#767676;fontColor=#FFFFFF;strokeColor=none;fontSize=13;fontFamily=Arial;arcSize=30;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="60" y="80" width="170" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_cand" value="&lt;b style=&quot;font-size:13px&quot;&gt;candidate&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8873D;fontColor=#FFFFFF;strokeColor=none;fontSize=13;fontFamily=Arial;arcSize=30;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="330" y="80" width="170" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_prom" value="&lt;b style=&quot;font-size:13px&quot;&gt;promoted&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#2E9E44;fontColor=#FFFFFF;strokeColor=none;fontSize=13;fontFamily=Arial;arcSize=30;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="600" y="80" width="170" height="55" as="geometry"/>
+        </mxCell>
+        <mxCell id="s_dem" value="&lt;b style=&quot;font-size:13px&quot;&gt;demoted&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#B64342;fontColor=#FFFFFF;strokeColor=none;fontSize=13;fontFamily=Arial;arcSize=30;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="870" y="80" width="160" height="55" as="geometry"/>
+        </mxCell>
+
+        <!-- Transition arrows -->
+        <mxCell id="t1" value="&lt;font color=&quot;#0F4D92&quot; style=&quot;font-size:9px&quot;&gt;verifications&lt;br&gt;≥ min_count&lt;/font&gt;" style="endArrow=blockThin;endFill=1;strokeColor=#0F4D92;strokeWidth=2.5;fontFamily=Arial;labelBackgroundColor=#FFFFFF;" edge="1" source="s_hyp" target="s_cand" parent="1"/>
+        <mxCell id="t2" value="&lt;font color=&quot;#0F4D92&quot; style=&quot;font-size:9px&quot;&gt;dominance&lt;br&gt;≥ 80%&lt;/font&gt;" style="endArrow=blockThin;endFill=1;strokeColor=#0F4D92;strokeWidth=2.5;fontFamily=Arial;labelBackgroundColor=#FFFFFF;" edge="1" source="s_cand" target="s_prom" parent="1"/>
+        <mxCell id="t3" value="&lt;font color=&quot;#B64342&quot; style=&quot;font-size:9px&quot;&gt;dominance&lt;br&gt;&amp;lt; 40%&lt;/font&gt;" style="endArrow=blockThin;endFill=1;strokeColor=#B64342;strokeWidth=2.5;fontFamily=Arial;labelBackgroundColor=#FFFFFF;" edge="1" source="s_prom" target="s_dem" parent="1"/>
+
+        <!-- Re-explore loop -->
+        <mxCell id="t_loop" value="&lt;font color=&quot;#7B61A0&quot; style=&quot;font-size:9px&quot;&gt;VLM re-explores → new observations restart cycle&lt;/font&gt;" style="endArrow=blockThin;endFill=1;strokeColor=#7B61A0;strokeWidth=1.5;dashed=1;dashPattern=8 4;fontFamily=Arial;curved=1;labelBackgroundColor=#FFFFFF;" edge="1" source="s_dem" target="s_hyp" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="550" y="180"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- Annotation boxes -->
+        <mxCell id="ann_hyp" value="&lt;b style=&quot;color:#767676&quot;&gt;hypothesis&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;1–2 observations&lt;br&gt;Not visible to ActionAdvisor&lt;br&gt;VLM explores independently&lt;br&gt;Stored in memory only&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#767676;strokeWidth=1.2;fontSize=10;fontFamily=Arial;align=center;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="45" y="230" width="200" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="ann_cand" value="&lt;b style=&quot;color:#E8873D&quot;&gt;candidate&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Unstable outcomes&lt;br&gt;Low-confidence advisory hint&lt;br&gt;Multiple observed targets&lt;br&gt;Shannon entropy &amp;gt; threshold&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#E8873D;strokeWidth=1.2;fontSize=10;fontFamily=Arial;align=center;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="305" y="230" width="220" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="ann_prom" value="&lt;b style=&quot;color:#2E9E44&quot;&gt;promoted&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;Verified &amp;amp; reliable&lt;br&gt;Grounded → Fast Path eligible&lt;br&gt;Ungrounded → VLM hint only&lt;br&gt;Persisted to Neo4j&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#2E9E44;strokeWidth=1.2;fontSize=10;fontFamily=Arial;align=center;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="575" y="230" width="220" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="ann_dem" value="&lt;b style=&quot;color:#B64342&quot;&gt;demoted&lt;/b&gt;&lt;br&gt;&lt;font style=&quot;font-size:9px&quot;&gt;UI layout changed&lt;br&gt;Removed from hints&lt;br&gt;VLM re-explores&lt;br&gt;New cycle starts&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#B64342;strokeWidth=1.2;fontSize=10;fontFamily=Arial;align=center;verticalAlign=top;spacingTop=4;" vertex="1" parent="1">
+          <mxGeometry x="850" y="230" width="200" height="90" as="geometry"/>
+        </mxCell>
+
+        <!-- SAVA Config bar -->
+        <mxCell id="sava_bar" value="&lt;b&gt;SAVA Config&lt;/b&gt;  &lt;font style=&quot;font-family:Courier New&quot;&gt;min_verification = 3  │  dominance_threshold = 0.80  │  entropy_vlm_threshold = 0.50  │  demotion_threshold = 0.40&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F5F5F5;strokeColor=#E0E0E0;strokeWidth=1;fontSize=8;fontFamily=Arial;fontColor=#333333;align=center;" vertex="1" parent="1">
+          <mxGeometry x="120" y="345" width="760" height="28" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
