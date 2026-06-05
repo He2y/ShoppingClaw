@@ -194,20 +194,13 @@ AMSG 是核心研究贡献。它是一个有类型的有向图，将移动 UI �
 
 ### 5.1  形式化定义
 
-```
-G = (V, A, E_c, E_h, T, Σ, B, Π, L, O)
+图谱的核心持久化模式是三节点两关系：
 
-V      UIState 节点，由 PageState 实现
-A      Action 节点，存储语义意图和锚定证据
-E_c    已提交/已提升的 UIState-Action-UIState 转移
-E_h    提升前暂存的假设/候选转移
-T      TaskTarget 节点，用于轨迹级检索
-Σ      页面类型和合理转移的领域模式
-B      UIState 上的信念分布（贝叶斯后验）
-Π      加权转移边上的规划器（Dijkstra 或 A*）
-L      边提升和降级的生命周期记录
-O      后条件统计的结果分布
 ```
+(UIState) -[NEXT_ACTION]-> (Action) -[PRODUCES]-> (UIState)
+```
+
+UIState 节点存储页面状态抽象（app, page_type, landmarks, affordances, risk）。Action 节点存储语义动作（intent, semantic_target, postcondition, lifecycle_stage）。关系上记录 `frequency`（成功次数）、`fail_count`（失败次数）和 `confidence`（成功率），作为边生命周期的数据基础。
 
 ### 5.2  UIState / PageState
 
@@ -277,43 +270,21 @@ hypothesis（假设）→ candidate（候选）→ promoted（已提升）→ de
 
 ## 7  定位与规划
 
-### 7.1  贝叶斯信念定位
+### 7.1  页面定位
 
-`MultiSignalLocalizer` 维护图谱节点上的概率分布，每次新观测时更新：
+默认的定位机制很直接：用当前 `(app, page_type)` 在 Neo4j 中匹配 UIState 节点。匹配到图谱候选时给固定评分 0.92，当前观测给 0.82。这个简单方法有效，因为 `PageClassifier` 已经提供了准确的 page_type，`(app, page_type)` 二元组在绝大多数场景下足以唯一标识页面状态。
 
-$$B_t(v) = \eta \cdot P(o_t | v) \cdot \sum_{v'} P(v | v', a_{t-1}) \cdot B_{t-1}(v')$$
-
-观测似然 $P(o_t | v)$ 是四个独立通道的加权和：
-
-| 通道 | 权重 | 信号 | 可用性 |
-|---|---|---|---|
-| 视觉 | 0.30 | VLM 截图嵌入的余弦相似度 | 可选 |
-| 语义 | 0.25 | 文本语义嵌入的余弦相似度 | 可选 |
-| 结构 | 0.25 | 加权相似度：app(0.35) + page_type(0.35) + landmark Jaccard(0.20) + affordance Jaccard(0.10) | 始终 |
-| 时序 | 0.20 | 来自历史的转移频率 $P(v | v', a_{t-1})$ | 首次动作后 |
-
-通道不可用时（如未配置嵌入模型），权重重新分配到可用通道。这种优雅退化意味着系统无需嵌入模型也能工作（仅使用结构+时序），但有了它们会更好。
-
-信念分布连接到规划器：高熵信念（对当前位置的不确定性）通过增强成本函数中的信息增益项增加动作成本。
+一个可选的多通道贝叶斯定位器（`MultiSignalLocalizer`）已实现但默认未启用（`use_multi_signal_belief=False`）。它增加了视觉嵌入、语义嵌入和时序转移通道，但相对于 `(app, page_type)` 匹配的边际改进尚未通过消融实验验证。
 
 ### 7.2  路径规划
 
-`EnhancedPlanner` 支持三种规划后端（通过 `AMSGOptimConfig` 选择）：
+默认规划器是 **Dijkstra**，边权为：
 
-**Dijkstra**（遗留）：基础成本 + 失败率惩罚 + 风险惩罚 - 置信度奖励
+$$\text{cost}(e) = 1.0 + 3.0 \times \text{fail\_rate} + R(\text{risk}) - 0.3 \times \text{confidence}$$
 
-**A\***（模式感知）：Dijkstra 成本 + 基于 BFS 预计算的模式距离的可采纳启发式
+风险惩罚：normal=0, medium=0.8, high=2.0。这个成本函数偏好高成功率、低风险、高置信度的边——即经过验证的可靠路径。
 
-**Belief-A\***（完整）：
-$$C'(e) = \text{base} + 0.5 \cdot \text{staleness} - \text{exploration\_bonus} - \text{information\_gain} + \text{entropy\_penalty}$$
-
-其中：
-- **过期衰减**：$1 - \exp(-\Delta t / \text{halflife})$ — 未近期遍历的边向更高成本衰减
-- **探索奖励**：$-w / \sqrt{1 + \text{visits}}$ — UCB 风格的低访问状态奖励
-- **信息增益**：$+w \cdot H_{\text{belief}} \cdot \text{staleness}$ — 高熵信念状态成本更高
-- **熵惩罚**：$+0.5 \cdot H_{\text{outcome}}$ — 不可预测的转移被惩罚
-
-规划器连接回信念定位器：信念熵直接影响路径成本，在定位置信度和规划决策之间创建反馈环路。
+在典型购物应用图谱（< 50 节点）上，Dijkstra 已能高效找到最优路径。增强规划器（A* 和 Belief-A* 后端）已实现但默认未启用——其额外的成本调整项（过期衰减、探索奖励、信息增益、熵惩罚）在当前图谱规模下贡献 < 0.1，不影响路径选择。
 
 ### 7.3  动作编译
 
@@ -367,8 +338,8 @@ Shopping-Agent 解决了当前 GUI 智能体领域的三个具体缺口：
 | **图谱演进** | N/A | 构建后静态 | 提取后静态 | 离线 BFS 后静态 | 记录-重放（静态） | 自演进：在线暂存 → 后条件验证 → 生命周期提升 → 降级 |
 | **持久化** | 无 | 会话内内存 | 向量库（静态） | 向量库（静态） | 潜在记忆模型 | Neo4j + 生命周期元数据 + 结果分布 |
 | **VLM/图谱边界** | 仅 VLM | RAG → VLM | RAG → VLM | 确定性传送（无 VLM） | 经验 → 跳过 VLM（二元） | 三速调度 + 熵驱动边界 |
-| **定位** | VLM 感知 | BFS 相似搜索 | 嵌入检索 | 多模态检索 | 页面匹配 | 四通道贝叶斯信念 |
-| **规划** | 多 Agent 分解 | 页面图 BFS | UTG BFS | 交互图最短路径 | 前缀可复用性 | Belief-A* + 模式启发式 |
+| **定位** | VLM 感知 | BFS 相似搜索 | 嵌入检索 | 多模态检索 | 页面匹配 | (app, page_type) 匹配 + 可选贝叶斯扩展 |
+| **规划** | 多 Agent 分解 | 页面图 BFS | UTG BFS | 交互图最短路径 | 前缀可复用性 | Dijkstra 加权图（成功率 + 风险惩罚） |
 | **安全机制** | 未报告 | 未报告 | 未报告 | 未报告 | 未报告 | SpecGuard：任务槽位感知的购买拦截 |
 | **转移验证** | 自演进训练 | 无 | 无 | 无 | 无 | 后条件验证 + 结果分布 + 熵阈值 |
 | **质量门控** | 轨迹过滤 | 无 | 无 | 无 | 手动纠正 | 三道门：任务成功、VLM 轨迹审核、规范化 |
