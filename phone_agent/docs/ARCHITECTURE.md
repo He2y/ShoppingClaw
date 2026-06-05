@@ -460,24 +460,11 @@ The key insight is that **no raw action writes directly to Neo4j**. Every persis
 
 ## 7  Localization and Planning
 
-### 7.1  Bayesian Belief Localization
+### 7.1  Page Localization
 
-`MultiSignalLocalizer` maintains a probability distribution over graph nodes, updating it with each new observation:
+The default localization mechanism is straightforward: match the current `(app, page_type)` against UIState nodes in Neo4j. When a match is found, the graph candidate gets a fixed score of 0.92; the current observation gets 0.82. This simple approach works because `PageClassifier` already provides an accurate page_type, and the `(app, page_type)` pair uniquely identifies a page state in the vast majority of cases.
 
-$$B_t(v) = \eta \cdot P(o_t | v) \cdot \sum_{v'} P(v | v', a_{t-1}) \cdot B_{t-1}(v')$$
-
-The observation likelihood $P(o_t | v)$ is a weighted sum of four independent channels:
-
-| Channel | Weight | Signal | Availability |
-|---|---|---|---|
-| Visual | 0.30 | Cosine similarity of VLM screenshot embeddings | Optional |
-| Semantic | 0.25 | Cosine similarity of text semantic embeddings | Optional |
-| Structural | 0.25 | Weighted similarity: app (0.35) + page_type (0.35) + landmark Jaccard (0.20) + affordance Jaccard (0.10) | Always |
-| Temporal | 0.20 | Transition frequency $P(v | v', a_{t-1})$ from history | After first action |
-
-When channels are unavailable (e.g., no VLM embedding model configured), weights redistribute to available channels. This graceful degradation means the system works without embedding models (using structural+temporal only) but improves with them.
-
-The belief distribution connects to the planner: high-entropy belief (uncertainty about current location) increases the cost of actions through the information-gain term in the enhanced cost function.
+An optional multi-signal Bayesian localizer (`MultiSignalLocalizer`) is implemented but not enabled by default (`use_multi_signal_belief=False`). It adds visual embedding, semantic embedding, and temporal transition channels, but the marginal improvement over `(app, page_type)` matching has not been validated through ablation experiments.
 
 ### 7.2  Goal Inference
 
@@ -492,24 +479,13 @@ For search-first tasks, `_search_first_targets()` forces the route to progress t
 
 ### 7.3  Route Planning
 
-`EnhancedPlanner` supports three planning backends (selectable via `AMSGOptimConfig`):
+The default planner is **Dijkstra** on the weighted graph:
 
-**Dijkstra** (legacy):
-$$\text{cost}(e) = \text{base} + 3 \cdot \text{fail\_rate} + \text{risk\_penalty} - 0.3 \cdot \text{confidence}$$
+$$\text{cost}(e) = 1.0 + 3.0 \cdot \text{fail\_rate} + \text{risk\_penalty} - 0.3 \cdot \text{confidence}$$
 
-**A\*** (schema-aware):
-Dijkstra cost + admissible heuristic from BFS-precomputed schema distances between page types.
+Risk penalties: normal=0, medium=0.8, high=2.0. This cost function prefers edges with high success rates, low risk, and high confidence — edges that have been verified to work.
 
-**Belief-A\*** (full):
-$$C'(e) = \text{base} + 0.5 \cdot \text{staleness} - \text{exploration\_bonus} - \text{information\_gain} + \text{entropy\_penalty}$$
-
-Where:
-- **Staleness**: $1 - \exp(-\Delta t / \text{halflife})$ — edges not recently traversed decay toward higher cost.
-- **Exploration bonus**: $-w / \sqrt{1 + \text{visits}}$ — UCB-style bonus for under-visited states.
-- **Information gain**: $+w \cdot H_{\text{belief}} \cdot \text{staleness}$ — high-entropy belief states cost more.
-- **Entropy penalty**: $+0.5 \cdot H_{\text{outcome}}$ — unpredictable transitions are penalized.
-
-The planner connects back to the belief localizer: belief entropy directly influences route cost, creating a feedback loop between localization confidence and planning decisions. High localization uncertainty makes the planner prefer well-verified, low-risk routes.
+On typical shopping app graphs (< 50 nodes), Dijkstra finds optimal paths efficiently. An enhanced planner (`EnhancedPlanner` with A* and Belief-A* backends) is implemented but not enabled by default — its additional cost adjustments (temporal decay, exploration bonus, information gain, entropy penalty) contribute < 0.1 on current graph sizes and do not change path selection in practice.
 
 ### 7.4  Action Compilation
 
@@ -553,20 +529,11 @@ Shopping-Agent supports five VLM families through a unified adapter architecture
 
 ---
 
-## 9  Ablation Configuration
+## 9  Configuration Presets
 
-`AMSGOptimConfig` exposes paper-ready presets for controlled experiments:
+`AMSGOptimConfig` provides configuration presets via the `AMSG_CONFIG` environment variable. The default is `legacy` (fixed-score localization, Dijkstra planning, no lifecycle). The production-recommended preset is `sava` (Dijkstra, strict lifecycle with 3x verification and 80% dominance threshold).
 
-| Preset | Belief | Planner | Edge policy | Use case |
-|---|---|---|---|---|
-| `legacy` | Fixed scores | Dijkstra | Legacy (no lifecycle) | Regression baseline |
-| `edge_only` | Fixed | Dijkstra | Verified (lifecycle) | Edge lifecycle ablation |
-| `belief_only` | Bayesian | Dijkstra | Legacy | Localization ablation |
-| `planner_only` | Fixed | Belief-A* | Legacy | Planning ablation |
-| `full` | Bayesian | Belief-A* | Verified | Full method |
-| `sava` | Fixed (default) | Dijkstra (default) | Strict verified (3x, 80%) | VLM-primary action library |
-
-The `sava` preset represents the strictest operational mode: at least three postcondition verifications and 80% outcome dominance before an edge is promoted, with entropy threshold 0.5 for VLM verification.
+Additional presets (`belief_only`, `planner_only`, `full`) exist as experimental infrastructure for future ablation studies — they are not validated contributions.
 
 ---
 
@@ -589,38 +556,36 @@ Shopping-Agent addresses three specific gaps in the current GUI agent landscape:
 | **Graph structure** | None (multi-agent framework) | Page graph from episodes | UTG → vector DB | Interaction graph (BFS) | Multi-level experience tree | AMSG (typed directed graph with lifecycle) |
 | **Graph evolution** | N/A | Static after construction | Static after extraction | Static after offline BFS | Record-replay (static) | Self-evolving: online staging → postcondition verification → lifecycle promotion → demotion |
 | **Persistence** | None | In-memory per session | Vector DB (static) | Vector DB (static) | Latent memory model | Neo4j with lifecycle metadata and outcome distributions |
-| **VLM/Graph boundary** | VLM-only (no graph) | RAG retrieval → VLM | RAG retrieval → VLM | Deterministic teleport (no VLM for navigation) | Experience → skip VLM (binary) | Three-speed dispatch with entropy-based boundary |
-| **Localization** | VLM perception | BFS similarity search | Embedding retrieval | Multimodal retrieval (ColQwen) | Page matching | 4-channel Bayesian belief (visual, semantic, structural, temporal) |
-| **Planning** | Multi-agent decomposition | BFS on page graph | BFS on UTG | Shortest path on interaction graph | Prefix reusability | Belief-A* with schema heuristic, temporal decay, exploration bonus |
+| **VLM/Graph boundary** | VLM-only (no graph) | RAG retrieval → VLM | RAG retrieval → VLM | Deterministic teleport (no VLM for navigation) | Experience → skip VLM (binary) | Three-speed dispatch based on grounded/ungrounded classification |
+| **Localization** | VLM perception | BFS similarity search | Embedding retrieval | Multimodal retrieval (ColQwen) | Page matching | (app, page_type) matching + optional Bayesian extension |
+| **Planning** | Multi-agent decomposition | BFS on page graph | BFS on UTG | Shortest path on interaction graph | Prefix reusability | Dijkstra on weighted graph (success rate + risk penalty) |
 | **Safety** | None reported | None reported | None reported | None reported | None reported | SpecGuard: task-slot-aware purchase interception |
 | **Transition verification** | Self-evolving training (model-level) | None (edges from episodes) | None | None | None | Postcondition verification + outcome distribution + entropy threshold |
 | **Quality gate** | Trajectory filtering (training) | None | None | None | Manual correction of traces | Three gates: task success, VLM trajectory review, canonicalization |
 | **Multi-model support** | Proprietary model | GPT-4o | MobileAgent-v2, UI-TARS | GPT-4o, Gemini, Claude | MobiMind (custom) | 5 families: AutoGLM, UI-TARS, Qwen-VL, MAI-UI, GUI-Owl |
 | **Cross-platform** | Android only | Android (evaluation) | Android + HarmonyOS | Web only | Android only | Android + HarmonyOS + iOS |
 
-### 10.3  Innovation Claims
+### 10.3  Core Contributions (Default-Enabled, Reproducible)
 
-Based on the implementation and comparative analysis, Shopping-Agent supports the following method claims:
+1. **Self-updating page-state graph**. The first cross-session persistent navigation knowledge graph for mobile GUI agents. The graph grows with successful tasks and shrinks when edge reliability drops. Unlike static graphs (PG-Agent, KG-RAG, WebNavigator), AMSG evolves automatically.
 
-1. **VLM-primary graph guidance**: The graph narrows and grounds the action space but does not replace visual semantic reasoning. Content-dependent decisions (product choice, SKU selection, checkout confirmation) remain under VLM or human control.
+2. **Success-rate-driven edge lifecycle**. Each transition tracks postcondition success/failure counts and progresses through hypothesis → candidate → promoted → demoted stages. Only statistically reliable transitions enter the executable action library. This solves the real problem of online observation noise (popups, login interceptions, classifier errors).
 
-2. **Page-state abstraction for mobile GUI agents**: Screenshots are collapsed into reusable page states based on app, page type, landmarks, affordances, slots, risk, and semantic signature. This enables cross-task knowledge transfer.
+3. **Grounded/ungrounded classification with three-speed dispatch**. Each edge is independently classified as grounded (graph executes directly, ~0.5s) or ungrounded (VLM decides, ~5s). Fast Path has postcondition protection — mismatch falls back to VLM. This is the only known per-edge control boundary for GUI agent graphs.
 
-3. **Dual-speed execution with entropy-based dispatch**: Mechanical, grounded, high-confidence actions use Fast Path (~0.5s). Semantic or risky actions use Full VLM Path (~5s). The dispatch boundary is determined by edge lifecycle stage and outcome entropy, not a hardcoded rule.
+4. **Delayed postcondition verification**. Action outcomes are recorded at step t+1 when the actual result can be observed, not at step t when only the intent is known. This ensures the lifecycle system receives ground-truth observations.
 
-4. **Lifecycle-verified graph self-evolution**: Transitions are promoted only after postcondition verification and outcome dominance measurement, then automatically demoted when reliability decays due to UI changes.
+5. **Staging-first persistence with three quality gates**. Failed tasks do not write to the graph. New transitions require VLM review. All paths pass through canonicalization. No raw action writes to Neo4j.
 
-5. **Outcome-entropy decision boundary**: High-entropy transitions (same action → multiple possible outcomes) automatically require VLM verification, replacing brittle hardcoded graph/VLM boundaries with a data-driven signal.
+6. **Structured task constraints as first-class state**. Task specs (color, storage, size, price) are extracted once and enforced by SpecGuard at purchase commit. This makes shopping safety a system property, not prompt engineering.
 
-6. **Staging-first graph persistence with three quality gates**: Online execution, offline exploration, and trajectory review all pass through canonicalization and verification before Neo4j persistence. No raw action writes directly to the graph.
+### 10.4  Experimental Extensions (Not Default-Enabled)
 
-7. **Structured task constraints as first-class runtime state**: Task specs are extracted once and reused by clarification, graph routing, prompt construction, SpecGuard, and runtime slot filling. This makes purchase safety a system property, not a prompt engineering trick.
+The following are implemented but require ablation experiments to validate as contributions:
 
-8. **Memory-decoupled prompt injection**: Progress and focus are always injected; costly retrieval occurs only when VLM reasoning signals show need. This keeps the context window lean without losing access to detailed memory.
-
-9. **Multi-channel Bayesian belief localization**: Four independent observation channels with automatic weight redistribution when channels are unavailable. The belief distribution feeds directly into planning cost functions.
-
-10. **Model-agnostic action IR**: The graph stores semantic actions and locator evidence, while model-specific adapters normalize coordinates and syntax. This allows the same graph to serve five different VLM families without modification.
+- Multi-channel Bayesian belief localization (default: off; `(app, page_type)` matching suffices for most cases)
+- Belief-A* enhanced planner (default: Dijkstra; enhancement terms contribute < 0.1 on typical graph sizes)
+- Entropy-driven VLM verification boundary (implemented but hardcoded transition set is the primary mechanism)
 
 ---
 
