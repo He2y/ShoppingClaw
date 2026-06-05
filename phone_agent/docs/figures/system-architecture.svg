@@ -1,0 +1,229 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 820" width="1200" height="820">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    .title { font-size: 20px; font-weight: 600; fill: #111827; }
+    .subtitle { font-size: 12px; fill: #6b7280; }
+    .layer-label { font-size: 14px; font-weight: 600; }
+    .node-label { font-size: 12px; fill: #111827; font-weight: 500; }
+    .node-sub { font-size: 10px; fill: #6b7280; }
+    .legend-text { font-size: 11px; fill: #6b7280; }
+  </style>
+  <defs>
+    <marker id="arr-blue" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="arr-green" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#059669"/>
+    </marker>
+    <marker id="arr-purple" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#7c3aed"/>
+    </marker>
+    <filter id="shadow" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="820" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="600" y="36" text-anchor="middle" class="title">Shopping-Agent System Architecture</text>
+  <text x="600" y="54" text-anchor="middle" class="subtitle">Six-layer design with closed-loop graph evolution</text>
+
+  <!-- ====== Layer 1: Strategic (VLM) ====== -->
+  <rect x="40" y="70" width="1120" height="105" rx="10" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.2"/>
+  <text x="56" y="90" class="layer-label" fill="#7c3aed">1  Strategic Layer</text>
+  <text x="210" y="90" class="subtitle">VLM-Primary Control</text>
+
+  <rect x="60" y="100" width="160" height="60" rx="8" fill="#fff" stroke="#c4b5fd" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="140" y="126" text-anchor="middle" class="node-label">PhoneAgent</text>
+  <text x="140" y="140" text-anchor="middle" class="node-sub">main loop (729 LOC)</text>
+
+  <rect x="240" y="100" width="160" height="60" rx="8" fill="#fff" stroke="#c4b5fd" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="320" y="126" text-anchor="middle" class="node-label">TaskPlan</text>
+  <text x="320" y="140" text-anchor="middle" class="node-sub">VLM pre-plan + slots</text>
+
+  <rect x="420" y="100" width="175" height="60" rx="8" fill="#fff" stroke="#c4b5fd" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="507" y="126" text-anchor="middle" class="node-label">ClarificationAgent</text>
+  <text x="507" y="140" text-anchor="middle" class="node-sub">3-layer short-circuit</text>
+
+  <rect x="615" y="100" width="175" height="60" rx="8" fill="#fff" stroke="#c4b5fd" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="702" y="126" text-anchor="middle" class="node-label">VerificationDetector</text>
+  <text x="702" y="140" text-anchor="middle" class="node-sub">login / CAPTCHA gate</text>
+
+  <rect x="810" y="100" width="160" height="60" rx="8" fill="#fff" stroke="#c4b5fd" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="890" y="126" text-anchor="middle" class="node-label">SpecGuard</text>
+  <text x="890" y="140" text-anchor="middle" class="node-sub">purchase safety</text>
+
+  <rect x="990" y="100" width="155" height="60" rx="8" fill="#fff" stroke="#c4b5fd" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="1067" y="126" text-anchor="middle" class="node-label">TaskSpecExtractor</text>
+  <text x="1067" y="140" text-anchor="middle" class="node-sub">slot extraction</text>
+
+  <!-- ====== Layer 2: Tactical (Graph) ====== -->
+  <rect x="40" y="190" width="1120" height="105" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1.2"/>
+  <text x="56" y="210" class="layer-label" fill="#16a34a">2  Tactical Layer</text>
+  <text x="195" y="210" class="subtitle">Graph-Guided Action Library</text>
+
+  <rect x="60" y="220" width="195" height="60" rx="8" fill="#fff" stroke="#86efac" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="157" y="246" text-anchor="middle" class="node-label">GraphRuntimeController</text>
+  <text x="157" y="260" text-anchor="middle" class="node-sub">v4 runtime contract</text>
+
+  <rect x="275" y="220" width="160" height="60" rx="8" fill="#fff" stroke="#86efac" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="355" y="246" text-anchor="middle" class="node-label">ActionAdvisor</text>
+  <text x="355" y="260" text-anchor="middle" class="node-sub">promoted actions</text>
+
+  <rect x="455" y="220" width="180" height="60" rx="8" fill="#fff" stroke="#86efac" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="545" y="246" text-anchor="middle" class="node-label">EdgeLifecycleManager</text>
+  <text x="545" y="260" text-anchor="middle" class="node-sub">outcome distributions</text>
+
+  <rect x="655" y="220" width="180" height="60" rx="8" fill="#fff" stroke="#86efac" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="745" y="246" text-anchor="middle" class="node-label">MultiSignalLocalizer</text>
+  <text x="745" y="260" text-anchor="middle" class="node-sub">4-channel Bayesian</text>
+
+  <rect x="855" y="220" width="160" height="60" rx="8" fill="#fff" stroke="#86efac" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="935" y="246" text-anchor="middle" class="node-label">EnhancedPlanner</text>
+  <text x="935" y="260" text-anchor="middle" class="node-sub">Belief-A* routing</text>
+
+  <!-- ====== Layer 3: Memory ====== -->
+  <rect x="40" y="310" width="1120" height="105" rx="10" fill="#f0fdfa" stroke="#99f6e4" stroke-width="1.2"/>
+  <text x="56" y="330" class="layer-label" fill="#0d9488">3  Memory Layer</text>
+  <text x="185" y="330" class="subtitle">Four Surfaces, Decoupled Injection</text>
+
+  <rect x="60" y="340" width="195" height="60" rx="8" fill="#fff" stroke="#99f6e4" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="157" y="366" text-anchor="middle" class="node-label">MemoryStore (FAISS)</text>
+  <text x="157" y="380" text-anchor="middle" class="node-sub">user preferences</text>
+
+  <rect x="275" y="340" width="195" height="60" rx="8" fill="#fff" stroke="#99f6e4" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="372" y="366" text-anchor="middle" class="node-label">UnifiedSessionState</text>
+  <text x="372" y="380" text-anchor="middle" class="node-sub">single write path</text>
+
+  <rect x="490" y="340" width="170" height="60" rx="8" fill="#fff" stroke="#99f6e4" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="575" y="366" text-anchor="middle" class="node-label">RetrievalGateway</text>
+  <text x="575" y="380" text-anchor="middle" class="node-sub">on-demand retrieval</text>
+
+  <rect x="680" y="340" width="195" height="60" rx="8" fill="#fff" stroke="#99f6e4" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="777" y="366" text-anchor="middle" class="node-label">SpatialGraphMemory</text>
+  <text x="777" y="380" text-anchor="middle" class="node-sub">page graph + routes</text>
+
+  <rect x="895" y="340" width="155" height="60" rx="8" fill="#fff" stroke="#99f6e4" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="972" y="366" text-anchor="middle" class="node-label">Trajectory Files</text>
+  <text x="972" y="380" text-anchor="middle" class="node-sub">JSON per task</text>
+
+  <!-- ====== Layer 4: Persistence ====== -->
+  <rect x="40" y="430" width="1120" height="105" rx="10" fill="#fff7ed" stroke="#fdba74" stroke-width="1.2"/>
+  <text x="56" y="450" class="layer-label" fill="#ea580c">4  Persistence Layer</text>
+  <text x="210" y="450" class="subtitle">Quality-Gated Neo4j Writes</text>
+
+  <rect x="100" y="460" width="200" height="60" rx="8" fill="#fff" stroke="#fdba74" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="200" y="486" text-anchor="middle" class="node-label">GraphStore</text>
+  <text x="200" y="500" text-anchor="middle" class="node-sub">UIState / Action / Edge</text>
+
+  <rect x="380" y="460" width="200" height="60" rx="8" fill="#fff" stroke="#fdba74" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="480" y="486" text-anchor="middle" class="node-label">GraphLifecycleStore</text>
+  <text x="480" y="500" text-anchor="middle" class="node-sub">stage / dominance / entropy</text>
+
+  <rect x="660" y="460" width="200" height="60" rx="8" fill="#fff" stroke="#fdba74" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="760" y="486" text-anchor="middle" class="node-label">TrajectoryReviewer</text>
+  <text x="760" y="500" text-anchor="middle" class="node-sub">VLM quality gate</text>
+
+  <!-- Neo4j cylinder -->
+  <g transform="translate(960, 460)">
+    <ellipse cx="60" cy="10" rx="55" ry="10" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+    <rect x="5" y="10" width="110" height="40" fill="#fff7ed" stroke="none"/>
+    <line x1="5" y1="10" x2="5" y2="50" stroke="#ea580c" stroke-width="1.5"/>
+    <line x1="115" y1="10" x2="115" y2="50" stroke="#ea580c" stroke-width="1.5"/>
+    <ellipse cx="60" cy="50" rx="55" ry="10" fill="#fff7ed" stroke="#ea580c" stroke-width="1.5"/>
+    <text x="60" y="36" text-anchor="middle" class="node-label" fill="#ea580c">Neo4j</text>
+  </g>
+
+  <!-- ====== Layer 5: Model Protocol ====== -->
+  <rect x="40" y="550" width="1120" height="105" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.2"/>
+  <text x="56" y="570" class="layer-label" fill="#2563eb">5  Model Protocol Layer</text>
+  <text x="225" y="570" class="subtitle">5-Family VLM Normalization</text>
+
+  <rect x="60" y="580" width="155" height="60" rx="8" fill="#fff" stroke="#93c5fd" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="137" y="606" text-anchor="middle" class="node-label">ModelClient</text>
+  <text x="137" y="620" text-anchor="middle" class="node-sub">streaming + parse</text>
+
+  <rect x="235" y="580" width="155" height="60" rx="8" fill="#fff" stroke="#93c5fd" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="312" y="606" text-anchor="middle" class="node-label">AutoGLM</text>
+  <text x="312" y="620" text-anchor="middle" class="node-sub">[0, 1000]</text>
+
+  <rect x="410" y="580" width="120" height="60" rx="8" fill="#fff" stroke="#93c5fd" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="470" y="606" text-anchor="middle" class="node-label">UI-TARS</text>
+  <text x="470" y="620" text-anchor="middle" class="node-sub">abs pixels</text>
+
+  <rect x="550" y="580" width="120" height="60" rx="8" fill="#fff" stroke="#93c5fd" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="610" y="606" text-anchor="middle" class="node-label">Qwen-VL</text>
+  <text x="610" y="620" text-anchor="middle" class="node-sub">[0, 999]</text>
+
+  <rect x="690" y="580" width="120" height="60" rx="8" fill="#fff" stroke="#93c5fd" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="750" y="606" text-anchor="middle" class="node-label">MAI-UI</text>
+  <text x="750" y="620" text-anchor="middle" class="node-sub">[0, 999]</text>
+
+  <rect x="830" y="580" width="120" height="60" rx="8" fill="#fff" stroke="#93c5fd" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="890" y="606" text-anchor="middle" class="node-label">GUI-Owl</text>
+  <text x="890" y="620" text-anchor="middle" class="node-sub">[0, 1.0]</text>
+
+  <rect x="970" y="580" width="175" height="60" rx="8" fill="#fff" stroke="#93c5fd" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="1057" y="606" text-anchor="middle" class="node-label">ProtocolBridge</text>
+  <text x="1057" y="620" text-anchor="middle" class="node-sub">coord normalization</text>
+
+  <!-- ====== Layer 6: Device Execution ====== -->
+  <rect x="40" y="670" width="1120" height="105" rx="10" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.2"/>
+  <text x="56" y="690" class="layer-label" fill="#dc2626">6  Device Execution Layer</text>
+  <text x="240" y="690" class="subtitle">Cross-Platform Device Abstraction</text>
+
+  <rect x="100" y="700" width="200" height="60" rx="8" fill="#fff" stroke="#fca5a5" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="200" y="726" text-anchor="middle" class="node-label">ActionHandler</text>
+  <text x="200" y="740" text-anchor="middle" class="node-sub">Tap / Type / Swipe / Compound</text>
+
+  <rect x="380" y="700" width="160" height="60" rx="8" fill="#fff" stroke="#fca5a5" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="460" y="726" text-anchor="middle" class="node-label">ADB (Android)</text>
+  <text x="460" y="740" text-anchor="middle" class="node-sub">screencap + input</text>
+
+  <rect x="600" y="700" width="180" height="60" rx="8" fill="#fff" stroke="#fca5a5" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="690" y="726" text-anchor="middle" class="node-label">HDC (HarmonyOS)</text>
+  <text x="690" y="740" text-anchor="middle" class="node-sub">hdc shell</text>
+
+  <rect x="840" y="700" width="160" height="60" rx="8" fill="#fff" stroke="#fca5a5" stroke-width="1.2" filter="url(#shadow)"/>
+  <text x="920" y="726" text-anchor="middle" class="node-label">XCTest (iOS)</text>
+  <text x="920" y="740" text-anchor="middle" class="node-sub">WebDriverAgent</text>
+
+  <!-- ====== ARROWS: Downward flow (blue) ====== -->
+  <!-- Strategic -> Tactical -->
+  <path d="M140,160 L140,175 L157,175 L157,220" stroke="#2563eb" stroke-width="1.8" fill="none" marker-end="url(#arr-blue)"/>
+  <!-- Tactical -> Memory -->
+  <path d="M355,280 L355,295 L372,295 L372,340" stroke="#2563eb" stroke-width="1.8" fill="none" marker-end="url(#arr-blue)"/>
+  <!-- Memory -> Persistence -->
+  <path d="M777,400 L777,415 L760,415 L760,460" stroke="#2563eb" stroke-width="1.8" fill="none" marker-end="url(#arr-blue)"/>
+
+  <!-- ====== ARROWS: Upward flow (green) ====== -->
+  <!-- Device -> Model -->
+  <path d="M320,700 L320,660 L312,660 L312,640" stroke="#059669" stroke-width="1.8" fill="none" marker-end="url(#arr-green)"/>
+  <!-- Persistence -> Memory (graph update) -->
+  <path d="M200,460 L200,445 L157,445 L157,400" stroke="#059669" stroke-width="1.8" fill="none" marker-end="url(#arr-green)"/>
+  <!-- Memory -> Tactical (belief/planning evidence) -->
+  <path d="M777,340 L777,325 L745,325 L745,280" stroke="#059669" stroke-width="1.8" fill="none" marker-end="url(#arr-green)"/>
+
+  <!-- ====== ARROWS: Lateral flow (purple) — graph <-> VLM ====== -->
+  <!-- Tactical -> Strategic (graph hints to VLM) -->
+  <path d="M157,220 C100,200 100,170 140,160" stroke="#7c3aed" stroke-width="1.8" fill="none" stroke-dasharray="6,3" marker-end="url(#arr-purple)"/>
+  <!-- Strategic -> Tactical (VLM decisions to graph) -->
+  <path d="M890,160 C950,180 950,210 935,220" stroke="#7c3aed" stroke-width="1.8" fill="none" stroke-dasharray="6,3" marker-end="url(#arr-purple)"/>
+
+  <!-- ====== Feedback loop arrow (green, curved) ====== -->
+  <path d="M1020,480 C1160,480 1170,130 1020,130 L970,130" stroke="#059669" stroke-width="2" fill="none" stroke-dasharray="8,4" marker-end="url(#arr-green)"/>
+  <rect x="1130" y="280" width="56" height="50" rx="4" fill="#fff" stroke="none"/>
+  <text x="1158" y="298" text-anchor="middle" font-size="10" fill="#059669" font-weight="500">Feedback</text>
+  <text x="1158" y="312" text-anchor="middle" font-size="10" fill="#059669" font-weight="500">Loop</text>
+
+  <!-- ====== Legend ====== -->
+  <rect x="40" y="785" width="380" height="28" rx="4" fill="#f9fafb" stroke="#e5e7eb" stroke-width="0.8"/>
+  <line x1="52" y1="799" x2="82" y2="799" stroke="#2563eb" stroke-width="2" marker-end="url(#arr-blue)"/>
+  <text x="88" y="803" class="legend-text">Task -> Action (downward)</text>
+  <line x1="210" y1="799" x2="240" y2="799" stroke="#059669" stroke-width="2" marker-end="url(#arr-green)"/>
+  <text x="246" y="803" class="legend-text">Observation -> Memory (upward)</text>
+  <line x1="395" y1="799" x2="425" y2="799" stroke="#7c3aed" stroke-width="2" stroke-dasharray="6,3"/>
+  <text x="430" y="803" class="legend-text">Graph / VLM (lateral)</text>
+</svg>

@@ -1,0 +1,245 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 700" width="1200" height="700">
+  <style>
+    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
+    .title { font-size: 20px; font-weight: 600; fill: #111827; }
+    .subtitle { font-size: 12px; fill: #6b7280; }
+    .path-title { font-size: 13px; font-weight: 600; }
+    .node-label { font-size: 11px; fill: #fff; font-weight: 500; }
+    .node-label-dark { font-size: 11px; fill: #111827; font-weight: 500; }
+    .node-sub { font-size: 9px; fill: #6b7280; }
+    .node-sub-light { font-size: 9px; fill: rgba(255,255,255,0.8); }
+    .legend-text { font-size: 11px; fill: #6b7280; }
+    .badge { font-size: 10px; fill: #fff; font-weight: 700; }
+  </style>
+  <defs>
+    <marker id="ab" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#2563eb"/>
+    </marker>
+    <marker id="ag" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#059669"/>
+    </marker>
+    <marker id="ao" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#ea580c"/>
+    </marker>
+    <marker id="ar" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#dc2626"/>
+    </marker>
+    <marker id="ap" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#7c3aed"/>
+    </marker>
+    <marker id="ay" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+      <polygon points="0 0, 10 3.5, 0 7" fill="#6b7280"/>
+    </marker>
+    <filter id="sh" x="-2%" y="-2%" width="104%" height="104%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="700" fill="#ffffff"/>
+
+  <!-- Title -->
+  <text x="600" y="36" text-anchor="middle" class="title">Automatic Graph Persistence Pipeline</text>
+  <text x="600" y="54" text-anchor="middle" class="subtitle">Three paths, three quality gates — no raw action writes to Neo4j</text>
+
+  <!-- ============ PATH 1: Online Runtime ============ -->
+  <rect x="30" y="75" width="530" height="210" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1.2"/>
+  <circle cx="52" cy="97" r="12" fill="#16a34a"/>
+  <text x="52" y="101" text-anchor="middle" class="badge">1</text>
+  <text x="72" y="97" class="path-title" fill="#16a34a">Online Runtime Path</text>
+  <text x="260" y="97" class="subtitle">closed-loop execution</text>
+
+  <rect x="50" y="115" width="110" height="42" rx="6" fill="#16a34a" filter="url(#sh)"/>
+  <text x="105" y="135" text-anchor="middle" class="node-label">Execute</text>
+  <text x="105" y="148" text-anchor="middle" class="node-sub-light">Action</text>
+
+  <rect x="185" y="115" width="110" height="42" rx="6" fill="#0d9488" filter="url(#sh)"/>
+  <text x="240" y="135" text-anchor="middle" class="node-label">Verify</text>
+  <text x="240" y="148" text-anchor="middle" class="node-sub-light">Postcondition</text>
+
+  <rect x="320" y="115" width="110" height="42" rx="6" fill="#0f766e" filter="url(#sh)"/>
+  <text x="375" y="135" text-anchor="middle" class="node-label">Record</text>
+  <text x="375" y="148" text-anchor="middle" class="node-sub-light">Observation</text>
+
+  <rect x="185" y="180" width="120" height="42" rx="6" fill="#065f46" filter="url(#sh)"/>
+  <text x="245" y="200" text-anchor="middle" class="node-label">EdgeLifecycle</text>
+  <text x="245" y="213" text-anchor="middle" class="node-sub-light">record_outcome()</text>
+
+  <!-- Decision diamond: Task Success? -->
+  <polygon points="430,195 470,175 510,195 470,215" fill="#fff" stroke="#16a34a" stroke-width="1.8"/>
+  <text x="470" y="198" text-anchor="middle" font-size="9" fill="#16a34a" font-weight="600">Task OK?</text>
+
+  <!-- Online Path arrows -->
+  <line x1="160" y1="136" x2="183" y2="136" stroke="#fff" stroke-width="1.5" marker-end="url(#ag)"/>
+  <line x1="295" y1="136" x2="318" y2="136" stroke="#fff" stroke-width="1.5" marker-end="url(#ag)"/>
+  <path d="M375,157 L375,170 L307,170 L307,180" stroke="#059669" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+  <path d="M305,201 L340,201 L340,195 L428,195" stroke="#059669" stroke-width="1.5" fill="none" marker-end="url(#ag)"/>
+
+  <!-- Success branch -> flush -->
+  <rect x="420" y="235" width="130" height="36" rx="6" fill="#16a34a" filter="url(#sh)"/>
+  <text x="485" y="253" text-anchor="middle" class="node-label" font-size="10">flush_staged_graph()</text>
+  <text x="485" y="265" text-anchor="middle" class="node-sub-light">-> Neo4j</text>
+  <line x1="470" y1="215" x2="470" y2="233" stroke="#16a34a" stroke-width="1.5" marker-end="url(#ag)"/>
+  <text x="480" y="228" font-size="8" fill="#16a34a">yes</text>
+
+  <!-- Fail branch -> stage only -->
+  <rect x="65" y="235" width="110" height="36" rx="6" fill="#fff" stroke="#dc2626" stroke-width="1.2"/>
+  <text x="120" y="253" text-anchor="middle" class="node-label-dark" font-size="10">Stage only</text>
+  <text x="120" y="265" text-anchor="middle" class="node-sub">(no persist)</text>
+  <path d="M430,195 L410,195 C380,195 380,253 380,253 L177,253" stroke="#dc2626" stroke-width="1.2" fill="none" stroke-dasharray="4,2" marker-end="url(#ar)"/>
+  <text x="395" y="250" font-size="8" fill="#dc2626">no</text>
+
+  <!-- ============ PATH 2: Trajectory Review ============ -->
+  <rect x="580" y="75" width="590" height="210" rx="10" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1.2"/>
+  <circle cx="602" cy="97" r="12" fill="#7c3aed"/>
+  <text x="602" y="101" text-anchor="middle" class="badge">2</text>
+  <text x="622" y="97" class="path-title" fill="#7c3aed">Trajectory Review Path</text>
+  <text x="830" y="97" class="subtitle">VLM quality gate for graph evolution</text>
+
+  <rect x="600" y="115" width="100" height="42" rx="6" fill="#7c3aed" filter="url(#sh)"/>
+  <text x="650" y="135" text-anchor="middle" class="node-label">Trajectory</text>
+  <text x="650" y="148" text-anchor="middle" class="node-sub-light">JSON file</text>
+
+  <rect x="720" y="115" width="110" height="42" rx="6" fill="#6d28d9" filter="url(#sh)"/>
+  <text x="775" y="135" text-anchor="middle" class="node-label">Extract</text>
+  <text x="775" y="148" text-anchor="middle" class="node-sub-light">transitions</text>
+
+  <rect x="850" y="115" width="100" height="42" rx="6" fill="#5b21b6" filter="url(#sh)"/>
+  <text x="900" y="135" text-anchor="middle" class="node-label">Dedup</text>
+  <text x="900" y="148" text-anchor="middle" class="node-sub-light">vs graph</text>
+
+  <rect x="970" y="115" width="120" height="42" rx="6" fill="#4c1d95" filter="url(#sh)"/>
+  <text x="1030" y="135" text-anchor="middle" class="node-label">Strong VLM</text>
+  <text x="1030" y="148" text-anchor="middle" class="node-sub-light">validation</text>
+
+  <!-- Decision diamond: Approved? -->
+  <polygon points="1030,195 1070,175 1110,195 1070,215" fill="#fff" stroke="#7c3aed" stroke-width="1.8"/>
+  <text x="1070" y="198" text-anchor="middle" font-size="9" fill="#7c3aed" font-weight="600">Valid?</text>
+
+  <!-- Approved -> import -->
+  <rect x="1005" y="235" width="130" height="36" rx="6" fill="#7c3aed" filter="url(#sh)"/>
+  <text x="1070" y="253" text-anchor="middle" class="node-label" font-size="10">Import as</text>
+  <text x="1070" y="265" text-anchor="middle" class="node-sub-light">hypothesis edge</text>
+  <line x1="1070" y1="215" x2="1070" y2="233" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#ap)"/>
+  <text x="1080" y="228" font-size="8" fill="#7c3aed">yes</text>
+
+  <!-- Rejected -->
+  <rect x="1120" y="178" width="46" height="32" rx="6" fill="#fff" stroke="#dc2626" stroke-width="1.2"/>
+  <text x="1143" y="198" text-anchor="middle" font-size="10" fill="#dc2626" font-weight="500">Reject</text>
+  <line x1="1110" y1="195" x2="1118" y2="195" stroke="#dc2626" stroke-width="1.2" marker-end="url(#ar)"/>
+
+  <!-- Review path arrows -->
+  <line x1="700" y1="136" x2="718" y2="136" stroke="#fff" stroke-width="1.5" marker-end="url(#ap)"/>
+  <line x1="830" y1="136" x2="848" y2="136" stroke="#fff" stroke-width="1.5" marker-end="url(#ap)"/>
+  <line x1="950" y1="136" x2="968" y2="136" stroke="#fff" stroke-width="1.5" marker-end="url(#ap)"/>
+  <path d="M1030,157 L1030,173" stroke="#7c3aed" stroke-width="1.5" fill="none" marker-end="url(#ap)"/>
+
+  <!-- ============ PATH 3: Offline Exploration ============ -->
+  <rect x="30" y="300" width="530" height="130" rx="10" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.2"/>
+  <circle cx="52" cy="322" r="12" fill="#2563eb"/>
+  <text x="52" y="326" text-anchor="middle" class="badge">3</text>
+  <text x="72" y="322" class="path-title" fill="#2563eb">Offline Exploration Path</text>
+  <text x="290" y="322" class="subtitle">batch import with canonicalization</text>
+
+  <rect x="50" y="345" width="100" height="42" rx="6" fill="#2563eb" filter="url(#sh)"/>
+  <text x="100" y="365" text-anchor="middle" class="node-label">Exploration</text>
+  <text x="100" y="378" text-anchor="middle" class="node-sub-light">files</text>
+
+  <rect x="170" y="345" width="100" height="42" rx="6" fill="#1d4ed8" filter="url(#sh)"/>
+  <text x="220" y="365" text-anchor="middle" class="node-label">Canonicalize</text>
+  <text x="220" y="378" text-anchor="middle" class="node-sub-light">pages</text>
+
+  <rect x="290" y="345" width="100" height="42" rx="6" fill="#1e40af" filter="url(#sh)"/>
+  <text x="340" y="365" text-anchor="middle" class="node-label">Filter</text>
+  <text x="340" y="378" text-anchor="middle" class="node-sub-light">quality gates</text>
+
+  <rect x="410" y="345" width="130" height="42" rx="6" fill="#1e3a8a" filter="url(#sh)"/>
+  <text x="475" y="365" text-anchor="middle" class="node-label">Promote</text>
+  <text x="475" y="378" text-anchor="middle" class="node-sub-light">staging -> canonical</text>
+
+  <!-- Offline arrows -->
+  <line x1="150" y1="366" x2="168" y2="366" stroke="#fff" stroke-width="1.5" marker-end="url(#ab)"/>
+  <line x1="270" y1="366" x2="288" y2="366" stroke="#fff" stroke-width="1.5" marker-end="url(#ab)"/>
+  <line x1="390" y1="366" x2="408" y2="366" stroke="#fff" stroke-width="1.5" marker-end="url(#ab)"/>
+
+  <!-- ============ CONVERGENCE: Quality Gates + Neo4j ============ -->
+  <rect x="580" y="310" width="260" height="115" rx="10" fill="#fff7ed" stroke="#fdba74" stroke-width="1.5"/>
+  <text x="596" y="333" class="path-title" fill="#ea580c">Quality Gates</text>
+
+  <rect x="600" y="348" width="220" height="25" rx="5" fill="#dcfce7" stroke="#86efac" stroke-width="1"/>
+  <text x="710" y="365" text-anchor="middle" font-size="10" fill="#166534" font-weight="500">Gate 1: Task success</text>
+
+  <rect x="600" y="378" width="220" height="25" rx="5" fill="#ede9fe" stroke="#c4b5fd" stroke-width="1"/>
+  <text x="710" y="395" text-anchor="middle" font-size="10" fill="#5b21b6" font-weight="500">Gate 2: VLM trajectory review</text>
+
+  <rect x="600" y="408" width="220" height="25" rx="5" fill="#dbeafe" stroke="#93c5fd" stroke-width="1"/>
+  <text x="710" y="425" text-anchor="middle" font-size="10" fill="#1e40af" font-weight="500">Gate 3: Canonicalization filter</text>
+
+  <!-- Arrows from paths to quality gates -->
+  <path d="M485,268 C485,300 580,310 598,360" stroke="#16a34a" stroke-width="2" fill="none" marker-end="url(#ag)"/>
+  <path d="M1070,271 C1070,300 870,310 822,380" stroke="#7c3aed" stroke-width="2" fill="none" marker-end="url(#ap)"/>
+  <path d="M540,390 C560,400 580,410 598,415" stroke="#2563eb" stroke-width="2" fill="none" marker-end="url(#ab)"/>
+
+  <!-- Neo4j database -->
+  <g transform="translate(920, 330)">
+    <ellipse cx="80" cy="15" rx="75" ry="15" fill="#16a34a" opacity="0.15" stroke="#16a34a" stroke-width="2"/>
+    <rect x="5" y="15" width="150" height="65" fill="#f0fdf4" stroke="none"/>
+    <line x1="5" y1="15" x2="5" y2="80" stroke="#16a34a" stroke-width="2"/>
+    <line x1="155" y1="15" x2="155" y2="80" stroke="#16a34a" stroke-width="2"/>
+    <ellipse cx="80" cy="80" rx="75" ry="15" fill="#f0fdf4" stroke="#16a34a" stroke-width="2"/>
+    <text x="80" y="45" text-anchor="middle" font-size="16" fill="#16a34a" font-weight="700">Neo4j</text>
+    <text x="80" y="63" text-anchor="middle" font-size="10" fill="#059669">shopping-spatial-v4</text>
+  </g>
+
+  <!-- Arrow from gates to Neo4j -->
+  <line x1="820" y1="385" x2="918" y2="385" stroke="#16a34a" stroke-width="2.5" marker-end="url(#ag)"/>
+  <rect x="838" y="370" width="68" height="16" rx="3" fill="#fff" stroke="#16a34a" stroke-width="0.8"/>
+  <text x="872" y="381" text-anchor="middle" font-size="9" fill="#16a34a" font-weight="600">verified only</text>
+
+  <!-- ============ KEY PRINCIPLE ============ -->
+  <rect x="250" y="470" width="700" height="45" rx="10" fill="#fef2f2" stroke="#fca5a5" stroke-width="1.5"/>
+  <text x="600" y="495" text-anchor="middle" font-size="14" fill="#991b1b" font-weight="600">No raw action writes directly to Neo4j</text>
+  <text x="600" y="510" text-anchor="middle" font-size="11" fill="#991b1b">Every persistence path passes through at least one quality gate</text>
+
+  <!-- ============ Lifecycle Promotion Detail ============ -->
+  <rect x="30" y="535" width="1140" height="120" rx="10" fill="#f9fafb" stroke="#e5e7eb" stroke-width="1"/>
+  <text x="46" y="558" class="path-title" fill="#111827">Lifecycle Promotion After Persistence</text>
+
+  <rect x="60" y="575" width="120" height="36" rx="6" fill="#dbeafe" stroke="#93c5fd" stroke-width="1.2"/>
+  <text x="120" y="597" text-anchor="middle" font-size="10" fill="#1e40af" font-weight="500">hypothesis</text>
+
+  <rect x="230" y="575" width="120" height="36" rx="6" fill="#dcfce7" stroke="#86efac" stroke-width="1.2"/>
+  <text x="290" y="597" text-anchor="middle" font-size="10" fill="#166534" font-weight="500">candidate</text>
+
+  <rect x="400" y="575" width="120" height="36" rx="6" fill="#16a34a"/>
+  <text x="460" y="597" text-anchor="middle" font-size="10" fill="#fff" font-weight="500">promoted</text>
+
+  <rect x="570" y="575" width="120" height="36" rx="6" fill="#fee2e2" stroke="#fca5a5" stroke-width="1.2"/>
+  <text x="630" y="597" text-anchor="middle" font-size="10" fill="#991b1b" font-weight="500">demoted</text>
+
+  <line x1="180" y1="593" x2="228" y2="593" stroke="#2563eb" stroke-width="1.5" marker-end="url(#ab)"/>
+  <text x="204" y="586" text-anchor="middle" font-size="8" fill="#6b7280">verified x N</text>
+
+  <line x1="350" y1="593" x2="398" y2="593" stroke="#059669" stroke-width="1.5" marker-end="url(#ag)"/>
+  <text x="374" y="586" text-anchor="middle" font-size="8" fill="#6b7280">dominant</text>
+
+  <line x1="520" y1="593" x2="568" y2="593" stroke="#dc2626" stroke-width="1.5" marker-end="url(#ar)"/>
+  <text x="544" y="586" text-anchor="middle" font-size="8" fill="#6b7280">UI change</text>
+
+  <!-- Persistence details -->
+  <rect x="730" y="565" width="420" height="78" rx="6" fill="#fff" stroke="#e5e7eb" stroke-width="0.8"/>
+  <text x="746" y="584" font-size="10" fill="#111827" font-weight="600">Persisted to Neo4j per edge:</text>
+  <text x="746" y="600" font-size="10" fill="#374151">lifecycle_stage, verification_count, dominance_ratio</text>
+  <text x="746" y="616" font-size="10" fill="#374151">outcome_distribution_json, outcome_entropy</text>
+  <text x="746" y="632" font-size="10" fill="#374151">created_at, last_verified, last_traversed</text>
+
+  <!-- Legend -->
+  <rect x="30" y="665" width="540" height="28" rx="4" fill="#f9fafb" stroke="#e5e7eb" stroke-width="0.8"/>
+  <line x1="46" y1="679" x2="66" y2="679" stroke="#16a34a" stroke-width="2" marker-end="url(#ag)"/>
+  <text x="72" y="683" class="legend-text">Online runtime</text>
+  <line x1="180" y1="679" x2="200" y2="679" stroke="#7c3aed" stroke-width="2" marker-end="url(#ap)"/>
+  <text x="206" y="683" class="legend-text">Trajectory review</text>
+  <line x1="324" y1="679" x2="344" y2="679" stroke="#2563eb" stroke-width="2" marker-end="url(#ab)"/>
+  <text x="350" y="683" class="legend-text">Offline exploration</text>
+  <line x1="474" y1="679" x2="494" y2="679" stroke="#dc2626" stroke-width="1.5" stroke-dasharray="4,2"/>
+  <text x="500" y="683" class="legend-text">Rejected path</text>
+</svg>
