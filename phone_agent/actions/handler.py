@@ -581,7 +581,35 @@ def parse_action(response: str) -> dict[str, Any]:
                 "message": response.replace("finish(message=", "").strip('")\''),
             }
         else:
-            raise ValueError(f"Failed to parse action: {response}")
+            # Fallback: extract bare action calls from unformatted VLM output.
+            # Catches cases like "... reasoning text ... Type("4K显示器")"
+            # or "... do(action="Tap", element=[500,300])" buried in prose.
+            bare_do = re.search(r'do\(action=["\'].+?(?:\))\s*$', response, re.DOTALL)
+            if bare_do:
+                return parse_action(bare_do.group(0))
+
+            bare_action = re.search(
+                r'(?:^|\n)\s*((?:Type|Tap|Swipe|Back|Home|Launch|Wait|Interact|'
+                r'Long Press|Double Tap|Take_over|finish)\s*\(.*?\))\s*$',
+                response, re.DOTALL,
+            )
+            if bare_action:
+                call_str = bare_action.group(1).strip()
+                # Convert bare Type("text") → do(action="Type", text="text")
+                m = re.match(r'(Type|Type_Name)\s*\(\s*["\'](.+?)["\']\s*\)', call_str)
+                if m:
+                    return {"_metadata": "do", "action": m.group(1), "text": m.group(2)}
+                m = re.match(r'Tap\s*\(\s*\[(\d+)\s*,\s*(\d+)\]\s*\)', call_str)
+                if m:
+                    return {"_metadata": "do", "action": "Tap",
+                            "element": [int(m.group(1)), int(m.group(2))]}
+                m = re.match(r'(Back|Home|Wait|Interact)\s*\(', call_str)
+                if m:
+                    return {"_metadata": "do", "action": m.group(1)}
+                if call_str.startswith("finish"):
+                    return parse_action(call_str)
+
+            raise ValueError(f"Failed to parse action: {response[:200]}")
         return action
     except Exception as e:
         raise ValueError(f"Failed to parse action: {e}")

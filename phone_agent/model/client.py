@@ -272,7 +272,19 @@ class ModelClient:
             action = "do(action=" + parts[1]
             return thinking, action
 
-        # Rule 5: No markers found, return content as action
+        # Rule 5: Extract bare action call from end of unformatted output.
+        # Catches: "... reasoning ... Type("4K显示器")" or "... Tap([500,300])"
+        import re as _re
+        bare = _re.search(
+            r'(?:do\(action=|finish\(|(?:Type|Tap|Swipe|Back|Home|Launch)\s*\().+$',
+            content, _re.DOTALL,
+        )
+        if bare:
+            thinking = content[:bare.start()].strip()
+            action = bare.group(0).strip()
+            return thinking, action
+
+        # Rule 6: No markers found at all, return content as action
         return "", content
 
 
