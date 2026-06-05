@@ -245,9 +245,9 @@ Graph stores `SemanticActionIR` (intent + target + locator + postcondition). Pha
 
 ---
 
-## 8  Model and Device Abstraction
+## 6  Model and Device Abstraction
 
-### 8.1  Multi-Model Support
+### 6.1  Multi-Model Support
 
 Shopping-Agent supports five VLM families through a unified adapter architecture:
 
@@ -261,7 +261,7 @@ Shopping-Agent supports five VLM families through a unified adapter architecture
 
 `ModelProtocolBridge._scale_coord()` is the coordinate transformation hub, converting between all coordinate spaces through a normalized (0, 1) intermediate representation. This means the graph can store coordinates in any space and they will be correctly converted for the current model at runtime.
 
-### 8.2  Device Abstraction
+### 6.2  Device Abstraction
 
 `DeviceFactory` provides a unified interface across three platforms:
 
@@ -273,7 +273,7 @@ Shopping-Agent supports five VLM families through a unified adapter architecture
 
 ---
 
-## 9  Configuration Presets
+## 7  Configuration Presets
 
 `AMSGOptimConfig` provides configuration presets via the `AMSG_CONFIG` environment variable. The default is `legacy` (fixed-score localization, Dijkstra planning, no lifecycle). The production-recommended preset is `sava` (Dijkstra, strict lifecycle with 3x verification and 80% dominance threshold).
 
@@ -281,9 +281,9 @@ Additional presets (`belief_only`, `planner_only`, `full`) exist as experimental
 
 ---
 
-## 10  Comparative Analysis
+## 8  Comparative Analysis
 
-### 10.1  Positioning in the Literature
+### 8.1  Positioning in the Literature
 
 Shopping-Agent addresses three specific gaps in the current GUI agent landscape:
 
@@ -293,7 +293,7 @@ Shopping-Agent addresses three specific gaps in the current GUI agent landscape:
 
 **Gap 3: Binary graph/VLM control.** Existing graph-augmented agents use the graph either as a static RAG source (PG-Agent, KG-RAG) or as a deterministic controller that bypasses the VLM entirely (WebNavigator's Teleport). Shopping-Agent introduces a continuous spectrum: Fast Path (graph alone, ~0.5s), Graph Co-pilot (graph hints + VLM verification, ~3s), and Full VLM Path (VLM alone, ~5s). The dispatch decision is data-driven, based on edge lifecycle stage, outcome entropy, and grounding status.
 
-### 10.2  Detailed Comparison
+### 8.2  Detailed Comparison
 
 | Dimension | ColorAgent | PG-Agent | KG-RAG | WebNavigator | MobiAgent (AgentRR) | **Shopping-Agent** |
 |---|---|---|---|---|---|---|
@@ -309,7 +309,7 @@ Shopping-Agent addresses three specific gaps in the current GUI agent landscape:
 | **Multi-model support** | Proprietary model | GPT-4o | MobileAgent-v2, UI-TARS | GPT-4o, Gemini, Claude | MobiMind (custom) | 5 families: AutoGLM, UI-TARS, Qwen-VL, MAI-UI, GUI-Owl |
 | **Cross-platform** | Android only | Android (evaluation) | Android + HarmonyOS | Web only | Android only | Android + HarmonyOS + iOS |
 
-### 10.3  Core Contributions (Default-Enabled, Reproducible)
+### 8.3  Core Contributions (Default-Enabled, Reproducible)
 
 1. **Self-updating page-state graph**. The first cross-session persistent navigation knowledge graph for mobile GUI agents. The graph grows with successful tasks and shrinks when edge reliability drops. Unlike static graphs (PG-Agent, KG-RAG, WebNavigator), AMSG evolves automatically.
 
@@ -323,7 +323,7 @@ Shopping-Agent addresses three specific gaps in the current GUI agent landscape:
 
 6. **Structured task constraints as first-class state**. Task specs (color, storage, size, price) are extracted once and enforced by SpecGuard at purchase commit. This makes shopping safety a system property, not prompt engineering.
 
-### 10.4  Experimental Extensions (Not Default-Enabled)
+### 8.4  Experimental Extensions (Not Default-Enabled)
 
 The following are implemented but require ablation experiments to validate as contributions:
 
@@ -333,7 +333,7 @@ The following are implemented but require ablation experiments to validate as co
 
 ---
 
-## 11  Implementation Map
+## 9  Implementation Map
 
 | Concept | File |
 |---|---|
@@ -368,6 +368,6 @@ The following are implemented but require ablation experiments to validate as co
 
 ---
 
-## 12  Paper Method Summary
+## 10  Paper Method Summary
 
 > Shopping-Agent is a VLM-primary mobile GUI agent augmented by a self-evolving Active Mobile Spatial Graph (AMSG). The system abstracts screenshots into semantic page states and persists verified navigation transitions in Neo4j. Each step locates the current page via `(app, page_type)` matching, plans a route with Dijkstra on the weighted graph, and caches the route as a RuntimeDAG for subsequent steps to advance directly. Grounded, promoted transitions execute via Fast Path (~0.5s, no VLM call); ungrounded transitions require VLM to choose the specific target (~5s), with postcondition protection — mismatch triggers automatic fallback. Delayed postcondition verification at step t+1 confirms step t's outcome, ensuring edge success-rate tracking is based on ground-truth observations. Online observations are staged in memory; only successful tasks trigger Neo4j writes, and new transitions require VLM trajectory review — no raw actions write directly to the graph. User constraints are extracted as first-class task slots and enforced by SpecGuard at the point of purchase commitment.

@@ -455,9 +455,9 @@ SemanticActionIR → DeviceActionIR → 设备指令
 
 ---
 
-## 8  模型与设备抽象
+## 6  模型与设备抽象
 
-### 8.1  多模型支持
+### 6.1  多模型支持
 
 Shopping-Agent 通过统一的适配器架构支持五个 VLM 家族：
 
@@ -473,9 +473,9 @@ Shopping-Agent 通过统一的适配器架构支持五个 VLM 家族：
 
 ---
 
-## 9  对比分析
+## 7  对比分析
 
-### 9.1  在文献中的定位
+### 7.1  在文献中的定位
 
 Shopping-Agent 解决了当前 GUI 智能体领域的三个具体缺口：
 
@@ -485,7 +485,7 @@ Shopping-Agent 解决了当前 GUI 智能体领域的三个具体缺口：
 
 **缺口 3：二元的图谱/VLM 控制。** 现有图谱增强的 Agent 将图谱用作静态 RAG 源（PG-Agent、KG-RAG）或完全绕过 VLM 的确定性控制器（WebNavigator 的 Teleport）。Shopping-Agent 引入三档调度：锚定且已提升的转移走快速路径（~0.5s，不调用 VLM），非锚定转移由 VLM 决策（~5s），带后条件保护。调度依据是每条边的锚定性（是否有稳定坐标和确定性目标）和生命周期阶段（是否经过验证和提升）。
 
-### 9.2  详细对比
+### 7.2  详细对比
 
 | 维度 | ColorAgent | PG-Agent | KG-RAG | WebNavigator | MobiAgent (AgentRR) | **Shopping-Agent** |
 |---|---|---|---|---|---|---|
@@ -501,7 +501,7 @@ Shopping-Agent 解决了当前 GUI 智能体领域的三个具体缺口：
 | **多模型支持** | 专有模型 | GPT-4o | MobileAgent-v2 | GPT-4o, Gemini, Claude | MobiMind（自定义） | 5 族：AutoGLM, UI-TARS, Qwen-VL, MAI-UI, GUI-Owl |
 | **跨平台** | 仅 Android | Android | Android + HarmonyOS | 仅 Web | 仅 Android | Android + HarmonyOS + iOS |
 
-### 9.3  创新点总结
+### 7.3  创新点总结
 
 ### 核心贡献（默认启用、可复现）
 
@@ -522,6 +522,6 @@ Shopping-Agent 解决了当前 GUI 智能体领域的三个具体缺口：
 
 ---
 
-## 10  论文方法摘要
+## 8  论文方法摘要
 
 > Shopping-Agent 是一个以 VLM 为主的移动 GUI 智能体，通过自演进的主动移动空间图谱（AMSG）增强。系统将截图抽象为语义页面状态，在 Neo4j 中持久化经过验证的导航转移。每个执行步骤通过 `(app, page_type)` 匹配定位当前页面，用 Dijkstra 在加权图上规划路径，路径缓存为 RuntimeDAG 供后续步骤直接推进。锚定且已提升的转移走快速路径（~0.5s，跳过 VLM），非锚定转移由 VLM 选择具体目标（~5s），带后条件保护——不匹配时自动回退。延迟后条件验证在 t+1 步确认 t 步的动作结果，使边的成功率追踪基于真实观测。在线观测暂存在内存中，仅成功任务触发 Neo4j 写入，新转移需经 VLM 轨迹审核——没有原始动作直接写入图谱。用户约束作为一等任务槽位提取，由 SpecGuard 在购买提交点强制执行。
