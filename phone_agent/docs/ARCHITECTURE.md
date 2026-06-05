@@ -1,10 +1,10 @@
-# ClawGUI-Agent Architecture
+# Shopping-Agent Architecture
 
-> Version: 2026-06-05  
+> Version: 2026-06-05 (revised)  
 > Scope: current checkout under `phone_agent/`, with emphasis on `agent.py`, `core/`, `memory/`, `spatial/`, `model/`, `actions/`, `device_factory.py`, and the AMSG v4 Neo4j runtime contract.  
 > Purpose: provide a paper-ready architecture and method reference for later academic writing.
 
-ClawGUI-Agent is a VLM-primary mobile GUI agent with a self-evolving Active Mobile Spatial Graph, abbreviated as AMSG. The central design is not "replace the VLM with a graph planner". The design is:
+Shopping-Agent is a VLM-primary mobile GUI agent with a self-evolving Active Mobile Spatial Graph, abbreviated as AMSG. The central design is not "replace the VLM with a graph planner". The design is:
 
 1. Let the VLM handle semantic judgement, such as product choice, task constraint interpretation, visual ambiguity, dialog understanding, and user-facing decisions.
 2. Let AMSG handle reusable structure, such as page localization, safe navigation priors, verified transitions, postcondition statistics, action grounding evidence, and graph-based context.
@@ -586,7 +586,7 @@ Backends include:
 
 `webui.py` wraps the loop as a Gradio streaming UI with memory inspection, Neo4j status, pending trajectory listing, manual commit, and task execution controls.
 
-`nanobot/` is a separate chat-platform gateway. Its `gui-mobile` and `clawgui-eval` skills can bridge chat channels and evaluation workflows into the phone agent, but they are not part of the core `PhoneAgent._execute_step()` loop.
+`nanobot/` is a separate chat-platform gateway. Its `gui-mobile` and `shopping-eval` skills can bridge chat channels and evaluation workflows into the phone agent, but they are not part of the core `PhoneAgent._execute_step()` loop.
 
 ## 13. Innovation Claims for a Paper
 
@@ -657,6 +657,7 @@ The strict `sava()` preset requires at least three verifications and a dominance
 | Runtime graph controller | `phone_agent/spatial/runtime_controller.py` |
 | Action library/advisor | `phone_agent/spatial/action_advisor.py` |
 | Edge lifecycle | `phone_agent/spatial/edge_lifecycle.py` |
+| AMSG config presets | `phone_agent/spatial/amsg_config.py` |
 | Belief localization | `phone_agent/spatial/belief_localizer.py` |
 | Enhanced planning | `phone_agent/spatial/enhanced_planner.py` |
 | Schema registry | `phone_agent/spatial/schema_registry.py` |
@@ -672,7 +673,7 @@ The strict `sava()` preset requires at least three verifications and a dominance
 
 A compact method description:
 
-> ClawGUI-Agent is a VLM-primary mobile GUI agent augmented by a self-maintaining Active Mobile Spatial Graph. Each step observes the current screen, classifies page semantics, localizes a page-state belief, verifies the previous transition, and chooses between a fast graph-grounded action and a full VLM reasoning path. The graph stores page abstractions, semantic action nodes, empirical outcome distributions, lifecycle metadata, and optional functionality roles in Neo4j. Online observations and offline exploration artifacts are staged, canonicalized, filtered, and persisted only after postcondition verification or VLM trajectory review. User constraints and session memory are injected through a lightweight, on-demand mechanism, while high-risk or semantically underdetermined transitions remain under VLM or human control.
+> Shopping-Agent is a VLM-primary mobile GUI agent augmented by a self-maintaining Active Mobile Spatial Graph. Each step observes the current screen, classifies page semantics, localizes a page-state belief, verifies the previous transition, and chooses between a fast graph-grounded action and a full VLM reasoning path. The graph stores page abstractions, semantic action nodes, empirical outcome distributions, lifecycle metadata, and optional functionality roles in Neo4j. Online observations and offline exploration artifacts are staged, canonicalized, filtered, and persisted only after postcondition verification or VLM trajectory review. User constraints and session memory are injected through a lightweight, on-demand mechanism, while high-risk or semantically underdetermined transitions remain under VLM or human control.
 
 Recommended paper figures:
 
@@ -685,8 +686,9 @@ Recommended paper figures:
 
 These points should be handled before making final paper claims:
 
-1. The v4 Functionality persistence/query layer exists in `GraphStore`, but local functionality extractor, clusterer, coverage, and reporting modules are not present in the current `phone_agent/spatial/` checkout. Older tests and documents still reference them.
+1. The v4 Functionality extractor, clusterer, coverage metrics, reporting, role classifier, and task synthesis modules have been intentionally removed from `phone_agent/spatial/`. The GraphStore retains the persistence/query API for functionality data, but no local extraction pipeline exists. If needed for paper experiments, these modules can be restored from git history.
 2. Several source files contain mojibake in Chinese comments, prompts, and log strings. The architecture is still understandable, but camera-ready code and paper artifacts should normalize UTF-8 text before release.
+3. Price constraint enforcement relies on a `⛔ 价格红线` context injection on decision pages (search_result, product_detail, spec_selection). This is a prompt-level guard, not a hard programmatic check — VLM compliance depends on model capability.
 3. Some tests still target old APIs. For example, `tests/test_agent_graph_runtime.py` calls removed `PhoneAgent._spec_guard_check`, while the current implementation routes through `agent._spec_guard.check(...)`.
 4. Page classification remains an upstream dependency. RuntimeDAG skipping improves latency, but any paper evaluation should report classifier usage, skip count, and failure recovery metrics.
 5. Graph shortcuts are strongest for stable navigation affordances. Product, store, SKU, and checkout choices should be measured separately because they require VLM semantics.

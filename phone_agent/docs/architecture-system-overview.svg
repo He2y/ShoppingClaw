@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1400" height="900" viewBox="0 0 1400 900" role="img" aria-labelledby="title desc">
-  <title id="title">ClawGUI-Agent architecture overview</title>
+  <title id="title">Shopping-Agent architecture overview</title>
   <desc id="desc">Layered architecture showing VLM planner, runtime graph controller, memory system, graph store, and device backends.</desc>
   <defs>
     <marker id="arrow" markerWidth="11" markerHeight="11" refX="9" refY="5.5" orient="auto">
@@ -29,7 +29,7 @@
     </style>
   </defs>
   <rect class="bg" x="0" y="0" width="1400" height="900"/>
-  <text class="title" x="60" y="54">ClawGUI-Agent: VLM-Primary Agent with Active Mobile Spatial Graph</text>
+  <text class="title" x="60" y="54">Shopping-Agent: VLM-Primary Agent with Active Mobile Spatial Graph</text>
   <text class="subtitle" x="60" y="82">The VLM makes semantic decisions; AMSG provides reusable navigation, localization, verification, and memory-backed context.</text>
 
   <rect class="layer" x="45" y="120" width="1310" height="125"/>
