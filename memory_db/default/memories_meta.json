@@ -824,8 +824,8 @@
     "content": "用户常用应用: 淘宝",
     "memory_type": "app_usage",
     "created_at": "2026-05-14T23:45:19.221678",
-    "last_accessed": "2026-06-04T16:36:46.770465",
-    "access_count": 345,
+    "last_accessed": "2026-06-05T10:28:35.178748",
+    "access_count": 349,
     "importance": 1.0,
     "metadata": {
       "app_name": "淘宝",
@@ -853,8 +853,8 @@
     "content": "任务: 去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max，银色，512G | 结果: 模型错误: Error code: 400 - {'error': {'code': '1210', 'message': 'API 调用参数有误，请检查文档。'}} | 失败",
     "memory_type": "task_history",
     "created_at": "2026-05-15T00:03:50.961886",
-    "last_accessed": "2026-06-04T11:52:51.026125",
-    "access_count": 137,
+    "last_accessed": "2026-06-05T10:30:47.101742",
+    "access_count": 159,
     "importance": 1.0,
     "metadata": {
       "task": "去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max，银色，512G",
@@ -898,279 +898,313 @@
     "content": "任务: 去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max，银色，512G | 结果: 任务已完成！我已经成功为您在淘宝苹果官方旗舰店选择了iPhone 17 Pro Max，银色，512GB，并进入了订单确认页面。\n\n订单详情：\n- 商品：Apple/苹果 iPhone 17 Pro Max\n- 颜色：银色\n- 存储容量：512GB\n- 套餐类型：官方标配（需现场激活）\n- 价格：¥11894.8\n- 配送：顺丰包邮，预计明天18点前送达\n- 退货权益：88VIP专享，官方退货可用\n\n订单已准备就绪，您可以点击页面底部的\"立即支付¥11894.8\"按钮来完成支付。 | 成功",
     "memory_type": "task_history",
     "created_at": "2026-05-15T00:08:03.291225",
-    "last_accessed": "2026-06-04T16:28:17.345627",
-    "access_count": 226,
+    "last_accessed": "2026-06-05T10:30:58.247953",
+    "access_count": 249,
     "importance": 1.0,
     "metadata": {
-      "task": "去淘宝买一个iPhone 17 pro max，银色 512G，加入购物车",
-      "result": "任务已成功完成！我已经在淘宝上搜索了\"iPhone 17 Pro Max\"，选择了银色和512G容量，并将商品成功加入购物车。页面右上角显示\"加购成功\"的提示，确认商品已添加到购物车中。",
+      "task": "去淘宝帮我买个iPhone 17 pro max ,银色 522G，优先苹果官方旗舰店购买",
+      "result": "完美！我已经成功完成了所有规格的选择：\n\n**订单信息确认：**\n- **商品**：Apple/苹果 iPhone 17 Pro Max\n- **颜色**：银色 ✓\n- **存储容量**：512GB ✓\n- **价格**：¥10999（原价¥11999，优惠后）\n- **配送地址**：铜川路2655弄鼎秀园23号903\n- **支付方式**：立即支付\n\n所有规格都符合您的要求（银色、512GB）。订单已准备完成，页面显示共减¥1000优惠。\n\n接下来请您点击底部的\"立即支付¥10999\"按钮来完成支付操作。",
       "success": true,
-      "duration": 150.068896,
-      "steps": 10,
+      "duration": 200.439599,
+      "steps": 14,
       "apps_used": [
-        "淘宝"
+        "淘宝",
+        "system home"
       ],
       "contacts_mentioned": [],
       "session_state": {
-        "task": "去淘宝买一个iPhone 17 pro max，银色 512G，加入购物车",
+        "task": "去淘宝帮我买个iPhone 17 pro max ,银色 522G，优先苹果官方旗舰店购买",
         "platform": "淘宝",
         "current_product": {
-          "name": "页面右上角显示\"加购成功\"的提示，说明商品已经成功加入购物车了",
-          "price": null,
+          "name": "订单确认页面",
+          "price": 10999.0,
           "currency": "¥",
           "specs": {},
-          "source_page": "search",
-          "status": "added_to_cart",
-          "first_seen_step": 10
+          "source_page": "product_detail",
+          "status": "viewed",
+          "first_seen_step": 14
         },
         "products": [
           {
-            "name": "淘宝的首页",
-            "price": null,
-            "currency": "¥",
-            "specs": {},
-            "source_page": "home",
-            "status": "added_to_cart",
-            "first_seen_step": 1
-          },
-          {
-            "name": "ADB Keyboard {ON}\"在底部显示，说明键盘已经激活",
+            "name": "苹果官方旗舰店\"，搜索并购买iPhone 16 Pro Max银色512GB版本",
             "price": null,
             "currency": "¥",
             "specs": {},
             "source_page": "search",
+            "status": "viewed",
+            "first_seen_step": 1
+          },
+          {
+            "name": "右上角有\"跳过 2\"的按钮。我需要跳过这个页面，然后进入淘宝主页面",
+            "price": null,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "home",
             "status": "viewed",
             "first_seen_step": 2
           },
           {
-            "name": "iPhone 17 Pro Max\"的搜索结果页面",
-            "price": null,
-            "currency": "¥",
-            "specs": {},
-            "source_page": "search",
-            "status": "viewed",
-            "first_seen_step": 3
-          },
-          {
-            "name": "银色\"选项",
-            "price": null,
-            "currency": "¥",
-            "specs": {},
-            "source_page": "spec_selection",
-            "status": "viewed",
-            "first_seen_step": 4
-          },
-          {
-            "name": "银色\"按钮现在有一个下拉箭头，表示已被选中",
-            "price": null,
-            "currency": "¥",
-            "specs": {},
-            "source_page": "",
-            "status": "viewed",
-            "first_seen_step": 5
-          },
-          {
-            "name": "512GB\"选项",
-            "price": null,
-            "currency": "¥",
-            "specs": {},
-            "source_page": "",
-            "status": "viewed",
-            "first_seen_step": 6
-          },
-          {
-            "name": "多个iPhone 17 Pro Max的商品，包括不同颜色和容量的选项",
-            "price": 10956.34,
-            "currency": "¥",
-            "specs": {},
-            "source_page": "product_detail",
-            "status": "added_to_cart",
-            "first_seen_step": 7
-          },
-          {
-            "name": "。我可以看到这是\"iPhone 17 Pro Max\"的商品页面，价格是",
-            "price": 10956.34,
-            "currency": "¥",
-            "specs": {},
-            "source_page": "product_detail",
-            "status": "added_to_cart",
-            "first_seen_step": 8
-          },
-          {
-            "name": "加入购物车\"按钮来完成加入购物车的操作",
-            "price": null,
-            "currency": "¥",
-            "specs": {},
-            "source_page": "product_detail",
-            "status": "added_to_cart",
-            "first_seen_step": 9
-          },
-          {
-            "name": "页面右上角显示\"加购成功\"的提示，说明商品已经成功加入购物车了",
-            "price": null,
-            "currency": "¥",
-            "specs": {},
-            "source_page": "search",
-            "status": "added_to_cart",
-            "first_seen_step": 10
-          }
-        ],
-        "cart_items": [
-          {
-            "name": "淘宝的首页",
+            "name": "淘宝主页面。我可以看到顶部有一个搜索框，显示着\"亚麻混纺短袖\"的搜索内容",
             "price": null,
             "currency": "¥",
             "specs": {},
             "source_page": "home",
-            "status": "added_to_cart",
-            "first_seen_step": 1
+            "status": "viewed",
+            "first_seen_step": 3
           },
           {
-            "name": "多个iPhone 17 Pro Max的商品，包括不同颜色和容量的选项",
-            "price": 10956.34,
-            "currency": "¥",
-            "specs": {},
-            "source_page": "product_detail",
-            "status": "added_to_cart",
-            "first_seen_step": 7
-          },
-          {
-            "name": "。我可以看到这是\"iPhone 17 Pro Max\"的商品页面，价格是",
-            "price": 10956.34,
-            "currency": "¥",
-            "specs": {},
-            "source_page": "product_detail",
-            "status": "added_to_cart",
-            "first_seen_step": 8
-          },
-          {
-            "name": "加入购物车\"按钮来完成加入购物车的操作",
-            "price": null,
-            "currency": "¥",
-            "specs": {},
-            "source_page": "product_detail",
-            "status": "added_to_cart",
-            "first_seen_step": 9
-          },
-          {
-            "name": "页面右上角显示\"加购成功\"的提示，说明商品已经成功加入购物车了",
+            "name": "搜索页面。我可以看到搜索框显示着\"亚麻混纺短袖",
             "price": null,
             "currency": "¥",
             "specs": {},
             "source_page": "search",
-            "status": "added_to_cart",
+            "status": "viewed",
+            "first_seen_step": 4
+          },
+          {
+            "name": "右上角的\"搜索\"按钮来执行搜索",
+            "price": null,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "search",
+            "status": "viewed",
+            "first_seen_step": 5
+          },
+          {
+            "name": "顶部有\"店铺\"选项，我应该点击它来筛选店铺",
+            "price": 8999.0,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "search",
+            "status": "viewed",
+            "first_seen_step": 6
+          },
+          {
+            "name": "进店\"按钮进入这个店铺",
+            "price": null,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "search",
+            "status": "viewed",
+            "first_seen_step": 7
+          },
+          {
+            "name": "Apple Store 官方旗舰店",
+            "price": 6374.15,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "search",
+            "status": "viewed",
+            "first_seen_step": 8
+          },
+          {
+            "name": "搜索页面",
+            "price": null,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "search",
+            "status": "viewed",
+            "first_seen_step": 9
+          },
+          {
+            "name": "它查看详情",
+            "price": 8999.0,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "search",
+            "status": "viewed",
             "first_seen_step": 10
+          },
+          {
+            "name": "商品详情页",
+            "price": 8999.0,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "product_detail",
+            "status": "added_to_cart",
+            "first_seen_step": 11
+          },
+          {
+            "name": "领券购买\"按钮来继续购买流程",
+            "price": 10999.0,
+            "currency": "¥",
+            "specs": {
+              "存储容量": "512GB",
+              "容量": "512GB",
+              "颜色": "银色"
+            },
+            "source_page": "product_detail",
+            "status": "viewed",
+            "first_seen_step": 13
+          },
+          {
+            "name": "订单确认页面",
+            "price": 10999.0,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "product_detail",
+            "status": "viewed",
+            "first_seen_step": 14
+          }
+        ],
+        "cart_items": [
+          {
+            "name": "商品详情页",
+            "price": 8999.0,
+            "currency": "¥",
+            "specs": {},
+            "source_page": "product_detail",
+            "status": "added_to_cart",
+            "first_seen_step": 11
           }
         ],
         "steps": [
           {
             "step": 1,
-            "action_type": "Tap",
-            "action_target": "[429, 114]",
-            "thinking_short": "用户想要在淘宝购买一个iPhone 17 Pro Max，银色，512G，并加入购物车。",
-            "page_type": "home",
-            "app": "淘宝",
-            "timestamp": "2026-05-27T20:25:40.798421"
+            "action_type": "Launch",
+            "action_target": "",
+            "thinking_short": "用户想要在淘宝APP中，进入\"苹果官方旗舰店\"，搜索并购买iPhone 16 Pro Max银色512GB版本。",
+            "page_type": "search",
+            "app": "System Home",
+            "timestamp": "2026-06-05T10:28:35.194340"
           },
           {
             "step": 2,
             "action_type": "Tap",
-            "action_target": "[194, 174]",
-            "thinking_short": "好的，搜索框已经被激活了，我可以看到\"ADB Keyboard {ON}\"在底部显示，说明键盘已经激活。",
-            "page_type": "search",
+            "action_target": "[838, 75]",
+            "thinking_short": "淘宝APP已经启动，现在显示的是一个618促销活动的启动页面。",
+            "page_type": "home",
             "app": "淘宝",
-            "timestamp": "2026-05-27T20:26:04.219034"
+            "timestamp": "2026-06-05T10:28:44.048060"
           },
           {
             "step": 3,
             "action_type": "Tap",
-            "action_target": "[419, 656]",
-            "thinking_short": "好的，搜索结果已经显示出来了。",
-            "page_type": "search",
+            "action_target": "[429, 114]",
+            "thinking_short": "好的，现在进入了淘宝主页面。",
+            "page_type": "home",
             "app": "淘宝",
-            "timestamp": "2026-05-27T20:26:15.184882"
+            "timestamp": "2026-06-05T10:28:52.312018"
           },
           {
             "step": 4,
-            "action_type": "Tap",
-            "action_target": "[69, 172]",
-            "thinking_short": "好的，颜色筛选菜单已经打开了。",
-            "page_type": "spec_selection",
+            "action_type": "Type",
+            "action_target": "苹果官方旗舰店",
+            "thinking_short": "好的，现在进入了搜索页面。",
+            "page_type": "search",
             "app": "淘宝",
-            "timestamp": "2026-05-27T20:26:25.812046"
+            "timestamp": "2026-06-05T10:29:04.099695"
           },
           {
             "step": 5,
             "action_type": "Tap",
-            "action_target": "[135, 124]",
-            "thinking_short": "好的，银色已经被选中了，我可以看到\"银色\"按钮现在有一个下拉箭头，表示已被选中。",
-            "page_type": "",
+            "action_target": "[893, 71]",
+            "thinking_short": "好的，我已经输入了\"苹果官方旗舰店\"，现在搜索框显示着这个文本，并且下方出现了一些搜索建议，包括：\n",
+            "page_type": "search",
             "app": "淘宝",
-            "timestamp": "2026-05-27T20:26:37.077692"
+            "timestamp": "2026-06-05T10:29:10.570411"
           },
           {
             "step": 6,
             "action_type": "Tap",
-            "action_target": "[85, 215]",
-            "thinking_short": "好的，容量筛选菜单已经打开了。",
-            "page_type": "",
+            "action_target": "[631, 129]",
+            "thinking_short": "好的，搜索结果页面已经显示出来了。",
+            "page_type": "search",
             "app": "淘宝",
-            "timestamp": "2026-05-27T20:26:55.363246"
+            "timestamp": "2026-06-05T10:29:29.535452"
           },
           {
             "step": 7,
             "action_type": "Tap",
-            "action_target": "[253, 313]",
-            "thinking_short": "好的，现在我已经选择了银色和512GB，页面显示的是符合这两个条件的商品列表。",
-            "page_type": "product_detail",
+            "action_target": "[911, 231]",
+            "thinking_short": "好的，现在显示的是店铺搜索结果页面。",
+            "page_type": "search",
             "app": "淘宝",
-            "timestamp": "2026-05-27T20:27:06.606433"
+            "timestamp": "2026-06-05T10:29:37.334280"
           },
           {
             "step": 8,
             "action_type": "Tap",
-            "action_target": "[516, 959]",
-            "thinking_short": "好的，商品详情页已经打开了。",
-            "page_type": "product_detail",
+            "action_target": "[844, 70]",
+            "thinking_short": "好的，现在我已经进入了\"Apple Store 官方旗舰店\"。",
+            "page_type": "search",
             "app": "淘宝",
-            "timestamp": "2026-05-27T20:27:18.655713"
+            "timestamp": "2026-06-05T10:29:48.021127"
           },
           {
             "step": 9,
             "action_type": "Tap",
-            "action_target": "[499, 952]",
-            "thinking_short": "好的，规格选择页面已经打开了。",
-            "page_type": "product_detail",
+            "action_target": "[214, 168]",
+            "thinking_short": "好的，现在进入了搜索页面。",
+            "page_type": "search",
             "app": "淘宝",
-            "timestamp": "2026-05-27T20:27:31.009616"
+            "timestamp": "2026-06-05T10:29:56.424381"
           },
           {
             "step": 10,
-            "action_type": "",
-            "action_target": "",
-            "thinking_short": "完美！我可以看到页面右上角显示\"加购成功\"的提示，说明商品已经成功加入购物车了。",
+            "action_type": "Tap",
+            "action_target": "[253, 313]",
+            "thinking_short": "好的，现在显示了\"iPhone 17 Pro Max\"的搜索结果。",
             "page_type": "search",
             "app": "淘宝",
-            "timestamp": "2026-05-27T20:27:42.416467"
+            "timestamp": "2026-06-05T10:30:06.367895"
+          },
+          {
+            "step": 11,
+            "action_type": "Tap",
+            "action_target": "[818, 956]",
+            "thinking_short": "好的，现在进入了商品详情页。",
+            "page_type": "product_detail",
+            "app": "淘宝",
+            "timestamp": "2026-06-05T10:30:21.640442"
+          },
+          {
+            "step": 12,
+            "action_type": "Tap",
+            "action_target": "[464, 856]",
+            "thinking_short": "好的，现在显示了规格选择页面。",
+            "page_type": "product_detail",
+            "app": "淘宝",
+            "timestamp": "2026-06-05T10:30:34.806707"
+          },
+          {
+            "step": 13,
+            "action_type": "Tap",
+            "action_target": "[499, 952]",
+            "thinking_short": "好的，我已经选择了512GB存储容量。",
+            "page_type": "product_detail",
+            "app": "淘宝",
+            "timestamp": "2026-06-05T10:30:45.835782"
+          },
+          {
+            "step": 14,
+            "action_type": "",
+            "action_target": "",
+            "thinking_short": "好的，现在进入了订单确认页面。",
+            "page_type": "product_detail",
+            "app": "淘宝",
+            "timestamp": "2026-06-05T10:30:57.662064"
           }
         ],
         "constraints": {},
         "progress": {
-          "completed": [],
+          "completed": [
+            "启动应用"
+          ],
           "remaining": [],
           "current": ""
         },
         "state": {
-          "current_state_id": "state_淘宝_unknown_color_银色_product_iPhone_17_pro_max_qu_4ce11ef5",
-          "prev_state_id": "state_淘宝_unknown_color_银色_product_iPhone_17_pro_max_qu_eab9ba20",
-          "task_start_state_id": "state_淘宝_unknown_color_银色_product_iPhone_17_pro_max_qu_eab9ba20",
+          "current_state_id": "state_淘宝_product_detail_product_image_price_buy_button_4ad9a21d",
+          "prev_state_id": "state_淘宝_product_detail_product_image_price_buy_button_9468b31e",
+          "task_start_state_id": "state_System_Home_home_search_bar_bottom_tabs_tap_sear_ebe3dce5",
           "task_end_state_id": null,
-          "state_history_size": 20
+          "state_history_size": 16
         },
         "statistics": {
-          "total_products": 10,
-          "cart_items": 5,
-          "total_steps": 10,
+          "total_products": 13,
+          "cart_items": 1,
+          "total_steps": 14,
           "stagnation_count": 1
         }
       }
@@ -1181,8 +1215,8 @@
     "content": "任务执行流程: 去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max 使用了 System Home → 淘宝",
     "memory_type": "task_pattern",
     "created_at": "2026-05-15T00:08:03.904925",
-    "last_accessed": "2026-06-04T16:36:46.770463",
-    "access_count": 238,
+    "last_accessed": "2026-06-05T10:30:58.827569",
+    "access_count": 261,
     "importance": 1.0,
     "metadata": {
       "task_type": "shopping",
@@ -1190,7 +1224,7 @@
         "System Home",
         "淘宝"
       ],
-      "task_summary": "去淘宝苹果官方旗舰店买一个iPhone 17 Pro Max，银色，512G"
+      "task_summary": "去淘宝帮我买个iPhone 17 pro max ,银色 522G，优先苹果官方旗舰店购买"
     }
   },
   "86142b56de16062f": {
@@ -1348,8 +1382,8 @@
     "content": "任务执行流程: 打开淘宝，搜索耳机 使用了 System Home → 淘宝",
     "memory_type": "task_pattern",
     "created_at": "2026-05-27T17:28:45.176424",
-    "last_accessed": "2026-06-04T16:36:46.770464",
-    "access_count": 242,
+    "last_accessed": "2026-06-05T10:30:47.101745",
+    "access_count": 262,
     "importance": 1.0,
     "metadata": {
       "task_type": "shopping",
@@ -1554,8 +1588,8 @@
     "content": "任务: 去淘宝买一个iPhone 17 pro max，银色 512G，加入购物车 | 结果: 已成功在淘宝搜索\"耳机\"！搜索结果已显示，可以看到各种耳机产品，包括弱水时砂耳机（¥338.72）、安克声阔P31i蓝牙耳机（¥198.9）、华为FreeArc蓝牙耳机（¥542.01）等。页面还显示了热门分类（耳机礼盒、耳夹式耳机、头戴耳机、游戏耳机、骨传导耳机等）以及筛选选项（综合、销量、全部、天猫、店铺、闪购等）。 | 成功",
     "memory_type": "task_history",
     "created_at": "2026-05-27T18:49:49.715693",
-    "last_accessed": "2026-06-04T16:36:46.770466",
-    "access_count": 203,
+    "last_accessed": "2026-06-05T10:30:47.101740",
+    "access_count": 225,
     "importance": 1.0,
     "metadata": {
       "task": "去淘宝买一个iPhone 17 pro max，银色 512G，加入购物车",
@@ -1647,8 +1681,8 @@
     "content": "任务: 去淘宝买一个iPhone 17 pro max，银色 512G，加入购物车 | 结果: 我注意到您提到\"你正在商品详情/规格选择页面\"，但当前显示的是淘宝购物车页面，里面有耳机、眼镜等商品，没有看到iPhone 17 Pro Max。\n\n为了帮您完成购买，我需要：\n1. 导航到苹果官方旗舰店\n2. 找到iPhone 17 Pro Max\n3. 选择银色和512G版本\n4. 加入购物车或完成购买\n\n但是，您还没有提供完整的规格信息（比如是512G还是5G版本，是要购买还是加入购物车）。请告诉我：\n- 是512G还是5G版本？\n- 是要购买还是加入购物车？\n- 其他任何需要的规格参数\n\n只有提供完整的规格信息，我才能继续帮您操作。 | 成功",
     "memory_type": "task_history",
     "created_at": "2026-05-27T19:09:55.113533",
-    "last_accessed": "2026-06-04T16:10:30.559797",
-    "access_count": 143,
+    "last_accessed": "2026-06-05T10:30:47.101743",
+    "access_count": 165,
     "importance": 1.0,
     "metadata": {
       "task": "去淘宝买一个iPhone 17 pro max，银色 512G，加入购物车",
@@ -2402,8 +2436,8 @@
     "content": "任务执行流程: 我想买一个500元-1000元的运动手表，帮我挑选一个加入购 使用了 System Home → 淘宝",
     "memory_type": "task_pattern",
     "created_at": "2026-06-04T16:00:36.495653",
-    "last_accessed": "2026-06-04T16:36:46.770454",
-    "access_count": 52,
+    "last_accessed": "2026-06-05T10:30:47.101744",
+    "access_count": 74,
     "importance": 1.0,
     "metadata": {
       "task_type": "shopping",
@@ -2880,6 +2914,19 @@
       "category": "time",
       "source": "auto_thinking",
       "context": "好的，现在屏幕显示为黑色，这通常意味着页面正在加载中。让我等待一下，让页面完全加载出来。"
+    }
+  },
+  "6183c7b1138e0f08": {
+    "id": "6183c7b1138e0f08",
+    "content": "用户偏好 (shopping): 倾向于选择 iPhone 17 pro max ,银色 522G，优先苹果官方旗舰店",
+    "memory_type": "user_preference",
+    "created_at": "2026-06-05T10:25:09.734022",
+    "last_accessed": "2026-06-05T10:30:47.101731",
+    "access_count": 24,
+    "importance": 1.0,
+    "metadata": {
+      "category": "shopping",
+      "raw_preference": "倾向于选择 iPhone 17 pro max ,银色 522G，优先苹果官方旗舰店"
     }
   }
 }
