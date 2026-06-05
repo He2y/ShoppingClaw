@@ -13,7 +13,7 @@ ClawGUI-Agent is a VLM-primary mobile GUI agent with a self-evolving Active Mobi
 
 This creates an asymmetric agent: the graph accelerates and constrains the loop, while the VLM remains the semantic authority whenever a decision depends on current screen content or user intent.
 
-![System architecture generated with image-2](figures/system-architecture-image2.png)
+![System architecture figure](figures/system-architecture-nature-image2.png)
 
 ## 1. Design Philosophy
 
@@ -45,7 +45,7 @@ The runtime database defaults to `shopping-spatial-v4` through `AMSG_RUNTIME_GRA
 
 ## 3. Agent Execution Model
 
-![Agent execution flow generated with image-2](figures/agent-execution-flow-image2.png)
+![Agent execution flow figure](figures/agent-execution-flow-nature-image2.png)
 
 The main control loop is implemented by `PhoneAgent._execute_step()`. Each step follows the same closed loop:
 
@@ -241,7 +241,7 @@ This file is both a debug artifact and a graph-evolution input.
 
 ## 7. AMSG Graph Design
 
-![AMSG graph schema generated with image-2](figures/amsg-graph-schema-image2.png)
+![AMSG graph schema figure](figures/amsg-graph-schema-nature-image2.png)
 
 AMSG is a typed directed graph:
 
@@ -468,7 +468,7 @@ This is the core "graph as advisor, not controller" decision.
 
 ## 10. Automatic Graph Persistence
 
-![AMSG automatic persistence pipeline generated with image-2](figures/graph-persistence-pipeline-image2.png)
+![AMSG automatic persistence pipeline figure](figures/graph-persistence-pipeline-nature-image2.png)
 
 The graph persistence pipeline is staging-first. The graph does not immediately persist every observed action as an executable edge.
 
@@ -676,12 +676,10 @@ A compact method description:
 
 Recommended paper figures:
 
-1. System architecture: `figures/system-architecture-image2.png`
-2. Agent execution flow: `figures/agent-execution-flow-image2.png`
-3. AMSG graph schema: `figures/amsg-graph-schema-image2.png`
-4. Automatic graph persistence pipeline: `figures/graph-persistence-pipeline-image2.png`
-
-Editable companion diagrams are kept as `figures/amsg-graph-schema.svg` and `figures/graph-persistence-pipeline.svg` for precise paper layout work.
+1. System architecture: `figures/system-architecture-nature-image2.png`
+2. Agent execution flow: `figures/agent-execution-flow-nature-image2.png`
+3. AMSG graph schema: `figures/amsg-graph-schema-nature-image2.png`
+4. Automatic graph persistence pipeline: `figures/graph-persistence-pipeline-nature-image2.png`
 
 ## 17. Current Implementation Boundaries
 
