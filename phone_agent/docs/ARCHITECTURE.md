@@ -253,20 +253,13 @@ AMSG is the core research contribution. It is a typed directed graph that repres
 
 ### 5.1  Formal Definition
 
-```
-G = (V, A, E_c, E_h, T, Sigma, B, Pi, L, O)
+The core persisted motif is a three-node, two-relationship pattern in Neo4j:
 
-V      UIState nodes, implemented by PageState
-A      Action nodes, storing semantic intent and grounding evidence
-E_c    committed/promoted UIState-Action-UIState transitions
-E_h    hypothesis/candidate transitions staged before promotion
-T      TaskTarget nodes for trajectory-level retrieval
-Sigma  domain schema over page types and plausible transitions
-B      belief distribution over UIState (Bayesian posterior)
-Pi     planner over weighted transition edges (Dijkstra or A*)
-L      lifecycle records for edge promotion and demotion
-O      outcome distributions for postcondition statistics
 ```
+(UIState) -[NEXT_ACTION]-> (Action) -[PRODUCES]-> (UIState)
+```
+
+UIState nodes store page-state abstractions (app, page_type, landmarks, affordances, risk). Action nodes store semantic actions (intent, semantic_target, postcondition, lifecycle_stage). Relationships track `frequency` (success count), `fail_count`, and `confidence` (= frequency / total), which form the data basis for the edge lifecycle system.
 
 ### 5.2  UIState / PageState
 
@@ -393,7 +386,7 @@ stateDiagram-v2
 
 $$H = -\sum_i p_i \ln(p_i)$$
 
-When `H > outcome_entropy_vlm_threshold` (default: 0.8), the transition is flagged for VLM verification instead of direct execution. This replaces a hardcoded list of "risky transitions" with a data-driven decision boundary.
+When `H > outcome_entropy_vlm_threshold` (default: 0.8), the transition is flagged for VLM verification instead of direct execution. In practice, a hardcoded set of semantic transitions (`search_result → product_detail`, `product_detail → spec_selection`) is the primary VLM-verification trigger; the entropy threshold serves as a supplementary data-driven mechanism.
 
 ### 6.2  Three Persistence Paths
 
@@ -487,7 +480,15 @@ Risk penalties: normal=0, medium=0.8, high=2.0. This cost function prefers edges
 
 On typical shopping app graphs (< 50 nodes), Dijkstra finds optimal paths efficiently. An enhanced planner (`EnhancedPlanner` with A* and Belief-A* backends) is implemented but not enabled by default — its additional cost adjustments (temporal decay, exploration bonus, information gain, entropy penalty) contribute < 0.1 on current graph sizes and do not change path selection in practice.
 
-### 7.4  Action Compilation
+### 7.4  RuntimeDAG: Cached Route Execution
+
+When Dijkstra finds a route, it is materialized into a `RuntimeDAG` — an in-memory array of edges with a cursor. Subsequent steps advance the cursor (`current_index += 1`) instead of re-querying Neo4j and re-running Dijkstra. This is the actual performance mechanism: on a 5-step navigation sequence, only the first step runs the full localization-planning pipeline; the remaining 4 steps read `route[current_index]` in < 1ms.
+
+RuntimeDAG is invalidated when: postcondition mismatch (arrived at unexpected page), app switch, consecutive graph failures exceed threshold, or next edge is high-risk. After invalidation, the next `locate_and_get_context()` call runs the full pipeline and creates a new DAG if planning succeeds.
+
+RuntimeDAG also controls PageClassifier skipping: when the DAG is valid and the next edge is not high-risk, `should_use_page_classifier()` returns `False`, and the agent uses the DAG's expected page_type instead of calling the classifier. This saves one VLM call per step but risks acting on a stale page_type if a popup appeared. The delayed postcondition verification at the next step catches such mismatches.
+
+### 7.5  Action Compilation
 
 Graph-native actions are compiled through a two-stage IR pipeline:
 
@@ -556,7 +557,7 @@ Shopping-Agent addresses three specific gaps in the current GUI agent landscape:
 | **Graph structure** | None (multi-agent framework) | Page graph from episodes | UTG → vector DB | Interaction graph (BFS) | Multi-level experience tree | AMSG (typed directed graph with lifecycle) |
 | **Graph evolution** | N/A | Static after construction | Static after extraction | Static after offline BFS | Record-replay (static) | Self-evolving: online staging → postcondition verification → lifecycle promotion → demotion |
 | **Persistence** | None | In-memory per session | Vector DB (static) | Vector DB (static) | Latent memory model | Neo4j with lifecycle metadata and outcome distributions |
-| **VLM/Graph boundary** | VLM-only (no graph) | RAG retrieval → VLM | RAG retrieval → VLM | Deterministic teleport (no VLM for navigation) | Experience → skip VLM (binary) | Three-speed dispatch based on grounded/ungrounded classification |
+| **VLM/Graph boundary** | VLM-only (no graph) | RAG retrieval → VLM | RAG retrieval → VLM | Deterministic teleport (no VLM for navigation) | Experience → skip VLM (binary) | Per-edge grounded/ungrounded classification with postcondition fallback |
 | **Localization** | VLM perception | BFS similarity search | Embedding retrieval | Multimodal retrieval (ColQwen) | Page matching | (app, page_type) matching + optional Bayesian extension |
 | **Planning** | Multi-agent decomposition | BFS on page graph | BFS on UTG | Shortest path on interaction graph | Prefix reusability | Dijkstra on weighted graph (success rate + risk penalty) |
 | **Safety** | None reported | None reported | None reported | None reported | None reported | SpecGuard: task-slot-aware purchase interception |
@@ -633,4 +634,4 @@ The following are implemented but require ablation experiments to validate as co
 
 ## 13  Paper Method Summary
 
-> Shopping-Agent is a VLM-primary mobile GUI agent augmented by a self-evolving Active Mobile Spatial Graph (AMSG). Each execution step observes the current screen, classifies page semantics, localizes a page-state belief using four-channel Bayesian inference, verifies the previous transition's postcondition, and dispatches through a three-speed gate: grounded actions execute via Fast Path (~0.5s), uncertain transitions receive VLM co-piloting, and semantic decisions use the full VLM reasoning path (~5s). The dispatch boundary is data-driven, determined by edge lifecycle stage and outcome entropy rather than hardcoded rules. AMSG stores page abstractions, semantic action nodes, verified transition edges with lifecycle metadata, empirical outcome distributions, and trajectory-level TaskTarget anchors in Neo4j. Online observations and offline exploration artifacts are staged, canonicalized, filtered, and persisted only after postcondition verification or VLM trajectory review — no raw actions write directly to the graph. User constraints are extracted as first-class task slots and enforced by SpecGuard at the point of purchase commitment, while session memory is injected through a lightweight, on-demand mechanism that keeps the VLM context lean.
+> Shopping-Agent is a VLM-primary mobile GUI agent augmented by a self-evolving Active Mobile Spatial Graph (AMSG). The system abstracts screenshots into semantic page states and persists verified navigation transitions in Neo4j. Each step locates the current page via `(app, page_type)` matching, plans a route with Dijkstra on the weighted graph, and caches the route as a RuntimeDAG for subsequent steps to advance directly. Grounded, promoted transitions execute via Fast Path (~0.5s, no VLM call); ungrounded transitions require VLM to choose the specific target (~5s), with postcondition protection — mismatch triggers automatic fallback. Delayed postcondition verification at step t+1 confirms step t's outcome, ensuring edge success-rate tracking is based on ground-truth observations. Online observations are staged in memory; only successful tasks trigger Neo4j writes, and new transitions require VLM trajectory review — no raw actions write directly to the graph. User constraints are extracted as first-class task slots and enforced by SpecGuard at the point of purchase commitment.
