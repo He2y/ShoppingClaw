@@ -60,7 +60,7 @@ block-beta
     style execution fill:#FFF3E0,stroke:#FFB74D
 ```
 
-> 推荐图例：`figures/system-architecture.png`
+> 推荐图例：`figures/system-architecture-nature-image2.png`
 
 ### 2.1  跨层集成
 
@@ -100,7 +100,7 @@ flowchart LR
     style E fill:#E8873D,color:#fff,stroke:none
 ```
 
-> 推荐图例：`figures/agent-execution-flow.png`
+> 推荐图例：`figures/agent-execution-flow-nature-image2.png`
 
 ### 3.2  任务初始化与预规划
 
@@ -271,7 +271,7 @@ hypothesis（假设）→ candidate（候选）→ promoted（已提升）→ de
 
 关键洞察是**没有原始动作直接写入 Neo4j**。每条持久化路径都通过至少一道质量门（任务成功、VLM 验证或规范化过滤）。这使 AMSG 成为"经过验证的动作库"而非嘈杂的轨迹堆积。
 
-> 推荐图例：`figures/graph-persistence-pipeline.png`
+> 推荐图例：`figures/graph-persistence-pipeline-nature-image2.png`
 
 ---
 
@@ -392,10 +392,10 @@ Shopping-Agent 解决了当前 GUI 智能体领域的三个具体缺口：
 
 ## 10  推荐论文图例
 
-1. **系统架构**：`figures/system-architecture.png` — 六层架构与跨层数据流
-2. **Agent 执行流程**：`figures/agent-execution-flow.png` — 五阶段闭环执行与双速调度
+1. **系统架构**：`figures/system-architecture-nature-image2.png` — 六层架构与跨层数据流
+2. **Agent 执行流程**：`figures/agent-execution-flow-nature-image2.png` — 五阶段闭环执行与双速调度
 3. **AMSG 图谱模式**：`figures/amsg-graph-schema-nature-image2.png` — UIState-Action-UIState 模体、生命周期证据、结果分布
-4. **图谱持久化管线**：`figures/graph-persistence-pipeline.png` — 三条持久化路径收敛到质量门控的 Neo4j 写入
+4. **图谱持久化管线**：`figures/graph-persistence-pipeline-nature-image2.png` — 三条持久化路径收敛到质量门控的 Neo4j 写入
 
 ---
 

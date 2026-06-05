@@ -40,7 +40,7 @@ The system is organized into six functional layers. Each layer addresses a disti
 
 **Figure 1** illustrates the inter-layer data flow. The key observation is that information flows in a closed loop: the Feedback Loop (postcondition verification, graph update, lifecycle promotion) feeds back into the Tactical Layer for the next step. This is what transforms AMSG from a static knowledge base into a self-evolving action library.
 
-> ![System Architecture](figures/system-architecture.png)
+> Recommended figure: `figures/system-architecture-nature-image2.png`
 
 ```mermaid
 block-beta
@@ -102,7 +102,7 @@ flowchart LR
     style E fill:#E8873D,color:#fff,stroke:none
 ```
 
-> ![Agent Execution Flow](figures/agent-execution-flow.png)
+> Recommended figure: `figures/agent-execution-flow-nature-image2.png`
 
 ### 3.2  Task Initialization and Pre-Planning
 
@@ -312,7 +312,7 @@ graph LR
     style T fill:#E8E0F0,stroke:#7B61A0,stroke-width:2px,color:#4a2d7a
 ```
 
-> ![AMSG Graph Schema](figures/amsg-graph-schema.png)
+> Recommended figure: `figures/amsg-graph-schema-nature-image2.png`
 
 ### 5.4  Grounded vs. Ungrounded Transitions
 
@@ -436,7 +436,7 @@ flowchart TD
     style DB fill:#2E7D32,color:#fff,stroke:none
 ```
 
-> ![Graph Persistence Pipeline](figures/graph-persistence-pipeline.png)
+> Recommended figure: `figures/graph-persistence-pipeline-nature-image2.png`
 
 **Path 1 (Online Runtime)**: During task execution, each action produces a postcondition observation. `SpatialGraphMemory.record_observation()` stages the transition locally. At task end, `flush_staged_graph()` canonicalizes states and edges, promotes valid transitions, and writes to Neo4j. Failed tasks do not flush — this is the first quality gate.
 
@@ -659,10 +659,10 @@ Based on the implementation and comparative analysis, Shopping-Agent supports th
 
 ## 12  Recommended Paper Figures
 
-1. **System architecture**: `figures/system-architecture.png` — Six-layer architecture with inter-layer data flows.
-2. **Agent execution flow**: `figures/agent-execution-flow.png` — Five-phase closed-loop execution with dual-speed dispatch.
-3. **AMSG graph schema**: `figures/amsg-graph-schema.png` — UIState-Action-UIState motif, lifecycle evidence, outcome distributions.
-4. **Graph persistence pipeline**: `figures/graph-persistence-pipeline.png` — Three persistence paths converging on quality-gated Neo4j writes.
+1. **System architecture**: `figures/system-architecture-nature-image2.png` — Six-layer architecture with inter-layer data flows.
+2. **Agent execution flow**: `figures/agent-execution-flow-nature-image2.png` — Five-phase closed-loop execution with dual-speed dispatch.
+3. **AMSG graph schema**: `figures/amsg-graph-schema-nature-image2.png` — UIState-Action-UIState motif, lifecycle evidence, outcome distributions.
+4. **Graph persistence pipeline**: `figures/graph-persistence-pipeline-nature-image2.png` — Three persistence paths converging on quality-gated Neo4j writes.
 
 ---
 
