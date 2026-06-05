@@ -1,176 +1,638 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 860">
-  <style>
-    text { font-family: 'Helvetica Neue', Helvetica, Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; }
-    .title { font-size: 18px; font-weight: 600; fill: #111827; }
-    .label { font-size: 13px; font-weight: 500; fill: #111827; }
-    .sublabel { font-size: 11px; fill: #6b7280; }
-    .layer-label { font-size: 12px; font-weight: 600; fill: #6b7280; letter-spacing: 1px; }
-    .arrow-label { font-size: 10.5px; fill: #374151; }
-  </style>
-  <defs>
-    <marker id="ab" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#2563eb"/></marker>
-    <marker id="ag" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#059669"/></marker>
-    <marker id="ao" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#ea580c"/></marker>
-    <marker id="ap" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto"><polygon points="0 0,10 3.5,0 7" fill="#7c3aed"/></marker>
-    <filter id="sh"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.08"/></filter>
-  </defs>
-  <rect width="1100" height="860" fill="#ffffff"/>
-  <text x="550" y="32" text-anchor="middle" class="title">Shopping-Agent Architecture: VLM-Primary + Action Library</text>
-
-  <!-- ===== User Task ===== -->
-  <rect x="440" y="50" width="220" height="40" rx="20" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="550" y="75" text-anchor="middle" class="label">User Task</text>
-  <line x1="550" y1="90" x2="550" y2="118" stroke="#2563eb" stroke-width="2" marker-end="url(#ab)"/>
-
-  <!-- ===== STRATEGIC LAYER ===== -->
-  <rect x="30" y="116" width="1040" height="260" rx="10" fill="#faf5ff" stroke="#c4b5fd" stroke-width="1" stroke-dasharray="6,3"/>
-  <text x="50" y="136" class="layer-label">STRATEGIC LAYER (VLM)</text>
-
-  <!-- Clarify Agent -->
-  <rect x="60" y="150" width="150" height="46" rx="8" fill="#ede9fe" stroke="#a78bfa" stroke-width="1.5"/>
-  <text x="135" y="170" text-anchor="middle" class="label">Clarify Agent</text>
-  <text x="135" y="185" text-anchor="middle" class="sublabel">Ambiguity Detection</text>
-
-  <!-- VLM Pre-Plan -->
-  <rect x="400" y="150" width="180" height="46" rx="8" fill="#ede9fe" stroke="#a78bfa" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="490" y="170" text-anchor="middle" class="label">VLM Pre-Plan</text>
-  <text x="490" y="185" text-anchor="middle" class="sublabel">Strong VLM Task Decomposition</text>
-
-  <!-- TaskPlan -->
-  <rect x="640" y="150" width="160" height="46" rx="8" fill="#ede9fe" stroke="#a78bfa" stroke-width="1.5"/>
-  <text x="720" y="170" text-anchor="middle" class="label">TaskPlan</text>
-  <text x="720" y="185" text-anchor="middle" class="sublabel">Steps + Goal Slots</text>
-
-  <!-- Arrow Pre-Plan → TaskPlan -->
-  <line x1="580" y1="173" x2="638" y2="173" stroke="#7c3aed" stroke-width="1.5" marker-end="url(#ap)"/>
-
-  <!-- Decision Diamond -->
-  <polygon points="550,225 630,260 550,295 470,260" fill="#fff7ed" stroke="#f97316" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="550" y="256" text-anchor="middle" style="font-size:12px;font-weight:500;fill:#111827">_needs_vlm?</text>
-  <text x="550" y="270" text-anchor="middle" class="sublabel">Dual-Speed</text>
-
-  <!-- Fast Path (left) -->
-  <rect x="60" y="240" width="200" height="52" rx="8" fill="#f0fdf4" stroke="#86efac" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="160" y="261" text-anchor="middle" class="label" style="fill:#059669">Fast Path ~0.5s</text>
-  <text x="160" y="277" text-anchor="middle" class="sublabel">Grounded Action Direct Execute</text>
-
-  <!-- Full Path (right) -->
-  <rect x="840" y="240" width="200" height="52" rx="8" fill="#eff6ff" stroke="#93c5fd" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="940" y="261" text-anchor="middle" class="label" style="fill:#2563eb">Full Path ~5s</text>
-  <text x="940" y="277" text-anchor="middle" class="sublabel">VLM Screenshot + Action Grounding</text>
-
-  <!-- Decision → Fast Path -->
-  <line x1="470" y1="260" x2="262" y2="260" stroke="#059669" stroke-width="2" marker-end="url(#ag)"/>
-  <rect x="340" y="247" width="68" height="16" rx="3" fill="#fff"/>
-  <text x="374" y="259" text-anchor="middle" class="arrow-label" style="fill:#059669">Grounded</text>
-
-  <!-- Decision → Full Path -->
-  <line x1="630" y1="260" x2="838" y2="260" stroke="#2563eb" stroke-width="2" marker-end="url(#ab)"/>
-  <rect x="700" y="247" width="68" height="16" rx="3" fill="#fff"/>
-  <text x="734" y="259" text-anchor="middle" class="arrow-label" style="fill:#2563eb">Semantic</text>
-
-  <!-- SpecGuard -->
-  <rect x="870" y="300" width="120" height="30" rx="6" fill="#fef2f2" stroke="#fca5a5" stroke-width="1"/>
-  <text x="930" y="320" text-anchor="middle" class="sublabel" style="fill:#dc2626">SpecGuard Safety</text>
-
-  <!-- TaskPlan → Decision (dashed) -->
-  <path d="M720,196 L720,225 Q720,235 660,235 L632,250" fill="none" stroke="#6b7280" stroke-width="1" stroke-dasharray="4,2"/>
-
-  <!-- ===== TACTICAL LAYER ===== -->
-  <rect x="30" y="390" width="1040" height="155" rx="10" fill="#f0fdf4" stroke="#86efac" stroke-width="1" stroke-dasharray="6,3"/>
-  <text x="50" y="410" class="layer-label">TACTICAL LAYER (Action Library)</text>
-
-  <!-- Action Advisor -->
-  <rect x="60" y="425" width="220" height="50" rx="8" fill="#dcfce7" stroke="#4ade80" stroke-width="1.5" filter="url(#sh)"/>
-  <text x="170" y="447" text-anchor="middle" class="label">Action Advisor</text>
-  <text x="170" y="462" text-anchor="middle" class="sublabel">query() · try_ground() · format_for_vlm()</text>
-
-  <!-- Neo4j -->
-  <path d="M420,425 Q420,420 480,420 Q540,420 540,425 L540,468 Q540,473 480,473 Q420,473 420,468 Z" fill="#dcfce7" stroke="#4ade80" stroke-width="1.5" filter="url(#sh)"/>
-  <ellipse cx="480" cy="425" rx="60" ry="5" fill="#dcfce7" stroke="#4ade80" stroke-width="1.5"/>
-  <text x="480" y="450" text-anchor="middle" class="label">Neo4j</text>
-  <text x="480" y="465" text-anchor="middle" class="sublabel">Action Library (Graph DB)</text>
-
-  <!-- Edge Lifecycle -->
-  <rect x="620" y="425" width="200" height="50" rx="8" fill="#dcfce7" stroke="#4ade80" stroke-width="1.5"/>
-  <text x="720" y="447" text-anchor="middle" class="label">Edge Lifecycle</text>
-  <text x="720" y="462" text-anchor="middle" class="sublabel">hypothesis → promoted → demoted</text>
-
-  <!-- Graph Schema mini -->
-  <rect x="60" y="485" width="80" height="30" rx="15" fill="#fff" stroke="#a78bfa" stroke-width="1.5"/>
-  <text x="100" y="505" text-anchor="middle" class="sublabel" style="fill:#7c3aed">UIState</text>
-  <line x1="140" y1="500" x2="185" y2="500" stroke="#ea580c" stroke-width="1.5" marker-end="url(#ao)"/>
-  <rect x="188" y="485" width="70" height="30" rx="6" fill="#fff" stroke="#f97316" stroke-width="1.5"/>
-  <text x="223" y="505" text-anchor="middle" class="sublabel" style="fill:#ea580c">Action</text>
-  <line x1="258" y1="500" x2="303" y2="500" stroke="#ea580c" stroke-width="1.5" marker-end="url(#ao)"/>
-  <rect x="306" y="485" width="80" height="30" rx="15" fill="#fff" stroke="#a78bfa" stroke-width="1.5"/>
-  <text x="346" y="505" text-anchor="middle" class="sublabel" style="fill:#7c3aed">UIState</text>
-
-  <!-- Advisory Arrow: ActionAdvisor → Fast Path -->
-  <path d="M170,425 L170,360 Q170,345 160,340 L160,294" fill="none" stroke="#059669" stroke-width="1.5" marker-end="url(#ag)"/>
-  <rect x="115" y="340" width="75" height="16" rx="3" fill="#fff"/>
-  <text x="152" y="351" text-anchor="middle" class="arrow-label" style="fill:#059669">ActionHints</text>
-
-  <!-- Advisory Arrow: ActionAdvisor → Full Path (try_ground) -->
-  <path d="M280,445 Q920,445 920,335 L920,294" fill="none" stroke="#059669" stroke-width="1" stroke-dasharray="5,3" marker-end="url(#ag)"/>
-  <rect x="860" y="340" width="65" height="16" rx="3" fill="#fff"/>
-  <text x="892" y="351" text-anchor="middle" class="arrow-label" style="fill:#059669">try_ground</text>
-
-  <!-- ===== EXECUTION LAYER ===== -->
-  <rect x="30" y="560" width="1040" height="95" rx="10" fill="#fff7ed" stroke="#fdba74" stroke-width="1" stroke-dasharray="6,3"/>
-  <text x="50" y="580" class="layer-label">EXECUTION LAYER (Device)</text>
-
-  <rect x="60" y="595" width="150" height="42" rx="8" fill="#fed7aa" stroke="#f97316" stroke-width="1.5"/>
-  <text x="135" y="614" text-anchor="middle" class="label">Screenshot</text>
-  <text x="135" y="628" text-anchor="middle" class="sublabel">ADB / HDC / iOS</text>
-
-  <rect x="250" y="595" width="150" height="42" rx="8" fill="#fed7aa" stroke="#f97316" stroke-width="1.5"/>
-  <text x="325" y="614" text-anchor="middle" class="label">Action Execute</text>
-  <text x="325" y="628" text-anchor="middle" class="sublabel">Tap · Type · Swipe</text>
-
-  <rect x="440" y="595" width="170" height="42" rx="8" fill="#fed7aa" stroke="#f97316" stroke-width="1.5"/>
-  <text x="525" y="614" text-anchor="middle" class="label">PageClassifier</text>
-  <text x="525" y="628" text-anchor="middle" class="sublabel">VLM Page Type Detection</text>
-
-  <rect x="650" y="595" width="170" height="42" rx="8" fill="#fed7aa" stroke="#f97316" stroke-width="1.5"/>
-  <text x="735" y="614" text-anchor="middle" class="label">Verification Detect</text>
-  <text x="735" y="628" text-anchor="middle" class="sublabel">CAPTCHA / Login</text>
-
-  <!-- ===== MEMORY LAYER ===== -->
-  <rect x="30" y="675" width="700" height="100" rx="10" fill="#f0fdfa" stroke="#5eead4" stroke-width="1" stroke-dasharray="6,3"/>
-  <text x="50" y="695" class="layer-label">MEMORY LAYER</text>
-
-  <path d="M60,710 Q60,705 110,705 Q160,705 160,710 L160,748 Q160,753 110,753 Q60,753 60,748 Z" fill="#ccfbf1" stroke="#2dd4bf" stroke-width="1.5"/>
-  <ellipse cx="110" cy="710" rx="50" ry="5" fill="#ccfbf1" stroke="#2dd4bf" stroke-width="1.5"/>
-  <text x="110" y="733" text-anchor="middle" class="label">FAISS</text>
-  <text x="110" y="747" text-anchor="middle" class="sublabel">User Preferences</text>
-
-  <rect x="200" y="708" width="160" height="44" rx="8" fill="#ccfbf1" stroke="#2dd4bf" stroke-width="1.5"/>
-  <text x="280" y="728" text-anchor="middle" class="label">Session State</text>
-  <text x="280" y="742" text-anchor="middle" class="sublabel">Products · Steps · Progress</text>
-
-  <rect x="400" y="708" width="150" height="44" rx="8" fill="#ccfbf1" stroke="#2dd4bf" stroke-width="1.5"/>
-  <text x="475" y="728" text-anchor="middle" class="label">Step Summaries</text>
-  <text x="475" y="742" text-anchor="middle" class="sublabel">Compressed History</text>
-
-  <rect x="590" y="708" width="130" height="44" rx="8" fill="#ccfbf1" stroke="#2dd4bf" stroke-width="1.5"/>
-  <text x="655" y="728" text-anchor="middle" class="label">Retrieval GW</text>
-  <text x="655" y="742" text-anchor="middle" class="sublabel">On-Demand Context</text>
-
-  <!-- Self-evolution arrow: Execute → Neo4j -->
-  <path d="M325,637 L325,665 Q325,675 380,675 L480,675 L480,550 L480,475" fill="none" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#ap)"/>
-  <rect x="402" y="538" width="110" height="16" rx="3" fill="#fff"/>
-  <text x="457" y="549" text-anchor="middle" class="arrow-label" style="fill:#7c3aed">record_observation</text>
-
-  <!-- ===== LEGEND ===== -->
-  <rect x="770" y="680" width="290" height="95" rx="8" fill="#f9fafb" stroke="#d1d5db" stroke-width="1"/>
-  <text x="785" y="700" style="font-size:12px;font-weight:600;fill:#374151">Legend</text>
-  <line x1="785" y1="715" x2="815" y2="715" stroke="#2563eb" stroke-width="2" marker-end="url(#ab)"/>
-  <text x="822" y="719" class="sublabel">VLM Decision / Full Path</text>
-  <line x1="785" y1="733" x2="815" y2="733" stroke="#059669" stroke-width="2" marker-end="url(#ag)"/>
-  <text x="822" y="737" class="sublabel">Graph Advisory / Fast Path</text>
-  <line x1="785" y1="751" x2="815" y2="751" stroke="#ea580c" stroke-width="1.5" marker-end="url(#ao)"/>
-  <text x="822" y="755" class="sublabel">Graph Schema / Execution</text>
-  <line x1="785" y1="769" x2="815" y2="769" stroke="#7c3aed" stroke-width="1.5" stroke-dasharray="5,3" marker-end="url(#ap)"/>
-  <text x="822" y="773" class="sublabel">Self-Evolution / Lifecycle</text>
+<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+  "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<svg xmlns:xlink="http://www.w3.org/1999/xlink" width="488.7pt" height="347.04pt" viewBox="0 0 488.7 347.04" xmlns="http://www.w3.org/2000/svg" version="1.1">
+ <metadata>
+  <rdf:RDF xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:cc="http://creativecommons.org/ns#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+   <cc:Work>
+    <dc:type rdf:resource="http://purl.org/dc/dcmitype/StillImage"/>
+    <dc:date>2026-06-05T13:42:42.157209</dc:date>
+    <dc:format>image/svg+xml</dc:format>
+    <dc:creator>
+     <cc:Agent>
+      <dc:title>Matplotlib v3.10.6, https://matplotlib.org/</dc:title>
+     </cc:Agent>
+    </dc:creator>
+   </cc:Work>
+  </rdf:RDF>
+ </metadata>
+ <defs>
+  <style type="text/css">*{stroke-linejoin: round; stroke-linecap: butt}</style>
+ </defs>
+ <g id="figure_1">
+  <g id="patch_1">
+   <path d="M 0 347.04 
+L 488.7 347.04 
+L 488.7 -0 
+L 0 -0 
+z
+" style="fill: #ffffff"/>
+  </g>
+  <g id="axes_1">
+   <g id="patch_2">
+    <path d="M 7.2 146.9088 
+L 481.5 146.9088 
+L 481.5 33.8112 
+L 7.2 33.8112 
+z
+" clip-path="url(#p8042400f84)" style="fill: #ede0eb; opacity: 0.35"/>
+   </g>
+   <g id="patch_3">
+    <path d="M 7.2 233.3952 
+L 481.5 233.3952 
+L 481.5 153.5616 
+L 7.2 153.5616 
+z
+" clip-path="url(#p8042400f84)" style="fill: #ddf3de; opacity: 0.35"/>
+   </g>
+   <g id="patch_4">
+    <path d="M 7.2 289.944 
+L 481.5 289.944 
+L 481.5 240.048 
+L 7.2 240.048 
+z
+" clip-path="url(#p8042400f84)" style="fill: #fde8d0; opacity: 0.35"/>
+   </g>
+   <g id="patch_5">
+    <path d="M 7.2 333.1872 
+L 481.5 333.1872 
+L 481.5 296.5968 
+L 7.2 296.5968 
+z
+" clip-path="url(#p8042400f84)" style="fill: #d5eeee; opacity: 0.35"/>
+   </g>
+   <g id="text_1">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #767676" x="16.686" y="43.896581" transform="rotate(-0 16.686 43.896581)">STRATEGIC LAYER (VLM)</text>
+   </g>
+   <g id="text_2">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #767676" x="16.686" y="163.646981" transform="rotate(-0 16.686 163.646981)">TACTICAL LAYER (Action Library)</text>
+   </g>
+   <g id="text_3">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #767676" x="16.686" y="250.133381" transform="rotate(-0 16.686 250.133381)">EXECUTION LAYER (Device)</text>
+   </g>
+   <g id="text_4">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #767676" x="16.686" y="306.596869" transform="rotate(-0 16.686 306.596869)">MEMORY LAYER</text>
+   </g>
+   <g id="patch_6">
+    <path d="M 187.434 53.7696 
+L 301.266 53.7696 
+Q 310.752 53.7696 310.752 47.1168 
+L 310.752 33.8112 
+Q 310.752 27.1584 301.266 27.1584 
+L 187.434 27.1584 
+Q 177.948 27.1584 177.948 33.8112 
+L 177.948 47.1168 
+Q 177.948 53.7696 187.434 53.7696 
+z
+" clip-path="url(#p8042400f84)" style="fill: #0f4d92"/>
+   </g>
+   <g id="patch_7">
+    <path d="M 78.345 87.0336 
+L 173.205 87.0336 
+Q 182.691 87.0336 182.691 80.3808 
+L 182.691 63.7488 
+Q 182.691 57.096 173.205 57.096 
+L 78.345 57.096 
+Q 68.859 57.096 68.859 63.7488 
+L 68.859 80.3808 
+Q 68.859 87.0336 78.345 87.0336 
+z
+" clip-path="url(#p8042400f84)" style="fill: #9a4d8e"/>
+   </g>
+   <g id="patch_8">
+    <path d="M 196.92 87.0336 
+L 282.294 87.0336 
+Q 291.78 87.0336 291.78 80.3808 
+L 291.78 63.7488 
+Q 291.78 57.096 282.294 57.096 
+L 196.92 57.096 
+Q 187.434 57.096 187.434 63.7488 
+L 187.434 80.3808 
+Q 187.434 87.0336 196.92 87.0336 
+z
+" clip-path="url(#p8042400f84)" style="fill: #9a4d8e"/>
+   </g>
+   <g id="patch_9">
+    <path d="M 306.009 87.0336 
+L 400.869 87.0336 
+Q 410.355 87.0336 410.355 80.3808 
+L 410.355 63.7488 
+Q 410.355 57.096 400.869 57.096 
+L 306.009 57.096 
+Q 296.523 57.096 296.523 63.7488 
+L 296.523 80.3808 
+Q 296.523 87.0336 306.009 87.0336 
+z
+" clip-path="url(#p8042400f84)" style="fill: #9a4d8e"/>
+   </g>
+   <g id="patch_10">
+    <path d="M 177.948 126.9504 
+L 310.752 126.9504 
+Q 320.238 126.9504 320.238 120.2976 
+L 320.238 100.3392 
+Q 320.238 93.6864 310.752 93.6864 
+L 177.948 93.6864 
+Q 168.462 93.6864 168.462 100.3392 
+L 168.462 120.2976 
+Q 168.462 126.9504 177.948 126.9504 
+z
+" clip-path="url(#p8042400f84)" style="fill: #e8873d"/>
+   </g>
+   <g id="patch_11">
+    <path d="M 26.172 146.9088 
+L 149.49 146.9088 
+Q 158.976 146.9088 158.976 140.256 
+L 158.976 123.624 
+Q 158.976 116.9712 149.49 116.9712 
+L 26.172 116.9712 
+Q 16.686 116.9712 16.686 123.624 
+L 16.686 140.256 
+Q 16.686 146.9088 26.172 146.9088 
+z
+" clip-path="url(#p8042400f84)" style="fill: #2e9e44"/>
+   </g>
+   <g id="patch_12">
+    <path d="M 339.21 146.9088 
+L 462.528 146.9088 
+Q 472.014 146.9088 472.014 140.256 
+L 472.014 123.624 
+Q 472.014 116.9712 462.528 116.9712 
+L 339.21 116.9712 
+Q 329.724 116.9712 329.724 123.624 
+L 329.724 140.256 
+Q 329.724 146.9088 339.21 146.9088 
+z
+" clip-path="url(#p8042400f84)" style="fill: #0f4d92"/>
+   </g>
+   <g id="patch_13">
+    <path d="M 377.154 166.8672 
+L 448.299 166.8672 
+Q 457.785 166.8672 457.785 160.2144 
+L 457.785 150.2352 
+Q 457.785 143.5824 448.299 143.5824 
+L 377.154 143.5824 
+Q 367.668 143.5824 367.668 150.2352 
+L 367.668 160.2144 
+Q 367.668 166.8672 377.154 166.8672 
+z
+" clip-path="url(#p8042400f84)" style="fill: #b64342"/>
+   </g>
+   <g id="patch_14">
+    <path d="M 26.172 203.4576 
+L 144.747 203.4576 
+Q 154.233 203.4576 154.233 196.8048 
+L 154.233 176.8464 
+Q 154.233 170.1936 144.747 170.1936 
+L 26.172 170.1936 
+Q 16.686 170.1936 16.686 176.8464 
+L 16.686 196.8048 
+Q 16.686 203.4576 26.172 203.4576 
+z
+" clip-path="url(#p8042400f84)" style="fill: #42949e"/>
+   </g>
+   <g id="patch_15">
+    <path d="M 168.462 203.4576 
+L 263.322 203.4576 
+Q 272.808 203.4576 272.808 196.8048 
+L 272.808 176.8464 
+Q 272.808 170.1936 263.322 170.1936 
+L 168.462 170.1936 
+Q 158.976 170.1936 158.976 176.8464 
+L 158.976 196.8048 
+Q 158.976 203.4576 168.462 203.4576 
+z
+" clip-path="url(#p8042400f84)" style="fill: #2e7d32"/>
+   </g>
+   <g id="patch_16">
+    <path d="M 291.78 203.4576 
+L 396.126 203.4576 
+Q 405.612 203.4576 405.612 196.8048 
+L 405.612 176.8464 
+Q 405.612 170.1936 396.126 170.1936 
+L 291.78 170.1936 
+Q 282.294 170.1936 282.294 176.8464 
+L 282.294 196.8048 
+Q 282.294 203.4576 291.78 203.4576 
+z
+" clip-path="url(#p8042400f84)" style="fill: #42949e"/>
+   </g>
+   <g id="patch_17">
+    <path d="M 54.63 233.3952 
+L 106.803 233.3952 
+Q 116.289 233.3952 116.289 226.7424 
+L 116.289 213.4368 
+Q 116.289 206.784 106.803 206.784 
+L 54.63 206.784 
+Q 45.144 206.784 45.144 213.4368 
+L 45.144 226.7424 
+Q 45.144 233.3952 54.63 233.3952 
+z
+" clip-path="url(#p8042400f84)" style="fill: #9a4d8e"/>
+   </g>
+   <g id="patch_18">
+    <path d="M 140.004 233.3952 
+L 187.434 233.3952 
+Q 196.92 233.3952 196.92 226.7424 
+L 196.92 213.4368 
+Q 196.92 206.784 187.434 206.784 
+L 140.004 206.784 
+Q 130.518 206.784 130.518 213.4368 
+L 130.518 226.7424 
+Q 130.518 233.3952 140.004 233.3952 
+z
+" clip-path="url(#p8042400f84)" style="fill: #e8873d"/>
+   </g>
+   <g id="patch_19">
+    <path d="M 215.892 233.3952 
+L 268.065 233.3952 
+Q 277.551 233.3952 277.551 226.7424 
+L 277.551 213.4368 
+Q 277.551 206.784 268.065 206.784 
+L 215.892 206.784 
+Q 206.406 206.784 206.406 213.4368 
+L 206.406 226.7424 
+Q 206.406 233.3952 215.892 233.3952 
+z
+" clip-path="url(#p8042400f84)" style="fill: #9a4d8e"/>
+   </g>
+   <g id="patch_20">
+    <path d="M 26.172 286.6176 
+L 121.032 286.6176 
+Q 130.518 286.6176 130.518 279.9648 
+L 130.518 260.0064 
+Q 130.518 253.3536 121.032 253.3536 
+L 26.172 253.3536 
+Q 16.686 253.3536 16.686 260.0064 
+L 16.686 279.9648 
+Q 16.686 286.6176 26.172 286.6176 
+z
+" clip-path="url(#p8042400f84)" style="fill: #e8873d"/>
+   </g>
+   <g id="patch_21">
+    <path d="M 140.004 286.6176 
+L 234.864 286.6176 
+Q 244.35 286.6176 244.35 279.9648 
+L 244.35 260.0064 
+Q 244.35 253.3536 234.864 253.3536 
+L 140.004 253.3536 
+Q 130.518 253.3536 130.518 260.0064 
+L 130.518 279.9648 
+Q 130.518 286.6176 140.004 286.6176 
+z
+" clip-path="url(#p8042400f84)" style="fill: #e8873d"/>
+   </g>
+   <g id="patch_22">
+    <path d="M 253.836 286.6176 
+L 348.696 286.6176 
+Q 358.182 286.6176 358.182 279.9648 
+L 358.182 260.0064 
+Q 358.182 253.3536 348.696 253.3536 
+L 253.836 253.3536 
+Q 244.35 253.3536 244.35 260.0064 
+L 244.35 279.9648 
+Q 244.35 286.6176 253.836 286.6176 
+z
+" clip-path="url(#p8042400f84)" style="fill: #e8873d"/>
+   </g>
+   <g id="patch_23">
+    <path d="M 367.668 286.6176 
+L 462.528 286.6176 
+Q 472.014 286.6176 472.014 279.9648 
+L 472.014 260.0064 
+Q 472.014 253.3536 462.528 253.3536 
+L 367.668 253.3536 
+Q 358.182 253.3536 358.182 260.0064 
+L 358.182 279.9648 
+Q 358.182 286.6176 367.668 286.6176 
+z
+" clip-path="url(#p8042400f84)" style="fill: #e8873d"/>
+   </g>
+   <g id="patch_24">
+    <path d="M 26.172 333.1872 
+L 111.546 333.1872 
+Q 121.032 333.1872 121.032 326.5344 
+L 121.032 309.9024 
+Q 121.032 303.2496 111.546 303.2496 
+L 26.172 303.2496 
+Q 16.686 303.2496 16.686 309.9024 
+L 16.686 326.5344 
+Q 16.686 333.1872 26.172 333.1872 
+z
+" clip-path="url(#p8042400f84)" style="fill: #42949e"/>
+   </g>
+   <g id="patch_25">
+    <path d="M 130.518 333.1872 
+L 215.892 333.1872 
+Q 225.378 333.1872 225.378 326.5344 
+L 225.378 309.9024 
+Q 225.378 303.2496 215.892 303.2496 
+L 130.518 303.2496 
+Q 121.032 303.2496 121.032 309.9024 
+L 121.032 326.5344 
+Q 121.032 333.1872 130.518 333.1872 
+z
+" clip-path="url(#p8042400f84)" style="fill: #42949e"/>
+   </g>
+   <g id="patch_26">
+    <path d="M 234.864 333.1872 
+L 320.238 333.1872 
+Q 329.724 333.1872 329.724 326.5344 
+L 329.724 309.9024 
+Q 329.724 303.2496 320.238 303.2496 
+L 234.864 303.2496 
+Q 225.378 303.2496 225.378 309.9024 
+L 225.378 326.5344 
+Q 225.378 333.1872 234.864 333.1872 
+z
+" clip-path="url(#p8042400f84)" style="fill: #42949e"/>
+   </g>
+   <g id="patch_27">
+    <path d="M 339.21 333.1872 
+L 424.584 333.1872 
+Q 434.07 333.1872 434.07 326.5344 
+L 434.07 309.9024 
+Q 434.07 303.2496 424.584 303.2496 
+L 339.21 303.2496 
+Q 329.724 303.2496 329.724 309.9024 
+L 329.724 326.5344 
+Q 329.724 333.1872 339.21 333.1872 
+z
+" clip-path="url(#p8042400f84)" style="fill: #42949e"/>
+   </g>
+   <g id="text_5">
+    <text style="font-weight: 700; font-size: 11px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #272727" x="244.35" y="25.186856" transform="rotate(-0 244.35 25.186856)">Shopping-Agent: VLM-Primary + Action Library Architecture</text>
+   </g>
+   <g id="patch_28">
+    <path d="M 242.370614 47.39444 
+Q 185.06377 55.432622 129.085561 63.284442 
+" style="fill: none; stroke: #0f4d92; stroke-width: 1.2; stroke-linecap: round"/>
+    <path d="M 132.476788 64.424432 
+L 129.085561 63.284442 
+L 132.032289 61.255454 
+z
+" style="fill: #0f4d92; stroke: #0f4d92; stroke-width: 1.2; stroke-linecap: round"/>
+   </g>
+   <g id="patch_29">
+    <path d="M 175.205374 72.0648 
+Q 185.062044 72.0648 193.577072 72.0648 
+" style="fill: none; stroke: #9a4d8e; stroke-width: 1.2; stroke-linecap: round"/>
+    <path d="M 190.377072 70.4648 
+L 193.577072 72.0648 
+L 190.377072 73.6648 
+z
+" style="fill: #9a4d8e; stroke: #9a4d8e; stroke-width: 1.2; stroke-linecap: round"/>
+   </g>
+   <g id="patch_30">
+    <path d="M 175.97064 110.610353 
+Q 132.889325 116.971226 91.798887 123.038149 
+" style="fill: none; stroke: #2e9e44; stroke-width: 1.8; stroke-linecap: round"/>
+    <path d="M 95.19827 124.153583 
+L 91.798887 123.038149 
+L 94.730864 120.987903 
+z
+" style="fill: #2e9e44; stroke: #2e9e44; stroke-width: 1.8; stroke-linecap: round"/>
+   </g>
+   <g id="text_6">
+    <text style="font-weight: 700; font-size: 6.5px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #2e9e44" x="121.032" y="108.6552" transform="rotate(-0 121.032 108.6552)">Grounded</text>
+   </g>
+   <g id="patch_31">
+    <path d="M 312.72936 110.610353 
+Q 355.810675 116.971226 396.901113 123.038149 
+" style="fill: none; stroke: #0f4d92; stroke-width: 1.8; stroke-linecap: round"/>
+    <path d="M 393.969136 120.987903 
+L 396.901113 123.038149 
+L 393.50173 124.153583 
+z
+" style="fill: #0f4d92; stroke: #0f4d92; stroke-width: 1.8; stroke-linecap: round"/>
+   </g>
+   <g id="text_7">
+    <text style="font-weight: 700; font-size: 6.5px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #0f4d92" x="348.696" y="108.6552" transform="rotate(-0 348.696 108.6552)">Semantic</text>
+   </g>
+   <g id="patch_32">
+    <path d="M 108.801058 220.0896 
+Q 123.402679 220.0896 136.886266 220.0896 
+" style="fill: none; stroke: #e8873d; stroke-linecap: round"/>
+    <path d="M 133.686266 218.4896 
+L 136.886266 220.0896 
+L 133.686266 221.6896 
+z
+" style="fill: #e8873d; stroke: #e8873d; stroke-linecap: round"/>
+   </g>
+   <g id="patch_33">
+    <path d="M 189.431479 220.0896 
+Q 201.662041 220.0896 212.774569 220.0896 
+" style="fill: none; stroke: #e8873d; stroke-linecap: round"/>
+    <path d="M 209.574569 218.4896 
+L 212.774569 220.0896 
+L 209.574569 221.6896 
+z
+" style="fill: #e8873d; stroke: #e8873d; stroke-linecap: round"/>
+   </g>
+   <g id="patch_34">
+    <path d="M 87.831 174.849829 
+Q 87.831 158.551626 87.831 143.371456 
+" style="fill: none; stroke-dasharray: 3.7,1.6; stroke-dashoffset: 0; stroke: #2e9e44; stroke-linecap: round"/>
+    <path d="M 86.231 146.571456 
+L 87.831 143.371456 
+L 89.431 146.571456 
+z
+" style="fill: #2e9e44; stroke-dasharray: 3.7,1.6; stroke-dashoffset: 0; stroke: #2e9e44; stroke-linecap: round"/>
+   </g>
+   <g id="text_8">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #2e9e44" transform="translate(49.438688 159.7437) rotate(-90)">ActionHints</text>
+   </g>
+   <g id="patch_35">
+    <path d="M 146.702865 186.417007 
+Q 256.205965 163.541121 364.833539 140.848137 
+" style="fill: none; stroke-dasharray: 2.96,1.28; stroke-dashoffset: 0; stroke: #42949e; stroke-width: 0.8; stroke-linecap: round"/>
+    <path d="M 361.373974 139.936321 
+L 364.833539 140.848137 
+L 362.028347 143.0687 
+z
+" style="fill: #42949e; stroke-dasharray: 2.96,1.28; stroke-dashoffset: 0; stroke: #42949e; stroke-width: 0.8; stroke-linecap: round"/>
+   </g>
+   <g id="text_9">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start; fill: #42949e" x="268.065" y="156.888" transform="rotate(-0 268.065 156.888)">try_ground</text>
+   </g>
+   <g id="patch_36">
+    <path d="M 215.892 258.004347 
+Q 215.892 228.403773 215.892 200.144839 
+" style="fill: none; stroke-dasharray: 4.44,1.92; stroke-dashoffset: 0; stroke: #9a4d8e; stroke-width: 1.2; stroke-linecap: round"/>
+    <path d="M 214.292 203.344839 
+L 215.892 200.144839 
+L 217.492 203.344839 
+z
+" style="fill: #9a4d8e; stroke-dasharray: 4.44,1.92; stroke-dashoffset: 0; stroke: #9a4d8e; stroke-width: 1.2; stroke-linecap: round"/>
+   </g>
+   <g id="text_10">
+    <text style="font-size: 5.5px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #9a4d8e" transform="translate(220.635 238.48875)">record_observation</text>
+    <text style="font-size: 5.5px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; fill: #9a4d8e" transform="translate(220.635 244.386469)">(self-evolution)</text>
+   </g>
+   <g id="text_11">
+    <text style="font-weight: 700; font-size: 9px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="244.35" y="42.796969" transform="rotate(-0 244.35 42.796969)">User Task</text>
+   </g>
+   <g id="text_12">
+    <text style="font-weight: 700; font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="125.775" y="71.47743" transform="rotate(-0 125.775 71.47743)">VLM Pre-Plan</text>
+   </g>
+   <g id="text_13">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="125.775" y="80.93538" transform="rotate(-0 125.775 80.93538)">Strong VLM</text>
+   </g>
+   <g id="text_14">
+    <text style="font-weight: 700; font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="239.607" y="71.47743" transform="rotate(-0 239.607 71.47743)">TaskPlan</text>
+   </g>
+   <g id="text_15">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="239.607" y="80.970536" transform="rotate(-0 239.607 80.970536)">Steps + Slots</text>
+   </g>
+   <g id="text_16">
+    <text style="font-weight: 700; font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="353.439" y="71.47368" transform="rotate(-0 353.439 71.47368)">Clarify Agent</text>
+   </g>
+   <g id="text_17">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="353.439" y="80.907724" transform="rotate(-0 353.439 80.907724)">3-Layer Filter</text>
+   </g>
+   <g id="text_18">
+    <text style="font-weight: 700; font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="244.35" y="112.439025" transform="rotate(-0 244.35 112.439025)">_needs_vlm?  Dual-Speed</text>
+   </g>
+   <g id="text_19">
+    <text style="font-weight: 700; font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="87.831" y="131.35263" transform="rotate(-0 87.831 131.35263)">Fast Path  ~0.5s</text>
+   </g>
+   <g id="text_20">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="87.831" y="140.809174" transform="rotate(-0 87.831 140.809174)">Grounded Action Execute</text>
+   </g>
+   <g id="text_21">
+    <text style="font-weight: 700; font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="400.869" y="131.35263" transform="rotate(-0 400.869 131.35263)">Full Path  ~5s</text>
+   </g>
+   <g id="text_22">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="400.869" y="140.81058" transform="rotate(-0 400.869 140.81058)">VLM + Action Grounding</text>
+   </g>
+   <g id="text_23">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="412.7265" y="157.081987" transform="rotate(-0 412.7265 157.081987)">SpecGuard</text>
+   </g>
+   <g id="text_24">
+    <text style="font-weight: 700; font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="85.4595" y="186.23823" transform="rotate(-0 85.4595 186.23823)">Action Advisor</text>
+   </g>
+   <g id="text_25">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="85.4595" y="195.69618" transform="rotate(-0 85.4595 195.69618)">query · try_ground · format</text>
+   </g>
+   <g id="text_26">
+    <text style="font-weight: 700; font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="215.892" y="186.197605" transform="rotate(-0 215.892 186.197605)">Neo4j</text>
+   </g>
+   <g id="text_27">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="215.892" y="195.69618" transform="rotate(-0 215.892 195.69618)">Action Library (Graph DB)</text>
+   </g>
+   <g id="text_28">
+    <text style="font-weight: 700; font-size: 8px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="343.953" y="186.23448" transform="rotate(-0 343.953 186.23448)">Edge Lifecycle</text>
+   </g>
+   <g id="text_29">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="343.953" y="195.659618" transform="rotate(-0 343.953 195.659618)">hypothesis → promoted</text>
+   </g>
+   <g id="text_30">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="80.7165" y="221.904131" transform="rotate(-0 80.7165 221.904131)">UIState</text>
+   </g>
+   <g id="text_31">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="163.719" y="221.904131" transform="rotate(-0 163.719 221.904131)">Action</text>
+   </g>
+   <g id="text_32">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="241.9785" y="221.904131" transform="rotate(-0 241.9785 221.904131)">UIState</text>
+   </g>
+   <g id="text_33">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="73.602" y="269.139011" transform="rotate(-0 73.602 269.139011)">Screenshot</text>
+   </g>
+   <g id="text_34">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="73.602" y="278.854774" transform="rotate(-0 73.602 278.854774)">ADB/HDC/iOS</text>
+   </g>
+   <g id="text_35">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="187.434" y="269.139011" transform="rotate(-0 187.434 269.139011)">Action Execute</text>
+   </g>
+   <g id="text_36">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="187.434" y="278.85618" transform="rotate(-0 187.434 278.85618)">Tap·Type·Swipe</text>
+   </g>
+   <g id="text_37">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="301.266" y="269.13573" transform="rotate(-0 301.266 269.13573)">PageClassifier</text>
+   </g>
+   <g id="text_38">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="301.266" y="278.819618" transform="rotate(-0 301.266 278.819618)">VLM Page Detection</text>
+   </g>
+   <g id="text_39">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="415.098" y="269.139011" transform="rotate(-0 415.098 269.139011)">Verification</text>
+   </g>
+   <g id="text_40">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="415.098" y="278.85618" transform="rotate(-0 415.098 278.85618)">CAPTCHA/Login</text>
+   </g>
+   <g id="text_41">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="68.859" y="317.371811" transform="rotate(-0 68.859 317.371811)">FAISS</text>
+   </g>
+   <g id="text_42">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="68.859" y="327.087574" transform="rotate(-0 68.859 327.087574)">User Prefs</text>
+   </g>
+   <g id="text_43">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="173.205" y="317.371811" transform="rotate(-0 173.205 317.371811)">Session State</text>
+   </g>
+   <g id="text_44">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="173.205" y="327.124136" transform="rotate(-0 173.205 327.124136)">Products·Steps</text>
+   </g>
+   <g id="text_45">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="277.551" y="317.414468" transform="rotate(-0 277.551 317.414468)">Step Summaries</text>
+   </g>
+   <g id="text_46">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="277.551" y="327.08898" transform="rotate(-0 277.551 327.08898)">Compressed History</text>
+   </g>
+   <g id="text_47">
+    <text style="font-weight: 700; font-size: 7px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff" x="381.897" y="317.371811" transform="rotate(-0 381.897 317.371811)">Retrieval GW</text>
+   </g>
+   <g id="text_48">
+    <text style="font-size: 6px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: middle; fill: #ffffff; opacity: 0.85" x="381.897" y="327.087574" transform="rotate(-0 381.897 327.087574)">On-Demand</text>
+   </g>
+   <g id="legend_1">
+    <g id="patch_37">
+     <path d="M 268.285719 323.348281 
+L 281.285719 323.348281 
+L 281.285719 318.798281 
+L 268.285719 318.798281 
+z
+" style="fill: #0f4d92"/>
+    </g>
+    <g id="text_49">
+     <text style="font-size: 6.5px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="286.485719" y="323.348281" transform="rotate(-0 286.485719 323.348281)">VLM Decision / Full Path</text>
+    </g>
+    <g id="patch_38">
+     <path d="M 268.285719 332.621953 
+L 281.285719 332.621953 
+L 281.285719 328.071953 
+L 268.285719 328.071953 
+z
+" style="fill: #2e9e44"/>
+    </g>
+    <g id="text_50">
+     <text style="font-size: 6.5px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="286.485719" y="332.621953" transform="rotate(-0 286.485719 332.621953)">Graph Advisory / Fast Path</text>
+    </g>
+    <g id="patch_39">
+     <path d="M 377.155641 323.348281 
+L 390.155641 323.348281 
+L 390.155641 318.798281 
+L 377.155641 318.798281 
+z
+" style="fill: #e8873d"/>
+    </g>
+    <g id="text_51">
+     <text style="font-size: 6.5px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="395.355641" y="323.348281" transform="rotate(-0 395.355641 323.348281)">Device / Execution</text>
+    </g>
+    <g id="patch_40">
+     <path d="M 377.155641 332.621953 
+L 390.155641 332.621953 
+L 390.155641 328.071953 
+L 377.155641 328.071953 
+z
+" style="fill: #9a4d8e"/>
+    </g>
+    <g id="text_52">
+     <text style="font-size: 6.5px; font-family: 'Arial', 'Helvetica', 'DejaVu Sans', sans-serif; text-anchor: start" x="395.355641" y="332.621953" transform="rotate(-0 395.355641 332.621953)">Self-Evolution / Lifecycle</text>
+    </g>
+   </g>
+  </g>
+ </g>
+ <defs>
+  <clipPath id="p8042400f84">
+   <rect x="7.2" y="7.2" width="474.3" height="332.64"/>
+  </clipPath>
+ </defs>
 </svg>
