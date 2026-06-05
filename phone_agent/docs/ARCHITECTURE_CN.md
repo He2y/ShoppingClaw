@@ -256,161 +256,202 @@ VLM 的上下文窗口是稀缺资源。系统按优先级分层注入：
 
 ---
 
-## 4  记忆架构
+## 4  记忆系统：为 Agent 循环提供什么
 
-记忆系统分离了四个服务于不同时间和语义角色的面。关键设计决策是**记忆解耦**：并非所有记忆都注入每次 VLM 调用。系统始终注入轻量上下文，仅当 VLM 推理信号表明需要时才触发详细检索。
+回顾第 3 节的 Agent 循环：Phase 3 需要图谱定位和路径规划，Phase 4 需要组装 VLM 上下文，Phase 6 需要记录步骤状态。这三个需求的时间尺度和数据粒度完全不同——这就是记忆系统分成多个面的原因。
 
-### 4.1  四个记忆面
+### 4.1  每个记忆面解决 Agent 循环中的哪个问题
 
-| 记忆面 | 存储 | 时间范围 | 注入策略 |
-|---|---|---|---|
-| **用户记忆** | `MemoryStore`（FAISS 向量存储） | 跨会话 | 偏好和联系人在澄清和槽位填充时注入 |
-| **会话状态** | `UnifiedSessionState` | 单任务 | 进度摘要和当前焦点每步注入 |
-| **图谱记忆** | `SpatialGraphMemory` + Neo4j | 跨会话（持久化图谱）+ 会话内（暂存观测） | 路径存在时注入图谱上下文；匹配页面时注入动作提示 |
-| **轨迹文件** | 每任务 JSON | 单任务，保留供审核 | 不注入。由 `TrajectoryReviewer` 用于离线图谱演进 |
+**用户记忆（FAISS 向量存储，跨会话持久）** → 服务于 Phase 3 的澄清和 Phase 4 的槽位填充。
 
-### 4.2  轻量上下文注入
+问题：用户说"帮我买个手机"，缺少颜色/存储等规格。每次都追问用户体验很差。
+解决：FAISS 中存储了"用户偏好银色"、"联系人张三常用微信"等历史偏好。ClarificationAgent 的第二层直接从 FAISS 填充缺失槽位，不需要追问。下次用户再说"买手机"，系统直接带上"银色"偏好进行搜索。
 
-`MemoryManager.get_injection_context()` 实现解耦策略：
+**会话状态（UnifiedSessionState，单任务生命周期）** → 服务于 Phase 4 的进度注入和 Phase 6 的步骤记录。
 
-1. **始终注入**：简短的进度摘要（任务计划状态、步数、最近动作）。
-2. **始终注入**：当前焦点（Agent 当前正在做什么）。
-3. **触发式注入**：`RetrievalGateway` 仅当上一次 VLM 思考表明回忆、比较、计算、商品查询或停滞时才激活。
-4. **条件注入**：任务约束（价格范围、颜色、存储）仅在存在且当前页面与决策相关时注入。
+问题：VLM 需要知道"我做到哪了"，但不需要知道每步的完整推理过程。
+解决：`UnifiedSessionState` 是单次写入路径——每步通过 `record_step()` 写入动作类型和截断的思考摘要（150 字）。`progress_summary()` 生成一行进度文本（如 "Step 3 → 已搜索 → 找到 12 件 | 当前: iPhone 15 ¥6999"），每步注入 VLM 上下文。完整思考存入 `_reasoning_archive`，仅在 `RetrievalGateway` 触发检索时才被查询。
 
-在典型的 30 步购物任务中，完整检索可能在 3-5 步触发。其余 25+ 步仅接收 2-3 行进度摘要。这对 VLM 性能至关重要：过长的历史混淆推理并增加延迟。
+**图谱记忆（SpatialGraphMemory + Neo4j，跨会话持久）** → 服务于 Phase 3 的定位/规划和 Phase 5 的快速路径。
 
-### 4.3  四面协同
+问题：VLM 每次推理 ~5s，但 "首页→搜索" 这种机械导航每次都相同。
+解决：图谱存储经过验证的页面转移。Phase 3 中 `locate_and_get_context()` 查询图谱，如果找到路径，Phase 5 直接走快速路径（~0.5s）。图谱解决的不是"理解"问题，而是"重复劳动"问题。
 
-四个记忆面不是独立数据库——它们形成协调的记忆架构：
+**轨迹文件（JSON，单任务产物）** → 不服务于 Agent 循环，服务于任务结束后的图谱演进。
 
-- **用户记忆 → 澄清**：用户偏好在第二层填补规格缺口，减少不必要的提问。
-- **会话状态 → 图谱路由**：会话状态中的任务槽位填充 `GoalSpec`，驱动路径规划。
-- **图谱记忆 → VLM 上下文**：图谱记忆中的已提升动作和路径计划作为动作提示出现在 VLM 提示中。
-- **轨迹文件 → 图谱演进**：保存的轨迹喂入 `TrajectoryReviewer`，验证新转移并作为图谱假设导入。
-- **会话状态 → 轨迹文件**：任务结束时，会话状态序列化为轨迹 JSON 文件供审计和审核。
+问题：任务成功后，如何发现图谱中尚未记录的新转移？
+解决：`TrajectoryReviewer` 在任务结束后（3.4 节）读取轨迹文件，提取新转移，VLM 验证后以 hypothesis 导入图谱。轨迹文件是图谱自演进的输入数据。
 
-这种协调意味着从过去任务中学到的用户偏好（存储在 FAISS 中）可以影响当前任务的图谱路由（通过 GoalSpec）和安全检查（通过 SpecGuard）——用户无需重复表述。
+### 4.2  按需检索：为什么不把所有记忆都塞给 VLM
+
+Agent 循环的 Phase 4 组装 VLM 上下文时，如果把所有历史步骤、所有商品信息、所有用户偏好全部注入，会出现两个问题：
+1. **token 浪费**：30 步任务的完整历史可能占 3000+ token，但 VLM 真正需要参考历史的步骤只有 3-5 步
+2. **注意力稀释**：大量无关历史会干扰 VLM 对当前步骤的推理
+
+`RetrievalGateway` 的设计是：**监听 VLM 的思考文本，只在检测到特定信号时触发检索**。
+
+| VLM 思考中的信号 | 触发的检索类型 | 注入内容 |
+|---|---|---|
+| "之前看过"、"忘记了"、"记不清" | 回忆检索 | 最近 5 步操作摘要 + 相关思考片段 |
+| "哪个更便宜"、"对比"、"性价比" | 商品对比 | 已浏览商品表格（名称/价格/规格） |
+| "总共"、"合计"、"一共" | 购物车计算 | 购物车商品列表 + 总价 |
+| 连续 3 步相同动作（停滞检测） | 自动回忆 | 最近步骤 + "当前可能需要先选择规格" |
+
+冷却机制：上次检索后 3 步内不再触发，防止每步都检索。
+
+这个设计使得典型 30 步任务中，25+ 步的记忆注入只有 2-3 行进度摘要，仅 3-5 步有详细检索。VLM 的上下文窗口被高效利用。
+
+### 4.3  记忆面之间的数据流
+
+四个面不是独立存在的。用一个具体例子说明它们如何在 Agent 循环中协同：
+
+```
+任务 N："帮我在淘宝买银色 iPhone 16"
+│
+├── [3.1 任务接收] TaskSpecExtractor 提取 color="银色"
+│     → 存入 TaskSlots → GoalSpec（图谱路由目标）+ SpecGuard（购买安全）
+│
+├── [3.2 Phase 3] 图谱规划：GoalSpec 指定目标 page_type = spec_selection
+│     → Dijkstra 找到路径 home → search_input → search_result → ...
+│
+├── [3.2 Phase 6] 每步记录到 UnifiedSessionState
+│     → 检测到商品 "iPhone 16 ¥6999 银色 256G" → 存入 session.products
+│
+├── [3.4 任务结束] 成功
+│     → 轨迹写入 JSON
+│     → flush_staged_graph() → Neo4j 新增 home→search_input 等边
+│     → 学习偏好 "银色" → 写入 FAISS
+│     → TrajectoryReviewer → VLM 审核新转移
+│
+任务 N+1："买个手机"（没指定颜色）
+│
+├── [3.1 任务接收] TaskSpecExtractor: color 为空
+│
+├── [3.2 Phase 3 - 澄清] ClarificationAgent Layer 2:
+│     → 查询 FAISS: 找到 "用户偏好银色" (任务 N 学到的)
+│     → 自动填充 color="银色"，不追问用户
+│
+├── [3.2 Phase 3 - 图谱] 图谱已有任务 N 写入的边
+│     → 快速路径命中 home→search_input（~0.5s，跳过 VLM）
+│
+└── 任务 N 的记忆同时影响了任务 N+1 的澄清和导航
+```
 
 ---
 
-## 5  主动移动空间图谱（AMSG）
+## 5  空间图谱（AMSG）：为什么要这样设计
 
-AMSG 是核心研究贡献。它是一个有类型的有向图，将移动 UI 表示为由动作转移连接的页面状态网络，标注了生命周期元数据、结果分布和定位证据。
+### 5.1  图谱解决 Agent 循环中的什么问题
 
-### 5.1  形式化定义
+回到 3.2 节的步骤循环。如果没有图谱，每步都走 VLM 路径：截图 → VLM 推理（~5s）→ 执行。一个 20 步购物任务需要 ~100s 的 VLM 推理时间。
 
-图谱的核心持久化模式是三节点两关系：
+但其中大部分步骤是机械导航：首页点搜索、输入关键词、点提交、滚动浏览。这些操作在所有购物任务中完全相同。图谱的作用就是**把这些已验证的导航路径缓存下来**，让 Phase 5 走快速路径（~0.5s），只在需要语义判断的步骤（选哪个商品、选哪个 SKU）才调用 VLM。
 
-```
-(UIState) -[NEXT_ACTION]-> (Action) -[PRODUCES]-> (UIState)
-```
+这不是一个通用的图规划问题。图谱规模小（~8-12 种页面类型，15-25 条常用边），Dijkstra 在微秒级完成。真正的设计挑战是：
 
-UIState 节点存储页面状态抽象（app, page_type, landmarks, affordances, risk）。Action 节点存储语义动作（intent, semantic_target, postcondition, lifecycle_stage）。关系上记录 `frequency`（成功次数）、`fail_count`（失败次数）和 `confidence`（成功率），作为边生命周期的数据基础。
+1. **存什么才能跨任务复用？** → 页面状态抽象（5.2 节）
+2. **怎么区分图谱能做和 VLM 必须做的？** → 锚定性分类（5.3 节）
+3. **怎么防止噪声污染图谱？** → 生命周期 + 暂存持久化（5.4-5.5 节）
+4. **怎么避免每步都重新规划？** → RuntimeDAG 缓存（5.6 节）
 
-### 5.2  UIState / PageState
+### 5.2  页面状态抽象：存什么才能跨任务复用
 
-`PageState` 将截图抽象为可复用的页面身份。这不是像素级身份——它是*语义*身份，使系统能够识别"这是淘宝的商品详情页"而不管显示的是哪个商品。
-
-| 字段 | 系统中的角色 |
-|---|---|
-| `state_id` | 来自 `(app, page_type, landmarks, affordances, risk)` 的稳定哈希 |
-| `app` | 当前应用名，通过模式别名规范化 |
-| `page_type` | 分类：`home`、`search_input`、`search_result`、`product_detail`、`spec_selection`、`cart`、`checkout`、`filter_panel` 等 |
-| `landmarks` | 稳定的视觉锚点（如"搜索栏"、"价格标签"、"加购按钮"） |
-| `affordances` | 可能的交互（如"点击商品"、"下滑"、"输入查询"） |
-| `slots` | 从任务和页面文本检测的运行时槽位（如 `{query: "iPhone 16"}`） |
-| `risk_level` | `normal`、`medium` 或 `high`。支付和登录页面始终为 `high` |
-| `semantic_signature` | 确定性字符串：`app|domain|page_type|landmarks|affordances|slots` |
-
-页面状态抽象使图谱可跨任务复用。从一次购物会话学到的商品详情页可以指导完全不同会话中的导航，因为图谱存储的是页面*类型*和*结构*，而非具体内容。
-
-### 5.3  锚定与非锚定转移
-
-这一区分是"图谱作为顾问而非控制器"的操作核心：
-
-| 转移 | 锚定？ | 图谱行为 | VLM 角色 |
-|---|---|---|---|
-| `home → search_input` | 是 | 快速路径，带坐标 | 无 |
-| `search_input → search_result` | 是 | 复合动作：输入 + 提交 | 无（槽位替换） |
-| `search_result → product_detail` | **否** | 仅提示（无坐标） | 必须选择匹配当前任务的商品 |
-| `product_detail → spec_selection` | **否** | 仅提示 | 必须判断商品页面和目标动作 |
-| `spec_selection → cart/checkout` | **否** | 仅提示 | 必须安全选择用户的 SKU |
-
-锚定转移具有稳定的坐标和确定性结果。非锚定转移需要关于*与哪个*元素交互的语义判断——图谱知道转移存在，但只有 VLM 能在当前屏幕上决定具体目标。
-
----
-
-## 6  图谱自演进
-
-图谱不是通过记录每个观测到的动作来增长的。它通过一个暂存优先的管线和三条独立路径演进，全部收敛到同一个质量门控的持久化层。
-
-### 6.1  边生命周期状态机
-
-AMSG 中的每个转移都经历一个决定其运行时权限的生命周期：
+图谱的节点不是截图，是语义描述：
 
 ```
-hypothesis（假设）→ candidate（候选）→ promoted（已提升）→ demoted（已降级）
+PageState = (app, page_type, landmarks, affordances, slots, risk)
 ```
 
-- **提升条件**：`verification_count >= min_verification_count`（默认 1，严格 3）AND `dominance_ratio >= threshold`（默认 0.6，严格 0.8）AND `risk_level != "high"`
-- **降级条件**：已提升边的优势比降至 40% 以下时自动降级。这处理了 UI 变更：如果应用更新改变了按钮的目标，结果分布偏移，优势度下降，边自动降级。
+**为什么不存截图哈希？** 同一个搜索结果页，搜索"iPhone"和搜索"耳机"的截图完全不同，但页面结构相同——都有搜索栏、商品卡片列表、筛选按钮。存截图哈希意味着每次搜索不同关键词都产生一个新节点，图谱膨胀但不复用。
 
-**结果熵**（Shannon 熵）：$H = -\sum_i p_i \ln(p_i)$
+**为什么不存 DOM？** 移动应用不一定提供 accessibility tree。即使提供，DOM 结构在 app 版本更新后经常变化。
 
-当 $H >$ 结果熵 VLM 阈值（默认 0.8）时，转移被标记为需要 VLM 验证而非直接执行。这用数据驱动的决策边界替代了硬编码的"风险转移"列表。
+**存 (app, page_type) 二元组就够了吗？** 对于定位（Phase 3）确实够了。但对于去重（同一 page_type 的不同观测要合并为一个节点），需要更细粒度的 `semantic_signature`：`app|domain|page_type|landmarks|affordances|slots`。签名相同的观测合并到同一节点。
 
-### 6.2  三条持久化路径
+**这如何服务 Agent 循环？** Phase 3 中 `locate_and_get_context()` 用 `(app, page_type)` 在 Neo4j 查找匹配节点。找到后，该节点的出边（NEXT_ACTION）就是当前页面可用的已验证动作。Phase 5 中 `ActionAdvisor.query()` 返回这些出边中已提升的动作作为快速路径候选。
 
-**路径 1（在线运行时）**：任务执行期间，每个动作产生后条件观测。`SpatialGraphMemory.record_observation()` 在本地暂存转移。任务结束时，`flush_staged_graph()` 规范化状态和边，提升有效转移，写入 Neo4j。**失败的任务不会刷新**——这是第一道质量门。
+### 5.3  锚定性分类：图谱和 VLM 各管什么
 
-**路径 2（轨迹审核）**：`TrajectoryReviewer` 处理保存的轨迹文件。提取页面转移，对比现有图谱边去重，并请求强 VLM 验证新候选。仅 VLM 批准的转移以 `hypothesis` 边导入。这是第二道质量门——防止对话框、广告、分类器错误和瞬态屏幕污染图谱。
-
-**路径 3（离线探索）**：`import_exploration_staging()` 通过规范化、瞬态页面过滤、应用不匹配过滤、搜索宏合成、同页压缩和边质量过滤处理预采集的探索数据。
-
-关键洞察是**没有原始动作直接写入 Neo4j**。每条持久化路径都通过至少一道质量门（任务成功、VLM 验证或规范化过滤）。这使 AMSG 成为"经过验证的动作库"而非嘈杂的轨迹堆积。
-
-> 推荐图例：`figures/graph-persistence-pipeline-nature-image2.png`
-
----
-
-## 7  定位与规划
-
-### 7.1  页面定位
-
-默认的定位机制很直接：用当前 `(app, page_type)` 在 Neo4j 中匹配 UIState 节点。匹配到图谱候选时给固定评分 0.92，当前观测给 0.82。这个简单方法有效，因为 `PageClassifier` 已经提供了准确的 page_type，`(app, page_type)` 二元组在绝大多数场景下足以唯一标识页面状态。
-
-一个可选的多通道贝叶斯定位器（`MultiSignalLocalizer`）已实现但默认未启用（`use_multi_signal_belief=False`）。它增加了视觉嵌入、语义嵌入和时序转移通道，但相对于 `(app, page_type)` 匹配的边际改进尚未通过消融实验验证。
-
-### 7.2  路径规划
-
-默认规划器是 **Dijkstra**，边权为：
-
-$$\text{cost}(e) = 1.0 + 3.0 \times \text{fail\_rate} + R(\text{risk}) - 0.3 \times \text{confidence}$$
-
-风险惩罚：normal=0, medium=0.8, high=2.0。这个成本函数偏好高成功率、低风险、高置信度的边——即经过验证的可靠路径。
-
-在典型购物应用图谱（< 50 节点）上，Dijkstra 已能高效找到最优路径。增强规划器（A* 和 Belief-A* 后端）已实现但默认未启用——其额外的成本调整项（过期衰减、探索奖励、信息增益、熵惩罚）在当前图谱规模下贡献 < 0.1，不影响路径选择。
-
-### 7.3  RuntimeDAG：缓存路径执行
-
-当 Dijkstra 找到路径时，路径被物化为 `RuntimeDAG`——内存中的边数组加游标。后续步骤直接推进游标（`current_index += 1`），不再查询 Neo4j 和重跑 Dijkstra。在一个 5 步连续导航序列中，仅第一步跑完整的定位-规划管线，后续 4 步读 `route[current_index]`，开销 < 1ms。
-
-RuntimeDAG 失效条件：后条件不匹配（到达非预期页面）、应用切换、连续图谱失败超阈值、下一条边是高风险。失效后，下一次 `locate_and_get_context()` 调用跑完整管线，规划成功则创建新 DAG。
-
-RuntimeDAG 还控制 PageClassifier 跳过：当 DAG 可用且下一步非高风险时，`should_use_page_classifier()` 返回 `False`，Agent 使用 DAG 预期的 page_type 代替分类器输出，节省一次 VLM 调用。但如果弹窗出现导致实际页面与预期不符，延迟后条件验证会在下一步发现并修复。
-
-### 7.4  动作编译
-
-图谱原生动作通过两阶段 IR 管线编译：
+这是图谱设计中最关键的决策。观察购物流程中每步的性质：
 
 ```
-SemanticActionIR（意图、语义目标、定位器、后条件）
-    → DeviceActionIR（动作类型、坐标、坐标空间、屏幕尺寸）
-    → ActionHandler 的标准动作字典
+home → search_input          谁都知道搜索按钮在哪   → 图谱能做
+search_input → search_result  输入+提交，机械操作     → 图谱能做（槽位替换）
+search_result → product_detail 选哪个商品？取决于任务 → 只有 VLM 能做
+product_detail → spec_selection 选什么规格？取决于用户 → 只有 VLM 能做
+spec_selection → cart          确认购买？需要安全检查  → VLM + SpecGuard
 ```
 
-`SpatialModelBridge` 处理第一阶段（语义到设备 IR），`ModelProtocolBridge` 处理跨模型家族的坐标归一化。这保持 AMSG 模型无关：图谱存储语义意图和定位器证据，而适配器处理模型原生语法和坐标系统。
+前两步是**锚定的**——按钮位置固定，点击结果确定，图谱可以直接执行。后三步是**非锚定的**——目标元素取决于当前屏幕内容和用户意图，图谱只能提供"这个转移存在"的提示，具体点哪里必须 VLM 看截图决定。
+
+**这如何影响 Phase 5 的调度？** `ActionAdvisor.is_fast_executable()` 检查三个条件：`grounded=True`（有坐标）、`confidence >= 0.9`（高置信度）、有坐标或复合步骤。全部满足 → 快速路径。任一不满足 → VLM 路径。
+
+**为什么不让图谱也学习非锚定转移的坐标？** 因为坐标是内容相关的。搜索"iPhone"和搜索"耳机"后，第一个商品卡片的坐标不同。存储旧坐标会导致点击错误的商品。
+
+### 5.4  边生命周期：怎么防止噪声进入图谱
+
+在线执行中，以下噪声观测频繁出现：
+
+| 噪声来源 | 产生的虚假转移 | 如果写入图谱的后果 |
+|---|---|---|
+| 广告弹窗 | `product_detail → dialog` | 规划器可能走"经过弹窗"的路径 |
+| 登录拦截 | `product_detail → login` | 快速路径尝试绕过登录，失败 |
+| 分类器误判 | `search_result → unknown` | 图谱出现无意义的 unknown 节点 |
+| 网络延迟 | 页面加载不完整 → 错误分类 | 同上 |
+
+生命周期系统的作用是**只提升统计上可靠的转移**。每条边追踪成功/失败次数：
+
+```
+hypothesis → candidate → promoted → demoted
+  (首次观测)   (验证过N次)  (成功率>=θ)   (成功率下降)
+```
+
+只有 `promoted` 边对 `ActionAdvisor` 可见——这意味着 Phase 5 的快速路径只使用经过验证的动作。`hypothesis` 和 `candidate` 边是图谱的"暂存区"，不影响 Agent 执行。
+
+**延迟后条件验证**（3.2 节 Phase 6）是生命周期系统正确工作的前提：步骤 t 执行动作后，暂存 `(当前页, 动作, 预期目标)`。步骤 t+1 的 Phase 3 对比实际页面和预期——匹配则记录 success，不匹配记录 failure。这确保成功率基于真实观测。
+
+### 5.5  暂存持久化：三道质量门
+
+即使有生命周期系统，直接将在线观测写入 Neo4j 仍然有风险——失败任务的整条轨迹可能都是错误导航。因此增加两道额外的门：
+
+**门 1：任务成功**。`flush_staged_graph()` 只在 `end_task(success=True)` 时调用。失败任务的观测暂存在内存中，不写入 Neo4j。
+
+**门 2：VLM 轨迹审核**。成功任务的轨迹文件由 `TrajectoryReviewer` 处理。它用强 VLM 逐条验证新发现的转移——"从 `product_detail` 到 `spec_selection` 是真实导航还是弹窗干扰？"。只有 VLM 批准的转移以 `hypothesis` 身份导入。
+
+**门 3：规范化过滤**。`canonicalize_state_graph()` 执行语义签名去重、瞬态页面过滤（移除 `unknown`）、应用一致性检查。
+
+三道门确保图谱只包含**经过验证的、稳定的、规范化的**导航知识。
+
+### 5.6  RuntimeDAG：避免每步重新规划
+
+Dijkstra 规划在微秒级完成，但 Phase 3 的完整流程（Neo4j 查询 + 定位 + 规划 + 上下文组装）需要 50-200ms（含网络往返）。如果每步都跑完整流程，20 步任务累积 1-4s 的开销。
+
+RuntimeDAG 是一个简单的优化：规划结果缓存为内存中的边数组 + 游标。连续步骤中，Phase 3 直接检查 DAG 是否可用——可用则取 `route[current_index]` 返回，跳过整个定位-规划管线。
+
+```
+步骤 1: 完整管线 → Dijkstra 找到 5 步路径 → 缓存为 DAG
+步骤 2: DAG 可用 → route[1] → 跳过 Neo4j (~10ms)
+步骤 3: DAG 可用 → route[2] → 跳过 Neo4j (~10ms)
+步骤 4: DAG 可用 → route[3] → 跳过 Neo4j (~10ms)
+步骤 5: 非锚定边 → VLM 接管 → DAG 使命结束
+```
+
+DAG 的失效是被动的：后条件不匹配、应用切换或高风险边时，DAG 不再被使用，下次 Phase 3 自动重建。
+
+**副作用**：DAG 可用时，`should_use_page_classifier()` 返回 `False`，Phase 1 跳过 PageClassifier。这省了一次 VLM 调用，但代价是如果弹窗出现，Agent 会带着错误的 page_type 进入 Phase 5。延迟后条件验证在下一步发现不匹配，触发 DAG 失效和 VLM 回退——最坏情况是浪费一步，不会执行危险动作。
+
+### 5.7  动作编译：从语义到设备指令
+
+图谱存储的是 `SemanticActionIR`（意图 + 语义目标 + 定位器 + 后条件），不是设备指令。Phase 5 执行前需要两阶段编译：
+
+```
+SemanticActionIR → DeviceActionIR → 设备指令
+   (图谱存储)        (坐标归一化)      (ActionHandler 执行)
+```
+
+`SpatialModelBridge` 处理第一阶段：将语义动作转换为带坐标的设备动作 IR。`ModelProtocolBridge` 处理坐标归一化：5 种 VLM 家族使用不同坐标系（AutoGLM [0,1000]、Qwen-VL [0,999]、GUI-Owl [0,1.0]、UI-TARS 绝对像素），通过归一化 (0,1) 中间表示统一转换。
+
+这使图谱模型无关——同一个 Neo4j 图谱可以服务不同的 VLM，只需在编译时转换坐标系。
 
 ---
 

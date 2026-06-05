@@ -138,331 +138,110 @@ Failed tasks save trajectory files only — no graph writes. This is the first g
 
 ---
 
-## 4  Memory Architecture
+## 4  Memory System: What It Provides to the Agent Loop
 
-The memory system separates four surfaces that serve different temporal and semantic roles. The critical design decision is **memory decoupling**: not all memory is injected into every VLM call. Instead, the system injects lightweight context always and triggers detailed retrieval only when the VLM's reasoning signals a need.
+Recall the agent loop (Section 3.2): Phase 3 needs graph localization and routing, Phase 4 needs VLM context assembly, Phase 6 needs step recording. These three needs have different time scales and data granularities — that is why the memory system is split into multiple surfaces.
 
-### 4.1  Four Memory Surfaces
+### 4.1  What Each Surface Solves in the Agent Loop
 
-| Surface | Storage | Temporal scope | Injection strategy |
-|---|---|---|---|
-| **User memory** | `MemoryStore` (FAISS vector store) under `memory_db/<user>` | Cross-session | Preferences and contacts injected during clarification and slot filling. |
-| **Session state** | `UnifiedSessionState` | Per-task | Progress summary and current focus injected every step. |
-| **Graph memory** | `SpatialGraphMemory` + Neo4j | Cross-session (persistent graph) + per-session (staged observations) | Graph context injected when route exists; action hints injected on matching pages. |
-| **Trajectory files** | JSON per task under `memory_db/<user>/trajectories/` | Per-task, retained for review | Not injected. Used by `TrajectoryReviewer` for offline graph evolution. |
+**User memory (FAISS, cross-session)** → serves Phase 3 clarification and Phase 4 slot filling. Problem: user says "buy me a phone" without specifying color. Asking every time is bad UX. Solution: FAISS stores "user prefers silver" from a past task. `ClarificationAgent` Layer 2 fills the gap silently.
 
-```mermaid
-graph TD
-    subgraph surfaces["Four Memory Surfaces"]
-        direction LR
-        UM["User Memory\nFAISS · Preferences"]
-        SS["Session State\nProducts · Cart · Steps"]
-        GM["Graph Memory\nNeo4j · Lifecycle"]
-        TF["Trajectory Files\nJSON · Audit"]
-    end
+**Session state (UnifiedSessionState, per-task)** → serves Phase 4 progress injection and Phase 6 step recording. Problem: VLM needs to know "where I am in the task" but not every step's full reasoning. Solution: single write path via `record_step()` with truncated thinking (150 chars). `progress_summary()` generates one line per step for injection. Full thinking stored in `_reasoning_archive`, queried only on demand.
 
-    subgraph injection["Per-Step Injection"]
-        P1["Progress summary\n(always)"]
-        P2["Current focus\n(always)"]
-        P3["On-demand retrieval\n(triggered)"]
-        P4["Constraints\n(if exist)"]
-    end
+**Graph memory (SpatialGraphMemory + Neo4j, cross-session)** → serves Phase 3 localization/planning and Phase 5 Fast Path. Problem: VLM costs ~5s per step, but "home → search" is identical across all tasks. Solution: graph caches verified transitions. Phase 3 queries the graph; if a route exists, Phase 5 executes via Fast Path (~0.5s).
 
-    UM --> injection
-    SS --> injection
-    GM --> injection
-    injection --> VLM["VLM Context Window"]
+**Trajectory files (JSON, per-task artifact)** → does not serve the agent loop; serves post-task graph evolution. Problem: how to discover new transitions after a successful task? Solution: `TrajectoryReviewer` reads trajectory files, extracts new transitions, VLM-validates, imports as hypothesis edges.
 
-    style UM fill:#42949E,color:#fff,stroke:none
-    style SS fill:#E8873D,color:#fff,stroke:none
-    style GM fill:#2E7D32,color:#fff,stroke:none
-    style TF fill:#7B61A0,color:#fff,stroke:none
-    style VLM fill:#0F4D92,color:#fff,stroke:none
-```
+### 4.2  On-Demand Retrieval: Why Not Inject Everything
 
-### 4.2  Lightweight Context Injection
+If Phase 4 injected all history, all products, and all preferences into every VLM call: (1) token waste — 30 steps of full history is 3000+ tokens, but VLM only needs history on 3-5 steps; (2) attention dilution — irrelevant context hurts current-step reasoning.
 
-`MemoryManager.get_injection_context()` implements the decoupling strategy:
+`RetrievalGateway` monitors VLM thinking text and triggers retrieval only on specific signals:
 
-1. **Always inject**: A short progress summary (task plan status, step count, recent actions).
-2. **Always inject**: The current focus (what the agent is trying to do right now).
-3. **Triggered injection**: `RetrievalGateway` activates only when the previous VLM thinking indicates recall, comparison, calculation, product lookup, or stagnation. It uses heuristic intent detection over model thinking text and queries `UnifiedSessionState`.
-4. **Conditional injection**: Task constraints (price range, color, storage) injected only when they exist and the current page is decision-relevant.
+| Signal in VLM thinking | Retrieval type | Injected content |
+|---|---|---|
+| "saw earlier", "forgot", "which one" | Recall | Last 5 step summaries + relevant thinking |
+| "cheaper", "compare", "better value" | Product comparison | Browsed products table (name/price/specs) |
+| "total", "how much altogether" | Cart calculation | Cart items + total price |
+| 3+ identical actions (stagnation) | Auto-recall | Recent steps + "may need to select specs first" |
 
-This strategy keeps the VLM context window lean. In a typical 30-step shopping task, full retrieval might trigger on 3-5 steps (when the VLM's thinking mentions "I saw a product earlier" or "comparing prices"). The remaining 25+ steps receive only the 2-3 line progress summary. This is critical for VLM performance: long histories confuse reasoning and increase latency.
+Cooldown: no retrieval within 3 steps of last trigger. Result: in a 30-step task, 25+ steps get 2-3 lines of progress summary; only 3-5 steps get detailed retrieval.
 
-### 4.3  Session State as Single Write Path
+### 4.3  Cross-Surface Data Flow
 
-`UnifiedSessionState` merges the older KnowledgeBase, SessionMemory, and StateManager roles into a single state object. Each step writes once through `record_step()`, then optional product and constraint extraction updates the same state. This eliminates state drift across components — there is no scenario where the memory manager and the session state disagree about what happened.
+The four surfaces coordinate through the agent lifecycle. Concrete example:
 
-The session state also serves as the anchor for the Tactical Layer: `GraphRuntimeController.locate_and_get_context()` reads the current session state to determine task progress, and the graph's `GoalSpec` is derived from the session's task slots.
+Task N: "Buy silver iPhone 16 on Taobao" → succeeds → FAISS learns "prefers silver" + Neo4j gets new edges + trajectory saved.
 
-### 4.4  Memory Surfaces Working Together
-
-The four surfaces are not independent databases — they form a coordinated memory architecture:
-
-- **User memory → Clarification**: User preferences fill spec gaps in Layer 2, reducing unnecessary questions.
-- **Session state → Graph routing**: Task slots from session state populate `GoalSpec`, which drives route planning.
-- **Graph memory → VLM context**: Promoted actions and route plans from graph memory appear as action hints in the VLM prompt.
-- **Trajectory files → Graph evolution**: Saved trajectories feed `TrajectoryReviewer`, which validates new transitions and imports them as graph hypotheses.
-- **Session state → Trajectory files**: At task end, the session state is serialized into a trajectory JSON file for audit and review.
-
-This coordination means that a user preference learned from a past task (stored in FAISS) can influence the current task's graph routing (via GoalSpec) and safety checking (via SpecGuard) — all without the user repeating themselves.
+Task N+1: "Buy me a phone" (no color specified) → ClarificationAgent Layer 2 queries FAISS → finds "prefers silver" → fills slot silently → graph already has edges from Task N → Fast Path hits more steps → task completes faster without asking the user.
 
 ---
 
-## 5  Active Mobile Spatial Graph (AMSG)
+## 5  Spatial Graph (AMSG): Why It Is Designed This Way
 
-AMSG is the core research contribution. It is a typed directed graph that represents the mobile UI as a network of page states connected by action transitions, annotated with lifecycle metadata, outcome distributions, and localization evidence.
+### 5.1  What Problem It Solves in the Agent Loop
 
-### 5.1  Formal Definition
+Without the graph, every step takes the VLM Path: screenshot → VLM reasoning (~5s) → execute. A 20-step shopping task costs ~100s of VLM inference. But most steps are mechanical navigation: tap search, type query, submit, scroll. These are identical across all shopping tasks. The graph caches verified navigation paths so Phase 5 can take the Fast Path (~0.5s), reserving VLM calls for steps that require semantic judgment (which product, which SKU).
 
-The core persisted motif is a three-node, two-relationship pattern in Neo4j:
+This is not a general graph planning problem. The graph is small (~8-12 page types, 15-25 edges), and Dijkstra completes in microseconds. The real design challenges are: (1) what to store so it reuses across tasks, (2) how to separate what the graph can do from what only VLM can do, (3) how to prevent noise from polluting the graph, and (4) how to avoid re-planning every step.
+
+### 5.2  Page-State Abstraction: What to Store for Reuse
+
+Graph nodes are not screenshots — they are semantic descriptions: `PageState = (app, page_type, landmarks, affordances, slots, risk)`. Searching "iPhone" and "headphones" produce different screenshots but the same page structure (search bar, product cards, filter buttons). Storing screenshot hashes would create a new node per search query; storing `(app, page_type)` with semantic signature enables cross-task reuse.
+
+In the agent loop: Phase 3's `locate_and_get_context()` matches `(app, page_type)` against Neo4j nodes. When found, the node's outgoing edges (NEXT_ACTION) are the verified actions available on this page. Phase 5's `ActionAdvisor.query()` returns promoted edges as Fast Path candidates.
+
+### 5.3  Grounded vs. Ungrounded: Who Controls What
+
+The most critical design decision. In a shopping flow:
+
+| Step | Nature | Who decides |
+|---|---|---|
+| home → search_input | Button position is fixed | Graph (Fast Path) |
+| search_input → search_result | Type + submit, mechanical | Graph (slot substitution) |
+| search_result → product_detail | Which product? Depends on task | VLM only |
+| product_detail → spec_selection | Which specs? Depends on user | VLM only |
+
+Grounded transitions have stable coordinates and deterministic outcomes → Fast Path. Ungrounded transitions require seeing the current screen to choose the target → VLM Path with graph hints.
+
+This classification happens per-edge via `ActionAdvisor.is_fast_executable()`: `grounded=True` AND `confidence >= 0.9` AND has coordinates → Fast Path. Otherwise → VLM.
+
+### 5.4  Edge Lifecycle: Preventing Noise
+
+Online observations include popups, login interceptions, classifier errors. If written directly to the graph, the planner might route through a popup dialog. The lifecycle system only promotes statistically reliable transitions:
 
 ```
-(UIState) -[NEXT_ACTION]-> (Action) -[PRODUCES]-> (UIState)
+hypothesis → candidate → promoted → demoted
+(first seen)  (verified N times)  (success rate >= θ)  (rate dropped)
 ```
 
-UIState nodes store page-state abstractions (app, page_type, landmarks, affordances, risk). Action nodes store semantic actions (intent, semantic_target, postcondition, lifecycle_stage). Relationships track `frequency` (success count), `fail_count`, and `confidence` (= frequency / total), which form the data basis for the edge lifecycle system.
+Only `promoted` edges are visible to `ActionAdvisor`. Default thresholds: N=1, θ=0.6. Strict mode: N=3, θ=0.8. Demotion triggers automatically when success rate drops below 40% (e.g., app UI changed).
 
-### 5.2  UIState / PageState
+The delayed postcondition verification from Phase 6 (Section 3.2) is the data source: step t caches `(page, action, expected_target)`, step t+1 compares actual page_type → records success or failure → feeds lifecycle counters.
 
-`PageState` abstracts a screenshot into a reusable page identity. This is not pixel-level identity — it is a *semantic* identity that allows the system to recognize "this is a product detail page in Taobao" regardless of which product is displayed.
+### 5.5  Staging-First Persistence: Three Quality Gates
 
-| Field | Role in the system |
-|---|---|
-| `state_id` | Stable hash from `(app, page_type, landmarks, affordances, risk)`. |
-| `app` | Current application name, canonicalized via schema aliases. |
-| `page_type` | Categorical: `home`, `search_input`, `search_result`, `product_detail`, `spec_selection`, `cart`, `checkout`, `filter_panel`, etc. |
-| `landmarks` | Stable visual anchors (e.g., "search bar", "price tag", "add to cart button"). |
-| `affordances` | Possible interactions (e.g., "tap product", "swipe down", "type query"). |
-| `slots` | Runtime slots detected from task and page text (e.g., `{query: "iPhone 16"}`). |
-| `risk_level` | `normal`, `medium`, or `high`. Payment and login pages are always `high`. |
-| `semantic_signature` | Deterministic string: `app|domain|page_type|landmarks|affordances|slots`. |
+Even with lifecycle, directly writing to Neo4j is risky — a failed task's entire trajectory may be wrong navigation. Three gates:
 
-The page-state abstraction is what makes the graph reusable across tasks. A product detail page learned from one shopping session can inform navigation in a completely different session with a different product, because the graph stores the page *type* and *structure*, not the specific content.
+**Gate 1 (task success)**: `flush_staged_graph()` only runs on `end_task(success=True)`. Failed tasks stage in memory only.
 
-### 5.3  Action Nodes
+**Gate 2 (VLM trajectory review)**: `TrajectoryReviewer` uses a strong VLM to validate each new transition — "is this real navigation or a popup/classifier error?" Only approved transitions import as `hypothesis`.
 
-`Action` nodes represent semantic transition affordances, not raw coordinates. `GraphStore._semantic_action_key()` intentionally ignores coordinate jitter — coordinates are treated as grounding *evidence*, not identity.
+**Gate 3 (canonicalization)**: Semantic signature dedup, transient page filtering (`unknown` removed), app consistency check.
 
-| Field | Purpose |
-|---|---|
-| `type` | Action verb: `tap`, `type`, `swipe`, `back`, `launch`, `compound`. |
-| `intent` | Semantic description: "tap search button", "type product query". |
-| `semantic_target` | Human-readable target: "search box", "add to cart". |
-| `target_locator` | Coordinates, region, or element descriptor for grounding. |
-| `expected_postcondition` | Target page type after action. |
-| `risk_level` | Inherited from source/target page risk. |
-| `lifecycle_stage` | `hypothesis`, `candidate`, `promoted`, or `demoted`. |
-| `outcome_entropy` | Shannon entropy of empirical outcome distribution. |
+No raw action writes directly to Neo4j. Every path passes at least one gate.
 
-The canonical persisted motif is:
+### 5.6  RuntimeDAG: Avoid Re-Planning Every Step
 
-```mermaid
-graph LR
-    S["UIState\n(Source Page)"] -->|"NEXT_ACTION"| A["Action\ntype · intent · locator\nlifecycle · entropy"]
-    A -->|"PRODUCES"| T["UIState\n(Target Page)"]
+The full Phase 3 pipeline (Neo4j query + Dijkstra + context assembly) takes 50-200ms including network round-trip. RuntimeDAG caches the planning result as an in-memory edge array + cursor. Consecutive steps read `route[current_index]` in <1ms, skipping the entire pipeline.
 
-    style S fill:#E8E0F0,stroke:#7B61A0,stroke-width:2px,color:#4a2d7a
-    style A fill:#FFF3E0,stroke:#E8873D,stroke-width:2px,color:#7a4a0d
-    style T fill:#E8E0F0,stroke:#7B61A0,stroke-width:2px,color:#4a2d7a
-```
+DAG invalidation is passive: postcondition mismatch, app switch, high-risk edge, or route exhaustion. After invalidation, next Phase 3 rebuilds automatically.
 
-> Recommended figure: `figures/amsg-graph-schema-nature-image2.png`
+Side effect: when DAG is valid, `should_use_page_classifier()` returns `False` — Phase 1 skips the classifier, saving one VLM call. If a popup appears, the agent acts on stale page_type, but delayed postcondition verification catches the mismatch at the next step.
 
-### 5.4  Grounded vs. Ungrounded Transitions
+### 5.7  Action Compilation: Semantic to Device
 
-This distinction is the operational core of "graph as advisor, not controller":
-
-| Transition | Grounded? | Graph behavior | VLM role |
-|---|---|---|---|
-| `home → search_input` | Yes | Fast Path with coordinates | None |
-| `search_input → search_result` | Yes | Compound: Type + Submit | None (slot substitution) |
-| `search_result → product_detail` | **No** | Hint only (no coordinates) | Must choose the product matching the current task |
-| `product_detail → spec_selection` | **No** | Hint only | Must judge product page and target action |
-| `spec_selection → cart/checkout` | **No** | Hint only | Must select the user's SKU safely |
-| `search_result → filter_panel` | Yes | Fast Path | None |
-
-Grounded transitions have stable coordinates and deterministic outcomes. Ungrounded transitions require semantic judgment about *which* element to interact with — the graph knows the transition exists, but only the VLM can decide the specific target on the current screen.
-
-```mermaid
-graph TD
-    H["home"] -->|"Grounded"| SI["search_input"]
-    SI -->|"Grounded\nCompound: Type + Submit"| SR["search_result"]
-    SR -->|"Ungrounded\nVLM picks product"| PD["product_detail"]
-    SR -->|"Grounded"| FP["filter_panel"]
-    FP -->|"Grounded"| SR
-    PD -->|"Ungrounded\nVLM picks action"| SS["spec_selection"]
-    SS -->|"Ungrounded\nVLM selects specs"| CA["cart"]
-    SS -->|"Ungrounded"| CO["checkout"]
-
-    style H fill:#2E9E44,color:#fff,stroke:none
-    style SI fill:#2E9E44,color:#fff,stroke:none
-    style SR fill:#3775BA,color:#fff,stroke:none
-    style FP fill:#2E9E44,color:#fff,stroke:none
-    style PD fill:#0F4D92,color:#fff,stroke:none
-    style SS fill:#0F4D92,color:#fff,stroke:none
-    style CA fill:#0F4D92,color:#fff,stroke:none
-    style CO fill:#B64342,color:#fff,stroke:none
-```
-
----
-
-## 6  Graph Self-Evolution
-
-The graph does not grow by recording every observed action. It evolves through a staging-first pipeline with three independent paths, all converging on the same quality-gated persistence layer.
-
-### 6.1  Edge Lifecycle State Machine
-
-Every transition in AMSG passes through a lifecycle that determines its runtime authority:
-
-```mermaid
-stateDiagram-v2
-    [*] --> hypothesis : first observation
-    hypothesis --> candidate : verifications >= min_count
-    candidate --> promoted : dominance >= threshold
-    promoted --> demoted : dominance drops\n(UI changed)
-    demoted --> hypothesis : VLM re-explores
-
-    note right of hypothesis
-        1-2 observations
-        Not visible to ActionAdvisor
-    end note
-
-    note right of promoted
-        Grounded -> Fast Path
-        Ungrounded -> VLM hint
-        Persisted to Neo4j
-    end note
-```
-
-`EdgeLifecycleManager` tracks both individual edge lifecycle records and aggregate `OutcomeDistribution` for `(source_page_type, action_key)` pairs.
-
-**Promotion criteria** (configurable via `AMSGOptimConfig`):
-- `verification_count >= min_verification_count` (default: 1, strict: 3)
-- `dominance_ratio >= outcome_dominance_threshold` (default: 0.6, strict: 0.8)
-- `risk_level != "high"`
-
-**Demotion**: A promoted edge is demoted when its dominance ratio falls below 40%. This handles UI changes: if an app update changes the target of a button, the outcome distribution shifts, dominance drops, and the edge is automatically demoted.
-
-**Outcome Entropy** (Shannon entropy):
-
-$$H = -\sum_i p_i \ln(p_i)$$
-
-When `H > outcome_entropy_vlm_threshold` (default: 0.8), the transition is flagged for VLM verification instead of direct execution. In practice, a hardcoded set of semantic transitions (`search_result → product_detail`, `product_detail → spec_selection`) is the primary VLM-verification trigger; the entropy threshold serves as a supplementary data-driven mechanism.
-
-### 6.2  Three Persistence Paths
-
-```mermaid
-flowchart TD
-    subgraph online["Path 1: Online Runtime"]
-        R1["Execute Action"] --> R2["Verify Postcondition"]
-        R2 --> R3["record_observation()"]
-        R3 --> R4["EdgeLifecycle\nrecord_outcome()"]
-        R4 --> R5{"Task\nSuccess?"}
-        R5 -->|"yes"| R6["flush_staged_graph()\n-> Neo4j"]
-        R5 -->|"no"| R7["Stage only\n(no persist)"]
-    end
-
-    subgraph review["Path 2: Trajectory Review"]
-        T1["Trajectory\nJSON"] --> T2["Extract transitions"]
-        T2 --> T3["Dedup vs graph"]
-        T3 --> T4["Strong VLM\nvalidation"]
-        T4 --> T5{"Approved?"}
-        T5 -->|"yes"| T6["Import as\nhypothesis"]
-        T5 -->|"no"| T7["Reject"]
-    end
-
-    subgraph offline["Path 3: Offline Exploration"]
-        O1["Exploration\nfiles"] --> O2["Canonicalize\n& filter"]
-        O2 --> O3["Stage pages\n& transitions"]
-        O3 --> O4["Quality\ngates"]
-        O4 --> O5["Promote\nstaging"]
-    end
-
-    R6 --> DB[("Neo4j\nshopping-spatial-v4")]
-    T6 --> DB
-    O5 --> DB
-
-    style R6 fill:#2E9E44,color:#fff,stroke:none
-    style T6 fill:#2E9E44,color:#fff,stroke:none
-    style O5 fill:#2E9E44,color:#fff,stroke:none
-    style T7 fill:#B64342,color:#fff,stroke:none
-    style T4 fill:#7B61A0,color:#fff,stroke:none
-    style DB fill:#2E7D32,color:#fff,stroke:none
-```
-
-> Recommended figure: `figures/graph-persistence-pipeline-nature-image2.png`
-
-**Path 1 (Online Runtime)**: During task execution, each action produces a postcondition observation. `SpatialGraphMemory.record_observation()` stages the transition locally. At task end, `flush_staged_graph()` canonicalizes states and edges, promotes valid transitions, and writes to Neo4j. Failed tasks do not flush — this is the first quality gate.
-
-**Path 2 (Trajectory Review)**: `TrajectoryReviewer` processes saved trajectory files. It extracts page transitions, deduplicates against existing graph edges, and asks a strong VLM to validate new candidates. Only VLM-approved transitions are imported as `hypothesis` edges. This is the second quality gate — it prevents graph pollution from dialogs, ads, classifier mistakes, and transient screens.
-
-**Path 3 (Offline Exploration)**: `import_exploration_staging()` processes pre-collected exploration data through canonicalization, transient-page filtering, app-mismatch filtering, search-macro synthesis, same-page compaction, and edge-quality filtering. Only after all gates pass does `promote_staging_to_canonical()` merge into the graph.
-
-The key insight is that **no raw action writes directly to Neo4j**. Every persistence path passes through at least one quality gate (task success, VLM validation, or canonicalization filtering). This is what makes AMSG a "verified action library" rather than a noisy trajectory dump.
-
-### 6.3  Lifecycle Persistence
-
-`GraphLifecycleStore.persist_lifecycle_batch()` writes lifecycle records and outcome distributions to Neo4j:
-
-- `lifecycle_stage`, `verification_count`, `dominance_ratio`
-- `outcome_distribution_json`, `outcome_entropy`
-- Timestamps for creation, last update, last verification
-
-`GraphLifecycleStore.demote_stale_edges()` runs periodically to demote promoted edges whose dominance ratio has dropped below threshold. This ensures the graph self-corrects when app UIs change.
-
----
-
-## 7  Localization and Planning
-
-### 7.1  Page Localization
-
-The default localization mechanism is straightforward: match the current `(app, page_type)` against UIState nodes in Neo4j. When a match is found, the graph candidate gets a fixed score of 0.92; the current observation gets 0.82. This simple approach works because `PageClassifier` already provides an accurate page_type, and the `(app, page_type)` pair uniquely identifies a page state in the vast majority of cases.
-
-An optional multi-signal Bayesian localizer (`MultiSignalLocalizer`) is implemented but not enabled by default (`use_multi_signal_belief=False`). It adds visual embedding, semantic embedding, and temporal transition channels, but the marginal improvement over `(app, page_type)` matching has not been validated through ablation experiments.
-
-### 7.2  Goal Inference
-
-`GoalSpec.from_task()` extracts target page types and slots. `GraphRuntimeController._infer_goal_spec()` enriches this with VLM pre-plan fields:
-
-- `search_query` → `query` slot
-- `product` → `product` slot
-- `specs` → slot values (color, storage, size)
-- `target_page` → prioritized target page type
-
-For search-first tasks, `_search_first_targets()` forces the route to progress through `home → search_input → search_result → original targets`. This prevents the graph from taking a historical shortcut from home directly to a random product detail page — a shortcut that would bypass the user's actual search intent.
-
-### 7.3  Route Planning
-
-The default planner is **Dijkstra** on the weighted graph:
-
-$$\text{cost}(e) = 1.0 + 3.0 \cdot \text{fail\_rate} + \text{risk\_penalty} - 0.3 \cdot \text{confidence}$$
-
-Risk penalties: normal=0, medium=0.8, high=2.0. This cost function prefers edges with high success rates, low risk, and high confidence — edges that have been verified to work.
-
-On typical shopping app graphs (< 50 nodes), Dijkstra finds optimal paths efficiently. An enhanced planner (`EnhancedPlanner` with A* and Belief-A* backends) is implemented but not enabled by default — its additional cost adjustments (temporal decay, exploration bonus, information gain, entropy penalty) contribute < 0.1 on current graph sizes and do not change path selection in practice.
-
-### 7.4  RuntimeDAG: Cached Route Execution
-
-When Dijkstra finds a route, it is materialized into a `RuntimeDAG` — an in-memory array of edges with a cursor. Subsequent steps advance the cursor (`current_index += 1`) instead of re-querying Neo4j and re-running Dijkstra. This is the actual performance mechanism: on a 5-step navigation sequence, only the first step runs the full localization-planning pipeline; the remaining 4 steps read `route[current_index]` in < 1ms.
-
-RuntimeDAG is invalidated when: postcondition mismatch (arrived at unexpected page), app switch, consecutive graph failures exceed threshold, or next edge is high-risk. After invalidation, the next `locate_and_get_context()` call runs the full pipeline and creates a new DAG if planning succeeds.
-
-RuntimeDAG also controls PageClassifier skipping: when the DAG is valid and the next edge is not high-risk, `should_use_page_classifier()` returns `False`, and the agent uses the DAG's expected page_type instead of calling the classifier. This saves one VLM call per step but risks acting on a stale page_type if a popup appeared. The delayed postcondition verification at the next step catches such mismatches.
-
-### 7.5  Action Compilation
-
-Graph-native actions are compiled through a two-stage IR pipeline:
-
-```
-SemanticActionIR (intent, semantic_target, locator, postcondition)
-    → DeviceActionIR (action_type, coordinate, coordinate_space, screen_size)
-    → Canonical action dict for ActionHandler
-```
-
-`SpatialModelBridge` handles the first stage (semantic to device IR), and `ModelProtocolBridge` handles coordinate normalization across model families. This keeps AMSG model-agnostic: the graph stores semantic intent and locator evidence, while adapters handle model-native syntax and coordinate systems.
+Graph stores `SemanticActionIR` (intent + target + locator + postcondition). Phase 5 compiles through two stages: `SpatialModelBridge` (semantic → device IR) then `ModelProtocolBridge` (coordinate normalization across 5 VLM coordinate systems via (0,1) intermediate). This keeps the graph model-agnostic — the same Neo4j graph serves different VLMs.
 
 ---
 
