@@ -1,4 +1,4 @@
-# Shopping-Agent Architecture
+﻿# Shopping-Agent Architecture
 
 > Version: 2026-06-05 (revised)  
 > Scope: current checkout under `phone_agent/`, with emphasis on `agent.py`, `core/`, `memory/`, `spatial/`, `model/`, `actions/`, `device_factory.py`, and the AMSG v4 Neo4j runtime contract.  
@@ -12,8 +12,6 @@ Shopping-Agent is a VLM-primary mobile GUI agent with a self-evolving Active Mob
 4. Let graph persistence be earned by verification, not by raw trajectory replay.
 
 This creates an asymmetric agent: the graph accelerates and constrains the loop, while the VLM remains the semantic authority whenever a decision depends on current screen content or user intent.
-
-![System architecture figure](figures/system-architecture-nature-image2.png)
 
 ## 1. Design Philosophy
 
@@ -36,24 +34,59 @@ The resulting system is best described as **VLM-primary graph-guided control**. 
 | User-facing safety | `phone_agent/clarify.py`, `phone_agent/core/spec_guard.py`, `phone_agent/verification_detector.py`, `phone_agent/core/status.py` | Ask only when the task is genuinely ambiguous, block unsafe SKU/payment commits, detect login/CAPTCHA/SMS pages, and expose structured status events. |
 | Runtime graph guidance | `phone_agent/spatial/runtime_controller.py`, `phone_agent/spatial/action_advisor.py` | Locate the current page, infer graph goal, plan routes, expose promoted actions, and decide whether to skip or call the VLM. |
 | AMSG memory | `phone_agent/memory/spatial_graph_memory.py`, `phone_agent/spatial/edge_lifecycle.py`, `phone_agent/spatial/belief_localizer.py`, `phone_agent/spatial/enhanced_planner.py` | Maintain page states, transition edges, lifecycle metadata, Bayesian belief localization, and enhanced planning. |
-| Persistence | `phone_agent/memory/graph_store.py`, `phone_agent/memory/graph_lifecycle_store.py`, `phone_agent/spatial/trajectory_reviewer.py` | Persist UIState/Action/TaskTarget/Functionality graph data into Neo4j and review completed trajectories before importing new edges. |
+| Persistence | `phone_agent/memory/graph_store.py`, `phone_agent/memory/graph_lifecycle_store.py`, `phone_agent/spatial/trajectory_reviewer.py` | Persist UIState/Action/TaskTarget graph data, lifecycle statistics, and reviewed transition evidence into Neo4j. |
 | Session memory | `phone_agent/memory/memory_manager.py`, `phone_agent/memory/core/unified_state.py`, `phone_agent/memory/retrieval_gateway.py`, `phone_agent/memory/memory_store.py` | Store preferences, contacts, task history, products, cart state, current focus, trajectory JSON, and on-demand retrieval results. |
 | Model protocol | `phone_agent/model/client.py`, `phone_agent/model/adapters.py`, `phone_agent/model/protocol_bridge.py`, `phone_agent/spatial/model_bridge.py` | Support AutoGLM, UI-TARS, Qwen-VL, MAI-UI, and GUI-Owl while normalizing model outputs into device actions. |
 | Device execution | `phone_agent/actions/handler.py`, `phone_agent/actions/handler_*.py`, `phone_agent/device_factory.py`, `phone_agent/{adb,hdc,xctest}/` | Execute Launch, Tap, Type, Swipe, Back, Compound, Interact, and Take_over on Android, HarmonyOS, and iOS-style backends. |
+
+```mermaid
+block-beta
+    columns 1
+    block:strategic["Strategic Layer (VLM)"]
+        A["Task Plan\n& Reasoning"] B["Clarify\nAgent"] C["Verification\nDetector"] D["SpecGuard\nSafety"]
+    end
+    block:tactical["Tactical Layer (Action Library)"]
+        E["Runtime Graph\nController"] F["Action\nAdvisor"] G["Edge\nLifecycle"] H["Belief\nLocalizer"]
+    end
+    block:memory["Memory Layer"]
+        I["FAISS\nVector Store"] J["Session\nState"] K["Retrieval\nGateway"] L["Trajectory\nReviewer"]
+    end
+    block:execution["Execution Layer (Device)"]
+        M["ADB\nAndroid"] N["HDC\nHarmonyOS"] O["XCTest\niOS"] P["Model\nAdapters"]
+    end
+
+    style strategic fill:#F3E8FD,stroke:#C4A8E0
+    style tactical fill:#E8F5E9,stroke:#81C784
+    style memory fill:#E0F2F1,stroke:#80CBC4
+    style execution fill:#FFF3E0,stroke:#FFB74D
+```
 
 The runtime database defaults to `shopping-spatial-v4` through `AMSG_RUNTIME_GRAPH_DATABASE`. `GraphRuntimeController` advertises the runtime contract as `amsg-v4-runtime` and disables legacy fallback by default in `MemoryManager._ensure_graph_runtime_controller()`.
 
 ## 3. Agent Execution Model
 
-![Agent execution flow figure](figures/agent-execution-flow-nature-image2.png)
-
 The main control loop is implemented by `PhoneAgent._execute_step()`. Each step follows the same closed loop:
 
-```text
-Observe -> Page Semantics -> Verification Gate -> Graph Runtime
-        -> Fast Path or Full VLM Path -> SpecGuard -> Execute
-        -> Postcondition Verification -> Memory and Graph Update
-        -> Observe next screen
+```mermaid
+flowchart LR
+    A["📷 Observe"] --> B["🏷️ Page\nSemantics"]
+    B --> C{"🔒 Verification\nGate"}
+    C -->|"login/captcha"| T["⏸️ Take_over"]
+    C -->|"clear"| D["🗺️ Graph\nRuntime"]
+    D --> E{"⚡ _needs_vlm?"}
+    E -->|"Grounded\n~0.5s"| F["🟢 Fast Path"]
+    E -->|"Semantic\n~5s"| G["🔵 Full VLM Path"]
+    F --> H["🛡️ SpecGuard"]
+    G --> H
+    H --> I["▶️ Execute"]
+    I --> J["✅ Postcondition\nVerify"]
+    J --> K["💾 Memory &\nGraph Update"]
+    K --> A
+
+    style F fill:#2E9E44,color:#fff,stroke:none
+    style G fill:#0F4D92,color:#fff,stroke:none
+    style T fill:#B64342,color:#fff,stroke:none
+    style E fill:#E8873D,color:#fff,stroke:none
 ```
 
 ### 3.1 Task Initialization
@@ -127,6 +160,24 @@ When login, CAPTCHA, SMS code, slider verification, or similar user-owned pages 
 2. Memory preferences fill missing slots when possible.
 3. A VLM ambiguity check asks a targeted user question only when the task is still underspecified.
 
+```mermaid
+flowchart LR
+    T["User Task"] --> L1{"Layer 1\nRule-based\n0ms"}
+    L1 -->|"non-shopping\nor specs complete"| SKIP["✅ Skip\nclarification"]
+    L1 -->|"shopping +\nmissing specs"| L2{"Layer 2\nMemory\npreferences"}
+    L2 -->|"all gaps\nfilled"| ENRICH["✅ Enrich\nfrom memory"]
+    L2 -->|"specific\nquery exists"| SKIP
+    L2 -->|"vague\ntask"| L3{"Layer 3\n🤖 Strong VLM\nambiguity check"}
+    L3 -->|"CLEAR"| SKIP
+    L3 -->|"CLARIFY"| ASK["❓ Ask user\ntargeted question"]
+    ASK --> REBUILD["Reconstruct\nclarified task"]
+
+    style L1 fill:#42949E,color:#fff,stroke:none
+    style L2 fill:#E8873D,color:#fff,stroke:none
+    style L3 fill:#7B61A0,color:#fff,stroke:none
+    style SKIP fill:#2E9E44,color:#fff,stroke:none
+```
+
 This is important for user experience. The system should not ask users for every missing field. It should ask only when the missing field blocks safe execution.
 
 ### 3.5 Runtime Graph Contract
@@ -151,7 +202,7 @@ The controller also caches `RuntimeDAG` when a route exists. RuntimeDAG allows c
 The agent has three practical execution paths:
 
 | Path | Trigger | VLM call | Safety boundary |
-|---|---:|---:|---|
+|---|:---|---:|---|
 | Fast Path | `ActionAdvisor` returns a grounded promoted action with confidence at least `0.9` and aligned with the current plan step. | No | Must pass postcondition check; otherwise falls through to Full VLM Path. |
 | Graph shortcut | `GraphRuntimeController` returns a high-confidence compilable structural action. | No | Disabled for high-risk, low-confidence, ungrounded, or uncompiled actions. |
 | Full VLM Path | No safe graph action, semantic target choice required, low confidence, failed repair, or safety guard active. | Yes | VLM sees graph hints but must ground on current screenshot. |
@@ -206,8 +257,37 @@ This is a UX decision as much as a safety decision. The user should not be asked
 |---|---|---|
 | User memory | `MemoryStore` under `memory_db/<user>` | Preferences, contacts, app usage, corrections, task history. |
 | Session state | `UnifiedSessionState` | Current task, products, cart state, constraints, current focus, state IDs, reasoning archive. |
-| Graph memory | `SpatialGraphMemory` plus Neo4j | Page graph, action graph, lifecycle metadata, v4 functionality graph. |
+| Graph memory | `SpatialGraphMemory` plus Neo4j | Page-state graph, action-transition graph, lifecycle metadata, staged observations, and route-planning evidence. |
 | Trajectory files | `memory_db/<user>/trajectories/*.json` | Per-task step details for review, audit, and graph evolution. |
+
+```mermaid
+graph TD
+    subgraph surfaces["Four Memory Surfaces"]
+        direction LR
+        UM["🧠 User Memory\nFAISS Vector Store\nPreferences · Contacts"]
+        SS["📋 Session State\nUnifiedSessionState\nProducts · Cart · Steps"]
+        GM["🗺️ Graph Memory\nNeo4j + Lifecycle\nPages · Actions · Routes"]
+        TF["📁 Trajectory Files\nJSON per task\nAudit · Evolution"]
+    end
+
+    subgraph injection["Per-Step Injection (lightweight)"]
+        P1["① Progress summary\n(always)"]
+        P2["② Current focus\n(always)"]
+        P3["③ On-demand retrieval\n(triggered by thinking)"]
+        P4["④ Constraints\n(if exists)"]
+    end
+
+    UM --> injection
+    SS --> injection
+    GM --> injection
+    injection --> VLM["VLM Context Window"]
+
+    style UM fill:#42949E,color:#fff,stroke:none
+    style SS fill:#E8873D,color:#fff,stroke:none
+    style GM fill:#2E7D32,color:#fff,stroke:none
+    style TF fill:#7B61A0,color:#fff,stroke:none
+    style VLM fill:#0F4D92,color:#fff,stroke:none
+```
 
 ### 6.1 Lightweight Context Injection
 
@@ -241,28 +321,33 @@ This file is both a debug artifact and a graph-evolution input.
 
 ## 7. AMSG Graph Design
 
-![AMSG graph schema figure](figures/amsg-graph-schema-nature-image2.png)
-
 AMSG is a typed directed graph:
 
 ```text
-G = (V, E_c, E_h, F, C, T, Sigma, B, Pi)
+G = (V, A, E_c, E_h, T, Sigma, B, Pi, L, O)
 
-V      UIState nodes
-E_c    committed/promoted transitions
-E_h    hypothesis/candidate transitions
-F      FunctionalityItem nodes
-C      FunctionalityCluster nodes
-T      TaskTarget nodes
-Sigma  domain schema
+V      UIState nodes, implemented by PageState
+A      Action nodes, storing semantic intent and grounding evidence
+E_c    committed/promoted UIState-Action-UIState transitions
+E_h    hypothesis/candidate transitions staged before promotion
+T      TaskTarget nodes for trajectory-level retrieval only
+Sigma  domain schema over page types and plausible transitions
 B      belief distribution over UIState
-Pi     planner
+Pi     planner over weighted transition edges
+L      lifecycle records for edge promotion and demotion
+O      outcome distributions for postcondition statistics
 ```
 
 The canonical persisted motif is:
 
-```text
-(source:UIState)-[:NEXT_ACTION]->(action:Action)-[:PRODUCES]->(target:UIState)
+```mermaid
+graph LR
+    S["🟣 UIState\n(Source Page)"] -->|"NEXT_ACTION"| A["🟠 Action\ntype · region · locator\nlifecycle · entropy"]
+    A -->|"PRODUCES"| T["🟣 UIState\n(Target Page)"]
+
+    style S fill:#E8E0F0,stroke:#7B61A0,stroke-width:2px,color:#4a2d7a
+    style A fill:#FFF3E0,stroke:#E8873D,stroke-width:2px,color:#7a4a0d
+    style T fill:#E8E0F0,stroke:#7B61A0,stroke-width:2px,color:#4a2d7a
 ```
 
 ### 7.1 UIState
@@ -308,8 +393,24 @@ The canonical persisted motif is:
 
 The edge lifecycle is:
 
-```text
-hypothesis -> candidate -> promoted -> demoted
+```mermaid
+stateDiagram-v2
+    [*] --> hypothesis : first observation
+    hypothesis --> candidate : verifications ≥ min_count
+    candidate --> promoted : dominance ≥ 80%
+    promoted --> demoted : dominance < 40%\n(UI changed)
+    demoted --> hypothesis : VLM re-explores
+
+    note right of hypothesis
+        1–2 observations
+        Not visible to ActionAdvisor
+    end note
+
+    note right of promoted
+        Grounded → Fast Path
+        Ungrounded → VLM hint
+        Persisted to Neo4j
+    end note
 ```
 
 `EdgeLifecycleManager.record_outcome()` tracks both concrete edge records and outcome distributions for `(source_page_type, action_key)`.
@@ -323,28 +424,7 @@ Promotion is based on:
 
 Demotion occurs when a promoted edge later loses dominance. High outcome entropy causes VLM verification instead of direct shortcut execution.
 
-### 7.4 Functionality Layer
-
-`GraphStore` implements a v4 Functionality persistence and query layer:
-
-```text
-(UIState)-[:EXPOSES_FUNCTION]->(FunctionalityItem)
-(FunctionalityItem)-[:MEMBER_OF]->(FunctionalityCluster)
-(Action)-[:IMPLEMENTS_FUNCTION]->(FunctionalityItem or FunctionalityCluster)
-(FunctionalityCluster)-[:LEADS_TO]->(UIState)
-```
-
-The runtime query API is `GraphStore.get_v4_functionality_context()`, which returns:
-
-- `available_roles`
-- `data_items`
-- `verified_clusters`
-- `implemented_actions`
-- `semantic_hint`
-
-The write API is `GraphStore.upsert_functionality_graph(report)`. In the current checkout, the persistence/query surface exists, but local extractor and clusterer modules are not present under `phone_agent/spatial/`. If a paper claims functionality discovery as an implemented method, the extraction pipeline should be restored or described as an external artifact source.
-
-### 7.5 TaskTarget
+### 7.4 TaskTarget
 
 `TaskTarget` nodes support trajectory-level retrieval:
 
@@ -353,7 +433,7 @@ The write API is `GraphStore.upsert_functionality_graph(report)`. In the current
 (TaskTarget)-[:ENDS_AT]->(UIState)
 ```
 
-This is separate from runtime route planning. Runtime uses page transitions; TaskTarget is a GraphRAG surface for similar-task context.
+This is separate from runtime route planning. TaskTarget is a GraphRAG surface for similar-task context. Runtime localization and routing operate over UIState, Action, TransitionEdge, lifecycle evidence, and outcome statistics.
 
 ## 8. Localization and Planning
 
@@ -401,6 +481,27 @@ later pages     -> original targets
 ```
 
 This prevents the graph from taking a historical shortcut from home to a random product detail page.
+
+```mermaid
+graph TD
+    H["🏠 home"] -->|"Grounded ✅"| SI["🔍 search_input"]
+    SI -->|"Grounded ✅\nCompound: Type + Submit"| SR["📋 search_result"]
+    SR -->|"Ungrounded ⚠️\nVLM picks product"| PD["📦 product_detail"]
+    SR -->|"Grounded ✅"| FP["🔧 filter_panel"]
+    FP -->|"Grounded ✅"| SR
+    PD -->|"Ungrounded ⚠️\nVLM picks action"| SS["🛒 spec_selection"]
+    SS -->|"Ungrounded ⚠️\nVLM selects specs"| CA["🧺 cart"]
+    SS -->|"Ungrounded ⚠️"| CO["💳 checkout"]
+
+    style H fill:#2E9E44,color:#fff,stroke:none
+    style SI fill:#2E9E44,color:#fff,stroke:none
+    style SR fill:#3775BA,color:#fff,stroke:none
+    style FP fill:#2E9E44,color:#fff,stroke:none
+    style PD fill:#0F4D92,color:#fff,stroke:none
+    style SS fill:#0F4D92,color:#fff,stroke:none
+    style CA fill:#0F4D92,color:#fff,stroke:none
+    style CO fill:#B64342,color:#fff,stroke:none
+```
 
 ### 8.3 Route Planning
 
@@ -468,9 +569,37 @@ This is the core "graph as advisor, not controller" decision.
 
 ## 10. Automatic Graph Persistence
 
-![AMSG automatic persistence pipeline figure](figures/graph-persistence-pipeline-nature-image2.png)
-
 The graph persistence pipeline is staging-first. The graph does not immediately persist every observed action as an executable edge.
+
+```mermaid
+flowchart TD
+    subgraph runtime["Online Runtime Path"]
+        R1["Execute Action"] --> R2["Verify Postcondition"]
+        R2 --> R3["record_observation()"]
+        R3 --> R4["EdgeLifecycle\nrecord_outcome()"]
+        R4 --> R5{"Task\nSuccess?"}
+        R5 -->|"yes"| R6["flush_staged_graph()\n→ Neo4j"]
+        R5 -->|"no"| R7["Stage only\n(no persist)"]
+    end
+
+    subgraph review["Trajectory Review Path"]
+        T1["Save trajectory\nJSON"] --> T2["Extract transitions"]
+        T2 --> T3["Dedup vs\nexisting graph"]
+        T3 --> T4["🤖 Strong VLM\nvalidation"]
+        T4 --> T5{"Approved?"}
+        T5 -->|"yes"| T6["Import to Neo4j\nas hypothesis"]
+        T5 -->|"no"| T7["❌ Reject\n(noise/dialog)"]
+    end
+
+    R6 --> DB[("🗄️ Neo4j\nshopping-spatial-v4")]
+    T6 --> DB
+
+    style R6 fill:#2E9E44,color:#fff,stroke:none
+    style T6 fill:#2E9E44,color:#fff,stroke:none
+    style T7 fill:#B64342,color:#fff,stroke:none
+    style T4 fill:#7B61A0,color:#fff,stroke:none
+    style DB fill:#2E7D32,color:#fff,stroke:none
+```
 
 ### 10.1 Online Runtime Path
 
@@ -673,7 +802,7 @@ The strict `sava()` preset requires at least three verifications and a dominance
 
 A compact method description:
 
-> Shopping-Agent is a VLM-primary mobile GUI agent augmented by a self-maintaining Active Mobile Spatial Graph. Each step observes the current screen, classifies page semantics, localizes a page-state belief, verifies the previous transition, and chooses between a fast graph-grounded action and a full VLM reasoning path. The graph stores page abstractions, semantic action nodes, empirical outcome distributions, lifecycle metadata, and optional functionality roles in Neo4j. Online observations and offline exploration artifacts are staged, canonicalized, filtered, and persisted only after postcondition verification or VLM trajectory review. User constraints and session memory are injected through a lightweight, on-demand mechanism, while high-risk or semantically underdetermined transitions remain under VLM or human control.
+> Shopping-Agent is a VLM-primary mobile GUI agent augmented by a self-maintaining Active Mobile Spatial Graph. Each step observes the current screen, classifies page semantics, localizes a page-state belief, verifies the previous transition, and chooses between a fast graph-grounded action and a full VLM reasoning path. The graph stores page abstractions, semantic action nodes, verified transition edges, empirical outcome distributions, lifecycle metadata, and trajectory-level TaskTarget anchors in Neo4j. Online observations and offline exploration artifacts are staged, canonicalized, filtered, and persisted only after postcondition verification or VLM trajectory review. User constraints and session memory are injected through a lightweight, on-demand mechanism, while high-risk or semantically underdetermined transitions remain under VLM or human control.
 
 Recommended paper figures:
 
@@ -686,12 +815,12 @@ Recommended paper figures:
 
 These points should be handled before making final paper claims:
 
-1. The v4 Functionality extractor, clusterer, coverage metrics, reporting, role classifier, and task synthesis modules have been intentionally removed from `phone_agent/spatial/`. The GraphStore retains the persistence/query API for functionality data, but no local extraction pipeline exists. If needed for paper experiments, these modules can be restored from git history.
-2. Several source files contain mojibake in Chinese comments, prompts, and log strings. The architecture is still understandable, but camera-ready code and paper artifacts should normalize UTF-8 text before release.
-3. Price constraint enforcement relies on a `⛔ 价格红线` context injection on decision pages (search_result, product_detail, spec_selection). This is a prompt-level guard, not a hard programmatic check — VLM compliance depends on model capability.
+1. Several source files contain mojibake in Chinese comments, prompts, and log strings. The architecture is still understandable, but camera-ready code and paper artifacts should normalize UTF-8 text before release.
+2. Price constraint enforcement relies on a prompt-level reminder on decision pages such as `search_result`, `product_detail`, and `spec_selection`. It is not yet a fully programmatic price verifier, so VLM compliance should be measured explicitly.
 3. Some tests still target old APIs. For example, `tests/test_agent_graph_runtime.py` calls removed `PhoneAgent._spec_guard_check`, while the current implementation routes through `agent._spec_guard.check(...)`.
 4. Page classification remains an upstream dependency. RuntimeDAG skipping improves latency, but any paper evaluation should report classifier usage, skip count, and failure recovery metrics.
 5. Graph shortcuts are strongest for stable navigation affordances. Product, store, SKU, and checkout choices should be measured separately because they require VLM semantics.
-6. Paper experiments must report the exact `AMSG_CONFIG`, Neo4j database name, strong VLM configuration, and whether trajectory review was enabled.
+6. Some legacy graph helper APIs remain in the codebase for compatibility, but they are outside the current method claim and are intentionally omitted from the AMSG figures.
+7. Paper experiments must report the exact `AMSG_CONFIG`, Neo4j database name, strong VLM configuration, and whether trajectory review was enabled.
 
-These limitations do not weaken the core architecture. They define the honest boundary between implemented method, experimental configuration, and future functionality-discovery work.
+These limitations do not weaken the core architecture. They define the honest boundary between implemented method, experimental configuration, and future graph-memory extensions.
