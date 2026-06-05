@@ -311,7 +311,167 @@ $$h(s) = \min_{g \in \text{Goals}} d_\Sigma(s.\text{page\_type}, g)$$
 
 ---
 
-## 6  暂存优先持久化
+## 6  运行时图谱管线：从单步闭环到跨任务演进
+
+前述章节分别介绍了定位（第 3 节）、生命周期（第 4 节）和规划（第 5 节）的独立算法。本节阐述这些算法如何在运行时管线中协同工作，形成从单步观测到跨任务图谱累积的完整闭环。
+
+### 6.1  单步闭环：延迟验证架构
+
+AMSG 运行时管线的核心设计是**延迟后条件验证**（delayed postcondition verification）。传统方法在执行动作后立即记录转移结果，但此时尚无法知道动作是否真正达到了预期页面——因为下一张截图还没有被捕获和分类。
+
+AMSG 的解决方案是将每步分为**两个时间点**：
+
+**时间点 t（执行时）**：执行动作 $a_t$ 后，将 `(source_state, action, expected_postcondition)` 暂存为**待验证转移**（pending transition），不立即写入图谱。
+
+**时间点 t+1（验证时）**：捕获新截图，进行页面分类和信念定位。将观测到的 `page_type` 与 $t$ 步暂存的 `expected_postcondition` 对比：
+- **匹配**：调用 `record_observation(source, action, target, outcome="success")`，转移进入生命周期系统
+- **不匹配**：调用 `record_observation(source, action, target, outcome="failure")`，触发修复策略（重试/重规划/回退）
+
+这一设计产生如下单步数据流：
+
+```
+Step t:                              Step t+1:
+┌────────────────────┐               ┌────────────────────┐
+│ 1. 截图 + 分类      │               │ 1. 截图 + 分类      │
+│ 2. 验证 t-1 的      │               │ 2. 验证 t 的        │
+│    pending transition│              │    pending transition│
+│ 3. 信念定位          │               │    → 匹配? success  │
+│ 4. 目标推断 + 路径规划│              │    → 不匹配? failure │
+│ 5. 调度(快速/VLM)    │               │ 3. 信念定位          │
+│ 6. 执行动作          │               │ ...                 │
+│ 7. 暂存 pending:     │               │                     │
+│    (state, action,   │              │                     │
+│     postcondition)   │               │                     │
+└────────────────────┘               └────────────────────┘
+```
+
+**实现参考**：
+- 暂存：`memory_manager.py` 的 `update_state_and_transition()` 设置 `_pending_transition_source`、`_pending_transition_action`、`_pending_expected_postcondition`
+- 验证：`runtime_controller.py` 的 `_verify_pending_transition()` 在下一步的 `locate_and_get_context()` 中执行
+- 记录：验证通过后调用 `spatial_graph_memory.record_observation()`，触发 `EdgeLifecycleManager.record_outcome()`
+
+**设计抉择**：为什么要延迟验证而非立即记录？因为立即记录只能记录"我执行了什么动作"，而延迟验证能记录"动作实际产生了什么结果"。后者是生命周期系统和结果分布的数据基础——没有真实的后条件观测，就无法计算优势度和熵。
+
+### 6.2  RuntimeDAG：有状态的路径执行
+
+当规划器找到从当前状态到目标的路径时，该路径被物化为一个 `RuntimeDAG` 对象，缓存在 `MemoryManager._runtime_dag` 中。RuntimeDAG 是一个**有状态的执行计划**：
+
+```python
+RuntimeDAG:
+    plan_id: str              # 基于(任务, 当前状态, 路径步骤)的唯一标识
+    app: str                  # 目标应用
+    goal_spec: GoalSpec       # 目标页面类型 + 运行时槽位
+    route: list[Edge]         # 有序边列表（从起点到目标）
+    current_index: int        # 当前执行到第几条边
+```
+
+**RuntimeDAG 生命周期**：
+
+1. **创建**：`_runtime_dag_from_route()` 在首次路径规划成功时创建 DAG，缓存路径上的所有节点和边
+2. **推进**：每步执行后，如果后条件验证通过，`current_index += 1`，DAG 推进到下一条边
+3. **复用**：连续多步中，如果 DAG 的后条件持续匹配，直接从 DAG 取下一条边——跳过完整的 Neo4j 查询和 Dijkstra 规划
+4. **失效**：以下情况触发 DAG 失效并重建：
+   - 后条件不匹配（到达了非预期页面）
+   - 当前应用与 DAG 应用不匹配（用户切换了应用）
+   - 连续图谱失败计数超过阈值
+   - 下一条边是高风险转移
+   - DAG 到达终点或无下一条边
+
+**性能影响**：RuntimeDAG 的存在将连续导航步骤的图谱查询从 O(Neo4j 查询 + Dijkstra 规划) 降低到 O(内存数组索引)。在一个 5 步连续导航序列（如 home → search_input → search_result → product_detail → spec_selection）中，仅第一步需要完整规划，后续 4 步直接从 DAG 读取。
+
+**实现参考**：
+- 创建：`runtime_controller.py` 的 `_runtime_dag_from_route()`
+- 快速路径使用：`runtime_controller.py` 的 `_try_runtime_dag_hint()`
+- 失效条件：`runtime_controller.py` 的 `should_use_page_classifier()` 和 DAG 可用性检查
+
+### 6.3  六阶段运行时编排
+
+`GraphRuntimeController.locate_and_get_context()` 是单步图谱交互的编排入口，将定位、验证、规划和调度在一次调用中完成：
+
+**阶段 1：RuntimeDAG 快速路径尝试**。如果 DAG 存在且可用，直接从 DAG 取下一步动作，记录上一步的 pending transition，返回 `mode=navigate`。成本：~10ms。
+
+**阶段 2：信念定位**。构建当前 PageState，查询 Neo4j 候选，执行四通道贝叶斯更新（第 3 节），得到信念分布 $B_t(v)$。
+
+**阶段 3：待验证转移验证**。将上一步的 `pending_expected_postcondition` 与当前信念的 `page_type` 对比。匹配则以 `success` 记录观测；不匹配则以 `failure` 记录并触发修复策略。
+
+**阶段 4：目标推断与路径规划**。从任务文本和 VLM 预规划提取 `GoalSpec`，执行 Dijkstra/A*/Belief-A* 规划（第 5 节），生成 `RoutePlan`。
+
+**阶段 5：RuntimeDAG 创建**。如果规划成功（`mode=navigate`），将路径物化为 RuntimeDAG 并缓存。
+
+**阶段 6：VLM 验证决策**。对下一条边检查是否需要 VLM 验证——基于硬编码的语义转移集合（如 `search_result → product_detail`）和数据驱动的结果熵阈值（第 4.3 节）。
+
+返回的 `context_data` 包含：
+
+| 字段 | 含义 | 消费者 |
+|---|---|---|
+| `mode` | `navigate` / `explore` / `verify_with_vlm` / `goal_reached` | Agent 调度门控 |
+| `belief` | 当前信念分布 | 调试/日志 |
+| `goal_spec` | 目标页面类型和槽位 | 任务进度追踪 |
+| `route_plan` | 完整路径和代价 | 调试/日志 |
+| `next_actions` | 下一步推荐动作列表 | 快速路径编译 / VLM 提示 |
+| `semantic_context` | 图谱上下文文本 | VLM 提示注入 |
+| `repair_hint` | 修复策略（如果上步失败） | Agent 修复逻辑 |
+| `runtime_metrics` | 分类器调用/DAG 命中/覆盖缺口 | 监控/消融分析 |
+
+### 6.4  任务结束：三阶段持久化触发
+
+当 `PhoneAgent.run()` 的循环结束（任务完成或超时）时，`MemoryManager.end_task()` 触发三阶段持久化：
+
+**阶段 A：轨迹保存**。无论成功与否，将完整的步骤详情序列化为 `trajectories/{timestamp}_{ok|fail}_{task_slug}.json`。这是审计和离线分析的基础。
+
+**阶段 B：图谱刷新（仅成功任务）**。调用 `spatial_graph_memory.flush_staged_graph()`：
+1. 规范化：按语义签名去重页面状态，合并相同签名的多次观测
+2. 过滤：移除瞬态 `unknown` 页面、应用不匹配的边、自环边
+3. 生命周期提升：检查每条边是否满足提升条件（验证次数 + 优势度 + 风险）
+4. Neo4j 写入：`MERGE` UIState 节点 + `MERGE` Action 节点 + `MERGE` 关系
+5. 生命周期持久化：将 `EdgeLifecycleManager` 的记录写入 Neo4j Action 节点的属性
+
+**阶段 C：VLM 轨迹审核（仅成功任务）**。调用 `TrajectoryReviewer.review_and_import()`：
+1. 从轨迹提取页面转移链
+2. 对比 Neo4j 去重
+3. 向强 VLM 提交新候选进行验证（"这是真实的页面导航还是弹窗/分类器错误？"）
+4. VLM 批准的转移以 `hypothesis` 身份导入 Neo4j
+
+**关键设计**：失败任务只执行阶段 A，不执行 B 和 C。这是第一道质量门——失败任务的观测可能包含大量错误导航（走错路、陷入循环、被弹窗干扰），将它们写入图谱会污染后续任务的导航质量。
+
+### 6.5  跨任务图谱演进
+
+AMSG 的跨任务演进形成一个正反馈循环：
+
+```
+任务 N 执行
+    ↓
+  成功 → flush_staged_graph() + VLM 轨迹审核
+    ↓
+  Neo4j 中新增/增强了若干 UIState-Action-UIState 转移
+    ↓
+任务 N+1 执行
+    ↓
+  locate_and_get_context() 查询 Neo4j
+    ↓
+  更多已验证边 → 更多快速路径命中 → 更少 VLM 调用 → 更快完成
+    ↓
+  成功 → 进一步增强图谱
+    ↓
+  ...
+```
+
+这一循环的收敛性来自两个约束：
+
+1. **上界约束**：移动应用的页面类型是有限的。一个典型的购物应用有 8-12 种核心页面类型和 15-25 种常用转移。在 10-20 次成功任务后，核心购物流程的转移基本被覆盖，图谱趋于稳定。
+
+2. **质量约束**：生命周期系统只提升可靠的转移，降级不可靠的转移。这意味着图谱不会无限膨胀——低质量的边被自动移除，图谱收敛到一组稳定的、经过验证的导航路径。
+
+**与纯 VLM 方法的效率对比**：在图谱冷启动（0 条边）时，AMSG 退化为纯 VLM 方法（每步都走完整 VLM 路径）。随着任务累积，越来越多的导航步骤走快速路径（~0.5s vs ~5s），总任务延迟呈亚线性下降。在图谱稳定后（核心转移已覆盖），一个典型的 20 步购物任务中约 12-15 步走快速路径，仅 5-8 步需要 VLM 推理。
+
+**实现参考**：
+- `memory_manager.py` 的 `end_task()` 方法，约 100 行，编排三阶段持久化
+- `spatial_graph_memory.py` 的 `flush_staged_graph()` 方法，调用 `canonicalize_state_graph()` 和 `promote_staging_to_canonical()`
+- `trajectory_reviewer.py` 的 `review_and_import()` 方法，调用强 VLM 验证新转移
+
+---
+
+## 7  暂存优先持久化
 
 ### 6.1  核心原则
 
@@ -351,7 +511,7 @@ AMSG 的持久化遵循一个严格原则：**没有原始动作直接写入 Neo
 
 ---
 
-## 7  双速调度决策理论
+## 8  双速调度决策理论
 
 ### 7.1  调度门控
 
@@ -386,7 +546,7 @@ AMSG 的调度是唯一在**边级别**做决策、提供**三档速度**、且�
 
 ---
 
-## 8  消融配置矩阵
+## 9  消融配置矩阵
 
 `AMSGOptimConfig` 提供六种预设配置，用于分离各算法模块的独立贡献：
 
@@ -409,7 +569,7 @@ AMSG 的调度是唯一在**边级别**做决策、提供**三档速度**、且�
 
 ---
 
-## 9  与现有工作的理论对比
+## 10  与现有工作的理论对比
 
 ### 9.1  定位方式
 
@@ -451,7 +611,7 @@ WebClipper [Wang et al., 2025] 将轨迹建模为状态图并通过最小必要 
 
 ---
 
-## 10  创新贡献总结
+## 11  创新贡献总结
 
 基于上述分析，AMSG 的核心算法创新可概括为：
 
