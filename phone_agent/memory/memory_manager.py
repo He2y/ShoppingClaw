@@ -300,31 +300,37 @@ class MemoryManager:
                     print(f"[!] [graph] 图谱提交失败: {e}")
 
         # VLM-powered trajectory review → auto-import new transitions
-        if success and self.session_history and self.runtime_graph_store:
+        traj_entry = getattr(self, "_last_trajectory_entry", None)
+        traj_path = getattr(self, "_last_trajectory_path", None)
+        if success and traj_entry and self.runtime_graph_store:
             try:
                 from phone_agent.spatial.trajectory_reviewer import TrajectoryReviewer
+                import json as _json
+
                 reviewer = TrajectoryReviewer(
                     graph_store=self.runtime_graph_store,
                     verbose=self._verbose,
                 )
-                trajectory_entry = {
-                    "task": self.current_task,
-                    "success": success,
-                    "step_details": [
-                        {
-                            "page_type": s.get("page_type", ""),
-                            "action_type": s.get("action", {}).get("action", ""),
-                            "action_params": {k: v for k, v in s.get("action", {}).items()
-                                             if k not in ("action", "_metadata")},
-                            "thinking": s.get("thinking", "")[:100],
-                            "app": s.get("screenshot_app", s.get("app", "")),
-                        }
-                        for s in self.session_history
-                    ],
-                }
                 apps = list(self._session_apps)
                 app = apps[0] if apps else ""
-                review = reviewer.review_and_import(trajectory_entry, app=app)
+                review = reviewer.review_and_import(traj_entry, app=app)
+
+                # Write review result back into the trajectory file
+                if traj_path:
+                    traj_entry["review"] = {
+                        "transitions_extracted": review.transitions_extracted,
+                        "already_in_graph": review.already_in_graph,
+                        "new_candidates": review.new_candidates,
+                        "vlm_approved": review.vlm_approved,
+                        "imported": review.imported,
+                        "details": review.details,
+                    }
+                    try:
+                        with open(traj_path, "w", encoding="utf-8") as f:
+                            _json.dump(traj_entry, f, ensure_ascii=False, indent=2)
+                    except Exception:
+                        pass
+
                 if self._verbose and review.imported > 0:
                     print(
                         f"[i] [graph-evolve] 自进化: {review.imported} 条新转换导入 "
@@ -496,6 +502,8 @@ class MemoryManager:
         filename = f"{ts}_{status}_{slug}.json"
         filepath = traj_dir / filename
 
+        self._last_trajectory_path = str(filepath)
+        self._last_trajectory_entry = entry
         try:
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(entry, f, ensure_ascii=False, indent=2)
