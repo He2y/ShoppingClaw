@@ -1,0 +1,22 @@
+{
+  "261d56d58aa10160e2e591ed86806a2b": {
+    "decision": "reject",
+    "note": "audit batch apply"
+  },
+  "c39b6cc8ecc707c5af826c39a8361f1a": {
+    "decision": "approve",
+    "note": "audit batch apply"
+  },
+  "630e2978b7a3c51e0e14e3038ee6f628": {
+    "decision": "approve",
+    "note": "audit batch apply"
+  },
+  "9db20136abc572743366d0f34fea87e1": {
+    "decision": "approve",
+    "note": "audit batch apply"
+  },
+  "5d9151895f738f941fb6ac661f2d4518": {
+    "decision": "approve",
+    "note": "audit batch apply"
+  }
+}

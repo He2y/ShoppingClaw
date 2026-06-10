@@ -2045,7 +2045,11 @@ class SpatialGraphMemory:
     ) -> bool:
         if not source_state or not target_state:
             return False
-        if source_state.app != target_state.app:
+        # Alias-aware: after canonical resolution one endpoint may carry the
+        # canonical id ('jd', merged with an existing Neo4j node) while a
+        # brand-new endpoint still carries the raw value ('京东') — exact
+        # comparison silently dropped product_detail->spec_selection on JD.
+        if not _same_app(source_state.app, target_state.app):
             return False
         if source_state.page_type in _TRANSIENT_PAGE_TYPES or target_state.page_type in _TRANSIENT_PAGE_TYPES:
             return False
