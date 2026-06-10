@@ -523,11 +523,22 @@ class OfflineExplorer:
             if inferred_str:
                 inferred_str_raw = str(inferred_str)
             if inferred_str and inferred_str != current_pt_str:
-                self._log(
-                    f"  belief repair: classifier={current_pt_str} "
-                    f"reasoning={inferred_str}"
-                )
-                current_page = self._relabel_page_info(current_page, inferred_page_type)
+                # Reasoning text frequently restates task constraints that
+                # mention high-risk pages (支付/地址/登录). Only the classifier,
+                # which sees the actual screenshot, may escalate to high risk.
+                high_risk = (getattr(self, "safety", None) or _get_default_safety()).high_risk_page_types
+                if inferred_str in high_risk and current_pt_str not in high_risk:
+                    self._log(
+                        "  belief repair ignored (high-risk escalation from reasoning): "
+                        f"classifier={current_pt_str} reasoning={inferred_str}"
+                    )
+                    inferred_str_raw = None
+                else:
+                    self._log(
+                        f"  belief repair: classifier={current_pt_str} "
+                        f"reasoning={inferred_str}"
+                    )
+                    current_page = self._relabel_page_info(current_page, inferred_page_type)
             self._record_page(current_page)
 
             if pending_transition:
@@ -539,8 +550,26 @@ class OfflineExplorer:
                 pending_transition = None
                 pending_confidence = None
                 if not recorded and self._should_stop_after_rejected_transition(self.last_rejection_reason):
-                    self._log(f"  stop exploration after rejected transition: {self.last_rejection_reason}")
-                    break
+                    # A genuine high-risk landing is worth backing out of, but a
+                    # single boundary hit must not kill a long exploration run.
+                    self._high_risk_hits = getattr(self, "_high_risk_hits", 0) + 1
+                    if self._high_risk_hits >= 3:
+                        self._log(
+                            f"  stop exploration after repeated high-risk boundaries "
+                            f"({self._high_risk_hits}): {self.last_rejection_reason}"
+                        )
+                        break
+                    self._log(
+                        f"  high-risk boundary ({self._high_risk_hits}/3): "
+                        f"{self.last_rejection_reason}; backing out and continuing"
+                    )
+                    self._rollback_from_risky_page(screenshot.width, screenshot.height)
+                    last_step_note = (
+                        "Last transition crossed a high-risk boundary and was rolled back. "
+                        "Choose a different safe direction from the current screenshot."
+                    )
+                    current_page = None
+                    continue
 
             traj.add_step(current_page, action, response.thinking)
             self._log(f"  [{step_idx+1}] {_page_type_str(current_page)}: {current_page.semantic_summary[:60]}")
@@ -1379,9 +1408,12 @@ def _build_taobao_task() -> str:
     """Return the default Taobao exploration task (from shopping schema YAML)."""
     try:
         from phone_agent.spatial.schema_registry import get_default_registry
+
+        from .task_builder import build_default_task
+
         schema = get_default_registry().load("shopping")
-        task = schema.exploration.default_task
-        if task:
+        task = build_default_task(schema, None, None, "淘宝")
+        if task and task != "广度优先探索所有主要页面类型":
             return task
     except Exception:
         pass

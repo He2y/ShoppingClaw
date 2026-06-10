@@ -49,6 +49,8 @@ def build_default_task(schema: Any, profile: Any = None, coverage: Any = None, a
     """Return the default exploration task description.
 
     Priority: profile.default_task → schema.exploration.default_task → generic fallback.
+    Schema task text may contain an ``{app}`` placeholder so one domain task
+    works for every app in the domain.
     """
     if profile is not None:
         task = str(getattr(profile, "default_task", "") or "")
@@ -57,7 +59,7 @@ def build_default_task(schema: Any, profile: Any = None, coverage: Any = None, a
 
     task = str((schema.exploration.default_task or ""))
     if task:
-        return task
+        return task.replace("{app}", app_display_name or "目标App")
 
     # Generic fallback
     return "广度优先探索所有主要页面类型"

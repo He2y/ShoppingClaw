@@ -61,18 +61,48 @@ def _resolve_app_profile(args: Any) -> Any:
     return None
 
 
-def _resolve_default_task(schema_name: str | None) -> str:
-    """Return the default task for the given schema, falling back to Taobao task."""
-    if schema_name is not None:
-        try:
-            from phone_agent.spatial.schema_registry import get_default_registry
-            schema = get_default_registry().merged(schema_name)
-            task = build_default_task(schema)
-            if task and task != "广度优先探索所有主要页面类型":
-                return task
-        except Exception:
-            pass
+def _resolve_schema_name(args: Any, app_profile: Any) -> str:
+    """--schema flag → profile.schema_name → AppRegistry lookup → shopping."""
+    if getattr(args, "schema", None):
+        return str(args.schema)
+    if app_profile is not None and getattr(app_profile, "schema_name", ""):
+        return str(app_profile.schema_name)
+    try:
+        from phone_agent.spatial.app_registry import get_default_app_registry
+
+        record = get_default_app_registry().resolve(args.app)
+        if record:
+            return record.schema
+    except Exception:
+        pass
+    return "shopping"
+
+
+def _resolve_default_task(args: Any, app_profile: Any, schema_name: str) -> str:
+    """Profile task → schema {app}-templated task → Taobao legacy fallback."""
+    try:
+        from phone_agent.spatial.schema_registry import get_default_registry
+
+        schema = get_default_registry().merged(schema_name)
+        task = build_default_task(schema, app_profile, None, args.app)
+        if task and task != "广度优先探索所有主要页面类型":
+            return task
+    except Exception:
+        pass
     return _build_taobao_task()
+
+
+def _resolve_storage_dir(args: Any) -> str:
+    """Explicit --storage-dir wins; default is one directory per canonical app."""
+    if getattr(args, "storage_dir", None):
+        return str(args.storage_dir)
+    try:
+        from phone_agent.spatial.app_registry import get_default_app_registry
+
+        app_id = get_default_app_registry().canonical_id(args.app) or "default"
+    except Exception:
+        app_id = "default"
+    return f"memory_db/exploration/{app_id}"
 
 
 def main() -> int:
@@ -80,7 +110,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Coverage-guided offline explorer for shopping apps.")
     parser.add_argument("--app", default="淘宝", help="Target shopping app name.")
     parser.add_argument("--task", default=None, help="Natural-language exploration task.")
-    parser.add_argument("--storage-dir", default="memory_db/exploration/taobao_spatial_v2", help="Output directory.")
+    parser.add_argument(
+        "--storage-dir",
+        default=None,
+        help="Output directory. Default: memory_db/exploration/<canonical_app_id>.",
+    )
     parser.add_argument("--max-steps", type=int, default=int(os.getenv("OFFLINE_EXPLORER_MAX_STEPS", "24")))
     parser.add_argument("--device-type", choices=["adb", "hdc"], default=os.getenv("PHONE_AGENT_DEVICE_TYPE", "adb"))
     parser.add_argument("--device-id", default=os.getenv("PHONE_AGENT_DEVICE_ID"))
@@ -147,6 +181,7 @@ def main() -> int:
     effective_auto_import, draft_warning = _apply_draft_gate(app_profile, args.auto_import_graph)
     if draft_warning:
         print(draft_warning)
+    schema_name = _resolve_schema_name(args, app_profile)
 
     try:
         if effective_auto_import:
@@ -175,9 +210,9 @@ def main() -> int:
                     lang=os.getenv("PHONE_AGENT_LANG", "cn"),
                 )
             ),
-            storage_dir=args.storage_dir,
+            storage_dir=_resolve_storage_dir(args),
             max_steps=args.max_steps,
-            task_description=args.task or _resolve_default_task(args.schema),
+            task_description=args.task or _resolve_default_task(args, app_profile, schema_name),
             classifier_api_key=args.classifier_apikey,
             classifier_base_url=args.classifier_base_url,
             classifier_model=args.classifier_model,
@@ -190,7 +225,7 @@ def main() -> int:
             device_id=args.device_id,
             active_exploration=args.active_exploration,
             verbose=not args.quiet,
-            schema_name=args.schema,
+            schema_name=schema_name,
             transition_policy=args.transition_policy,
             interference_policy=interference_policy,
             watchdog_config=WatchdogConfig(),

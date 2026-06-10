@@ -181,7 +181,7 @@ def test_safety_policy_risky_cta_tokens_superset_of_legacy(shopping_schema):
 
 def test_build_default_task_matches_legacy_taobao_task(shopping_schema):
     """build_default_task(shopping) must return the exact legacy _build_taobao_task() text."""
-    schema_task = build_default_task(shopping_schema)
+    schema_task = build_default_task(shopping_schema, None, None, "淘宝")
     legacy_task = _build_taobao_task()
     assert schema_task == legacy_task, (
         f"Task mismatch:\n  schema: {schema_task!r}\n  legacy: {legacy_task!r}"

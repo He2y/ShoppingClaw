@@ -26,7 +26,18 @@ from .manual_trajectory_importer import ManualTrajectoryImporter, ManualTrajecto
 from .memory_manager import MemoryManager
 from .core import UnifiedSessionState, Product, ProductStatus, StepRecord
 from .retrieval_gateway import RetrievalGateway, RetrievalResult
-from .offline_explorer import CoverageReport, CoverageTarget, OfflineExplorer, ShoppingPageType, Trajectory, PageInfo, PageClassifier
+# Import from the exploration package directly (not the offline_explorer shim)
+# so `python -m phone_agent.memory.offline_explorer` doesn't trigger the runpy
+# "found in sys.modules" warning.
+from .exploration import (
+    CoverageReport,
+    CoverageTarget,
+    OfflineExplorer,
+    PageClassifier,
+    PageInfo,
+    ShoppingPageType,
+    Trajectory,
+)
 
 # Backward-compatible data type aliases
 ProductInfo = Product

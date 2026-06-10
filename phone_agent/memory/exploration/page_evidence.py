@@ -11,9 +11,55 @@ _EXCLUDED_MARKERS = (
     "raw post-action",
     "核心空间骨架",
     "用户要求",
+    "用户特别强调",
     "任务要求",
     "system-reminder",
 )
+
+# Task-constraint restatements ("不提交订单、不支付、不确认地址" / "如果进入
+# 登录、支付、地址页立刻返回") mention high-risk page names without the agent
+# actually seeing those pages. Lines carrying these patterns are plans or
+# constraints, never observations of the current screen.
+_CONSTRAINT_MARKERS = (
+    "不提交",
+    "不支付",
+    "不确认",
+    "不下单",
+    "不点击",
+    "不要",
+    "避免",
+    "禁止",
+    "立刻返回",
+    "立即返回",
+    "如果进入",
+)
+
+
+_SENTENCE_SPLIT = ("。", "；", ";", "！", "!", "？", "?")
+
+
+def _strip_plan_and_constraint_text(line: str) -> str:
+    """Drop plan/constraint content at sentence granularity.
+
+    VLM reasoning often packs visual evidence and safety-rule restatements
+    into one line ("我已经在商品详情页了...。根据安全规则，不要购买..."), so
+    filtering whole lines would throw away genuine evidence.
+    """
+    stripped = line.strip()
+    # Numbered plan enumerations: "1. 先点击搜索框（搜索输入）"
+    if stripped[:2].rstrip(".、)").isdigit():
+        return ""
+    sentences: list[str] = []
+    current = []
+    for char in stripped:
+        current.append(char)
+        if char in _SENTENCE_SPLIT:
+            sentences.append("".join(current))
+            current = []
+    if current:
+        sentences.append("".join(current))
+    kept = [s for s in sentences if not any(marker in s for marker in _CONSTRAINT_MARKERS)]
+    return "".join(kept)
 
 _VISUAL_MARKERS = (
     "当前截图",
@@ -46,6 +92,9 @@ def infer_page_type_from_reasoning(text: str) -> str | None:
         line = raw_line.strip().lower()
         if not line or any(marker in line for marker in _EXCLUDED_MARKERS):
             continue
+        line = _strip_plan_and_constraint_text(line)
+        if not line:
+            continue
         if any(marker in line for marker in _VISUAL_MARKERS):
             capturing_visual_context = True
         if capturing_visual_context:
@@ -62,7 +111,12 @@ def infer_page_type_from_reasoning(text: str) -> str | None:
             return "settings"
         if any(token in scoped for token in ("支付页", "付款页面", "收银台", "支付密码", "付款方式", "payment page")):
             return "payment"
-        if any(token in scoped for token in ("地址", "address")):
+        # Page-level evidence only: a bare "地址" usually comes from task
+        # constraints or checkout summaries, not the address page itself.
+        if any(
+            token in scoped
+            for token in ("收货地址列表", "地址管理", "添加新地址", "地址列表", "我的地址", "地址页", "address page")
+        ):
             return "address"
         if is_login_page_evidence(scoped):
             return "login"

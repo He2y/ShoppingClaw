@@ -151,7 +151,15 @@ class AppOnboarder:
         """
         resolved_package = self._resolve_package(app_name, package)
 
+        # Prefer the canonical app id (e.g. 京东 -> jd) over an md5 slug so
+        # evidence directories stay human-readable.
         slug = _make_slug(app_name)
+        try:
+            canonical = self.app_registry.canonical_id(app_name)
+            if canonical and not canonical.startswith("app_"):
+                slug = canonical
+        except Exception:
+            pass
         evidence_dir = self.evidence_root / slug
         evidence_dir.mkdir(parents=True, exist_ok=True)
 
@@ -418,7 +426,7 @@ class AppOnboarder:
             '  "aliases": ["<其他常用名称>"],\n'
             '  "coverage_page_types": ["<该域中此 App 会有的页面类型>"],\n'
             '  "coverage_transitions": [["<源页面>", "<目标页面>"]],\n'
-            '  "unsafe_tokens": ["<该 App 界面语言下的危险按钮文案，如 立即购买、提交订单>"],\n'
+            '  "unsafe_tokens": ["<会产生不可逆后果的按钮文案，如 提交订单、立即支付、确认收货、注销账号。注意：加入购物车/立即购买 这类打开规格弹窗的购物 CTA 不算危险词，不要列入>"],\n'
             '  "trap_tokens": ["<直播/视频/广告/领券等陷阱入口文案>"],\n'
             '  "login_wall_on_launch": false,\n'
             '  "notes": "<onboarding 备注，可为空>",\n'
@@ -454,24 +462,50 @@ class AppOnboarder:
         # Determine schema name for the chosen domain
         schema_name = domain  # domains map directly to same-named schema files
 
-        # Filter coverage_page_types to only known types in schema
+        # Normalize and filter coverage to concrete, explorable schema types.
+        # Coverage drives the explorer's goals — interference pages (dialog/
+        # ad/permission/login) and abstract base aliases (search/list) must
+        # not become targets, or coverage can never complete.
+        schema = None
+        coverage_page_types: tuple[str, ...] = ()
+        coverage_transitions: tuple[tuple[str, str], ...] = ()
         try:
             schema = self.schema_registry.merged(schema_name)
-            known_types = set(schema.page_types.keys())
-            raw_coverage = [str(t) for t in (data.get("coverage_page_types") or [])]
-            unknown_types = [t for t in raw_coverage if t not in known_types]
-            coverage_page_types = tuple(t for t in raw_coverage if t in known_types)
-            if unknown_types:
-                notes = f"{notes} [unknown page_types dropped: {unknown_types}]".strip()
+            interference = set(schema.exploration.interference_page_types)
+            dropped: list[str] = []
+            normalized: list[str] = []
+            for raw_type in (str(t) for t in (data.get("coverage_page_types") or [])):
+                canonical = schema.normalize_page_type(raw_type)
+                if canonical not in schema.page_types or canonical in interference:
+                    dropped.append(raw_type)
+                    continue
+                if canonical not in normalized:
+                    normalized.append(canonical)
+            coverage_page_types = tuple(normalized)
+            if dropped:
+                notes = f"{notes} [coverage page_types dropped: {dropped}]".strip()
+
+            # Transitions must exist in the domain schema (alias-tolerant);
+            # arbitrary VLM-invented pairs become unreachable goals.
+            schema_pairs = {(t.source, t.target) for t in schema.transitions}
+            raw_trans = data.get("coverage_transitions") or []
+            kept_trans: list[tuple[str, str]] = []
+            dropped_trans: list[str] = []
+            for pair in raw_trans:
+                if not isinstance(pair, (list, tuple)) or len(pair) < 2:
+                    continue
+                src = schema.normalize_page_type(str(pair[0]))
+                tgt = schema.normalize_page_type(str(pair[1]))
+                if (src, tgt) in schema_pairs and (src, tgt) not in kept_trans:
+                    kept_trans.append((src, tgt))
+                else:
+                    dropped_trans.append(f"{pair[0]}->{pair[1]}")
+            coverage_transitions = tuple(kept_trans)
+            if dropped_trans:
+                notes = f"{notes} [off-schema transitions dropped: {dropped_trans}]".strip()
         except Exception:
             coverage_page_types = ()
-
-        raw_trans = data.get("coverage_transitions") or []
-        coverage_transitions = tuple(
-            (str(p[0]), str(p[1]))
-            for p in raw_trans
-            if isinstance(p, (list, tuple)) and len(p) >= 2
-        )
+            coverage_transitions = ()
 
         app_id = _sanitize_app_id(
             str(data.get("app_id") or ""),
@@ -482,8 +516,18 @@ class AppOnboarder:
         aliases_raw = data.get("aliases") or []
         aliases = tuple(str(a) for a in aliases_raw if str(a) != display_name and str(a) != app_id)
 
-        unsafe_tokens = tuple(str(t) for t in (data.get("unsafe_tokens") or []))
+        # Demote shopping CTAs (加入购物车/立即购买...) out of unsafe_tokens:
+        # they are how the explorer opens spec_selection. The domain schema's
+        # risky_cta mechanism already constrains where they may be tapped.
+        raw_unsafe = [str(t) for t in (data.get("unsafe_tokens") or [])]
         trap_tokens = tuple(str(t) for t in (data.get("trap_tokens") or []))
+        cta_tokens: set[str] = set()
+        if schema is not None:
+            cta_tokens = {t.lower() for t in schema.exploration.risky_cta_tokens}
+        demoted = [t for t in raw_unsafe if t.lower() in cta_tokens]
+        unsafe_tokens = tuple(t for t in raw_unsafe if t.lower() not in cta_tokens)
+        if demoted:
+            notes = f"{notes} [CTA tokens removed from unsafe (handled as risky CTA): {demoted}]".strip()
         login_wall = bool(data.get("login_wall_on_launch") or False)
         default_task = str(data.get("suggested_task") or "")
 
