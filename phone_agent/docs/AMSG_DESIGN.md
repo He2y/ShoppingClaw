@@ -1,7 +1,7 @@
 # 主动移动空间图谱（AMSG）：从页面图谱到自进化动作库
 
-> **版本**: 2026-06-05（重写版）
-> **定位**: 技术方法论文基础文档。从源码 `phone_agent/spatial/` 出发，分析现有页面图谱方法的问题，介绍 AMSG 的设计、与 Agent 执行的集成、以及图谱的构建与自进化机制。
+> **版本**: 2026-06-10（多 App 泛化版）
+> **定位**: 技术方法论文基础文档。从源码 `phone_agent/spatial/` 与 `phone_agent/memory/exploration/` 出发，分析现有页面图谱方法的问题，介绍 AMSG 的设计、与 Agent 执行的集成、面向陌生 App 的建图管线（强 VLM 规划 + 人工审核门）以及图谱的自进化机制。已在淘宝（核心流程）与京东（核心流程 + 秒送外卖链路）两个真实 App 上完成端到端验证。
 
 ---
 
@@ -48,6 +48,8 @@ WebNavigator 走向另一个极端：图谱直接控制导航（Retrieve-Reason-
 
 AMSG 的设计直接针对上述三个问题：用**自动持久化**替代静态构建，用**成功率追踪**替代布尔存在性，用**锚定性分类**划定图谱和 VLM 的边界。
 
+![](E:\ClawGUI\clawgui-agent\phone_agent\docs\图谱设计.png)
+
 ### 2.1  图谱存什么
 
 Neo4j 中的基本模式：
@@ -76,6 +78,20 @@ Action = (type, intent, semantic_target, postcondition, lifecycle_stage)
 
 **关系**上记录执行统计：`frequency`（成功次数）、`fail_count`（失败次数）、`confidence`（= frequency / total）。这是边生命周期系统的数据基础。
 
+### 2.1.1  多 App 组织：单库逻辑分区
+
+多个 App 不建多个 Neo4j 库，而是在**单库内按 `app` 属性逻辑分区**。三个理由：① 跨 App 结构迁移的聚合查询（泛化性实验的核心）在单库内是一条 Cypher，多库需要 Enterprise Fabric；② 节点本就携带 `app` 属性，查询天然按 App 作用域；③ 一个驱动连接池，没有 App→库的路由层。
+
+App 身份由 `spatial/app_registry.py` 的 **AppRegistry** 统一管理（`schemas/app_registry.yaml`）：包名 / 中文名 / 英文名 / 历史编码变体 → 规范 `app_id` → `domain` → 结构模式。每个节点写入三个字段：
+
+- `app`：规范 id（如 `jd`），**所有程序检索的作用域键**，读查询用别名 IN 列表容忍历史值
+- `app_raw`：注册表主显示名（如 `京东`），供 Neo4j Browser 人工浏览过滤
+- `domain`：领域（如 `shopping`），跨 App 结构先验聚合的分区键
+
+复合索引 `(app, page_type)` 与 `(domain, page_type)` 保证两类查询都是索引命中（`GraphStore.ensure_indexes()`）。
+
+一个实战教训：staging 节点与 Neo4j 已有节点做规范合并后，边的两端可能一端是规范 id（`jd`）一端是原始值（`京东`），任何用**精确相等**比较 App 的代码都会静默丢边——所有 App 一致性比较必须走别名感知的 `_same_app()`。
+
 ### 2.2  领域模式作为结构先验
 
 图谱不是无约束生长的——`spatial/schemas/shopping.yaml` 定义了购物场景的页面类型、风险等级和典型转移：
@@ -94,6 +110,10 @@ Action = (type, intent, semantic_target, postcondition, lifecycle_stage)
 ```
 
 模式的作用是规范化（"detail" → "product_detail"）和风险标注（checkout 始终高风险），不是限制图谱的生长。图谱可以学习到模式中未预定义的转移——只要它通过了质量门。
+
+模式如今承载的远不止页面类型：`exploration` 块定义覆盖目标、危险动作词表（common → 域 → App 三级累加）、干扰页面集合（dialog/permission/login/ad/captcha）、陷阱词表与默认探索任务模板（`{app}` 占位，一份任务文本服务整个域）。分类器的系统提示词**完全由模式生成**——给 shopping.yaml 增加即时零售类型（`channel_home` 频道首页、`shop_list` 商家列表、`store` 扩展覆盖外卖商家页）后，京东秒送的外卖链路无需改一行代码即可被正确分类。
+
+**开放词表**是泛化的最后保障：分类器遇到词表外的页面输出 `new:<类型名>` + 一句话定义进入提案池（出现 ≥2 次才浮出，永不直接建边），人工审核后合入域模式或 App profile。封闭词表是泛化瓶颈——真机测试中外卖商家页曾被硬塞为 product_detail，正是它催生了这一机制。
 
 ### 2.3  锚定与非锚定：图谱和 VLM 各管什么
 
@@ -177,34 +197,70 @@ Phase 4 组装 VLM 上下文时，图谱提供两种信息（参见 ARCHITECTURE
 
 **动作提示**（优先级 7）：`ActionAdvisor.query()` 返回当前页面上所有 promoted 边作为可选动作列表。非锚定边只提供"存在这个转移"的信息，不提供坐标——VLM 必须自己看截图决定点哪里。
 
+### 3.5  多 App 分层检索：冷启动时借同域结构
+
+检索按三层组织，**只有第一层产生可执行动作**（`spatial/domain_priors.py`）：
+
+1. **App 专属子图**：前台 App 检测 → AppRegistry 规范化 → 所有查询按规范 id 作用域。promoted 边的快速路径只能来自这一层
+2. **同域结构先验**：当 App 子图过冷（节点覆盖低于阈值）且 `mode=explore` 时，注入"同域其他 App 在该页面类型上的常见转移"（schema 转移 + 跨 App promoted 边聚合，按支持度排序）——**仅作为文本提示进入 semantic_context，绝不携带坐标**（其他 App 的 target_locator 禁止执行）。`AMSG_DOMAIN_PRIORS=0` 可关
+3. **common_mobile 兜底**：dialog/permission/login/captcha 等通用干扰页的处置知识
+
+这一分层使"京东冷启动借淘宝的购物结构方向感"成为可能，同时杜绝跨 App 坐标污染。
+
 ---
 
-## 4  图谱的构建管线
+## 4  陌生 App 的建图管线：探索 → 审核 → 入图
 
-图谱有三种构建途径，每种服务不同场景。它们共享同一套规范化和质量过滤逻辑。
+面对一个图谱从未见过的 App，AMSG 走一条五阶段闭环管线（`phone_agent/memory/exploration/`）。设计原则有两条：**真实 App 环境高度干扰，逃逸机制不得依赖 VLM 分类正确**（用截图感知哈希、覆盖进度、前台包名等机械信号兜底）；**离线探索产物一律不直写正式图谱**（人工审核是离线数据的质量门）。
 
-### 4.1  途径 A：离线探索（冷启动）
+![](E:\ClawGUI\clawgui-agent\phone_agent\docs\图谱构建管线.png)
 
-在 Agent 首次使用一个应用之前，可以通过 `OfflineExplorer` 预采集页面和转移数据。`import_exploration_staging()` 处理这些原始数据：
+### 4.1  阶段一：App 引导（onboarding）
 
-1. 原始页面 JSON → 转换为 PageState（`build_page_state()`）
-2. 按 `(app, page_type, risk)` 规范化
-3. 过滤瞬态 `unknown` 页面和应用不匹配的转移
-4. 搜索宏合成：从轨迹中恢复 Type + Submit 复合动作（`_synthesize_search_compound_steps()`）
-5. 同页动作压缩和边质量过滤
-6. 通过所有过滤后才由 `promote_staging_to_canonical()` 合并入 Neo4j
+`python -m phone_agent.memory.exploration.onboarding --app 京东` 对陌生 App 做安全采样（启动 → Back → 下滑各截一图，**绝不点击**），强 VLM 据此推断领域并产出 **draft profile**（`schemas/apps/<id>.yaml`）：domain → schema 映射、覆盖建议、该 App 界面语言下的危险词与陷阱词（直播/抽奖/领券类入口）、登录墙标记、建议任务。校验层把 VLM 的输出对齐到模式：覆盖类型经别名规范化并剔除干扰类型，越出模式的转移丢弃，与购物 CTA 冲突的"危险词"降级（加入购物车是打开规格弹窗的入口，不是危险动作）。**人工确认门**：draft 状态可探索但拒绝入图，人工核对后改 `status: confirmed`。
 
-离线探索产生的边初始 `lifecycle_stage="hypothesis"`，需要在线验证后才能提升为 `promoted`。
+### 4.2  阶段二：分轮焦点探索（强 VLM 规划 + GUI 模型执行）
 
-### 4.2  途径 B：领域模式（结构骨架）
+真机测试证明小 GUI 模型（如 autoglm-phone-9b）**没有规划能力**：它能把"点击右上角的筛选按钮"准确 ground 到坐标，但不知道覆盖 `search_result→filter_panel` *需要*点筛选按钮，于是永远在记忆中的主链路上打转。因此探索采用**规划-执行分离**（`exploration/planner.py`）：
 
-`spatial/schemas/shopping.yaml`（继承 `common_mobile.yaml`）预定义了购物场景的 8 种核心页面类型和 10 条典型转移。这不是图谱本身，而是图谱生长的骨架——`SchemaRegistry` 提供页面类型规范化、风险标注和转移距离启发式。
+- **强 VLM 规划器**（每步）：看截图 + 剩余焦点转移 + 最近执行结果，输出**一条具体指令**（"点击右上角的'筛选'按钮"）；执行结果回灌（"指令X → 落到 search_result，预期 filter_panel 未达成"），失败换打法；目标覆盖完毕主动 finish
+- **GUI 模型**（每步）：只收到这一条指令做 grounding 执行，看不到宏大任务
+- **分轮焦点**：一轮 24 步不可能覆盖全部目标。每轮启动时扫描历届产物的覆盖记录，从缺口中取一个小目标（骨架优先），**完成即收尾保存**；下一轮自动选下一批缺口。`--focus` 支持结构化（`search_result->filter_panel`）与**自然语言**（"探索首页的秒送模块"）混用——后者无预设转移，由规划器自主发现并判断结束
 
-模式 + 离线探索 = 冷启动时的初始图谱。但真正有价值的边来自途径 C——Agent 实际执行时的在线学习。
+探索全程的防御栈（`interference.py` / `watchdog.py` / `stability.py` / `confidence.py`）：
 
-### 4.3  途径 C：Agent 运行中的在线学习
+| 威胁 | 防御（不依赖分类正确性） |
+|---|---|
+| 直播间/广告页死循环 | 感知哈希滞留检测 → Back→Back→重启 App 升级逃逸；陷阱词进入前拦截 + 踩坑负记忆回写 profile |
+| 外跳浏览器/其他 App | 前台包名漂移检测，自动拉回 |
+| 弹窗/挽留弹窗 | 消解循环（VLM 找关闭按钮 → Back → 点空白），Back 拦截弹窗找"退出/离开"语义按钮 |
+| **人机验证（captcha）** | 一等页面类型；Back 绕开只是推迟，**默认蜂鸣暂停人工接力**，完成后续跑；人工操作不记边 |
+| 登录墙 | `--pause-on-login` 人工接力 |
+| 加载中间帧被当页面 | 落页稳定性检测（连续截图相似才分类） |
+| 分类器误判 | 三信号一致性（分类器/推理证据/landmark 结构核验）→ transient 拒绝、low_confidence 标记交审核；转移复现计数 |
+| Ctrl+C / 崩溃 | 中断安全保存——已采集数据永不丢失 |
 
-这是图谱最主要的数据来源。每次 Agent 成功完成任务，都会向图谱贡献新的观测（详见下节）。与 PG-Agent 的离线批量构建不同，AMSG 的在线学习是持续的——每次新任务都可能发现新的转移或验证已有转移的可靠性。
+轮末强 VLM 生成 `round_summary`（完成了什么/卡在哪/下轮建议）写入产物。
+
+### 4.3  阶段三：staging 规范化
+
+每轮产物（pages/transitions/trajectory JSON + 截图证据）默认自动打包为 **staging 批次**（`memory_db/staging/<batch>/`，`--no-staging` 关闭）。`import_exploration_staging()` 做规范化：语义签名去重、瞬态页过滤、Type+Submit 搜索宏合成、同页动作压缩、高风险边界过滤。staging 只在磁盘上打包候选，**不碰 Neo4j**——draft profile 门不拦它。
+
+### 4.4  阶段四：人工审核门（Gradio）
+
+`python -m phone_agent.spatial.review.webui_review` 逐条审核候选边：**前后截图对** + 动作描述 + 观测次数/置信度 + VLM 预判 + **双盲交叉验证**（强 VLM 独立重分类两端截图，不告知探索时的标签，不一致的"分类存疑"标红置顶）。批次概览显示完整漏斗（探索记录 N 条、探索期被拒 K 条、候选 M 条、当前 approve/reject 统计）——不存在静默丢失。决策预填规则：VLM 批准、或观测 ≥2 次且非低置信、或人工辅助采集（操作者已亲眼验证两端）→ approve；其余 → reject。
+
+### 4.5  阶段五：批准入图（hypothesis）
+
+`apply_review()` 把批准的边经 `promote_staging_to_canonical()` 写入 Neo4j：**`lifecycle_stage="hypothesis"` + 溯源属性**（`source_type=exploration_reviewed`、`review_batch_id`）。人工批准**不豁免在线验证**——hypothesis 边对 Agent 不可见，仍需后条件验证才能提升为 promoted。重复 apply 由回执（applied.json）拦截。高风险目标边（cart→checkout）可为图谱结构完整性而存在，但永不成为可执行快速路径。
+
+### 4.6  人工辅助采集
+
+当自主探索对某些转移无能为力时（执行知识缺失），操作者（或更强的 Agent）可直接驱动设备采集，产物按同一格式落盘、走同一条 staging→审核→入图管线，`source_kind=human_assisted` 标记来源。这是给图谱注入"转移→操作"执行知识的捷径——入图后探索器与运行时 Agent 即可复用。
+
+### 4.7  在线学习（持续来源）
+
+以上离线管线解决冷启动；图谱最主要的持续数据来源仍是 Agent 实际执行时的在线学习（详见下节）——每次成功任务都可能发现新转移或验证已有转移的可靠性。在线学习的质量门（任务成功 + VLM 轨迹审核 + hypothesis 不可见）与离线管线相互独立。
 
 ---
 
@@ -253,7 +309,7 @@ Phase 4 组装 VLM 上下文时，图谱提供两种信息（参见 ARCHITECTURE
 
 5. 仅 VLM 批准的转移以 `lifecycle_stage="hypothesis"` 导入
 
-这道门的价值是过滤 `flush_staged_graph()` 可能遗漏的噪声——特别是分类器误判产生的虚假转移。
+这道门的价值是过滤 `flush_staged_graph()` 可能遗漏的噪声——特别是分类器误判产生的虚假转移。两个失败安全细节：VLM 输出解析失败时候选标记为"未审核"（早期实现会**全部通过**，是危险的反向回退）；导入用语义键 MERGE（早期 CREATE 会在重跑时产生重复 Action 节点）。共享的 `VlmTransitionJudge` 同时服务在线审核与离线批次审核（第 4.4 节）。
 
 ### 5.5  边生命周期：成功率驱动的提升与降级
 
@@ -332,13 +388,15 @@ locate_and_get_context() 查询 Neo4j
 
 | 维度 | PG-Agent | KG-RAG | WebNavigator | MobiAgent | **AMSG** |
 |---|---|---|---|---|---|
-| 图谱来源 | episode 批量构建 | xTester 爬取 UTG | 自适应 BFS | 任务执行记录 | 离线探索 + 在线学习 + VLM 审核 |
+| 图谱来源 | episode 批量构建 | xTester 爬取 UTG | 自适应 BFS | 任务执行记录 | 引导式探索 + 人工审核 + 在线学习 |
 | 图谱更新 | 不更新 | 不更新 | 不更新 | 手动纠正轨迹 | 每次成功任务自动更新 |
 | 边可靠性 | 不追踪 | 不追踪 | 哈希去重 | 不追踪 | 成功率追踪 + 四阶段生命周期 |
 | VLM/图谱边界 | RAG 文本→VLM 始终推理 | 同左 | Teleport 无回退 | 二元重放 | 每条边独立判断（锚定→图谱 / 非锚定→VLM） |
-| 噪声控制 | 双层相似度 | BFS 评分 | DOM 差分 | 无 | 三道门（任务成功 + VLM 审核 + 规范化） |
+| 噪声控制 | 双层相似度 | BFS 评分 | DOM 差分 | 无 | 四道门（任务成功 + VLM 审核 + 规范化 + 离线人工审核） |
 | 后条件验证 | 无 | 无 | 无 | 无 | t+1 步延迟验证，成功率基于真实观测 |
 | 自修复 | 无 | 无 | 无 | 无 | 成功率下降 → 自动降级 → VLM 重新探索 |
+| 跨 App 泛化 | 单 App | 单 App | 单站点 | 单 App | 域模式复用 + 同域结构先验 + 开放词表进化 |
+| 探索规划 | — | 爬虫 | BFS | — | 强 VLM 规划 / GUI 模型执行分离，分轮焦点 |
 
 ### 7.1  AMSG 的核心差异
 
@@ -350,13 +408,23 @@ locate_and_get_context() 查询 Neo4j
 
 4. **真实后条件验证 vs 无验证**。没有后条件验证，成功率追踪的数据来源就是假设而非事实。这是 AMSG 生命周期系统正确工作的前提。
 
+5. **陌生 App 的可复制建图流程 vs 一次性数据集**。现有方法的图谱建设是论文作者的一次性工程。AMSG 的五阶段管线（引导 → 焦点探索 → staging → 人工审核 → hypothesis 入图）对任意同域 App 可复制——京东（含秒送外卖链路）从零到核心链路完整入图即按此流程完成，期间催生的开放词表与即时零售模式扩展又反哺到整个域。
+
 ---
 
-## 8  实验性扩展（未默认启用）
+## 8  消融开关与实验性扩展
 
-以下机制已实现但默认关闭，需要消融实验验证后才能作为论文贡献：
+建图管线的关键机制各有独立开关，支持消融实验：
+
+- **强 VLM 规划器**：`--no-strong-planner` / `AMSG_STRONG_PLANNER=0` 回退到单模型自主探索（即"小模型规划失败"基线）
+- **开放词表分类**：`build_fast_prompt(open_vocab=False)` 回退封闭词表（即"泛化失败"基线）
+- **同域结构先验注入**：`AMSG_DOMAIN_PRIORS=0` 关闭（冷启动对照）
+- **staging 自动打包**：`--no-staging`；**人工接力**：`--no-human`
+- **转移校验强度**：`--transition-policy strict | schema_guided | permissive`
+
+以下机制已实现但默认关闭，需要消融验证后才能作为论文贡献：
 
 - **多通道信念定位**（`use_multi_signal_belief=False`）：在 `(app, page_type)` 匹配上增加视觉/语义/时序通道的贝叶斯更新。当前 `(app, page_type)` 匹配已覆盖绝大多数场景。
 - **Belief-A* 规划**（`planner_backend="dijkstra"`）：在 Dijkstra 上叠加过期衰减、探索奖励等项。当前图谱规模（< 50 节点）下增强项贡献 < 0.1。
-- **熵驱动 VLM 验证边界**：基于结果分布的 Shannon 熵决定是否需要 VLM。当前硬编码转移集合是主要机制。
-- **消融预设矩阵**：通过 `AMSG_CONFIG` 切换 6 种配置（legacy/edge_only/belief_only/planner_only/full/sava），用于未来实验。
+- **熵驱动 VLM 验证边界**：基于结果分布的 Shannon 熵决定是否需要 VLM。当前转移集合由域模式的 `vlm_verify_transitions` 配置。
+- **消融预设矩阵**：通过 `AMSG_CONFIG` 切换 6 种配置（legacy/edge_only/belief_only/planner_only/full/sava），用于未来实验。注意：离线建图管线（staging/审核入图）固定使用 plausibility 策略——`sava` 的 verified 边策略要求运行时后条件记录，对离线数据会过滤全部候选；离线数据的质量门是人工审核而非生命周期策略。
