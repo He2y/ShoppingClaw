@@ -82,6 +82,8 @@ Shopping-Agent 是一个**以 VLM 为主、图谱引导的移动 GUI 智能体**
 └──────────────────────────┘
 ```
 
+![系统架构图](E:\ClawGUI\clawgui-agent\phone_agent\docs\系统架构图.png)
+
 ### 2.1  三个区域的职责边界
 
 **决策区域**回答"做什么"。`PhoneAgent._execute_step()` 是唯一的编排入口，每步调用图谱区域获取定位和动作建议，然后选择快速路径或 VLM 路径执行。决策区域不直接操作图谱或设备。
@@ -122,6 +124,7 @@ flowchart TD
 ## 3  Agent 设计
 
 本节按时间顺序描述一个任务从接收到完成的完整过程。入口是 `PhoneAgent.run(task)`，主循环是 `_execute_step()`，出口是 `MemoryManager.end_task()`。
+![](E:\ClawGUI\clawgui-agent\phone_agent\docs\Agent执行闭环.png)
 
 ### 3.1  任务接收：从自然语言到可执行状态
 
@@ -341,6 +344,8 @@ Agent 循环的 Phase 4 组装 VLM 上下文时，如果把所有历史步骤、
 
 ## 5  空间图谱（AMSG）：为什么要这样设计
 
+![](E:\ClawGUI\clawgui-agent\phone_agent\docs\图谱设计.png)
+
 ### 5.1  图谱解决 Agent 循环中的什么问题
 
 回到 3.2 节的步骤循环。如果没有图谱，每步都走 VLM 路径：截图 → VLM 推理（~5s）→ 执行。一个 20 步购物任务需要 ~100s 的 VLM 推理时间。
@@ -453,6 +458,27 @@ SemanticActionIR → DeviceActionIR → 设备指令
 
 这使图谱模型无关——同一个 Neo4j 图谱可以服务不同的 VLM，只需在编译时转换坐标系。
 
+![](E:\ClawGUI\clawgui-agent\phone_agent\docs\图谱构建管线.png)
+
+### 5.8  多 App 组织与陌生 App 建图管线
+
+**多 App 组织**：所有 App 共享单个 Neo4j 库，按 `app` 属性逻辑分区（跨 App 结构聚合查询在单库内是一条 Cypher）。App 身份由 `spatial/app_registry.py` 的 AppRegistry 统一（包名/中文名/历史变体 → 规范 id → 领域 → 模式）；节点携带 `app`（检索键）/`app_raw`（显示名）/`domain` 三字段，`(app, page_type)` 与 `(domain, page_type)` 复合索引保证查询命中。所有 App 一致性比较必须使用别名感知的 `_same_app()`——规范合并后边的两端可能一端是规范 id 一端是原始值，精确比较会静默丢边。
+
+**分层检索**：① App 专属子图是唯一的可执行动作来源；② App 子图过冷且 `mode=explore` 时注入同域结构先验（schema 转移 + 跨 App promoted 边聚合，仅作文本提示、绝不携带坐标，`spatial/domain_priors.py`）；③ common_mobile 兜底干扰页处置。
+
+**陌生 App 建图**走五阶段闭环管线（`phone_agent/memory/exploration/`，详见 AMSG_DESIGN.md 第 4 节）：
+
+```
+onboarding（安全采样 → 强 VLM 生成 draft profile → 人工确认）
+  → 分轮焦点探索（强 VLM 规划器逐步发指令，GUI 模型只做 grounding；
+     防御栈：感知哈希看门狗 / 弹窗消解 / captcha 人工接力 / 落页稳定性 / 三信号置信度）
+  → staging 批次（默认自动打包，不碰 Neo4j）
+  → Gradio 人工审核（前后截图对 + VLM 预判 + 双盲重分类）
+  → 批准入图（lifecycle=hypothesis + 溯源，人工批准不豁免在线验证）
+```
+
+两条设计原则贯穿管线：逃逸机制不依赖 VLM 分类正确（机械信号兜底）；离线探索产物一律不直写正式图谱（人工审核是离线数据的质量门）。京东（核心链路 + 秒送外卖链路）按此流程从零完成建图。
+
 ---
 
 ## 6  模型与设备抽象
@@ -511,6 +537,8 @@ Shopping-Agent 解决了当前 GUI 智能体领域的三个具体缺口：
 4. **延迟后条件验证**：在 t+1 步验证 t 步的动作结果，使成功率追踪基于真实观测。
 5. **暂存优先持久化与三道质量门**：失败任务不写图谱、新转移需 VLM 审核、所有路径经过规范化。
 6. **结构化任务约束作为一等运行时状态**：任务规格提取一次后被 SpecGuard 在购买提交点强制执行。
+7. **跨 App 泛化机制**：AppRegistry 单库逻辑分区、域模式复用（含开放词表 `new:<type>` 进化）、同域结构先验分层检索——新 App 冷启动可借同域结构方向感，但绝不执行跨 App 坐标。
+8. **陌生 App 的可复制建图管线**：onboarding → 强 VLM 规划/GUI 执行分离的分轮焦点探索 → staging → 人工审核门 → hypothesis 入图；已在京东（含秒送外卖链路）端到端验证。
 
 ### 实验性扩展（未默认启用）
 
@@ -524,4 +552,4 @@ Shopping-Agent 解决了当前 GUI 智能体领域的三个具体缺口：
 
 ## 8  论文方法摘要
 
-> Shopping-Agent 是一个以 VLM 为主的移动 GUI 智能体，通过自演进的主动移动空间图谱（AMSG）增强。系统将截图抽象为语义页面状态，在 Neo4j 中持久化经过验证的导航转移。每个执行步骤通过 `(app, page_type)` 匹配定位当前页面，用 Dijkstra 在加权图上规划路径，路径缓存为 RuntimeDAG 供后续步骤直接推进。锚定且已提升的转移走快速路径（~0.5s，跳过 VLM），非锚定转移由 VLM 选择具体目标（~5s），带后条件保护——不匹配时自动回退。延迟后条件验证在 t+1 步确认 t 步的动作结果，使边的成功率追踪基于真实观测。在线观测暂存在内存中，仅成功任务触发 Neo4j 写入，新转移需经 VLM 轨迹审核——没有原始动作直接写入图谱。用户约束作为一等任务槽位提取，由 SpecGuard 在购买提交点强制执行。
+> Shopping-Agent 是一个以 VLM 为主的移动 GUI 智能体，通过自演进的主动移动空间图谱（AMSG）增强。系统将截图抽象为语义页面状态，在 Neo4j 中持久化经过验证的导航转移。每个执行步骤通过 `(app, page_type)` 匹配定位当前页面，用 Dijkstra 在加权图上规划路径，路径缓存为 RuntimeDAG 供后续步骤直接推进。锚定且已提升的转移走快速路径（~0.5s，跳过 VLM），非锚定转移由 VLM 选择具体目标（~5s），带后条件保护——不匹配时自动回退。延迟后条件验证在 t+1 步确认 t 步的动作结果，使边的成功率追踪基于真实观测。在线观测暂存在内存中，仅成功任务触发 Neo4j 写入，新转移需经 VLM 轨迹审核——没有原始动作直接写入图谱。用户约束作为一等任务槽位提取，由 SpecGuard 在购买提交点强制执行。多 App 在单库内按规范化 App 身份逻辑分区；陌生 App 经由「引导 → 强 VLM 规划的分轮焦点探索 → 人工审核门」的可复制管线冷启动建图，运行时分层检索允许新 App 借用同域结构先验（仅方向提示，不含坐标）。

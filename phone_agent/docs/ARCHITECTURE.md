@@ -37,6 +37,8 @@ The system has three logical areas connected by a closed-loop data flow. The key
 
 **Execution Area** — answers "how to operate the device". `ModelProtocolBridge` normalizes semantic actions or VLM outputs into `DeviceActionIR` across five coordinate systems. `ActionHandler` compiles device commands. After execution, the new screenshot and page classification **feed back** into the Graph Area: postcondition verification updates edge success/failure counts, and successful task completion triggers graph persistence. Components: `ModelClient`, 5 model adapters, `ActionHandler`, `DeviceFactory` (ADB/HDC/XCTest).
 
+![](E:\ClawGUI\clawgui-agent\phone_agent\docs\系统架构图.png)
+
 ### 2.2  Closed-Loop Data Flow
 
 The three areas connect through a single closed loop. Each step, data flows in this order:
@@ -69,6 +71,8 @@ Key properties of this loop:
 ## 3  Agent Design
 
 This section describes a task's complete lifecycle in chronological order: from receiving user input to graph persistence after completion. Entry point: `PhoneAgent.run(task)`. Main loop: `_execute_step()`. Exit: `MemoryManager.end_task()`.
+
+![](E:\ClawGUI\clawgui-agent\phone_agent\docs\Agent执行闭环.png)
 
 ### 3.1  Task Reception: From Natural Language to Executable State
 
@@ -179,6 +183,8 @@ Task N+1: "Buy me a phone" (no color specified) → ClarificationAgent Layer 2 q
 
 ## 5  Spatial Graph (AMSG): Why It Is Designed This Way
 
+![](E:\ClawGUI\clawgui-agent\phone_agent\docs\图谱设计.png)
+
 ### 5.1  What Problem It Solves in the Agent Loop
 
 Without the graph, every step takes the VLM Path: screenshot → VLM reasoning (~5s) → execute. A 20-step shopping task costs ~100s of VLM inference. But most steps are mechanical navigation: tap search, type query, submit, scroll. These are identical across all shopping tasks. The graph caches verified navigation paths so Phase 5 can take the Fast Path (~0.5s), reserving VLM calls for steps that require semantic judgment (which product, which SKU).
@@ -242,6 +248,35 @@ Side effect: when DAG is valid, `should_use_page_classifier()` returns `False` �
 ### 5.7  Action Compilation: Semantic to Device
 
 Graph stores `SemanticActionIR` (intent + target + locator + postcondition). Phase 5 compiles through two stages: `SpatialModelBridge` (semantic → device IR) then `ModelProtocolBridge` (coordinate normalization across 5 VLM coordinate systems via (0,1) intermediate). This keeps the graph model-agnostic — the same Neo4j graph serves different VLMs.
+
+
+
+![](E:\ClawGUI\clawgui-agent\phone_agent\docs\图谱构建管线.png)
+
+---
+
+### 5.8  Multi-App Organization and the Unfamiliar-App Pipeline
+
+**Multi-app organization**: all apps share one Neo4j database, logically partitioned by the `app` property (cross-app structural aggregation stays a single Cypher query). App identity is unified by the AppRegistry (`spatial/app_registry.py`): package name / display name / legacy variants -> canonical id -> domain -> schema. Nodes carry `app` (query scope key), `app_raw` (display name) and `domain`; composite indexes on `(app, page_type)` and `(domain, page_type)` keep both query families index-hit. All app-equality comparisons must use the alias-aware `_same_app()` - after canonical resolution one edge endpoint may carry the canonical id while the other still holds the raw value, and exact comparison silently drops edges.
+
+**Layered retrieval**: (1) the app's own subgraph is the only source of executable actions; (2) when that subgraph is cold and `mode=explore`, same-domain structural priors (schema transitions + cross-app promoted-edge aggregation) are injected as TEXT-ONLY hints, never coordinates (`spatial/domain_priors.py`); (3) common_mobile knowledge handles dialogs/permissions/login/captcha.
+
+**Unfamiliar apps** are mapped through a five-stage closed-loop pipeline (`phone_agent/memory/exploration/`, see AMSG_DESIGN.md section 4):
+
+```
+onboarding (safe screen sampling -> strong-VLM draft profile -> human confirmation)
+  -> round-focused exploration (strong-VLM planner issues one concrete instruction
+     per step; the GUI model only grounds it; defense stack: perceptual-hash
+     watchdog / dialog dismissal / captcha human handover / landing stability /
+     three-signal confidence)
+  -> staging batch (auto-packaged, never touches Neo4j)
+  -> human review gate (Gradio: before/after screenshots, VLM pre-verdicts,
+     blind re-classification)
+  -> admission as lifecycle=hypothesis with provenance (approval does not
+     waive online verification)
+```
+
+Two principles run through the pipeline: escape mechanisms must not depend on VLM classification being correct (mechanical signals as backstop), and offline exploration output never writes directly to the canonical graph (human review is the offline quality gate). JD (core flow + the 秒送 instant-retail/takeout chain) was mapped from zero with this pipeline.
 
 ---
 
@@ -323,6 +358,10 @@ Shopping-Agent addresses three specific gaps in the current GUI agent landscape:
 
 6. **Structured task constraints as first-class state**. Task specs (color, storage, size, price) are extracted once and enforced by SpecGuard at purchase commit. This makes shopping safety a system property, not prompt engineering.
 
+7. **Cross-app generalization mechanisms**. AppRegistry-based single-database partitioning, domain-schema reuse with open-vocabulary `new:<type>` evolution, and layered retrieval with same-domain structural priors - a cold-starting app borrows directional knowledge from its domain without ever executing cross-app coordinates.
+
+8. **A replicable pipeline for unfamiliar apps**. Onboarding -> planner/executor-split round-focused exploration -> staging -> human review gate -> hypothesis admission; validated end-to-end on JD including its instant-retail (takeout) chain.
+
 ### 8.4  Experimental Extensions (Not Default-Enabled)
 
 The following are implemented but require ablation experiments to validate as contributions:
@@ -370,4 +409,4 @@ The following are implemented but require ablation experiments to validate as co
 
 ## 10  Paper Method Summary
 
-> Shopping-Agent is a VLM-primary mobile GUI agent augmented by a self-evolving Active Mobile Spatial Graph (AMSG). The system abstracts screenshots into semantic page states and persists verified navigation transitions in Neo4j. Each step locates the current page via `(app, page_type)` matching, plans a route with Dijkstra on the weighted graph, and caches the route as a RuntimeDAG for subsequent steps to advance directly. Grounded, promoted transitions execute via Fast Path (~0.5s, no VLM call); ungrounded transitions require VLM to choose the specific target (~5s), with postcondition protection — mismatch triggers automatic fallback. Delayed postcondition verification at step t+1 confirms step t's outcome, ensuring edge success-rate tracking is based on ground-truth observations. Online observations are staged in memory; only successful tasks trigger Neo4j writes, and new transitions require VLM trajectory review — no raw actions write directly to the graph. User constraints are extracted as first-class task slots and enforced by SpecGuard at the point of purchase commitment.
+> Shopping-Agent is a VLM-primary mobile GUI agent augmented by a self-evolving Active Mobile Spatial Graph (AMSG). The system abstracts screenshots into semantic page states and persists verified navigation transitions in Neo4j. Each step locates the current page via `(app, page_type)` matching, plans a route with Dijkstra on the weighted graph, and caches the route as a RuntimeDAG for subsequent steps to advance directly. Grounded, promoted transitions execute via Fast Path (~0.5s, no VLM call); ungrounded transitions require VLM to choose the specific target (~5s), with postcondition protection — mismatch triggers automatic fallback. Delayed postcondition verification at step t+1 confirms step t's outcome, ensuring edge success-rate tracking is based on ground-truth observations. Online observations are staged in memory; only successful tasks trigger Neo4j writes, and new transitions require VLM trajectory review — no raw actions write directly to the graph. User constraints are extracted as first-class task slots and enforced by SpecGuard at the point of purchase commitment. Multiple apps share one database under canonical app identities; unfamiliar apps are cold-started through a replicable pipeline - onboarding, strong-VLM-planned round-focused exploration, and a human review gate - while layered retrieval lets a new app borrow same-domain structural priors as direction-only hints, never coordinates.
