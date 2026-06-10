@@ -1,8 +1,8 @@
 # Shopping-Agent: System Architecture
 
-> **Version**: 2026-06-05 (rewritten)
-> **Scope**: Full `phone_agent/` implementation, with emphasis on agent execution, memory orchestration, AMSG graph design, and automatic graph persistence.
-> **Purpose**: Paper-ready architecture reference for academic writing.
+> **Version**: 2026-06-10 (multi-app generalization)
+> **Scope**: Full `phone_agent/` implementation, with emphasis on agent execution, memory orchestration, AMSG graph design, automatic graph persistence, multi-app graph organization, and the offline unfamiliar-app mapping pipeline (Section 5.8; full treatment in AMSG_DESIGN.md).
+> **Purpose**: Paper-ready architecture reference for academic writing. Validated end-to-end on two real apps: Taobao (core flow) and JD (core flow + the 秒送 instant-retail/takeout chain).
 
 Shopping-Agent is a **VLM-primary, graph-guided mobile GUI agent** augmented by a self-evolving **Active Mobile Spatial Graph (AMSG)**. The system automates complex shopping tasks on Android, HarmonyOS, and iOS devices through a closed-loop cycle of screenshot observation, page-state localization, graph-informed planning, VLM reasoning, action execution, and verified graph persistence.
 
@@ -90,7 +90,7 @@ When the user inputs `"Search iPhone 16 silver 256G on Taobao, add to cart"`, `r
 
 `run()` calls `_execute_step()` in a loop. Each step, in actual code order:
 
-**Phase 1 — Perception.** Capture screenshot via `DeviceFactory.get_screenshot()`, get current app, compute `ui_hash` (MD5). Classify page via `PageClassifier` → `page_type`, or use RuntimeDAG hint (skip classifier, save one VLM call).
+**Phase 1 — Perception.** Capture screenshot via `DeviceFactory.get_screenshot()`, get current app, compute `ui_hash` (MD5). Classify page via `PageClassifier` → `page_type` (prompts are generated from the domain schema; open vocabulary: pages outside the type list yield `new:<type>` proposals instead of forced mislabels), or use RuntimeDAG hint (skip classifier, save one VLM call).
 
 **Phase 2 — Safety gate.** `detect_verification(page_type, summary)` checks for login/CAPTCHA/SMS pages. Hit → `Take_over` (pause for human). Miss → continue. Adaptive counter: 0-3 consecutive hits → auto-takeover; 4-5 → let VLM try once; >5 → task fails.
 
@@ -237,6 +237,8 @@ Even with lifecycle, directly writing to Neo4j is risky — a failed task's enti
 
 No raw action writes directly to Neo4j. Every path passes at least one gate.
 
+These three gates govern **online learning**. Offline exploration data passes a fourth gate — **human review** (Section 5.8): exploration output lands in staging batches, and a human verifies each candidate edge against before/after screenshots in the Gradio review UI before it is admitted as hypothesis.
+
 ### 5.6  RuntimeDAG: Avoid Re-Planning Every Step
 
 The full Phase 3 pipeline (Neo4j query + Dijkstra + context assembly) takes 50-200ms including network round-trip. RuntimeDAG caches the planning result as an in-memory edge array + cursor. Consecutive steps read `route[current_index]` in <1ms, skipping the entire pipeline.
@@ -314,6 +316,8 @@ Shopping-Agent supports five VLM families through a unified adapter architecture
 
 Additional presets (`belief_only`, `planner_only`, `full`) exist as experimental infrastructure for future ablation studies — they are not validated contributions.
 
+Note: the offline mapping pipeline (staging / review apply) always uses the plausibility policy regardless of `AMSG_CONFIG` — `sava`'s verified edge policy requires runtime postcondition records, which offline-collected edges never have; the offline quality gate is human review, not the lifecycle policy.
+
 ---
 
 ## 8  Comparative Analysis
@@ -340,7 +344,9 @@ Shopping-Agent addresses three specific gaps in the current GUI agent landscape:
 | **Planning** | Multi-agent decomposition | BFS on page graph | BFS on UTG | Shortest path on interaction graph | Prefix reusability | Dijkstra on weighted graph (success rate + risk penalty) |
 | **Safety** | None reported | None reported | None reported | None reported | None reported | SpecGuard: task-slot-aware purchase interception |
 | **Transition verification** | Self-evolving training (model-level) | None (edges from episodes) | None | None | None | Postcondition verification + outcome distribution + entropy threshold |
-| **Quality gate** | Trajectory filtering (training) | None | None | None | Manual correction of traces | Three gates: task success, VLM trajectory review, canonicalization |
+| **Quality gate** | Trajectory filtering (training) | None | None | None | Manual correction of traces | Four gates: task success, VLM trajectory review, canonicalization, offline human review |
+| **Unfamiliar-app mapping** | None | One-off dataset | Offline crawl | Offline BFS | Manual recording | Replicable 5-stage pipeline (onboarding → planner/executor exploration → staging → human review → hypothesis) |
+| **Cross-app generalization** | None | Single app | Single app | Single site | Single app | Single-DB partitioning + domain-schema reuse + same-domain structural priors (direction-only hints) |
 | **Multi-model support** | Proprietary model | GPT-4o | MobileAgent-v2, UI-TARS | GPT-4o, Gemini, Claude | MobiMind (custom) | 5 families: AutoGLM, UI-TARS, Qwen-VL, MAI-UI, GUI-Owl |
 | **Cross-platform** | Android only | Android (evaluation) | Android + HarmonyOS | Web only | Android only | Android + HarmonyOS + iOS |
 
@@ -368,7 +374,9 @@ The following are implemented but require ablation experiments to validate as co
 
 - Multi-channel Bayesian belief localization (default: off; `(app, page_type)` matching suffices for most cases)
 - Belief-A* enhanced planner (default: Dijkstra; enhancement terms contribute < 0.1 on typical graph sizes)
-- Entropy-driven VLM verification boundary (implemented but hardcoded transition set is the primary mechanism)
+- Entropy-driven VLM verification boundary (implemented; the transition set is configured via the domain schema's `vlm_verify_transitions`)
+
+Every new mapping-pipeline mechanism carries an independent ablation switch: strong-VLM planner (`AMSG_STRONG_PLANNER=0`), open-vocabulary classification (`open_vocab=False`), same-domain priors (`AMSG_DOMAIN_PRIORS=0`), auto-staging (`--no-staging`), human handover (`--no-human`), transition validation strength (`--transition-policy`).
 
 ---
 
@@ -402,6 +410,17 @@ The following are implemented but require ablation experiments to validate as co
 | Action execution | `phone_agent/actions/handler.py` |
 | Device abstraction | `phone_agent/device_factory.py` |
 | Trajectory reviewer | `phone_agent/spatial/trajectory_reviewer.py` |
+| App identity registry | `phone_agent/spatial/app_registry.py` + `schemas/app_registry.yaml` |
+| App profiles (onboarding output) | `phone_agent/spatial/app_profiles.py` + `schemas/apps/*.yaml` |
+| Same-domain structural priors | `phone_agent/spatial/domain_priors.py` |
+| Exploration package (loop/classifier/safety/rules) | `phone_agent/memory/exploration/` |
+| Strong-VLM exploration planner | `phone_agent/memory/exploration/planner.py` |
+| Interference / watchdog / stability / confidence | `phone_agent/memory/exploration/{interference,watchdog,stability,confidence}.py` |
+| App onboarding | `phone_agent/memory/exploration/onboarding.py` |
+| Staging batches + human review gate | `phone_agent/spatial/review/` (`batch/manifest/decisions/apply/vlm_review`) |
+| Review web UI | `phone_agent/spatial/review/webui_review.py` |
+| Review CLI | `scripts/amsg_review.py` |
+| Graph indexes / app canonicalization migration | `scripts/create_amsg_indexes.py`, `scripts/migrate_app_canonicalization.py` |
 
 
 

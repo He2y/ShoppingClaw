@@ -1,8 +1,8 @@
 # Shopping-Agent：系统架构文档
 
-> **版本**: 2026-06-05（重写版）
-> **范围**: 完整 `phone_agent/` 实现，重点覆盖 Agent 执行模型、记忆系统协同、AMSG 图谱设计与自动持久化管线。
-> **用途**: 作为学术论文写作的架构参考文档。
+> **版本**: 2026-06-10（多 App 泛化版）
+> **范围**: 完整 `phone_agent/` 实现，重点覆盖 Agent 执行模型、记忆系统协同、AMSG 图谱设计与自动持久化管线，以及多 App 图谱组织与陌生 App 离线建图管线（5.8 节，详述见 AMSG_DESIGN.md）。
+> **用途**: 作为学术论文写作的架构参考文档。已在淘宝与京东（含秒送外卖链路）两个真实 App 上端到端验证。
 
 Shopping-Agent 是一个**以 VLM 为主、图谱引导的移动 GUI 智能体**，通过自演进的**主动移动空间图谱（Active Mobile Spatial Graph, AMSG）**增强。系统在 Android、HarmonyOS 和 iOS 设备上自动化执行复杂购物任务，通过截图观测、页面状态定位、图谱路径规划、VLM 推理、动作执行和验证后图谱持久化的闭环循环实现。
 
@@ -61,7 +61,8 @@ Shopping-Agent 是一个**以 VLM 为主、图谱引导的移动 GUI 智能体**
 │  数据存储：                │             │
 │    Neo4j (UIState→Action→UIState)      │
 │    FAISS (用户偏好/联系人)  │             │
-│    JSON (任务轨迹)         │             │
+│    JSON (任务轨迹/探索产物/  │             │
+│          staging 审核批次)  │             │
 └──────────────────────────┘             │
                │ 编译后的设备动作           │
                ▼                         │
@@ -119,6 +120,8 @@ flowchart TD
 - **持久化是延迟的**：实时更新的是内存中的 `EdgeLifecycleManager` 计数器，Neo4j 写入只在任务成功结束时触发
 - **快速路径有保护**：后条件不匹配时自动回退到 VLM 路径，最坏情况是多花一次 VLM 调用
 
+以上是**运行时**闭环。运行时之外还有一条**离线建图管线**（onboarding → 强 VLM 规划的焦点探索 → staging → 人工审核 → hypothesis 入图，见 5.8 节）负责陌生 App 的冷启动——两条管线在 Neo4j 中汇合：离线管线播种 hypothesis 边，运行时的后条件验证将其提升为可执行的 promoted 边。
+
 ---
 
 ## 3  Agent 设计
@@ -155,6 +158,7 @@ flowchart TD
 │  DeviceFactory.get_current_app()   → "taobao"
 │  MD5(截图)                         → ui_hash
 │  PageClassifier.classify(截图)     → page_type="search_result"
+│    提示词由域模式生成（开放词表：词表外页面产出 new:<type> 提案）
 │    或 RuntimeDAG 提供 hint（跳过分类器，省一次 VLM 调用）
 │
 ─── Phase 2: 安全门控 ──────────────────────────────
@@ -427,6 +431,8 @@ hypothesis → candidate → promoted → demoted
 
 三道门确保图谱只包含**经过验证的、稳定的、规范化的**导航知识。
 
+以上三道门作用于**在线学习**。离线探索数据另有第四道门——**人工审核**（5.8 节）：探索产物先进 staging 批次，人工在 Gradio 审核页逐条核对前后截图后才以 hypothesis 入图。
+
 ### 5.6  RuntimeDAG：避免每步重新规划
 
 Dijkstra 规划在微秒级完成，但 Phase 3 的完整流程（Neo4j 查询 + 定位 + 规划 + 上下文组装）需要 50-200ms（含网络往返）。如果每步都跑完整流程，20 步任务累积 1-4s 的开销。
@@ -523,7 +529,9 @@ Shopping-Agent 解决了当前 GUI 智能体领域的三个具体缺口：
 | **规划** | 多 Agent 分解 | 页面图 BFS | UTG BFS | 交互图最短路径 | 前缀可复用性 | Dijkstra 加权图（成功率 + 风险惩罚） |
 | **安全机制** | 未报告 | 未报告 | 未报告 | 未报告 | 未报告 | SpecGuard：任务槽位感知的购买拦截 |
 | **转移验证** | 自演进训练 | 无 | 无 | 无 | 无 | 后条件验证 + 结果分布 + 熵阈值 |
-| **质量门控** | 轨迹过滤 | 无 | 无 | 无 | 手动纠正 | 三道门：任务成功、VLM 轨迹审核、规范化 |
+| **质量门控** | 轨迹过滤 | 无 | 无 | 无 | 手动纠正 | 四道门：任务成功、VLM 轨迹审核、规范化、离线人工审核 |
+| **陌生 App 建图** | 无 | 一次性数据集 | 离线爬取 | 离线 BFS | 人工录制 | 可复制五阶段管线（引导→规划-执行分离探索→staging→人工审核→hypothesis） |
+| **跨 App 泛化** | 无 | 单 App | 单 App | 单站点 | 单 App | 单库分区 + 域模式复用 + 同域结构先验（仅方向提示） |
 | **多模型支持** | 专有模型 | GPT-4o | MobileAgent-v2 | GPT-4o, Gemini, Claude | MobiMind（自定义） | 5 族：AutoGLM, UI-TARS, Qwen-VL, MAI-UI, GUI-Owl |
 | **跨平台** | 仅 Android | Android | Android + HarmonyOS | 仅 Web | 仅 Android | Android + HarmonyOS + iOS |
 
@@ -544,7 +552,9 @@ Shopping-Agent 解决了当前 GUI 智能体领域的三个具体缺口：
 
 - 多通道贝叶斯信念定位（默认关闭；`(app, page_type)` 匹配已覆盖大多数场景）
 - Belief-A* 增强规划器（默认 Dijkstra；增强项在当前图谱规模下贡献 < 0.1）
-- 熵驱动的 VLM 验证边界（已实现但硬编码转移集合仍为主要机制）
+- 熵驱动的 VLM 验证边界（已实现；转移集合由域模式 `vlm_verify_transitions` 配置）
+
+建图管线的全部新机制均有独立消融开关：强 VLM 规划器（`AMSG_STRONG_PLANNER=0`）、开放词表分类（`open_vocab=False`）、同域结构先验（`AMSG_DOMAIN_PRIORS=0`）、staging 自动打包（`--no-staging`）、人工接力（`--no-human`）、转移校验强度（`--transition-policy`）。
 
 
 
