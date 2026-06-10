@@ -62,11 +62,15 @@ class SafetyPolicy:
 
     def is_safe_action(self, page_info: Any, action: dict, reasoning: str = "") -> bool:
         """Return True iff the action is safe to execute on page_info."""
+        # Retreat/no-op actions carry no risk by themselves — blocking Back
+        # because the reasoning text mentions 结算/checkout traps the agent
+        # on the very page it is trying to leave.
+        action_type = str(action.get("action") or action.get("action_type") or "").lower()
+        if action.get("_metadata") == "finish" or action_type in {"back", "wait"}:
+            return True
         page_type = _page_type_str(page_info)
         if page_type in self.high_risk_page_types:
             return False
-        if action.get("_metadata") == "finish":
-            return True
         action_text = json.dumps(action, ensure_ascii=False).lower()
         if self.action_text_has_unsafe_token(action_text, page_info):
             return False

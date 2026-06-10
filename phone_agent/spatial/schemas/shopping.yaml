@@ -176,7 +176,7 @@
       "target": "cart",
       "intent": "go_cart",
       "affordance": "go_cart",
-      "target_locator": {"region": "top_right", "role": "cart_entry_icon"},
+      "target_locator": {"region": "cart_entry", "role": "cart_entry_icon"},
       "exploration_hint": "For product_detail -> cart, use only the top-right cart entry/icon. Do not use the bottom 加入购物车/立即购买 CTA for this edge, because that CTA opens spec_selection."
     },
     {
@@ -230,7 +230,7 @@
     ],
     "risky_cta_allowed_pages": ["product_detail", "spec_selection"],
     "self_loop_input_pages": ["search_input", "filter_panel"],
-    "default_task": "覆盖{app}购物核心空间骨架：home -> search_input -> search_result -> product_detail -> spec_selection -> cart。只执行安全探索动作，不提交订单、不支付、不确认地址。如果进入登录、支付、地址或订单确认页，立刻返回。",
+    "default_task": "覆盖{app}购物核心空间骨架：home -> search_input -> search_result -> product_detail -> spec_selection -> cart。可以点击『加入购物车』按钮打开规格选择弹窗（这不会下单），在弹窗内可以选择规格，但不要点击弹窗内最终的确认提交/立即购买。只执行安全探索动作，不提交订单、不支付、不确认地址。如果进入登录、支付、地址或订单确认页，立刻返回。",
     "vlm_verify_transitions": [
       ["search_result", "product_detail"],
       ["product_detail", "spec_selection"]

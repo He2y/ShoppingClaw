@@ -14,6 +14,10 @@ REGIONS: dict[str, Callable[[float, float], bool]] = {
     "top_right_band": lambda x, y: x >= 800 and 150 <= y <= 420,
     "content_list":   lambda x, y: y >= 250,
     "bottom_cta":     lambda x, y: y >= 850,
+    # Cart entry differs per app: Taobao uses a top-right icon, JD a bottom
+    # dock tab (x~297, y~952). Accept both; reject only the bottom-right
+    # add-to-cart CTA zone, which opens spec_selection rather than cart.
+    "cart_entry":     lambda x, y: y <= 220 or (y >= 850 and x < 420),
 }
 
 

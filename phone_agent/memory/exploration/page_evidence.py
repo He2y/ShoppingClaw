@@ -34,6 +34,22 @@ _CONSTRAINT_MARKERS = (
     "如果进入",
 )
 
+# Plan-intent sentences describe where the agent WANTS to go, not what the
+# current screen shows ("然后继续探索到规格选择页" / "我需要继续探索到：").
+_PLAN_MARKERS = (
+    "我需要",
+    "我应该",
+    "应该是",
+    "应该会",
+    "下一步",
+    "接下来",
+    "然后",
+    "让我",
+    "首先",
+    "继续探索",
+    "->",
+)
+
 
 _SENTENCE_SPLIT = ("。", "；", ";", "！", "!", "？", "?")
 
@@ -49,6 +65,12 @@ def _strip_plan_and_constraint_text(line: str) -> str:
     # Numbered plan enumerations: "1. 先点击搜索框（搜索输入）"
     if stripped[:2].rstrip(".、)").isdigit():
         return ""
+    # Bullet page-type enumerations: "- spec_selection（规格选择）"
+    bare = stripped.lstrip("-—•* ").strip()
+    if bare[:1].isascii() and bare[:1].isalpha():
+        head = bare.split("（")[0].split("(")[0].strip()
+        if head and all(ch.isascii() and (ch.isalnum() or ch == "_") for ch in head):
+            return ""
     sentences: list[str] = []
     current = []
     for char in stripped:
@@ -58,7 +80,12 @@ def _strip_plan_and_constraint_text(line: str) -> str:
             current = []
     if current:
         sentences.append("".join(current))
-    kept = [s for s in sentences if not any(marker in s for marker in _CONSTRAINT_MARKERS)]
+    kept = [
+        s
+        for s in sentences
+        if not any(marker in s for marker in _CONSTRAINT_MARKERS)
+        and not any(marker in s for marker in _PLAN_MARKERS)
+    ]
     return "".join(kept)
 
 _VISUAL_MARKERS = (

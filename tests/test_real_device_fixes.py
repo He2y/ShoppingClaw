@@ -94,3 +94,57 @@ def test_cli_storage_dir_defaults_to_canonical_app_id():
     assert _resolve_storage_dir(args).endswith("exploration/jd")
     args2 = SimpleNamespace(app="京东", storage_dir="custom/dir")
     assert _resolve_storage_dir(args2) == "custom/dir"
+
+
+# ── second real-device run: plan text overriding the classifier ──
+
+
+def test_plan_enumeration_bullets_are_not_evidence():
+    reasoning = (
+        "从截图来看，当前页面显示的是搜索结果页面。\n"
+        "我需要继续探索到：\n"
+        "- product_detail（商品详情页）\n"
+        "- spec_selection（规格选择）\n"
+        "- cart（购物车）\n"
+    )
+    assert infer_page_type_from_reasoning(reasoning) == "search_result"
+
+
+def test_plan_intent_sentences_are_not_evidence():
+    reasoning = (
+        "从截图来看，当前页面显示的是搜索结果页面，搜索内容是米家空调。"
+        "然后继续探索到规格选择页，最后到购物车。"
+    )
+    assert infer_page_type_from_reasoning(reasoning) == "search_result"
+
+
+def test_skeleton_restatement_with_arrows_is_not_evidence():
+    reasoning = (
+        "当前截图显示的是商品搜索结果。\n"
+        "核心流程：home -> search_input -> search_result -> product_detail -> spec_selection -> cart\n"
+    )
+    assert infer_page_type_from_reasoning(reasoning) == "search_result"
+
+
+def test_back_action_is_always_safe_even_with_checkout_reasoning():
+    from phone_agent.memory.exploration.safety import SafetyPolicy
+
+    schema = get_default_registry().merged("shopping")
+    policy = SafetyPolicy.from_schema(schema)
+    page = SimpleNamespace(page_type="cart")
+    reasoning = "下一步应该是到 checkout（结算）页面。让我先返回上一级。"
+    assert policy.is_safe_action(page, {"_metadata": "do", "action": "Back"}, reasoning)
+    # Tapping a checkout button with that reasoning must still be blocked.
+    assert not policy.is_safe_action(
+        page, {"_metadata": "do", "action": "Tap", "element": [500, 900]}, reasoning
+    )
+
+
+def test_cart_entry_region_accepts_jd_bottom_dock_and_taobao_top_icon():
+    from phone_agent.memory.exploration.transition_rules import REGIONS
+
+    cart_entry = REGIONS["cart_entry"]
+    assert cart_entry(297, 952)      # JD bottom dock cart tab
+    assert cart_entry(844, 71)       # Taobao top-right cart icon
+    assert not cart_entry(518, 959)  # bottom-right add-to-cart CTA
+    assert not cart_entry(700, 900)  # buy-now CTA zone

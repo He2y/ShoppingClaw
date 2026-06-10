@@ -395,6 +395,12 @@ class OfflineExplorer:
             cur_hash = screenshot.base64_data[:_SCREEN_CHANGE_HASH_LEN]
             if step_idx > 0 and prev_screenshot_hash and cur_hash == prev_screenshot_hash:
                 self._log("  ⚠ 屏幕无变化，上次操作可能未生效")
+                # Surface this to the VLM, not just the console — otherwise it
+                # repeats the same ineffective tap until the watchdog restarts.
+                last_step_note = (
+                    f"{last_step_note} 警告：上一动作没有改变屏幕。"
+                    "不要重复点击同一坐标，从截图中换一个不同的元素或方向。"
+                ).strip()
             prev_screenshot_hash = cur_hash
 
             # Phase 4: StuckDetector
@@ -493,6 +499,9 @@ class OfflineExplorer:
                 )
             if active_frontier_hint:
                 task_text = f"{task_text}\n\n{active_frontier_hint}"
+            schema_hint = self._build_schema_transition_hint(current_page)
+            if schema_hint and not active_frontier_hint:
+                task_text = f"{task_text}\n\n{schema_hint}"
             if trap_hint:
                 task_text = f"{task_text}\n\n{trap_hint}"
 
@@ -523,22 +532,26 @@ class OfflineExplorer:
             if inferred_str:
                 inferred_str_raw = str(inferred_str)
             if inferred_str and inferred_str != current_pt_str:
-                # Reasoning text frequently restates task constraints that
-                # mention high-risk pages (支付/地址/登录). Only the classifier,
-                # which sees the actual screenshot, may escalate to high risk.
+                # The classifier (strong VLM) sees the actual screenshot; the
+                # reasoning comes from the action model and frequently restates
+                # plans/constraints ("然后到规格选择页"). Repair therefore only
+                # fills in when the classifier abstained (unknown), plus one
+                # known confusion: spec sheets classified as generic dialogs.
                 high_risk = (getattr(self, "safety", None) or _get_default_safety()).high_risk_page_types
-                if inferred_str in high_risk and current_pt_str not in high_risk:
-                    self._log(
-                        "  belief repair ignored (high-risk escalation from reasoning): "
-                        f"classifier={current_pt_str} reasoning={inferred_str}"
-                    )
-                    inferred_str_raw = None
-                else:
+                repair_allowed = (
+                    current_pt_str == "unknown" and inferred_str not in high_risk
+                ) or (current_pt_str == "dialog" and inferred_str == "spec_selection")
+                if repair_allowed:
                     self._log(
                         f"  belief repair: classifier={current_pt_str} "
                         f"reasoning={inferred_str}"
                     )
                     current_page = self._relabel_page_info(current_page, inferred_page_type)
+                else:
+                    self._log(
+                        "  belief repair skipped (classifier is authoritative): "
+                        f"classifier={current_pt_str} reasoning={inferred_str}"
+                    )
             self._record_page(current_page)
 
             if pending_transition:
@@ -1053,6 +1066,27 @@ class OfflineExplorer:
             f"缺失转移: {missing_edges}\n"
             "请优先选择能补齐缺失页面或缺失转移的安全动作，避免支付、提交订单和地址确认。"
         )
+
+    def _build_schema_transition_hint(self, page_info: PageInfo | None) -> str:
+        """Always-on lightweight hint: schema exploration_hint for the current page.
+
+        Tells the model HOW to traverse tricky edges (e.g. add-to-cart CTA
+        opens spec_selection) without requiring --active-exploration.
+        """
+        if page_info is None:
+            return ""
+        schema = getattr(self, "schema", None)
+        if schema is None:
+            return ""
+        page_type = _page_type_str(page_info)
+        hints = [
+            t.exploration_hint
+            for t in schema.outgoing(page_type)
+            if getattr(t, "exploration_hint", "")
+        ]
+        if not hints:
+            return ""
+        return "[导航提示]\n" + "\n".join(f"- {hint}" for hint in dict.fromkeys(hints))
 
     def _build_active_frontier_hint(self, page_info: PageInfo | None) -> str:
         """Return a compact AMSG frontier hint for active exploration."""

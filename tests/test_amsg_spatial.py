@@ -37,7 +37,7 @@ def test_schema_registry_merges_common_and_shopping_aliases():
     assert ("product_detail", "cart", "go_cart") in transitions
     go_cart = next(item for item in schema.transitions if item.intent == "go_cart")
     open_spec = next(item for item in schema.transitions if item.intent == "open_spec")
-    assert go_cart.target_locator["region"] == "top_right"
+    assert go_cart.target_locator["region"] == "cart_entry"
     assert open_spec.target_locator["region"] == "bottom_cta"
 
 
