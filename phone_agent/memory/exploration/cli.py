@@ -178,6 +178,11 @@ def main() -> int:
         help="AppProfile app_id to load for coverage/safety overrides (e.g. jd, pinduoduo).",
     )
     parser.add_argument(
+        "--no-staging",
+        action="store_true",
+        help="探索结束后不自动生成 staging 审核批次(默认自动生成).",
+    )
+    parser.add_argument(
         "--no-strong-planner",
         action="store_true",
         help="禁用强VLM逐步规划器(默认开启: 强VLM规划,GUI模型只执行单条指令).",
@@ -260,6 +265,7 @@ def main() -> int:
             app_profile=app_profile,
             focus=args.focus,
             use_strong_planner=not args.no_strong_planner,
+            auto_stage=not args.no_staging,
         )
         trajectories = explorer.explore()
         report = {

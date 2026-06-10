@@ -104,6 +104,7 @@ class OfflineExplorer:
         app_profile: Any | None = None,
         focus: str | None = None,
         use_strong_planner: bool = True,
+        auto_stage: bool = True,
     ):
         self.app_name = app_name
         self.device = device_factory
@@ -128,6 +129,7 @@ class OfflineExplorer:
         self.wait_stable = wait_stable
         self.save_screenshots = save_screenshots
         self.direct_import = direct_import
+        self.auto_stage = auto_stage
 
         # Resolve schema — priority: explicit param → profile → AppRegistry → "shopping"
         resolved_schema_name = schema_name
@@ -1568,7 +1570,14 @@ class OfflineExplorer:
                 json.dump(transitions_data, f, ensure_ascii=False, indent=2)
             self._log(f"  saved: {trans_path.name} ({len(self.transitions)} transitions)")
 
-        if self.auto_import_graph:
+        # Staging is the default destination for every round that produced
+        # transitions: it only packages review candidates on disk (no Neo4j),
+        # so the draft-profile gate does not apply — that gate guards the
+        # graph write, which happens at review apply time.
+        auto_stage = getattr(self, "auto_stage", True)
+        if (self.auto_import_graph or auto_stage) and self.transitions and trans_path is not None:
+            self._import_saved_graph(pages_path, trans_path)
+        elif self.auto_import_graph:
             self._import_saved_graph(pages_path, trans_path)
 
     def _import_saved_graph(self, pages_path: Path, transitions_path: Path | None) -> None:
