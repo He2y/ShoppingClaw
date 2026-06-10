@@ -644,11 +644,21 @@ class SpatialGraphMemory:
             if not source or not target:
                 filtered += 1
                 continue
+            action = dict(action)
+            # Propagate transition-level evidence (repeat observations,
+            # explorer confidence, provenance) into the edge action params
+            # so the review manifest can surface them to the human.
+            if "observations" in item:
+                action.setdefault("observations", item.get("observations"))
+            if isinstance(item.get("confidence"), str) and item.get("confidence"):
+                action.setdefault("confidence_level", item.get("confidence"))
+            if item.get("source_kind"):
+                action.setdefault("source_kind", item.get("source_kind"))
             raw_steps.append(
                 _StagingTransition(
                     source=source,
                     target=target,
-                    action=dict(action),
+                    action=action,
                     outcome=str(item.get("outcome") or "success"),
                 )
             )
@@ -1120,6 +1130,7 @@ class SpatialGraphMemory:
         edges: Iterable[TransitionEdge],
         *,
         persist: bool = True,
+        lifecycle_overrides: dict[str, Any] | None = None,
     ) -> GraphQualityReport:
         """Promote a validated staging graph into local memory and Neo4j."""
         promoted_edges = 0
@@ -1172,6 +1183,8 @@ class SpatialGraphMemory:
                 compound_edges += 1
             if persist and self.graph_store and getattr(self.graph_store, "driver", None):
                 lifecycle_data = self._build_lifecycle_dict(source, resolved_edge, target)
+                if lifecycle_overrides:
+                    lifecycle_data = {**lifecycle_data, **lifecycle_overrides}
                 self.graph_store.add_state_transition(
                     resolved_edge.source_id,
                     resolved_edge.target_id,

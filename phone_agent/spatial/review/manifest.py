@@ -30,6 +30,7 @@ class ReviewItem:
     vlm_verdict: str              # "approve" | "reject" | "unreviewed"
     vlm_reason: str
     blind_page_check: str         # "match" | "mismatch:<seen_src>-><seen_tgt>" | "skipped"
+    source_kind: str = ""         # "human_assisted" | "" (autonomous)
 
     # ── Serialization ──────────────────────────────────────────
 
@@ -49,6 +50,7 @@ class ReviewItem:
             "after_screenshot": self.after_screenshot,
             "observations": self.observations,
             "explorer_confidence": self.explorer_confidence,
+            "source_kind": self.source_kind,
             "vlm_verdict": self.vlm_verdict,
             "vlm_reason": self.vlm_reason,
             "blind_page_check": self.blind_page_check,
@@ -71,6 +73,7 @@ class ReviewItem:
             after_screenshot=str(data.get("after_screenshot") or ""),
             observations=int(data.get("observations") or 0),
             explorer_confidence=str(data.get("explorer_confidence") or ""),
+            source_kind=str(data.get("source_kind") or ""),
             vlm_verdict=str(data.get("vlm_verdict") or "unreviewed"),
             vlm_reason=str(data.get("vlm_reason") or ""),
             blind_page_check=str(data.get("blind_page_check") or "skipped"),
@@ -195,6 +198,7 @@ def build_manifest(
             after_screenshot=after_path,
             observations=observations,
             explorer_confidence=explorer_confidence,
+            source_kind=str(action_params.get("source_kind") or ""),
             vlm_verdict=vlm_verdict,
             vlm_reason=vlm_reason,
             blind_page_check=blind_page_check,

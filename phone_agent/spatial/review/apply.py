@@ -113,11 +113,21 @@ def apply_review(
             graph_store = None
 
     try:
-        memory = SpatialGraphMemory(graph_store)
+        from phone_agent.spatial.amsg_config import AMSGOptimConfig
+        # Approved edges enter as hypothesis; the verified lifecycle policy
+        # must not re-filter what the human just approved.
+        memory = SpatialGraphMemory(graph_store, config=AMSGOptimConfig.legacy())
         promote_report = memory.promote_staging_to_canonical(
             states_by_id,
             approved_edges,
             persist=(graph_store is not None),
+            # Review approval admits the edge as a hypothesis only - online
+            # postcondition verification still has to earn the promotion.
+            lifecycle_overrides={
+                "lifecycle_stage": "hypothesis",
+                "verification_count": 0,
+                "dominance_ratio": 0.0,
+            },
         )
     finally:
         if owns_store and graph_store is not None:

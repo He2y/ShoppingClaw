@@ -56,10 +56,6 @@
       "cart"
     ],
     [
-      "spec_selection",
-      "cart"
-    ],
-    [
       "cart",
       "checkout"
     ]
@@ -86,5 +82,5 @@
   ],
   "login_wall_on_launch": false,
   "default_task": "",
-  "onboarding_notes": "启动页为618大促广告页，含‘跳过’按钮；首页含多层促销入口与导购模块，需注意诱导性文案。 [suggested_task recorded in default_task] [manually cleaned 2026-06-10: CTA tokens demoted from unsafe; coverage normalized to schema] [VLM suggested_task: 从首页进入搜索，查找‘手机’类目，筛选‘国家补贴’标签商品，查看详情页并尝试加入购物车]"
+  "onboarding_notes": "启动页为618大促广告页，含‘跳过’按钮；首页含多层促销入口与导购模块，需注意诱导性文案。 [suggested_task recorded in default_task] [manually cleaned 2026-06-10: CTA tokens demoted from unsafe; coverage normalized to schema] [VLM suggested_task: 从首页进入搜索，查找‘手机’类目，筛选‘国家补贴’标签商品，查看详情页并尝试加入购物车] [spec_selection->cart removed: JD confirms add-to-cart back to product_detail, this edge does not exist in JD UI]"
 }

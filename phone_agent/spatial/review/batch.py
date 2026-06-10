@@ -58,11 +58,16 @@ def create_staging_batch(
         Path to the created batch directory.
     """
     from phone_agent.memory.spatial_graph_memory import SpatialGraphMemory
+    from phone_agent.spatial.amsg_config import AMSGOptimConfig
 
     pages_path = Path(pages_path)
 
-    # Run staging (side-effect-free — no Neo4j)
-    memory = SpatialGraphMemory(graph_store=None)
+    # Run staging (side-effect-free — no Neo4j). Force the legacy plausibility
+    # policy: AMSG_CONFIG=sava's "verified" edge policy requires runtime
+    # postcondition records, which offline-collected edges never have — it
+    # would silently filter every candidate. The quality gate for offline
+    # data is the human review of this batch, not the lifecycle policy.
+    memory = SpatialGraphMemory(graph_store=None, config=AMSGOptimConfig.legacy())
     states, edges, quality_report = memory.import_exploration_staging(
         pages_path, transitions_path
     )

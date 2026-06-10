@@ -21,6 +21,13 @@ def _default_decision(item: ReviewItem) -> str:
     """
     if item.vlm_verdict == "approve":
         return "approve"
+    # Human-assisted collection IS a human verification of the edge — the
+    # operator drove the device and confirmed both endpoint pages visually.
+    if (
+        getattr(item, "source_kind", "") == "human_assisted"
+        and item.explorer_confidence != "low_confidence"
+    ):
+        return "approve"
     if (
         item.vlm_verdict == "unreviewed"
         and item.observations >= 2
