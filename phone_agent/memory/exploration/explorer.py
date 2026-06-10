@@ -101,6 +101,7 @@ class OfflineExplorer:
         wait_stable: bool = True,
         save_screenshots: bool = True,
         direct_import: bool = False,
+        app_profile: Any | None = None,
     ):
         self.app_name = app_name
         self.device = device_factory
@@ -108,6 +109,13 @@ class OfflineExplorer:
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.max_steps = max_steps
+        # Profile default_task has priority over generic default when no explicit task given
+        if (
+            task_description == "广度优先探索所有主要页面类型"
+            and app_profile is not None
+            and getattr(app_profile, "default_task", "")
+        ):
+            task_description = app_profile.default_task
         self.task_description = task_description
         self.auto_import_graph = auto_import_graph
         self.graph_store = graph_store
@@ -119,8 +127,10 @@ class OfflineExplorer:
         self.save_screenshots = save_screenshots
         self.direct_import = direct_import
 
-        # Resolve schema
+        # Resolve schema — priority: explicit param → profile → AppRegistry → "shopping"
         resolved_schema_name = schema_name
+        if resolved_schema_name is None and app_profile is not None:
+            resolved_schema_name = getattr(app_profile, "schema_name", None)
         if resolved_schema_name is None:
             from phone_agent.spatial.app_registry import get_default_app_registry
             record = get_default_app_registry().resolve(app_name)
@@ -133,11 +143,14 @@ class OfflineExplorer:
         from phone_agent.spatial.schema_registry import get_default_registry
         self.schema = get_default_registry().merged(self._schema_name)
         self.space = PageTypeSpace.from_schema(self.schema)
-        self.safety = SafetyPolicy.from_schema(self.schema)
+        self.safety = SafetyPolicy.from_schema(self.schema, profile=app_profile)
         self.rules = TransitionRuleEngine(self.schema, self.safety, transition_policy)
 
-        # Coverage and task
-        self.coverage_targets = coverage_targets or coverage_from_schema(self.schema)
+        # Store profile for coverage + task overrides
+        self.app_profile = app_profile
+
+        # Coverage and task — profile overrides schema when present
+        self.coverage_targets = coverage_targets or coverage_from_schema(self.schema, profile=app_profile)
         self.coverage_report = CoverageReport((), self.coverage_targets.page_types, (), self.coverage_targets.transitions)
         self.last_import_result = None
 

@@ -1,8 +1,11 @@
 """CLI entry point for the offline explorer."""
 
+from __future__ import annotations
+
 import argparse
 import json
 import os
+from typing import Any
 
 from dotenv import load_dotenv
 
@@ -14,6 +17,48 @@ from .human_gate import ConsoleHumanGate
 from .interference import InterferencePolicy
 from .task_builder import build_default_task
 from .watchdog import WatchdogConfig
+
+
+def _apply_draft_gate(app_profile: "Any | None", auto_import_graph: bool) -> tuple[bool, str | None]:
+    """Check draft gate: returns (effective_auto_import, warning_message | None).
+
+    If profile.status == "draft" and auto_import_graph is True, refuse auto import
+    and return a warning message.
+    """
+    if app_profile is None:
+        return auto_import_graph, None
+    status = str(getattr(app_profile, "status", "confirmed") or "confirmed")
+    if status == "draft" and auto_import_graph:
+        msg = (
+            f"[draft gate] App '{getattr(app_profile, 'display_name', '')}' 的 profile "
+            f"状态为 draft，不允许自动入图 (--auto-import-graph)。\n"
+            "请人工确认 profile，将 status 改为 confirmed 后再执行入图。\n"
+            f"  Profile 路径提示: 运行 `python -m phone_agent.memory.exploration.onboarding "
+            f"--app {getattr(app_profile, 'display_name', '')}` 查看或重新生成。"
+        )
+        return False, msg
+    return auto_import_graph, None
+
+
+def _resolve_app_profile(args: Any) -> Any:
+    """Load AppProfile if --profile is given or auto-resolvable from --app."""
+    try:
+        from phone_agent.spatial.app_profiles import AppProfileRegistry
+        profile_registry = AppProfileRegistry()
+
+        # Explicit --profile flag
+        if hasattr(args, "profile") and args.profile:
+            profile = profile_registry.load(args.profile)
+            if profile is None:
+                profile = profile_registry.resolve(args.profile)
+            return profile
+
+        # Auto-resolve from --app
+        if hasattr(args, "app") and args.app:
+            return profile_registry.resolve(args.app)
+    except Exception:
+        pass
+    return None
 
 
 def _resolve_default_task(schema_name: str | None) -> str:
@@ -87,12 +132,24 @@ def main() -> int:
         action="store_true",
         help="Disable stability-based screen wait after actions (use fixed sleep instead).",
     )
+    parser.add_argument(
+        "--profile",
+        default=None,
+        help="AppProfile app_id to load for coverage/safety overrides (e.g. jd, pinduoduo).",
+    )
     args = parser.parse_args()
 
     set_device_type(DeviceType(args.device_type))
     graph_store = None
+
+    # Phase 3: resolve app profile
+    app_profile = _resolve_app_profile(args)
+    effective_auto_import, draft_warning = _apply_draft_gate(app_profile, args.auto_import_graph)
+    if draft_warning:
+        print(draft_warning)
+
     try:
-        if args.auto_import_graph:
+        if effective_auto_import:
             from ..graph_store import GraphStore
 
             graph_store = GraphStore(database=args.database)
@@ -128,7 +185,7 @@ def main() -> int:
             classifier_timing=args.classifier_timing,
             classifier_timeout=args.classifier_timeout,
             classifier_max_image_width=args.classifier_max_image_width,
-            auto_import_graph=args.auto_import_graph,
+            auto_import_graph=effective_auto_import,
             graph_store=graph_store,
             device_id=args.device_id,
             active_exploration=args.active_exploration,
@@ -139,6 +196,7 @@ def main() -> int:
             watchdog_config=WatchdogConfig(),
             human_gate=human_gate,
             wait_stable=not args.no_wait_stable,
+            app_profile=app_profile,
         )
         trajectories = explorer.explore()
         report = {
