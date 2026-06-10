@@ -216,7 +216,21 @@
         "follow_store",
         "scroll"
       ],
-      "description": "店铺主页 — 店铺Logo和名称、店铺评分、店铺内商品列表、关注按钮"
+      "description": "店铺/商家主页 — 店铺Logo和名称、店铺评分、店内商品或菜品列表、关注按钮；外卖/秒送商家页还含起送价、配送信息和底部店铺购物栏（已选N件/合计金额）",
+      "aliases": [
+        "merchant",
+        "restaurant",
+        "shop_detail"
+      ],
+      "vlm_hint": "单个商品的详情页是 product_detail；展示一个店铺/商家及其商品菜单列表的页面是 store（外卖商家页带起送价/配送费/店铺购物栏时尤其判 store，不要判为 product_detail）",
+      "evidence_tokens": [
+        "店铺主页",
+        "商家主页",
+        "菜单",
+        "起送",
+        "店铺购物栏",
+        "已选"
+      ]
     },
     "login": {
       "risk": "high",
@@ -252,6 +266,63 @@
         "deny_permission"
       ],
       "description": "系统权限弹窗 — 请求相机、位置、通知、相册等权限"
+    },
+    "channel_home": {
+      "risk": "normal",
+      "aliases": [
+        "seconds_delivery_home",
+        "takeout_home",
+        "instant_retail_home"
+      ],
+      "landmarks": [
+        "channel_header",
+        "search_bar",
+        "category_icons",
+        "merchant_feed"
+      ],
+      "affordances": [
+        "open_search",
+        "open_shop_list",
+        "open_category",
+        "go_back"
+      ],
+      "description": "频道首页 — 秒送/外卖/超市/买药等子频道的主页，有自己的搜索框、分类图标矩阵（外卖/咖啡奶茶/超市秒送等）和推荐商家/商品流，通常显示配送地址",
+      "vlm_hint": "App主首页(home)与子频道首页(channel_home)要区分：进入秒送/外卖/超市等频道后的页面是 channel_home，不是 home；判断依据是页面有配送地址、分类图标矩阵或商家推荐流",
+      "evidence_tokens": [
+        "秒送",
+        "外卖首页",
+        "频道首页",
+        "配送地址",
+        "超市频道"
+      ]
+    },
+    "shop_list": {
+      "risk": "normal",
+      "aliases": [
+        "merchant_list",
+        "restaurant_list"
+      ],
+      "landmarks": [
+        "shop_cards",
+        "rating",
+        "delivery_fee",
+        "delivery_time"
+      ],
+      "affordances": [
+        "open_shop",
+        "open_filter",
+        "sort",
+        "scroll"
+      ],
+      "description": "商家列表页 — 列表卡片是店铺/商家/餐厅（含店铺名、评分、月售、起送价、配送费、配送时长），点击进入商家主页；不是单个商品的搜索结果",
+      "vlm_hint": "搜索结果区分商品与商家：卡片是单个商品(价格+商品图)判 search_result；卡片是店铺/商家/餐厅(评分+起送价+配送费+月售)判 shop_list",
+      "evidence_tokens": [
+        "商家列表",
+        "起送",
+        "配送费",
+        "月售",
+        "餐厅列表"
+      ]
     }
   },
   "transitions": [
@@ -342,6 +413,62 @@
       "intent": "checkout",
       "affordance": "checkout",
       "risk": "high"
+    },
+    {
+      "source": "home",
+      "target": "channel_home",
+      "intent": "open_channel",
+      "affordance": "open_channel",
+      "exploration_hint": "进入秒送/外卖等子频道：点击顶部频道标签或首页分类图标矩阵中的频道入口。"
+    },
+    {
+      "source": "channel_home",
+      "target": "search_input",
+      "intent": "open_search",
+      "affordance": "open_search"
+    },
+    {
+      "source": "channel_home",
+      "target": "shop_list",
+      "intent": "open_shop_list",
+      "affordance": "open_shop_list"
+    },
+    {
+      "source": "search_input",
+      "target": "shop_list",
+      "intent": "submit_search",
+      "affordance": "submit_search"
+    },
+    {
+      "source": "shop_list",
+      "target": "store",
+      "intent": "open_shop",
+      "affordance": "open_shop"
+    },
+    {
+      "source": "search_result",
+      "target": "store",
+      "intent": "open_shop",
+      "affordance": "open_shop"
+    },
+    {
+      "source": "store",
+      "target": "product_detail",
+      "intent": "open_product",
+      "affordance": "open_product"
+    },
+    {
+      "source": "store",
+      "target": "spec_selection",
+      "intent": "open_spec",
+      "affordance": "open_spec",
+      "exploration_hint": "外卖商家页点菜品的『+』或『选规格』会打开规格弹窗，不会下单。"
+    },
+    {
+      "source": "channel_home",
+      "target": "home",
+      "intent": "go_back",
+      "affordance": "go_back"
     }
   ],
   "app_aliases": {

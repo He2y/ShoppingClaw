@@ -136,16 +136,19 @@ def build_full_prompt(space: "PageTypeSpace", schema: Any) -> str:
     return "".join(lines)
 
 
-def build_fast_prompt(space: "PageTypeSpace", schema: Any) -> str:
-    """Generate a fast (no elements, no open-vocab) classification prompt.
+def build_fast_prompt(space: "PageTypeSpace", schema: Any, open_vocab: bool = True) -> str:
+    """Generate a fast (no element extraction) classification prompt.
 
-    Fast mode FORBIDS new: types — must pick from the known list or unknown.
+    ``open_vocab=True`` (default) allows ``new:<type>`` proposals: the
+    classifier runs on the strong VLM, and a closed vocabulary forces novel
+    pages (外卖商家页、频道首页...) into the nearest wrong bucket — the exact
+    generalization failure observed on JD 秒送. Set False for weak models.
     """
     type_list = ", ".join(space.names)
     lines = [
         "你是移动App页面快速分类器。只判断当前页面类型和一句功能摘要，不要抽取元素。\n",
         _PROMPT_HEADER,
-        f"\npage_type 必须是以下之一: {type_list}。\n",
+        f"\npage_type 优先从以下类型中选择: {type_list}。\n",
     ]
 
     # Collect interference / priority hints
@@ -161,6 +164,15 @@ def build_fast_prompt(space: "PageTypeSpace", schema: Any) -> str:
             if hint not in seen_hints:
                 seen_hints.add(hint)
                 lines.append(f"{hint}\n")
+
+    if open_vocab:
+        lines.append(
+            "如果页面明显不属于以上任何类型，不要硬归类到最接近的类型，"
+            '而是输出 "page_type": "new:<英文snake_case名>" 并附 "new_type_description" '
+            "一句话定义。弹窗/权限/登录/人机验证页除外（它们用已有类型）。\n"
+        )
+    else:
+        lines.append("page_type 必须严格从上述列表中选择，无法判断时输出 unknown。\n")
 
     lines.append(_FAST_OUTPUT_FORMAT)
     return "".join(lines)

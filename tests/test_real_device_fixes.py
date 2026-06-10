@@ -495,3 +495,49 @@ def test_plan_context_natural_goal_keeps_planner_running():
     assert ctx.natural_goal
     ctx.push_result("指令『点击我的』→ 落到 my_account")
     assert len(ctx.recent_results) == 1
+
+
+# ── seventh issue: classifier generalization for instant-retail (秒送/外卖) ──
+
+
+def test_instant_retail_page_types_in_schema_and_prompt():
+    from phone_agent.memory.exploration.classifier_prompts import build_fast_prompt, build_full_prompt
+    from phone_agent.memory.exploration.types import PageTypeSpace
+
+    schema = get_default_registry().merged("shopping")
+    space = PageTypeSpace.from_schema(schema)
+    assert "channel_home" in space.names
+    assert "shop_list" in space.names
+    full = build_full_prompt(space, schema)
+    assert "商家列表页" in full and "频道首页" in full
+    # store/product_detail and shop_list/search_result disambiguation present
+    assert "不要判为 product_detail" in full
+    assert "shop_list" in build_fast_prompt(space, schema)
+
+
+def test_store_aliases_cover_takeout_merchant_names():
+    schema = get_default_registry().merged("shopping")
+    assert schema.normalize_page_type("shop_detail") == "store"
+    assert schema.normalize_page_type("restaurant") == "store"
+    assert schema.normalize_page_type("seconds_delivery_home") == "channel_home"
+
+
+def test_takeout_transitions_accepted_by_rule_engine():
+    from phone_agent.memory.exploration.safety import SafetyPolicy
+    from phone_agent.memory.exploration.transition_rules import TransitionRuleEngine
+    from types import SimpleNamespace as NS
+
+    schema = get_default_registry().merged("shopping")
+    engine = TransitionRuleEngine(schema, SafetyPolicy.from_schema(schema), "strict")
+    tap = {"action": "Tap", "element": [500, 500]}
+    cases = [
+        ("home", "channel_home"),
+        ("channel_home", "shop_list"),
+        ("shop_list", "store"),
+        ("store", "spec_selection"),
+    ]
+    for src, tgt in cases:
+        reason = engine.rejection_reason(
+            NS(page_type=src), tap, NS(page_type=tgt)
+        )
+        assert reason == "", f"{src}->{tgt} rejected: {reason}"

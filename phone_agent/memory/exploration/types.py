@@ -26,6 +26,8 @@ class ShoppingPageType(Enum):
     DIALOG = "dialog"
     PERMISSION = "permission"
     CAPTCHA = "captcha"
+    CHANNEL_HOME = "channel_home"
+    SHOP_LIST = "shop_list"
     UNKNOWN = "unknown"
 
 
@@ -232,6 +234,8 @@ _PAGE_TYPE_MAP: Dict[str, ShoppingPageType] = {
     "dialog": ShoppingPageType.DIALOG,
     "permission": ShoppingPageType.PERMISSION,
     "captcha": ShoppingPageType.CAPTCHA,
+    "channel_home": ShoppingPageType.CHANNEL_HOME,
+    "shop_list": ShoppingPageType.SHOP_LIST,
     "unknown": ShoppingPageType.UNKNOWN,
 }
 
@@ -254,6 +258,8 @@ _PAGE_TYPE_SUMMARY: Dict[ShoppingPageType, str] = {
     ShoppingPageType.DIALOG: "干扰弹窗",
     ShoppingPageType.PERMISSION: "权限弹窗",
     ShoppingPageType.CAPTCHA: "人机验证页",
+    ShoppingPageType.CHANNEL_HOME: "频道首页",
+    ShoppingPageType.SHOP_LIST: "商家列表页",
     ShoppingPageType.UNKNOWN: "未知页面",
 }
 

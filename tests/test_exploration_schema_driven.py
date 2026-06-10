@@ -134,10 +134,15 @@ def test_build_full_prompt_contains_open_vocab_clause(shopping_space, shopping_s
     assert "new_type_description" in prompt
 
 
-def test_build_fast_prompt_does_not_contain_open_vocab_clause(shopping_space, shopping_schema):
-    """Fast prompt must NOT contain the open-vocab clause (strict type list)."""
+def test_build_fast_prompt_open_vocab_default_and_strict_opt_out(shopping_space, shopping_schema):
+    """Fast prompt allows new:<type> by default (strong-VLM classifier needs
+    generalization beyond the preset list — JD 秒送 lesson); open_vocab=False
+    restores the strict closed list for weak models."""
     prompt = build_fast_prompt(shopping_space, shopping_schema)
-    assert "new_type_description" not in prompt
+    assert "new_type_description" in prompt
+    strict = build_fast_prompt(shopping_space, shopping_schema, open_vocab=False)
+    assert "new_type_description" not in strict
+    assert "必须严格从上述列表中选择" in strict
 
 
 # ── coverage_from_schema ──────────────────────────────────────────────────────
