@@ -1368,6 +1368,9 @@ def test_offline_explorer_save_results_auto_imports_spatial_graph(tmp_path):
     explorer.graph_store = FakeGraphStore()
     explorer.last_import_result = None
     explorer.verbose = False
+    # Phase 5: use direct_import=True to bypass staging gate (legacy test behavior)
+    explorer.direct_import = True
+    explorer.save_screenshots = False
 
     home = PageInfo(
         page_type=ShoppingPageType.HOME,

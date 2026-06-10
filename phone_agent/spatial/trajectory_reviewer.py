@@ -287,9 +287,18 @@ class TrajectoryReviewer:
             import re
             json_match = re.search(r"\[[\s\S]*\]", content)
             if not json_match:
-                return candidates  # Parse failure → approve all (conservative)
+                # FIXED: parse failure → unreviewed (never approve-all)
+                if self._verbose:
+                    print("[trajectory] VLM 审核: 响应中无 JSON 数组，全部标为 unreviewed（跳过）")
+                return []
 
-            verdicts = json.loads(json_match.group())
+            try:
+                verdicts = json.loads(json_match.group())
+            except (json.JSONDecodeError, ValueError) as parse_exc:
+                if self._verbose:
+                    print(f"[trajectory] VLM 审核 JSON 解析失败: {parse_exc}，全部标为 unreviewed")
+                return []
+
             approved = []
             for v in verdicts:
                 idx = v.get("index", 0) - 1
@@ -364,8 +373,10 @@ class TrajectoryReviewer:
                         pt=candidate.target_page,
                     )
 
-                # Create Action node + relationships
-                action_id = f"act_auto_{candidate.source_page}_{candidate.target_page}_{now_ms}"
+                # MERGE Action node + relationships (deterministic action_id prevents duplicates)
+                import hashlib as _hashlib
+                action_id_key = f"act_auto_{src_id}_{candidate.action_type}_{tgt_id}"
+                action_id = "act_" + _hashlib.md5(action_id_key.encode()).hexdigest()[:16]
                 target_locator = json.dumps({
                     "coordinate_space": "normalized_1000",
                     "element": element,
@@ -376,24 +387,28 @@ class TrajectoryReviewer:
                     """
                     MATCH (src:UIState {state_id: $src_id})
                     MATCH (tgt:UIState {state_id: $tgt_id})
-                    CREATE (src)-[:NEXT_ACTION {confidence: 1.0, frequency: 1}]->(action:Action {
-                        action_id: $action_id,
-                        type: $atype,
-                        region: $region,
-                        semantic_target: $semantic_target,
-                        target_locator: $target_locator,
-                        expected_postcondition: $tgt_pt,
-                        source_page_type: $src_pt,
-                        target_page_type: $tgt_pt,
-                        lifecycle_stage: 'hypothesis',
-                        verification_count: 1,
-                        dominance_ratio: 1.0,
-                        outcome_entropy: 0.0,
-                        outcome_distribution_json: $dist,
-                        risk_level: 'normal',
-                        created_at: $now,
-                        updated_at: $now
-                    })-[:PRODUCES]->(tgt)
+                    MERGE (action:Action {action_id: $action_id})
+                    ON CREATE SET
+                        action.type = $atype,
+                        action.region = $region,
+                        action.semantic_target = $semantic_target,
+                        action.target_locator = $target_locator,
+                        action.expected_postcondition = $tgt_pt,
+                        action.source_page_type = $src_pt,
+                        action.target_page_type = $tgt_pt,
+                        action.lifecycle_stage = 'hypothesis',
+                        action.verification_count = 1,
+                        action.dominance_ratio = 1.0,
+                        action.outcome_entropy = 0.0,
+                        action.outcome_distribution_json = $dist,
+                        action.risk_level = 'normal',
+                        action.created_at = $now,
+                        action.updated_at = $now
+                    ON MATCH SET
+                        action.verification_count = action.verification_count + 1,
+                        action.updated_at = $now
+                    MERGE (src)-[:NEXT_ACTION {confidence: 1.0, frequency: 1}]->(action)
+                    MERGE (action)-[:PRODUCES]->(tgt)
                     """,
                     src_id=src_id, tgt_id=tgt_id,
                     action_id=action_id,

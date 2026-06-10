@@ -99,6 +99,8 @@ class OfflineExplorer:
         watchdog_config: WatchdogConfig | None = None,
         human_gate: HumanGate | None = None,
         wait_stable: bool = True,
+        save_screenshots: bool = True,
+        direct_import: bool = False,
     ):
         self.app_name = app_name
         self.device = device_factory
@@ -114,6 +116,8 @@ class OfflineExplorer:
         self.verbose = verbose
         self.active_exploration = active_exploration
         self.wait_stable = wait_stable
+        self.save_screenshots = save_screenshots
+        self.direct_import = direct_import
 
         # Resolve schema
         resolved_schema_name = schema_name
@@ -1163,11 +1167,39 @@ class OfflineExplorer:
         if self.verbose:
             print(msg)
 
+    # ── Screenshot Persistence ──────────────────────────────────
+
+    def _persist_screenshots(self) -> None:
+        """Write each discovered page's screenshot to screenshots/<hash>.png.
+
+        Skips existing files and pages without base64 data.
+        """
+        import base64
+        screenshots_dir = self.storage_dir / "screenshots"
+        screenshots_dir.mkdir(exist_ok=True)
+        for page_info in self.discovered_pages.values():
+            h = page_info.screenshot_hash
+            b64 = getattr(page_info, "screenshot_base64", "")
+            if not h or not b64:
+                continue
+            dest = screenshots_dir / f"{h}.png"
+            if dest.exists():
+                continue
+            try:
+                dest.write_bytes(base64.b64decode(b64))
+            except Exception as exc:
+                self._log(f"  [screenshots] failed to save {h}: {exc}")
+
     # ── Persistence ─────────────────────────────────────────────
 
     def _save_results(self, traj: Trajectory):
         """Save all exploration data to JSON files."""
         timestamp = int(time.time())
+
+        # Save screenshots to disk if enabled
+        should_save_screenshots = getattr(self, "save_screenshots", True)
+        if should_save_screenshots:
+            self._persist_screenshots()
 
         pages_data = {
             "app": self.app_name,
@@ -1182,6 +1214,11 @@ class OfflineExplorer:
                     "elements": p.elements,
                     "screenshot_hash": p.screenshot_hash,
                     "app": p.app,
+                    **({
+                        "screenshot_file": f"screenshots/{p.screenshot_hash}.png"
+                    } if should_save_screenshots and p.screenshot_hash and (
+                        self.storage_dir / "screenshots" / f"{p.screenshot_hash}.png"
+                    ).exists() else {}),
                 }
                 for p in self.discovered_pages.values()
             ],
@@ -1268,12 +1305,39 @@ class OfflineExplorer:
             self._import_saved_graph(pages_path, trans_path)
 
     def _import_saved_graph(self, pages_path: Path, transitions_path: Path | None) -> None:
-        """Import saved exploration artifacts into SpatialGraphMemory."""
+        """Import saved exploration artifacts.
+
+        By default (direct_import=False) creates a staging batch for human
+        review.  Set direct_import=True for legacy / test behavior that writes
+        directly to Neo4j.
+        """
+        if not getattr(self, "direct_import", False):
+            # Phase 5: create staging batch for human review
+            try:
+                from phone_agent.spatial.review.batch import create_staging_batch
+                batch_dir = create_staging_batch(pages_path, transitions_path)
+                manifest_count = 0
+                manifest_path = batch_dir / "manifest.json"
+                if manifest_path.exists():
+                    import json as _json
+                    manifest_count = len(_json.loads(manifest_path.read_text(encoding="utf-8")))
+                self.last_import_result = {
+                    "staging_batch": str(batch_dir),
+                    "items": manifest_count,
+                }
+                self._log(
+                    f"  created staging batch: {batch_dir} ({manifest_count} items)"
+                )
+            except Exception as exc:
+                self._log(f"  staging batch creation failed: {exc}")
+                self.last_import_result = {"error": str(exc)}
+            return
+
+        # Legacy direct import to Neo4j
         owns_graph_store = self.graph_store is None
         graph_store = self.graph_store
         if graph_store is None:
             from ..graph_store import GraphStore
-
             graph_store = GraphStore()
 
         try:
