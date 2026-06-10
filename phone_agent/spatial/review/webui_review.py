@@ -183,6 +183,36 @@ def _build_app(storage_root: str = "memory_db/staging") -> Any:
             choices.append(label)
         return choices
 
+    def _batch_overview(batch_dir: Path, items: list) -> str:
+        """Funnel + pre-filled decision stats so nothing looks silently lost."""
+        parts: list[str] = []
+        try:
+            staging = load_staging_graph(batch_dir)
+            quality = staging.get("quality") or {}
+            seen = quality.get("transitions_seen")
+            src_path = staging.get("source_transitions_path") or ""
+            rejected_at_exploration = None
+            if src_path and Path(src_path).exists():
+                raw = json.loads(Path(src_path).read_text(encoding="utf-8"))
+                rejected_at_exploration = len(raw.get("rejected_transitions") or [])
+            funnel = f"探索记录 {seen} 条转移"
+            if rejected_at_exploration:
+                funnel += f"（另有 {rejected_at_exploration} 条在探索期被规则拒绝，不进入审核）"
+            funnel += f" → 审核候选 {len(items)} 条"
+            parts.append(funnel)
+        except Exception:
+            pass
+        try:
+            decisions = load_decisions(batch_dir)
+            n_approve = sum(
+                1 for it in items
+                if decisions.get(it.item_id, {}).get("decision") == "approve"
+            )
+            parts.append(f"当前决策: approve {n_approve} / reject {len(items) - n_approve}")
+        except Exception:
+            pass
+        return "；".join(parts)
+
     def _load_batch(batch_label: str) -> tuple:
         batch_id = batch_label.replace(" [已应用]", "").strip()
         batch_dir = Path(storage_root) / batch_id
@@ -194,8 +224,9 @@ def _build_app(storage_root: str = "memory_db/staging") -> Any:
         state_items["index"] = 0
 
         total = len(items)
+        overview = _batch_overview(batch_dir, items)
         if total == 0:
-            return ("暂无候选条目", "", None, None, "approve", f"0 / 0")
+            return ("暂无候选条目", "", None, None, "approve", f"{overview}\n\n0 / 0")
 
         item = items[0]
         decisions = load_decisions(batch_dir)
@@ -208,7 +239,7 @@ def _build_app(storage_root: str = "memory_db/staging") -> Any:
             before_img,
             after_img,
             current_decision,
-            f"1 / {total}",
+            f"{overview}\n\n1 / {total}",
         )
 
     def _navigate(direction: int) -> tuple:
@@ -413,7 +444,11 @@ def _build_app(storage_root: str = "memory_db/staging") -> Any:
             outputs=view_outputs,
         )
 
-        decision_radio.change(
+        # .input fires only on USER interaction. .change also fires when
+        # navigation programmatically sets the radio to the next item's
+        # pre-filled value, racing with the item_id update — that swapped
+        # two items' decisions in a real review session.
+        decision_radio.input(
             fn=_save_decision,
             inputs=[item_id_box, decision_radio],
             outputs=[save_status],
