@@ -3,93 +3,254 @@
   "page_types": {
     "home": {
       "risk": "normal",
-      "landmarks": ["entry_points", "navigation"],
-      "affordances": ["open_search", "open_list", "open_settings"]
+      "landmarks": [
+        "entry_points",
+        "navigation"
+      ],
+      "affordances": [
+        "open_search",
+        "open_list",
+        "open_settings"
+      ]
     },
     "search": {
       "risk": "normal",
-      "landmarks": ["search_bar", "keyboard_or_suggestions"],
-      "affordances": ["submit_query", "clear_query"]
+      "landmarks": [
+        "search_bar",
+        "keyboard_or_suggestions"
+      ],
+      "affordances": [
+        "submit_query",
+        "clear_query"
+      ]
     },
     "list": {
       "risk": "normal",
-      "landmarks": ["item_list"],
-      "affordances": ["open_detail", "filter", "sort", "scroll"]
+      "landmarks": [
+        "item_list"
+      ],
+      "affordances": [
+        "open_detail",
+        "filter",
+        "sort",
+        "scroll"
+      ]
     },
     "detail": {
       "risk": "normal",
-      "landmarks": ["detail_content"],
-      "affordances": ["go_back", "open_form", "open_dialog"]
+      "landmarks": [
+        "detail_content"
+      ],
+      "affordances": [
+        "go_back",
+        "open_form",
+        "open_dialog"
+      ]
     },
     "form": {
       "risk": "medium",
-      "landmarks": ["input_fields", "submit_button"],
-      "affordances": ["type_text", "submit_form"]
+      "landmarks": [
+        "input_fields",
+        "submit_button"
+      ],
+      "affordances": [
+        "type_text",
+        "submit_form"
+      ]
     },
     "dialog": {
       "risk": "medium",
-      "landmarks": ["modal_panel", "close_button"],
-      "affordances": ["close_dialog", "confirm_dialog"]
+      "landmarks": [
+        "modal_panel",
+        "close_button"
+      ],
+      "affordances": [
+        "close_dialog",
+        "confirm_dialog"
+      ]
     },
     "permission": {
       "risk": "high",
-      "landmarks": ["permission_prompt"],
-      "affordances": ["allow_permission", "deny_permission"]
+      "landmarks": [
+        "permission_prompt"
+      ],
+      "affordances": [
+        "allow_permission",
+        "deny_permission"
+      ]
     },
     "login": {
       "risk": "high",
-      "landmarks": ["credential_fields"],
-      "affordances": ["ask_user", "go_back"]
+      "landmarks": [
+        "credential_fields"
+      ],
+      "affordances": [
+        "ask_user",
+        "go_back"
+      ]
     },
     "payment": {
       "risk": "high",
-      "landmarks": ["payment_method", "pay_button"],
-      "affordances": ["ask_user", "go_back"]
+      "landmarks": [
+        "payment_method",
+        "pay_button"
+      ],
+      "affordances": [
+        "ask_user",
+        "go_back"
+      ]
     },
     "settings": {
       "risk": "medium",
-      "landmarks": ["setting_list"],
-      "affordances": ["open_detail", "toggle_setting", "go_back"]
+      "landmarks": [
+        "setting_list"
+      ],
+      "affordances": [
+        "open_detail",
+        "toggle_setting",
+        "go_back"
+      ]
     },
     "confirmation": {
       "risk": "high",
-      "landmarks": ["confirm_button", "cancel_button"],
-      "affordances": ["ask_user", "cancel"]
+      "landmarks": [
+        "confirm_button",
+        "cancel_button"
+      ],
+      "affordances": [
+        "ask_user",
+        "cancel"
+      ]
     },
     "unknown": {
       "risk": "medium",
       "landmarks": [],
-      "affordances": ["wait", "go_back"]
+      "affordances": [
+        "wait",
+        "go_back"
+      ]
     },
     "ad": {
       "risk": "medium",
-      "landmarks": ["ad_content", "close_button"],
-      "affordances": ["close_ad", "go_back"]
+      "landmarks": [
+        "ad_content",
+        "close_button"
+      ],
+      "affordances": [
+        "close_ad",
+        "go_back"
+      ]
+    },
+    "captcha": {
+      "risk": "high",
+      "landmarks": [
+        "captcha_challenge"
+      ],
+      "affordances": [
+        "ask_user",
+        "go_back"
+      ],
+      "description": "人机验证页 — 滑块验证、拼图验证、按轨迹绘制、旋转图片、点选文字/图形等安全验证挑战，通常以弹窗或全屏出现，没有账号/密码输入表单",
+      "vlm_hint": "出现滑块、拼图、轨迹绘制等人机验证挑战时判为 captcha，不要判为 dialog 或 login；只有包含账号/密码/短信验证码登录表单时才判为 login",
+      "evidence_tokens": [
+        "人机验证",
+        "安全验证",
+        "滑块验证",
+        "拼图验证",
+        "按轨迹",
+        "轨迹绘制",
+        "captcha"
+      ]
     }
   },
   "transitions": [
-    {"source": "home", "target": "search", "intent": "open_search", "affordance": "open_search"},
-    {"source": "search", "target": "list", "intent": "submit_query", "affordance": "submit_query"},
-    {"source": "list", "target": "detail", "intent": "open_detail", "affordance": "open_detail"},
-    {"source": "detail", "target": "form", "intent": "open_form", "affordance": "open_form"},
-    {"source": "detail", "target": "dialog", "intent": "open_dialog", "affordance": "open_dialog"},
-    {"source": "dialog", "target": "detail", "intent": "close_dialog", "affordance": "close_dialog"}
+    {
+      "source": "home",
+      "target": "search",
+      "intent": "open_search",
+      "affordance": "open_search"
+    },
+    {
+      "source": "search",
+      "target": "list",
+      "intent": "submit_query",
+      "affordance": "submit_query"
+    },
+    {
+      "source": "list",
+      "target": "detail",
+      "intent": "open_detail",
+      "affordance": "open_detail"
+    },
+    {
+      "source": "detail",
+      "target": "form",
+      "intent": "open_form",
+      "affordance": "open_form"
+    },
+    {
+      "source": "detail",
+      "target": "dialog",
+      "intent": "open_dialog",
+      "affordance": "open_dialog"
+    },
+    {
+      "source": "dialog",
+      "target": "detail",
+      "intent": "close_dialog",
+      "affordance": "close_dialog"
+    }
   ],
   "app_aliases": {},
   "intents": {
-    "open_search": {"action_family": "click"},
-    "submit_query": {"action_family": "type_or_click"},
-    "open_detail": {"action_family": "click"},
-    "go_back": {"action_family": "system_button"},
-    "wait": {"action_family": "wait"}
+    "open_search": {
+      "action_family": "click"
+    },
+    "submit_query": {
+      "action_family": "type_or_click"
+    },
+    "open_detail": {
+      "action_family": "click"
+    },
+    "go_back": {
+      "action_family": "system_button"
+    },
+    "wait": {
+      "action_family": "wait"
+    }
   },
   "exploration": {
     "unsafe_tokens": [
-      "pay", "payment", "submit", "checkout", "buy now", "logout", "log out", "switch account",
-      "支付", "付款", "立即支付", "提交订单", "确认订单", "下单", "结算", "去结算",
-      "退出登录", "切换账号", "注销账号"
+      "pay",
+      "payment",
+      "submit",
+      "checkout",
+      "buy now",
+      "logout",
+      "log out",
+      "switch account",
+      "支付",
+      "付款",
+      "立即支付",
+      "提交订单",
+      "确认订单",
+      "下单",
+      "结算",
+      "去结算",
+      "退出登录",
+      "切换账号",
+      "注销账号"
     ],
-    "interference_page_types": ["dialog", "permission", "login", "ad"],
-    "self_loop_input_pages": ["search", "form"]
+    "interference_page_types": [
+      "dialog",
+      "permission",
+      "login",
+      "ad",
+      "captcha"
+    ],
+    "self_loop_input_pages": [
+      "search",
+      "form"
+    ]
   }
 }

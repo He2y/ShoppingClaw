@@ -189,14 +189,21 @@ def main() -> int:
 
             graph_store = GraphStore(database=args.database)
 
-        # Phase 4: interference policy + human gate
+        # Phase 4: interference policy + human gate.
+        # The gate is always created in interactive runs - captchas cannot be
+        # dismissed programmatically, so the operator must be able to take
+        # over even without --pause-on-login (which only governs login walls).
         login_action = "pause_for_human" if args.pause_on_login else "back_out"
-        interference_policy = InterferencePolicy(login_action=login_action)
+        captcha_action = "back_out" if args.no_human else "pause_for_human"
+        interference_policy = InterferencePolicy(
+            login_action=login_action,
+            captcha_action=captcha_action,
+        )
         human_gate = None
-        if args.pause_on_login:
+        if not args.no_human:
             human_gate = ConsoleHumanGate(
                 timeout_s=interference_policy.pause_timeout_s,
-                interactive=not args.no_human,
+                interactive=True,
             )
 
         explorer = OfflineExplorer(

@@ -25,6 +25,7 @@ class ShoppingPageType(Enum):
     LOGIN = "login"
     DIALOG = "dialog"
     PERMISSION = "permission"
+    CAPTCHA = "captcha"
     UNKNOWN = "unknown"
 
 
@@ -230,6 +231,7 @@ _PAGE_TYPE_MAP: Dict[str, ShoppingPageType] = {
     "login": ShoppingPageType.LOGIN,
     "dialog": ShoppingPageType.DIALOG,
     "permission": ShoppingPageType.PERMISSION,
+    "captcha": ShoppingPageType.CAPTCHA,
     "unknown": ShoppingPageType.UNKNOWN,
 }
 
@@ -251,6 +253,7 @@ _PAGE_TYPE_SUMMARY: Dict[ShoppingPageType, str] = {
     ShoppingPageType.LOGIN: "登录页",
     ShoppingPageType.DIALOG: "干扰弹窗",
     ShoppingPageType.PERMISSION: "权限弹窗",
+    ShoppingPageType.CAPTCHA: "人机验证页",
     ShoppingPageType.UNKNOWN: "未知页面",
 }
 

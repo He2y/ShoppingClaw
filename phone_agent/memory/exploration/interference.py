@@ -18,7 +18,14 @@ class InterferencePolicy:
     dismiss_max_attempts: int = 3
     dismiss_strategies: tuple[str, ...] = ("close_button", "back", "tap_outside")
     login_action: str = "back_out"          # "back_out" | "pause_for_human"
+    # Captcha challenges cannot be dismissed away - backing out just postpones
+    # them. Default is to hand over to the human operator when a gate exists.
+    captcha_action: str = "pause_for_human"  # "back_out" | "pause_for_human"
     pause_timeout_s: float = 600.0
+
+
+# Summary tokens that reveal a captcha even when the classifier said "dialog".
+_CAPTCHA_SUMMARY_TOKENS = ("人机验证", "安全验证", "滑块验证", "拼图验证", "按轨迹", "轨迹绘制", "captcha")
 
 
 @dataclass(frozen=True)
@@ -125,40 +132,12 @@ class InterferenceHandler:
         page_type = _page_type_str(page_info)
         events: list[InterferenceEvent] = []
 
-        # --- Login / captcha special case ---
-        if page_type == "login" and self._policy.login_action == "pause_for_human":
-            if self._human_gate is not None:
-                req = HumanAssistRequest(
-                    kind="login",
-                    app=page_info.app,
-                    message=(
-                        "探索器遇到登录墙。请在设备上完成登录后按回车继续。"
-                        "如需跳过请输入 skip。"
-                    ),
-                    screenshot_path="",
-                )
-                result = self._human_gate.request(req)
-                if result == "resumed":
-                    # Re-capture and re-classify
-                    screenshot = self._capture_fn()
-                    resumed_page = self._classify_fn(screenshot, page_info.app, 0)
-                    event = InterferenceEvent(
-                        page_type=page_type,
-                        app=page_info.app,
-                        screenshot_hash=perceptual_hash(page_info.screenshot_base64 or ""),
-                        summary=page_info.semantic_summary,
-                        source_page_key=source_page_key,
-                        resolution="human_resumed",
-                        attempts=1,
-                        encountered_at=datetime.now().isoformat(),
-                    )
-                    events.append(event)
-                    return InterferenceOutcome(
-                        status="human_resumed",
-                        events=tuple(events),
-                        resumed_page=resumed_page,
-                    )
-                # skip → fall through to back_out
+        # --- Login / captcha: hand over to the human operator ---
+        if self._wants_human_assist(page_type, page_info):
+            outcome = self._request_human_assist(page_type, page_info, source_page_key, events)
+            if outcome is not None:
+                return outcome
+            # gate unavailable or operator skipped → fall through to dismissal
 
         # --- Dismiss loop ---
         attempt = 0
@@ -261,7 +240,16 @@ class InterferenceHandler:
                     resumed_page=next_page,
                 )
 
-        # All attempts exhausted
+        # All dismiss attempts exhausted. If the stubborn page looks like a
+        # captcha that the classifier labeled as a generic dialog, give the
+        # human operator a chance before restarting the app - a restart only
+        # postpones the challenge.
+        if page_type != "captcha" and self._looks_like_captcha(current_page_info):
+            self._log("  [interference] undismissable page looks like a captcha — asking human")
+            outcome = self._request_human_assist("captcha", current_page_info, source_page_key, events)
+            if outcome is not None:
+                return outcome
+
         event = InterferenceEvent(
             page_type=page_type,
             app=page_info.app,
@@ -277,6 +265,71 @@ class InterferenceHandler:
             status="needs_restart",
             events=tuple(events),
             resumed_page=None,
+        )
+
+    # ------------------------------------------------------------------
+    # Human assist
+    # ------------------------------------------------------------------
+
+    def _wants_human_assist(self, page_type: str, page_info: Any) -> bool:
+        if page_type == "login":
+            return self._policy.login_action == "pause_for_human"
+        if page_type == "captcha" or self._looks_like_captcha(page_info):
+            return getattr(self._policy, "captcha_action", "pause_for_human") == "pause_for_human"
+        return False
+
+    @staticmethod
+    def _looks_like_captcha(page_info: Any) -> bool:
+        summary = str(getattr(page_info, "semantic_summary", "") or "").lower()
+        return any(token in summary for token in _CAPTCHA_SUMMARY_TOKENS)
+
+    def _request_human_assist(
+        self,
+        kind: str,
+        page_info: Any,
+        source_page_key: str,
+        events: list[InterferenceEvent],
+    ) -> InterferenceOutcome | None:
+        """Invoke the human gate; None means unavailable/skipped (caller falls through)."""
+        if self._human_gate is None:
+            return None
+        if kind == "captcha":
+            message = (
+                "探索器遇到人机验证（滑块/拼图/轨迹绘制等），程序无法自动完成。\n"
+                "请在设备上手动完成验证后按回车继续探索；如需放弃该方向请输入 skip。"
+            )
+        else:
+            message = (
+                "探索器遇到登录墙。请在设备上完成登录后按回车继续。"
+                "如需跳过请输入 skip。"
+            )
+        req = HumanAssistRequest(
+            kind=kind,
+            app=page_info.app,
+            message=message,
+            screenshot_path="",
+        )
+        result = self._human_gate.request(req)
+        if result != "resumed":
+            return None
+        screenshot = self._capture_fn()
+        resumed_page = self._classify_fn(screenshot, page_info.app, 0)
+        events.append(
+            InterferenceEvent(
+                page_type=kind,
+                app=page_info.app,
+                screenshot_hash=perceptual_hash(getattr(page_info, "screenshot_base64", "") or ""),
+                summary=getattr(page_info, "semantic_summary", ""),
+                source_page_key=source_page_key,
+                resolution="human_resumed",
+                attempts=1,
+                encountered_at=datetime.now().isoformat(),
+            )
+        )
+        return InterferenceOutcome(
+            status="human_resumed",
+            events=tuple(events),
+            resumed_page=resumed_page,
         )
 
 

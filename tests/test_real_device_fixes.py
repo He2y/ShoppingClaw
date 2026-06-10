@@ -148,3 +148,111 @@ def test_cart_entry_region_accepts_jd_bottom_dock_and_taobao_top_icon():
     assert cart_entry(844, 71)       # Taobao top-right cart icon
     assert not cart_entry(518, 959)  # bottom-right add-to-cart CTA
     assert not cart_entry(700, 900)  # buy-now CTA zone
+
+
+# ── third issue: captcha must hand over to the human, not Back out ──
+
+
+def test_captcha_is_first_class_page_type_and_interference():
+    from phone_agent.memory.exploration.types import PageTypeSpace, ShoppingPageType, _PAGE_TYPE_MAP
+
+    schema = get_default_registry().merged("shopping")
+    space = PageTypeSpace.from_schema(schema)
+    assert "captcha" in space.names
+    assert "captcha" in space.interference
+    assert _PAGE_TYPE_MAP["captcha"] is ShoppingPageType.CAPTCHA
+
+
+def test_classifier_prompt_mentions_captcha():
+    from phone_agent.memory.exploration.classifier_prompts import build_full_prompt
+    from phone_agent.memory.exploration.types import PageTypeSpace
+
+    schema = get_default_registry().merged("shopping")
+    prompt = build_full_prompt(PageTypeSpace.from_schema(schema), schema)
+    assert "captcha" in prompt
+    assert "滑块" in prompt
+
+
+def test_page_evidence_detects_captcha_challenge():
+    reasoning = "当前屏幕显示京东验证页面，有一个安全验证弹窗，要求按照图中轨迹绘制。"
+    assert infer_page_type_from_reasoning(reasoning) == "captcha"
+
+
+def _make_captcha_handler(human_gate, classify_results):
+    from phone_agent.memory.exploration.interference import InterferenceHandler, InterferencePolicy
+    from phone_agent.memory.exploration.types import PageTypeSpace
+
+    schema = get_default_registry().merged("shopping")
+    space = PageTypeSpace.from_schema(schema)
+    results = iter(classify_results)
+
+    class FakeActionHandler:
+        executed = []
+
+        def execute(self, action, w, h):
+            self.executed.append(action)
+            return SimpleNamespace(success=True, message="")
+
+    def classify_fn(screenshot, app, step):
+        return next(results)
+
+    def capture_fn():
+        return SimpleNamespace(base64_data="", width=100, height=100)
+
+    return InterferenceHandler(
+        InterferencePolicy(captcha_action="pause_for_human"),
+        space,
+        FakeActionHandler(),
+        classify_fn,
+        capture_fn,
+        lambda msg: None,
+        human_gate=human_gate,
+    )
+
+
+def test_captcha_page_pauses_for_human_and_resumes():
+    resumed_page = SimpleNamespace(page_type="search_result", app="京东", semantic_summary="搜索结果",
+                                   screenshot_base64="")
+    captcha_page = SimpleNamespace(page_type="captcha", app="京东",
+                                   semantic_summary="安全验证弹窗，需按轨迹绘制", screenshot_base64="")
+
+    class FakeGate:
+        requests = []
+
+        def request(self, req):
+            self.requests.append(req)
+            return "resumed"
+
+    gate = FakeGate()
+    handler = _make_captcha_handler(gate, [resumed_page])
+    outcome = handler.handle(captcha_page, 100, 100, "search_result:搜索结果")
+
+    assert outcome.status == "human_resumed"
+    assert outcome.resumed_page is resumed_page
+    assert gate.requests[0].kind == "captcha"
+
+
+def test_dialog_with_captcha_summary_pauses_for_human():
+    """Even when the classifier says dialog, the captcha summary triggers the gate."""
+    captcha_dialog = SimpleNamespace(page_type="dialog", app="京东",
+                                     semantic_summary="安全验证弹窗，需按轨迹绘制", screenshot_base64="")
+    resumed_page = SimpleNamespace(page_type="search_result", app="京东", semantic_summary="搜索结果",
+                                   screenshot_base64="")
+
+    class FakeGate:
+        def request(self, req):
+            return "resumed"
+
+    handler = _make_captcha_handler(FakeGate(), [resumed_page])
+    outcome = handler.handle(captcha_dialog, 100, 100, "src")
+    assert outcome.status == "human_resumed"
+
+
+def test_captcha_without_gate_falls_back_to_dismissal():
+    captcha_page = SimpleNamespace(page_type="captcha", app="京东",
+                                   semantic_summary="安全验证", screenshot_base64="")
+    after_back = SimpleNamespace(page_type="search_result", app="京东", semantic_summary="搜索结果",
+                                 screenshot_base64="")
+    handler = _make_captcha_handler(None, [after_back])
+    outcome = handler.handle(captcha_page, 100, 100, "src")
+    assert outcome.status in {"resolved", "needs_restart"}

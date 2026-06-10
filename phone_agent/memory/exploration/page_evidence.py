@@ -132,6 +132,11 @@ def infer_page_type_from_reasoning(text: str) -> str | None:
         return None
 
     for scoped in ["\n".join(lines), *lines[:8]]:
+        if any(
+            token in scoped
+            for token in ("人机验证", "安全验证", "滑块验证", "拼图验证", "按轨迹", "轨迹绘制", "captcha")
+        ):
+            return "captcha"
         if "权限" in scoped or "permission" in scoped:
             return "permission"
         if is_settings_page_evidence(scoped):

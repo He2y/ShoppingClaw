@@ -72,14 +72,16 @@ class ConsoleHumanGate:
 
         Returns "resumed" or "skip".
         """
-        print("\n" + "=" * 60)
-        print(f"[HumanGate] Human assistance required")
-        print(f"  App:     {req.app}")
-        print(f"  Kind:    {req.kind}")
-        print(f"  Message: {req.message}")
+        kind_labels = {"captcha": "人机验证", "login": "登录"}
+        label = kind_labels.get(req.kind, req.kind)
+        # \a = terminal bell so the operator notices even when not watching.
+        print("\a\n" + "!" * 60)
+        print(f"!!  [HumanGate] 需要人工协助: {label} ({req.app})")
+        print("!" * 60)
+        print(f"  {req.message}")
         if req.screenshot_path:
-            print(f"  Screenshot: {req.screenshot_path}")
-        print("=" * 60)
+            print(f"  截图: {req.screenshot_path}")
+        print("!" * 60)
 
         if not self._is_interactive():
             print("[HumanGate] Non-interactive mode — skipping.")

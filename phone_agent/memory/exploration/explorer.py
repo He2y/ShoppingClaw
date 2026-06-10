@@ -539,8 +539,12 @@ class OfflineExplorer:
                 # known confusion: spec sheets classified as generic dialogs.
                 high_risk = (getattr(self, "safety", None) or _get_default_safety()).high_risk_page_types
                 repair_allowed = (
-                    current_pt_str == "unknown" and inferred_str not in high_risk
-                ) or (current_pt_str == "dialog" and inferred_str == "spec_selection")
+                    (current_pt_str == "unknown" and inferred_str not in high_risk)
+                    or (current_pt_str == "dialog" and inferred_str == "spec_selection")
+                    # Captcha challenges are routinely classified as generic
+                    # dialogs; the human-assist path needs the captcha label.
+                    or (current_pt_str in {"unknown", "dialog"} and inferred_str == "captcha")
+                )
                 if repair_allowed:
                     self._log(
                         f"  belief repair: classifier={current_pt_str} "
