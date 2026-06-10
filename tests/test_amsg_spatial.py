@@ -6,6 +6,7 @@ from types import SimpleNamespace
 from PIL import Image
 
 from phone_agent.memory import offline_explorer
+from phone_agent.memory.exploration import classifier as exploration_classifier
 from phone_agent.memory.offline_explorer import (
     OfflineExplorer,
     PageClassifier,
@@ -449,7 +450,7 @@ def test_page_classifier_falls_back_between_providers_and_uses_runtime_budget(mo
     monkeypatch.setenv("OFFLINE_VLM_BASE_URL", "https://offline.example/v1")
     monkeypatch.setenv("OFFLINE_VLM_MODEL", "offline-vlm")
     monkeypatch.setenv("OFFLINE_VLM_API_KEY", "offline-secret")
-    monkeypatch.setattr(offline_explorer, "load_dotenv", lambda: None)
+    monkeypatch.setattr(exploration_classifier, "load_dotenv", lambda: None)
 
     calls: list[dict] = []
     responses = {
@@ -472,7 +473,7 @@ def test_page_classifier_falls_back_between_providers_and_uses_runtime_budget(mo
         def __init__(self, base_url, api_key, timeout):
             self.chat = SimpleNamespace(completions=FakeCompletions(base_url))
 
-    monkeypatch.setattr(offline_explorer, "OpenAI", FakeOpenAI)
+    monkeypatch.setattr(exploration_classifier, "OpenAI", FakeOpenAI)
 
     classifier = PageClassifier(mode="fast")
     page_type, summary, elements = classifier.classify(_tiny_png_b64(), 120, 120)
@@ -491,7 +492,7 @@ def test_page_classifier_returns_unknown_with_diagnostics_when_all_providers_fai
     monkeypatch.setenv("AMSG_STRONG_VLM_BASE_URL", "https://strong.example/v1")
     monkeypatch.setenv("AMSG_STRONG_VLM_MODEL", "strong-vlm")
     monkeypatch.setenv("AMSG_STRONG_VLM_API_KEY", "secret")
-    monkeypatch.setattr(offline_explorer, "load_dotenv", lambda: None)
+    monkeypatch.setattr(exploration_classifier, "load_dotenv", lambda: None)
 
     class FakeCompletions:
         def create(self, **kwargs):
@@ -501,7 +502,7 @@ def test_page_classifier_returns_unknown_with_diagnostics_when_all_providers_fai
         def __init__(self, base_url, api_key, timeout):
             self.chat = SimpleNamespace(completions=FakeCompletions())
 
-    monkeypatch.setattr(offline_explorer, "OpenAI", FakeOpenAI)
+    monkeypatch.setattr(exploration_classifier, "OpenAI", FakeOpenAI)
 
     classifier = PageClassifier(mode="full")
     page_type, summary, elements = classifier.classify(_tiny_png_b64(), 120, 120)

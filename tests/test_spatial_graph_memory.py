@@ -3,6 +3,7 @@ import json
 from phone_agent.memory.manual_trajectory_importer import ManualTrajectoryImporter
 from phone_agent.memory.graph_store import GraphStore
 from phone_agent.memory import offline_explorer
+from phone_agent.memory.exploration import classifier as exploration_classifier
 from phone_agent.memory.memory_manager import MemoryManager
 from phone_agent.memory.offline_explorer import (
     CoverageTarget,
@@ -1410,7 +1411,7 @@ def test_page_classifier_falls_back_to_phone_agent_when_strong_vlm_missing(monke
     monkeypatch.setenv("PHONE_AGENT_MODEL", "autoglm-phone")
     monkeypatch.setenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1")
     monkeypatch.setenv("PHONE_AGENT_API_KEY", "EMPTY")
-    monkeypatch.setattr(offline_explorer, "load_dotenv", lambda: None)
+    monkeypatch.setattr(exploration_classifier, "load_dotenv", lambda: None)
 
     classifier = PageClassifier(mode="off")
     page_type, summary, elements = classifier.classify("unused", 100, 100)
