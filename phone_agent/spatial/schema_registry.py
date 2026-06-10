@@ -48,6 +48,7 @@ class ExplorationSpec:
     interference_page_types: tuple[str, ...] = ()
     trap_tokens: tuple[str, ...] = ()
     default_task: str = ""
+    vlm_verify_transitions: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -162,6 +163,10 @@ class SchemaRegistry:
             ),
             trap_tokens=_dedupe_ordered(base_exp.trap_tokens + child_exp.trap_tokens),
             default_task=child_exp.default_task if child_exp.default_task else base_exp.default_task,
+            # child-replaces: schema-specific vlm_verify_transitions override the base
+            vlm_verify_transitions=(
+                child_exp.vlm_verify_transitions if child_exp.vlm_verify_transitions else base_exp.vlm_verify_transitions
+            ),
         )
         return MobileSchema(
             name=schema.name,
@@ -270,6 +275,12 @@ class SchemaRegistry:
             for item in raw_transitions
             if isinstance(item, (list, tuple)) and len(item) >= 2
         )
+        raw_vlm_verify = raw.get("vlm_verify_transitions") or ()
+        vlm_verify_transitions = tuple(
+            (str(item[0]), str(item[1]))
+            for item in raw_vlm_verify
+            if isinstance(item, (list, tuple)) and len(item) >= 2
+        )
         return ExplorationSpec(
             coverage_page_types=tuple(str(s) for s in (raw.get("coverage_page_types") or ())),
             coverage_transitions=coverage_transitions,
@@ -280,6 +291,7 @@ class SchemaRegistry:
             interference_page_types=tuple(str(s) for s in (raw.get("interference_page_types") or ())),
             trap_tokens=tuple(str(s) for s in (raw.get("trap_tokens") or ())),
             default_task=str(raw.get("default_task") or ""),
+            vlm_verify_transitions=vlm_verify_transitions,
         )
 
 
@@ -291,3 +303,40 @@ def get_default_registry() -> SchemaRegistry:
     if _DEFAULT_REGISTRY is None:
         _DEFAULT_REGISTRY = SchemaRegistry()
     return _DEFAULT_REGISTRY
+
+
+# Legacy constant kept as fallback so behavior never silently changes.
+_LEGACY_VLM_VERIFY_TRANSITIONS: frozenset[tuple[str, str]] = frozenset({
+    ("search_result", "product_detail"),
+    ("product_detail", "spec_selection"),
+})
+
+
+def vlm_verify_transitions_for(app_or_schema: str) -> frozenset[tuple[str, str]]:
+    """Return the VLM-verify transition pairs for an app or schema name.
+
+    Reads the ``vlm_verify_transitions`` field from the merged schema.
+    Falls back to ``_LEGACY_VLM_VERIFY_TRANSITIONS`` if the schema lookup fails
+    so that existing shopping behavior is never silently changed.
+    """
+    try:
+        registry = get_default_registry()
+        # Try as a schema name first; if not found try as an app's schema.
+        schema_name = app_or_schema
+        try:
+            schema = registry.merged(schema_name)
+        except (FileNotFoundError, Exception):
+            # Try resolving as an app id → schema name.
+            from phone_agent.spatial.app_registry import get_default_app_registry
+            schema_name = get_default_app_registry().schema_for(app_or_schema)
+            if not schema_name:
+                return _LEGACY_VLM_VERIFY_TRANSITIONS
+            schema = registry.merged(schema_name)
+
+        pairs = schema.exploration.vlm_verify_transitions
+        if pairs:
+            return frozenset(pairs)
+        # Empty in schema → fall back to legacy constant.
+        return _LEGACY_VLM_VERIFY_TRANSITIONS
+    except Exception:
+        return _LEGACY_VLM_VERIFY_TRANSITIONS

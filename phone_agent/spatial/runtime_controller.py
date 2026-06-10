@@ -14,6 +14,7 @@ from typing import Any
 
 from phone_agent.memory.spatial_graph_memory import GoalSpec, PageBelief, PageState, RuntimeDAG
 
+_AMSG_DOMAIN_PRIORS_ENABLED = os.getenv("AMSG_DOMAIN_PRIORS", "1") not in ("0", "false", "False")
 
 V4_GRAPH_CONTRACT_VERSION = "amsg-v4-runtime"
 DEFAULT_RUNTIME_GRAPH_DATABASE = "shopping-spatial-v4"
@@ -65,6 +66,7 @@ class GraphRuntimeController:
         self.legacy_fallback = legacy_fallback
         self.contract_version = V4_GRAPH_CONTRACT_VERSION
         self.database = getattr(graph_store, "database", "") or runtime_graph_database()
+        self._domain_prior_provider: Any = None  # lazy; set on first explore-mode call
         if verbose:
             print(
                 "[GraphRuntime] "
@@ -215,6 +217,9 @@ class GraphRuntimeController:
             return context_data
 
         context_data["mode"] = "explore"
+        # Domain structural priors: inject text hint for cold-start apps.
+        # Only appended to semantic_context — never produces executable actions.
+        self._inject_domain_priors(context_data, current_page_state, goal_spec)
         return context_data
 
     def _base_context(self, task: str) -> dict[str, Any]:
@@ -522,7 +527,13 @@ class GraphRuntimeController:
                     if lifecycle.requires_vlm_verification(source_page_type, action_key):
                         return True
 
-        return (source_page_type, target_page_type) in VLM_VERIFY_TRANSITIONS
+        # Use schema-backed pairs; fall back to the module constant for safety.
+        try:
+            from phone_agent.spatial.schema_registry import vlm_verify_transitions_for
+            pairs = vlm_verify_transitions_for("shopping")
+        except Exception:
+            pairs = VLM_VERIFY_TRANSITIONS
+        return (source_page_type, target_page_type) in pairs
 
     def _inject_vlm_verification_hint(
         self,
@@ -559,6 +570,50 @@ class GraphRuntimeController:
             context_data["semantic_context"] = (
                 f"[V4 Knowledge] {semantic_hint}\n{context_data.get('semantic_context', '')}"
             ).strip()
+
+    def _get_domain_prior_provider(self) -> Any:
+        """Lazily instantiate the DomainPriorProvider, respecting any test injection."""
+        if self._domain_prior_provider is not None:
+            return self._domain_prior_provider
+        try:
+            from phone_agent.spatial.domain_priors import DomainPriorProvider
+            self._domain_prior_provider = DomainPriorProvider(
+                graph_store=self.graph_store,
+            )
+        except Exception:
+            self._domain_prior_provider = None
+        return self._domain_prior_provider
+
+    def _inject_domain_priors(
+        self,
+        context_data: dict[str, Any],
+        current_page_state: PageState | None,
+        goal_spec: Any,
+    ) -> None:
+        """Append domain structural prior hint to semantic_context when app is cold."""
+        if not _AMSG_DOMAIN_PRIORS_ENABLED:
+            return
+        try:
+            provider = self._get_domain_prior_provider()
+            if provider is None:
+                return
+            app = current_page_state.app if current_page_state else ""
+            page_type = current_page_state.page_type if current_page_state else ""
+            if not app or not page_type or page_type == "unknown":
+                return
+            if not provider.coverage_is_cold(app):
+                return
+            goal_page_types: tuple[str, ...] = ()
+            if goal_spec is not None and hasattr(goal_spec, "target_page_types"):
+                goal_page_types = tuple(goal_spec.target_page_types or ())
+            priors = provider.priors_for(app, page_type, goal_page_types)
+            hint = provider.format_hint(priors, app, page_type)
+            if hint:
+                context_data["semantic_context"] = (
+                    f"{context_data.get('semantic_context', '')}\n{hint}"
+                ).strip()
+        except Exception:
+            pass  # domain priors must never break the main loop
 
     def _metric(self, key: str, amount: int = 1) -> None:
         metrics = getattr(self.manager, "_runtime_metrics", None)

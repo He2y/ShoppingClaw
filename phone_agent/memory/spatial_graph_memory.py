@@ -2183,7 +2183,14 @@ class SpatialGraphMemory:
         # NOTE: When edge_promotion_policy="verified" (paper mode),
         # heuristic injection is disabled.  Edges must be earned through
         # real-device postcondition verification (Definition 8).
-        if self._amsg_config.enable_heuristic_injection and current_state and current_state.page_type == "product_detail":
+        _is_shopping_domain = False
+        if current_state:
+            try:
+                from phone_agent.spatial.app_registry import get_default_app_registry as _get_reg
+                _is_shopping_domain = _get_reg().domain_of(current_state.app) == "shopping"
+            except Exception:
+                _is_shopping_domain = False
+        if self._amsg_config.enable_heuristic_injection and current_state and current_state.page_type == "product_detail" and _is_shopping_domain:
             # Check if any edge leads to spec_selection with correct action
             has_spec_selection_edge = any(
                 edge.postcondition == "spec_selection" and (

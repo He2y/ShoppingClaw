@@ -20,10 +20,15 @@ from .spatial_graph_memory import PageBelief, RuntimeDAG, SpatialGraphMemory
 # the VLM must verify before execution. These involve selecting a specific
 # item (product, spec) where the graph only knows where ONE item was in a
 # past session — not which item matches the current user's request.
-_VLM_VERIFY_TRANSITIONS: frozenset[tuple[str, str]] = frozenset({
+#
+# Kept as a legacy fallback constant; the authoritative source is now the
+# schema YAML.  See schema_registry.vlm_verify_transitions_for().
+_LEGACY_VLM_VERIFY_TRANSITIONS: frozenset[tuple[str, str]] = frozenset({
     ("search_result", "product_detail"),
     ("product_detail", "spec_selection"),
 })
+# Backward-compat alias so any import of _VLM_VERIFY_TRANSITIONS still works.
+_VLM_VERIFY_TRANSITIONS = _LEGACY_VLM_VERIFY_TRANSITIONS
 
 
 # Preference/slot extraction is now centralized in phone_agent.core.task_spec.
@@ -217,8 +222,17 @@ class MemoryManager:
     @staticmethod
     def _requires_vlm_verification(source_page_type: str, target_page_type: str) -> bool:
         """Return True when this transition involves a semantic choice (e.g.
-        picking a specific product from a list) that the graph cannot make."""
-        return (source_page_type, target_page_type) in _VLM_VERIFY_TRANSITIONS
+        picking a specific product from a list) that the graph cannot make.
+
+        The authoritative set comes from the schema YAML; the legacy constant
+        is used as a fallback to ensure shopping behaviour never silently changes.
+        """
+        try:
+            from phone_agent.spatial.schema_registry import vlm_verify_transitions_for
+            pairs = vlm_verify_transitions_for("shopping")
+        except Exception:
+            pairs = _LEGACY_VLM_VERIFY_TRANSITIONS
+        return (source_page_type, target_page_type) in pairs
 
     def _inject_vlm_verification_hint(
         self,
