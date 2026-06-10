@@ -60,6 +60,11 @@
       "risk": "medium",
       "landmarks": [],
       "affordances": ["wait", "go_back"]
+    },
+    "ad": {
+      "risk": "medium",
+      "landmarks": ["ad_content", "close_button"],
+      "affordances": ["close_ad", "go_back"]
     }
   },
   "transitions": [
@@ -77,5 +82,14 @@
     "open_detail": {"action_family": "click"},
     "go_back": {"action_family": "system_button"},
     "wait": {"action_family": "wait"}
+  },
+  "exploration": {
+    "unsafe_tokens": [
+      "pay", "payment", "submit", "checkout", "buy now", "logout", "log out", "switch account",
+      "支付", "付款", "立即支付", "提交订单", "确认订单", "下单", "结算", "去结算",
+      "退出登录", "切换账号", "注销账号"
+    ],
+    "interference_page_types": ["dialog", "permission", "login", "ad"],
+    "self_loop_input_pages": ["search", "form"]
   }
 }

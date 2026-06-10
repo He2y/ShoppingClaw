@@ -30,8 +30,15 @@ class ShoppingPageType(Enum):
 
 @dataclass
 class PageInfo:
-    """Page analysis result."""
-    page_type: ShoppingPageType
+    """Page analysis result.
+
+    ``page_type`` is stored as a plain string.  Legacy code that constructs
+    ``PageInfo`` with a ``ShoppingPageType`` enum is handled in
+    ``__post_init__``: the enum is coerced to its ``.value`` string so that
+    all downstream code works uniformly with strings.
+    """
+
+    page_type: Any  # str in practice; ShoppingPageType accepted at construction
     semantic_summary: str
     elements: Dict[str, Any]
     screenshot_hash: str
@@ -40,9 +47,17 @@ class PageInfo:
     width: int = 0
     height: int = 0
 
+    def __post_init__(self) -> None:
+        # Coerce Enum → str so callers that still pass ShoppingPageType work.
+        if hasattr(self.page_type, "value"):
+            self.page_type = self.page_type.value
+
     def state_key(self) -> str:
         """Generate a stable key for deduplication."""
-        return f"{self.page_type.value}:{self.semantic_summary[:60]}"
+        pt = self.page_type
+        if hasattr(pt, "value"):
+            pt = pt.value
+        return f"{pt}:{self.semantic_summary[:60]}"
 
 
 @dataclass
@@ -118,7 +133,81 @@ class CoverageReport:
         }
 
 
-# Screen change detection: compare first N chars of base64 screenshots.
+@dataclass(frozen=True)
+class PageTypeSpace:
+    """Schema-driven page type space for a given app domain.
+
+    Attributes:
+        schema_name: The schema this space was built from.
+        names: All known page type names in this space.
+        high_risk: Set of page type names classified as high-risk.
+        interference: Set of page type names that are interference types.
+        summaries: Mapping from name → short Chinese label.
+    """
+
+    schema_name: str
+    names: tuple[str, ...]
+    high_risk: frozenset[str]
+    interference: frozenset[str]
+    summaries: dict[str, str]
+
+    @classmethod
+    def from_schema(cls, schema: Any, extra_types: tuple[str, ...] = ()) -> "PageTypeSpace":
+        """Build a PageTypeSpace from a merged MobileSchema."""
+        names: list[str] = list(schema.page_types.keys())
+        for et in extra_types:
+            if et not in names:
+                names.append(et)
+
+        high_risk = frozenset(
+            name
+            for name, spec in schema.page_types.items()
+            if getattr(spec, "risk", "normal") == "high"
+        )
+        interference = frozenset(schema.exploration.interference_page_types)
+
+        # Build summaries: use _PAGE_TYPE_SUMMARY for shopping types, fallback to name
+        summaries: dict[str, str] = {}
+        for name in names:
+            # Check if there's a legacy summary for this type
+            enum_val = _PAGE_TYPE_MAP.get(name)
+            if enum_val is not None:
+                summaries[name] = _PAGE_TYPE_SUMMARY.get(enum_val, name)
+            else:
+                summaries[name] = name
+
+        return cls(
+            schema_name=schema.name,
+            names=tuple(names),
+            high_risk=high_risk,
+            interference=interference,
+            summaries=summaries,
+        )
+
+    def normalize(self, raw: str) -> str:
+        """Normalize a raw page type string.
+
+        Returns:
+          - The canonical name if it's a known type.
+          - The canonical name if ``raw`` is an alias for a known type.
+          - ``raw`` unchanged if it starts with ``new:`` (open-vocab passthrough).
+          - ``"unknown"`` otherwise.
+        """
+        value = (raw or "").strip().lower()
+        if not value:
+            return "unknown"
+        if value in self.names:
+            return value
+        if value.startswith("new:"):
+            return raw  # passthrough
+        # Check _PAGE_TYPE_MAP aliases (via the enum)
+        if value in _PAGE_TYPE_MAP:
+            return value
+        return "unknown"
+
+
+# ── Screen change detection ────────────────────────────────────────────────────
+# Compare first N chars of base64 screenshots.
 # Two identical screenshots mean the last action had no visible effect.
 _SCREEN_CHANGE_HASH_LEN = 2000
 

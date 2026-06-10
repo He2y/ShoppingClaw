@@ -2,65 +2,202 @@
   "name": "shopping",
   "extends": "common_mobile",
   "page_types": {
+    "home": {
+      "risk": "normal",
+      "landmarks": ["entry_points", "banner", "product_grid", "search_bar"],
+      "affordances": ["open_search", "open_list", "open_settings"],
+      "description": "首页 — Banner轮播图、推荐商品网格、搜索框入口、活动入口图标",
+      "vlm_hint": "home 允许出现顶部搜索框；只有搜索框已激活、键盘/搜索历史/搜索建议出现时才判为 search_input。"
+    },
     "search_input": {
       "risk": "normal",
       "aliases": ["search"],
       "landmarks": ["search_bar", "history_tags", "suggestions"],
-      "affordances": ["submit_search", "type_query"]
+      "affordances": ["submit_search", "type_query"],
+      "description": "搜索输入页 — 搜索框已激活(有光标)、键盘已弹出、显示搜索历史或热门搜索词",
+      "vlm_hint": "search_input 必须是输入态或建议态；如果已经出现商品卡片、价格、店铺/销量等结果信息，判为 search_result。"
     },
     "search_result": {
       "risk": "normal",
       "aliases": ["list"],
       "landmarks": ["search_bar", "product_cards", "filter_buttons"],
-      "affordances": ["open_product", "open_filter", "sort", "scroll"]
+      "affordances": ["open_product", "open_filter", "sort", "scroll"],
+      "description": "搜索结果页 — 商品卡片列表、顶部有搜索框(未激活)、筛选/排序按钮(价格/销量/综合)",
+      "vlm_hint": "search_result 可以包含筛选/排序按钮；只有展开了筛选条件面板、价格区间、品牌/属性选项或确认筛选按钮时才判为 filter_panel。"
     },
     "product_detail": {
       "risk": "normal",
       "aliases": ["detail"],
       "landmarks": ["product_media", "product_title", "price", "buy_buttons"],
-      "affordances": ["open_spec", "add_to_cart", "buy_now", "go_cart"]
+      "affordances": ["open_spec", "add_to_cart", "buy_now", "go_cart"],
+      "description": "商品详情页 — 单个商品大图、价格(¥符号)、商品名称、顶部购物车入口、底部加入购物车/立即购买按钮",
+      "vlm_hint": "product_detail 是完整商品详情页；只有规格选项以弹窗/半屏面板出现时才判为 spec_selection。"
     },
     "spec_selection": {
       "risk": "medium",
       "aliases": ["dialog", "form"],
       "landmarks": ["spec_options", "quantity_selector", "confirm_button"],
-      "affordances": ["choose_spec", "confirm_spec", "close_dialog"]
+      "affordances": ["choose_spec", "confirm_spec", "close_dialog"],
+      "description": "规格选择 — 弹窗或半屏面板、颜色/尺寸/容量等选项按钮、数量选择器、显示价格"
     },
     "cart": {
       "risk": "medium",
       "aliases": ["list"],
       "landmarks": ["cart_items", "checkboxes", "checkout_button"],
-      "affordances": ["select_item", "checkout", "go_back"]
+      "affordances": ["select_item", "checkout", "go_back"],
+      "description": "购物车 — 商品列表每项带圆形复选框、有全选按钮、有结算/去结算按钮、有编辑/管理按钮"
     },
     "checkout": {
       "risk": "high",
       "aliases": ["confirmation"],
       "landmarks": ["address", "order_items", "submit_order"],
-      "affordances": ["ask_user", "go_back"]
+      "affordances": ["ask_user", "go_back"],
+      "description": "结算/订单确认 — 收货地址、支付方式选择、商品清单、提交订单按钮"
+    },
+    "payment": {
+      "risk": "high",
+      "landmarks": ["payment_method", "pay_button"],
+      "affordances": ["ask_user", "go_back"],
+      "description": "支付页"
+    },
+    "address": {
+      "risk": "high",
+      "landmarks": ["address_form", "address_list"],
+      "affordances": ["ask_user", "go_back"],
+      "description": "地址页"
     },
     "filter_panel": {
       "risk": "normal",
       "aliases": ["dialog", "form"],
       "landmarks": ["filter_options", "price_fields", "apply_button"],
-      "affordances": ["set_filter", "apply_filter", "close_dialog"]
+      "affordances": ["set_filter", "apply_filter", "close_dialog"],
+      "description": "筛选面板 — 展开了筛选条件面板、价格区间、品牌/属性选项或确认筛选按钮"
+    },
+    "category": {
+      "risk": "normal",
+      "landmarks": ["category_list", "subcategory_grid"],
+      "affordances": ["open_category", "scroll"],
+      "description": "分类页 — 左侧一级分类列表+右侧子分类网格、或分类图标网格布局"
+    },
+    "my_account": {
+      "risk": "normal",
+      "landmarks": ["user_avatar", "order_tabs", "account_entries"],
+      "affordances": ["open_orders", "open_coupons", "open_settings"],
+      "description": "个人中心 — 用户头像区域、订单入口(待付款/待发货/待收货)、优惠券/收藏/足迹等入口"
+    },
+    "settings": {
+      "risk": "medium",
+      "landmarks": ["setting_list"],
+      "affordances": ["open_detail", "toggle_setting", "go_back"],
+      "description": "设置页 — 账号与安全、隐私设置、通用设置、消息通知、支付设置、切换账号/退出登录等设置列表"
+    },
+    "store": {
+      "risk": "normal",
+      "landmarks": ["store_header", "store_products"],
+      "affordances": ["open_product", "follow_store", "scroll"],
+      "description": "店铺主页 — 店铺Logo和名称、店铺评分、店铺内商品列表、关注按钮"
+    },
+    "login": {
+      "risk": "high",
+      "landmarks": ["credential_fields"],
+      "affordances": ["ask_user", "go_back"],
+      "description": "登录/验证页 — 手机号输入框、密码输入框、登录按钮、验证码输入框、短信验证码、滑块验证、拼图验证、人机验证、获取验证码按钮、扫码登录、第三方登录图标。**只要页面主要功能是登录或身份验证（包括短信验证码、CAPTCHA、安全验证），都判为login**"
+    },
+    "dialog": {
+      "risk": "medium",
+      "landmarks": ["modal_panel", "close_button"],
+      "affordances": ["close_dialog", "confirm_dialog"],
+      "description": "遮挡主页面的弹窗/广告/优惠券/活动面板 — 有关闭按钮、确认按钮或半屏遮罩；优先识别为dialog而不是底层页面",
+      "vlm_hint": "若有优惠券、广告、活动、权限等遮挡主页面的弹窗，优先判为 dialog 或 permission。"
+    },
+    "permission": {
+      "risk": "high",
+      "landmarks": ["permission_prompt"],
+      "affordances": ["allow_permission", "deny_permission"],
+      "description": "系统权限弹窗 — 请求相机、位置、通知、相册等权限"
     }
   },
   "transitions": [
-    {"source": "home", "target": "search_input", "intent": "open_search", "affordance": "open_search"},
-    {"source": "search_input", "target": "search_result", "intent": "submit_search", "affordance": "submit_search"},
-    {"source": "search_result", "target": "product_detail", "intent": "open_product", "affordance": "open_product"},
-    {"source": "search_result", "target": "filter_panel", "intent": "open_filter", "affordance": "open_filter"},
-    {"source": "filter_panel", "target": "search_result", "intent": "apply_filter", "affordance": "apply_filter"},
-    {"source": "product_detail", "target": "spec_selection", "intent": "open_spec", "affordance": "open_spec", "target_locator": {"region": "bottom_cta", "role": "buy_or_add_to_cart_cta"}},
-    {"source": "spec_selection", "target": "product_detail", "intent": "confirm_add_to_cart", "affordance": "confirm_spec"},
-    {"source": "product_detail", "target": "cart", "intent": "go_cart", "affordance": "go_cart", "target_locator": {"region": "top_right", "role": "cart_entry_icon"}},
-    {"source": "spec_selection", "target": "cart", "intent": "confirm_spec", "affordance": "confirm_spec"},
-    {"source": "cart", "target": "checkout", "intent": "checkout", "affordance": "checkout", "risk": "high"}
+    {
+      "source": "home",
+      "target": "search_input",
+      "intent": "open_search",
+      "affordance": "open_search"
+    },
+    {
+      "source": "search_input",
+      "target": "search_result",
+      "intent": "submit_search",
+      "affordance": "submit_search"
+    },
+    {
+      "source": "search_result",
+      "target": "product_detail",
+      "intent": "open_product",
+      "affordance": "open_product",
+      "target_locator": {"region": "content_list"}
+    },
+    {
+      "source": "search_result",
+      "target": "filter_panel",
+      "intent": "open_filter",
+      "affordance": "open_filter",
+      "target_locator": {"region": "top_right_band"}
+    },
+    {
+      "source": "search_result",
+      "target": "spec_selection",
+      "intent": "open_product_spec",
+      "affordance": "open_product",
+      "target_locator": {"region": "content_list"}
+    },
+    {
+      "source": "filter_panel",
+      "target": "search_result",
+      "intent": "apply_filter",
+      "affordance": "apply_filter"
+    },
+    {
+      "source": "product_detail",
+      "target": "spec_selection",
+      "intent": "open_spec",
+      "affordance": "open_spec",
+      "target_locator": {"region": "bottom_cta", "role": "buy_or_add_to_cart_cta"},
+      "exploration_hint": "For product_detail -> spec_selection, Taobao usually opens the spec sheet only after tapping a bottom CTA such as '加入购物车', '立即购买', '领券购买', or a campaign-specific buy CTA. Do not hard-code the label; tap the CTA only to verify that the postcondition is spec_selection, and roll back if it lands on checkout/payment/address."
+    },
+    {
+      "source": "spec_selection",
+      "target": "product_detail",
+      "intent": "confirm_add_to_cart",
+      "affordance": "confirm_spec"
+    },
+    {
+      "source": "product_detail",
+      "target": "cart",
+      "intent": "go_cart",
+      "affordance": "go_cart",
+      "target_locator": {"region": "top_right", "role": "cart_entry_icon"},
+      "exploration_hint": "For product_detail -> cart, use only the top-right cart entry/icon. Do not use the bottom 加入购物车/立即购买 CTA for this edge, because that CTA opens spec_selection."
+    },
+    {
+      "source": "spec_selection",
+      "target": "cart",
+      "intent": "confirm_spec",
+      "affordance": "confirm_spec",
+      "exploration_hint": "For spec_selection -> cart/checkout, choose required specs first, then tap the second-stage confirm CTA. Do not submit order, pay, or confirm address after landing."
+    },
+    {
+      "source": "cart",
+      "target": "checkout",
+      "intent": "checkout",
+      "affordance": "checkout",
+      "risk": "high"
+    }
   ],
   "app_aliases": {
     "taobao": ["tmall", "淘宝", "天猫", "娣樺疂", "澶╃尗"],
-    "jd": ["jingdong", "京东", "浜笢"],
-    "pinduoduo": ["拼多多", "鎷煎澶?"],
+    "jd": ["jingdong", "京东", "浜笢"],
+    "pinduoduo": ["拼多多", "鎷煎澶?"],
     "meituan": ["美团", "缇庡洟"],
     "eleme": ["饿了么", "楗夸簡涔?"]
   },
@@ -71,5 +208,28 @@
     "go_cart": {"action_family": "click"},
     "confirm_spec": {"action_family": "click"},
     "checkout": {"action_family": "click", "risk": "high"}
+  },
+  "exploration": {
+    "coverage_page_types": [
+      "home", "search_input", "search_result", "product_detail",
+      "spec_selection", "cart", "checkout"
+    ],
+    "coverage_transitions": [
+      ["home", "search_input"],
+      ["search_input", "search_result"],
+      ["search_result", "product_detail"],
+      ["product_detail", "spec_selection"],
+      ["spec_selection", "product_detail"],
+      ["product_detail", "cart"],
+      ["cart", "checkout"]
+    ],
+    "unsafe_tokens": [],
+    "risky_cta_tokens": [
+      "加入购物车", "立即购买", "领券购买", "去购买", "购买按钮",
+      "买贵必赔", "购买", "规格", "颜色", "版本"
+    ],
+    "risky_cta_allowed_pages": ["product_detail", "spec_selection"],
+    "self_loop_input_pages": ["search_input", "filter_panel"],
+    "default_task": "覆盖淘宝购物核心空间骨架：home -> search_input -> search_result -> product_detail -> spec_selection -> cart。只执行安全探索动作，不提交订单、不支付、不确认地址。如果进入登录、支付、地址或订单确认页，立刻返回。"
   }
 }

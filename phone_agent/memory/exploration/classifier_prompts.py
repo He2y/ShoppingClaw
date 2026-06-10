@@ -1,5 +1,12 @@
 """Page classifier system prompts (shopping domain, P2b makes these schema-driven)."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .types import PageTypeSpace
+
 _CLASSIFIER_SYSTEM_PROMPT = (
     "你是一个移动应用页面分类器。识别购物App当前显示的页面类型，并列出页面中的关键交互元素。\n\n"
     "**重要**: 截图已经裁剪掉了顶部状态栏和底部导航栏（首页/购物车/我的等Tab）。\n"
@@ -51,3 +58,113 @@ _CLASSIFIER_FAST_SYSTEM_PROMPT = (
     "严格输出 JSON，不要加额外文字: "
     '{"page_type": "<类型>", "summary": "<≤15字功能概括>"}'
 )
+
+# ── Schema-driven prompt generation ──────────────────────────────────────────
+
+_PROMPT_HEADER = (
+    "**重要**: 截图已经裁剪掉了顶部状态栏和底部导航栏（首页/购物车/我的等Tab）。\n"
+    "你只能看到页面的主内容区域。请仅根据主内容区域判断页面类型，不要猜测被裁剪掉的部分。\n"
+)
+
+_ELEMENTS_SECTION = (
+    "\n=== elements 字段说明 ===\n"
+    "列出页面中可见的关键交互元素，用简短中文命名。只列功能性组件（按钮、输入框、列表、选择器等），\n"
+    "不要列纯展示内容（文字、图片）。命名要通用化，不要包含具体商品名或价格。\n"
+    '示例: {"search_bar": "顶部搜索栏", "product_cards": "商品卡片列表", "filter_buttons": "筛选排序按钮"}\n\n'
+    "=== summary 字段说明 ===\n"
+    "用不超过15个字概括页面功能，不要包含具体商品名/品牌名/价格。\n"
+    '示例: "商品搜索结果列表" 而非 "OPPO Find X9手机搜索结果页"\n'
+)
+
+_FULL_OUTPUT_FORMAT = (
+    "\n=== 输出格式 ===\n"
+    '严格输出JSON，不要加任何额外文字：\n'
+    '{"page_type": "<类型>", "summary": "<≤15字功能概括>", "elements": {"元素名": "简短描述"}}'
+)
+
+_OPEN_VOCAB_CLAUSE = (
+    '\n如果所有列出的类型都不匹配，输出 "page_type": "new:<英文snake_case名>" 并在 '
+    '"new_type_description" 字段给出一句话定义。不要把弹窗/权限/登录页归为 new 类型。'
+)
+
+_FAST_OUTPUT_FORMAT = (
+    "\n严格输出 JSON，不要加额外文字: "
+    '{"page_type": "<类型>", "summary": "<≤15字功能概括>"}'
+)
+
+
+def build_full_prompt(space: "PageTypeSpace", schema: Any) -> str:
+    """Generate a full classification prompt from a PageTypeSpace and schema.
+
+    The generated prompt contains every page-type definition line and
+    every 判别优先级 rule from the schema's vlm_hints.  For the shopping
+    schema this is byte-for-byte equivalent to the legacy constant.
+    """
+    lines = [
+        "你是一个移动应用页面分类器。识别App当前显示的页面类型，并列出页面中的关键交互元素。\n",
+        _PROMPT_HEADER,
+    ]
+
+    # Collect vlm_hints for disambiguation section
+    vlm_hints: list[str] = []
+    for name in space.names:
+        spec = schema.page_types.get(name)
+        if spec and getattr(spec, "vlm_hint", ""):
+            vlm_hints.append(spec.vlm_hint)
+
+    if vlm_hints:
+        lines.append("\n=== 判别优先级 ===\n")
+        # Dedupe while preserving order
+        seen_hints: set[str] = set()
+        idx = 1
+        for hint in vlm_hints:
+            if hint not in seen_hints:
+                seen_hints.add(hint)
+                lines.append(f"{idx}. {hint}\n")
+                idx += 1
+
+    lines.append("\n=== 页面类型定义 ===\n")
+    for name in space.names:
+        spec = schema.page_types.get(name)
+        description = (spec and getattr(spec, "description", "")) or name
+        lines.append(f"- {name}: {description}\n")
+
+    lines.append(_ELEMENTS_SECTION)
+    lines.append(_FULL_OUTPUT_FORMAT)
+    lines.append(_OPEN_VOCAB_CLAUSE)
+
+    return "".join(lines)
+
+
+def build_fast_prompt(space: "PageTypeSpace", schema: Any) -> str:
+    """Generate a fast (no elements, no open-vocab) classification prompt.
+
+    Fast mode FORBIDS new: types — must pick from the known list or unknown.
+    """
+    type_list = ", ".join(space.names)
+    lines = [
+        "你是移动App页面快速分类器。只判断当前页面类型和一句功能摘要，不要抽取元素。\n",
+        _PROMPT_HEADER,
+        f"\npage_type 必须是以下之一: {type_list}。\n",
+    ]
+
+    # Collect interference / priority hints
+    vlm_hints: list[str] = []
+    for name in space.names:
+        spec = schema.page_types.get(name)
+        if spec and getattr(spec, "vlm_hint", ""):
+            vlm_hints.append(spec.vlm_hint)
+
+    if vlm_hints:
+        seen_hints: set[str] = set()
+        for hint in vlm_hints:
+            if hint not in seen_hints:
+                seen_hints.add(hint)
+                lines.append(f"{hint}\n")
+
+    lines.append(_FAST_OUTPUT_FORMAT)
+    return "".join(lines)
+
+
+# Any import needed for type checking
+from typing import Any  # noqa: E402 (needed for build_full_prompt/build_fast_prompt signatures at runtime)

@@ -18,6 +18,9 @@ class PageTypeSpec:
     landmarks: tuple[str, ...] = ()
     affordances: tuple[str, ...] = ()
     aliases: tuple[str, ...] = ()
+    description: str = ""
+    vlm_hint: str = ""
+    evidence_tokens: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,22 @@ class TransitionSpec:
     target_locator: dict[str, Any] = field(default_factory=dict)
     risk: str = "normal"
     rollback_action: str = "Back"
+    exploration_hint: str = ""
+
+
+@dataclass(frozen=True)
+class ExplorationSpec:
+    """Schema-level configuration for the offline exploration pipeline."""
+
+    coverage_page_types: tuple[str, ...] = ()
+    coverage_transitions: tuple[tuple[str, str], ...] = ()
+    unsafe_tokens: tuple[str, ...] = ()
+    risky_cta_tokens: tuple[str, ...] = ()
+    risky_cta_allowed_pages: tuple[str, ...] = ()
+    self_loop_input_pages: tuple[str, ...] = ()
+    interference_page_types: tuple[str, ...] = ()
+    trap_tokens: tuple[str, ...] = ()
+    default_task: str = ""
 
 
 @dataclass(frozen=True)
@@ -39,6 +58,7 @@ class MobileSchema:
     transitions: tuple[TransitionSpec, ...] = ()
     app_aliases: dict[str, tuple[str, ...]] = field(default_factory=dict)
     intents: dict[str, dict[str, Any]] = field(default_factory=dict)
+    exploration: ExplorationSpec = field(default_factory=ExplorationSpec)
 
     def page_spec(self, page_type: str) -> PageTypeSpec | None:
         return self.page_types.get(page_type)
@@ -75,6 +95,17 @@ class MobileSchema:
         return any(self.page_type_matches(expected, observed) for observed in observed_page_types)
 
 
+def _dedupe_ordered(seq: tuple[str, ...]) -> tuple[str, ...]:
+    """Deduplicate preserving order."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in seq:
+        if item not in seen:
+            seen.add(item)
+            result.append(item)
+    return tuple(result)
+
+
 class SchemaRegistry:
     """Loads and merges AMSG schemas.
 
@@ -107,6 +138,31 @@ class SchemaRegistry:
         intents = dict(base.intents)
         intents.update(schema.intents)
         transitions = (*base.transitions, *schema.transitions)
+
+        # Merge ExplorationSpec: token lists concatenate (dedupe); other fields child-replaces
+        base_exp = base.exploration
+        child_exp = schema.exploration
+        merged_exp = ExplorationSpec(
+            coverage_page_types=(
+                child_exp.coverage_page_types if child_exp.coverage_page_types else base_exp.coverage_page_types
+            ),
+            coverage_transitions=(
+                child_exp.coverage_transitions if child_exp.coverage_transitions else base_exp.coverage_transitions
+            ),
+            unsafe_tokens=_dedupe_ordered(base_exp.unsafe_tokens + child_exp.unsafe_tokens),
+            risky_cta_tokens=_dedupe_ordered(base_exp.risky_cta_tokens + child_exp.risky_cta_tokens),
+            risky_cta_allowed_pages=(
+                child_exp.risky_cta_allowed_pages if child_exp.risky_cta_allowed_pages else base_exp.risky_cta_allowed_pages
+            ),
+            self_loop_input_pages=(
+                child_exp.self_loop_input_pages if child_exp.self_loop_input_pages else base_exp.self_loop_input_pages
+            ),
+            interference_page_types=(
+                child_exp.interference_page_types if child_exp.interference_page_types else base_exp.interference_page_types
+            ),
+            trap_tokens=_dedupe_ordered(base_exp.trap_tokens + child_exp.trap_tokens),
+            default_task=child_exp.default_task if child_exp.default_task else base_exp.default_task,
+        )
         return MobileSchema(
             name=schema.name,
             extends=schema.extends,
@@ -114,6 +170,7 @@ class SchemaRegistry:
             transitions=transitions,
             app_aliases=app_aliases,
             intents=intents,
+            exploration=merged_exp,
         )
 
     def normalize_app(self, app: str, schema_name: str = "shopping") -> str:
@@ -140,6 +197,16 @@ class SchemaRegistry:
             return True
         return self.normalize_app(app, schema_name).lower() == self.normalize_app(app_filter, schema_name).lower()
 
+    def list_schemas(self) -> tuple[str, ...]:
+        """Return names of all available domain schemas (excluding app_registry and apps/ subdirectory)."""
+        excludes = {"app_registry"}
+        names: list[str] = []
+        for p in self.schema_dir.glob("*.yaml"):
+            stem = p.stem
+            if stem not in excludes:
+                names.append(stem)
+        return tuple(sorted(names))
+
     def _all_loaded_and_default(self, schema_name: str) -> tuple[MobileSchema, ...]:
         schemas = [self.merged(schema_name)]
         if schema_name != "common_mobile":
@@ -163,6 +230,9 @@ class SchemaRegistry:
                 landmarks=tuple(item.get("landmarks") or ()),
                 affordances=tuple(item.get("affordances") or ()),
                 aliases=tuple(item.get("aliases") or ()),
+                description=str(item.get("description") or ""),
+                vlm_hint=str(item.get("vlm_hint") or ""),
+                evidence_tokens=tuple(item.get("evidence_tokens") or ()),
             )
         transitions = tuple(
             TransitionSpec(
@@ -173,6 +243,7 @@ class SchemaRegistry:
                 target_locator=dict(item.get("target_locator") or {}),
                 risk=str(item.get("risk") or "normal"),
                 rollback_action=str(item.get("rollback_action") or "Back"),
+                exploration_hint=str(item.get("exploration_hint") or ""),
             )
             for item in (raw.get("transitions") or ())
         )
@@ -180,6 +251,7 @@ class SchemaRegistry:
             str(key): tuple(str(alias) for alias in value)
             for key, value in (raw.get("app_aliases") or {}).items()
         }
+        exploration = SchemaRegistry._exploration_from_raw(raw.get("exploration") or {})
         return MobileSchema(
             name=str(raw.get("name") or "unknown"),
             extends=str(raw.get("extends") or ""),
@@ -187,6 +259,27 @@ class SchemaRegistry:
             transitions=transitions,
             app_aliases=aliases,
             intents=dict(raw.get("intents") or {}),
+            exploration=exploration,
+        )
+
+    @staticmethod
+    def _exploration_from_raw(raw: dict[str, Any]) -> ExplorationSpec:
+        raw_transitions = raw.get("coverage_transitions") or ()
+        coverage_transitions = tuple(
+            (str(item[0]), str(item[1]))
+            for item in raw_transitions
+            if isinstance(item, (list, tuple)) and len(item) >= 2
+        )
+        return ExplorationSpec(
+            coverage_page_types=tuple(str(s) for s in (raw.get("coverage_page_types") or ())),
+            coverage_transitions=coverage_transitions,
+            unsafe_tokens=tuple(str(s) for s in (raw.get("unsafe_tokens") or ())),
+            risky_cta_tokens=tuple(str(s) for s in (raw.get("risky_cta_tokens") or ())),
+            risky_cta_allowed_pages=tuple(str(s) for s in (raw.get("risky_cta_allowed_pages") or ())),
+            self_loop_input_pages=tuple(str(s) for s in (raw.get("self_loop_input_pages") or ())),
+            interference_page_types=tuple(str(s) for s in (raw.get("interference_page_types") or ())),
+            trap_tokens=tuple(str(s) for s in (raw.get("trap_tokens") or ())),
+            default_task=str(raw.get("default_task") or ""),
         )
 
 

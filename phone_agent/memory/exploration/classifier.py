@@ -13,7 +13,12 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from PIL import Image
 
-from .classifier_prompts import _CLASSIFIER_FAST_SYSTEM_PROMPT, _CLASSIFIER_SYSTEM_PROMPT
+from .classifier_prompts import (
+    _CLASSIFIER_FAST_SYSTEM_PROMPT,
+    _CLASSIFIER_SYSTEM_PROMPT,
+    build_fast_prompt,
+    build_full_prompt,
+)
 from .types import ShoppingPageType, _PAGE_TYPE_MAP
 
 
@@ -55,7 +60,12 @@ class PageClassifier:
         mode: str = "fast",
         timeout: float = 8.0,
         max_image_width: int = 720,
+        page_type_space: Any = None,
+        schema: Any = None,
     ):
+        self._page_type_space = page_type_space
+        self._schema = schema
+
         explicit_override = bool(api_key and base_url and model)
         providers: list[_ClassifierProvider] = []
         if explicit_override:
@@ -129,6 +139,16 @@ class PageClassifier:
             tuple[tuple[ShoppingPageType, str, Dict[str, str]], dict[str, Any]],
         ] = {}
 
+    def _get_system_prompt(self, mode: str) -> str:
+        """Get the system prompt, using schema-driven prompts when space is available."""
+        if self._page_type_space is not None and self._schema is not None:
+            if mode == "fast":
+                return build_fast_prompt(self._page_type_space, self._schema)
+            else:
+                return build_full_prompt(self._page_type_space, self._schema)
+        # Legacy prompts
+        return _CLASSIFIER_FAST_SYSTEM_PROMPT if mode == "fast" else _CLASSIFIER_SYSTEM_PROMPT
+
     def _client_for_provider(self, provider: _ClassifierProvider) -> Any:
         cache_key = f"{provider.source}|{provider.base_url}|{provider.model}"
         if cache_key not in self._clients:
@@ -142,6 +162,9 @@ class PageClassifier:
     def classify(self, screenshot_base64: str, width: int, height: int) -> tuple[ShoppingPageType, str, Dict[str, str]]:
         """Classify page type and extract elements from a cropped screenshot.
 
+        This is the legacy enum-returning method.  New code should prefer
+        ``classify_page`` which returns str page types and extra diagnostics.
+
         Args:
             screenshot_base64: Full screenshot as base64 string.
             width: Screenshot width in pixels.
@@ -150,6 +173,25 @@ class PageClassifier:
         Returns:
             (ShoppingPageType, summary, elements_dict). Returns (UNKNOWN, reason, {})
             on any failure.
+        """
+        page_type_str, summary, elements, extras = self.classify_page(screenshot_base64, width, height)
+        # Map str → enum; new:* and unrecognized → UNKNOWN
+        enum_val = _PAGE_TYPE_MAP.get(page_type_str, ShoppingPageType.UNKNOWN)
+        return (enum_val, summary, elements)  # type: ignore[return-value]
+
+    def classify_page(
+        self,
+        screenshot_base64: str,
+        width: int,
+        height: int,
+    ) -> tuple[str, str, Dict[str, str], Dict[str, Any]]:
+        """Classify a page and return string page type with extra diagnostics.
+
+        Returns:
+            (page_type_str, summary, elements, extras)
+            where extras may contain ``new_type_description`` and classifier
+            diagnostics.  ``page_type_str`` is normalized via space.normalize
+            when a PageTypeSpace is available.
         """
         start_time = time.time()
         if self.mode == "off":
@@ -160,7 +202,8 @@ class PageClassifier:
                 "fallback_used": False,
                 "raw_error": "",
             }
-            return ShoppingPageType.UNKNOWN, "classifier disabled", {}
+            return "unknown", "classifier disabled", {}, {}
+
         screenshot_key = hashlib.md5(screenshot_base64.encode()).hexdigest()
         provider_signature = tuple((provider.source, provider.model) for provider in self.providers)
         cache_key = (screenshot_key, self.mode, provider_signature, self.max_image_width)
@@ -168,7 +211,10 @@ class PageClassifier:
             self.last_duration = 0.0
             cached_result, cached_diagnostics = self._cache[cache_key]
             self.last_diagnostics = dict(cached_diagnostics)
-            return cached_result
+            # Convert cached enum result to str for classify_page
+            page_type_enum = cached_result[0]
+            pt_str = page_type_enum.value if hasattr(page_type_enum, "value") else str(page_type_enum)
+            return pt_str, cached_result[1], cached_result[2], {}
 
         try:
             cropped_b64 = self._crop_screenshot(screenshot_base64, width, height, self.max_image_width)
@@ -180,9 +226,9 @@ class PageClassifier:
                 "fallback_used": False,
                 "raw_error": f"crop error: {e}",
             }
-            return ShoppingPageType.UNKNOWN, f"crop error: {e}", {}
+            return "unknown", f"crop error: {e}", {}, {}
 
-        prompt = _CLASSIFIER_FAST_SYSTEM_PROMPT if self.mode == "fast" else _CLASSIFIER_SYSTEM_PROMPT
+        prompt = self._get_system_prompt(self.mode)
         errors: list[str] = []
         for provider_index, provider in enumerate(self.providers):
             max_tokens = provider.max_tokens_fast if self.mode == "fast" else provider.max_tokens_full
@@ -229,14 +275,25 @@ class PageClassifier:
                 if not result:
                     raise ValueError("empty classifier result")
 
-                page_type = _PAGE_TYPE_MAP.get(
-                    str(result.get("page_type", "")).strip(),
-                    ShoppingPageType.UNKNOWN,
-                )
-                summary = str(result.get("summary", "")).strip() or f"unnamed-{page_type.value}"
+                raw_page_type = str(result.get("page_type", "")).strip()
+                # Normalize through space if available, else use legacy map
+                if self._page_type_space is not None:
+                    page_type_str = self._page_type_space.normalize(raw_page_type)
+                else:
+                    # Normalize: keep known types, fallback to "unknown"
+                    if raw_page_type in _PAGE_TYPE_MAP:
+                        page_type_str = raw_page_type
+                    else:
+                        page_type_str = "unknown"
+
+                summary = str(result.get("summary", "")).strip() or f"unnamed-{page_type_str}"
                 elements = {} if self.mode == "fast" else result.get("elements", {})
                 if not isinstance(elements, dict):
                     elements = {}
+
+                extras: Dict[str, Any] = {}
+                if result.get("new_type_description"):
+                    extras["new_type_description"] = str(result["new_type_description"])
 
                 self.client = client
                 self.model = provider.model
@@ -252,9 +309,13 @@ class PageClassifier:
                     "max_tokens": max_tokens,
                 }
                 self.last_diagnostics = diagnostics
-                result_tuple = (page_type, summary, elements)
-                self._cache[cache_key] = (result_tuple, diagnostics)
-                return result_tuple
+                extras.update(diagnostics)
+
+                # Cache the result in legacy format for backward compat
+                enum_val = _PAGE_TYPE_MAP.get(page_type_str, ShoppingPageType.UNKNOWN)
+                self._cache[cache_key] = ((enum_val, summary, elements), diagnostics)  # type: ignore
+
+                return page_type_str, summary, elements, extras
             except Exception as e:
                 errors.append(f"{provider.source}/{provider.model}: {e}")
                 continue
@@ -267,8 +328,7 @@ class PageClassifier:
             "fallback_used": len(self.providers) > 1,
             "raw_error": raw_error,
         }
-        return ShoppingPageType.UNKNOWN, f"API/parse error: {raw_error}", {}
-
+        return "unknown", f"API/parse error: {raw_error}", {}, {"raw_error": raw_error}
 
     @staticmethod
     def _parse_json_object(raw: str) -> dict[str, Any]:

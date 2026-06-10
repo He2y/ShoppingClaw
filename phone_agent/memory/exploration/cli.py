@@ -10,6 +10,21 @@ from phone_agent.device_factory import DeviceType, get_device_factory, set_devic
 from phone_agent.model.client import ModelClient, ModelConfig
 
 from .explorer import OfflineExplorer, _build_taobao_task
+from .task_builder import build_default_task
+
+
+def _resolve_default_task(schema_name: str | None) -> str:
+    """Return the default task for the given schema, falling back to Taobao task."""
+    if schema_name is not None:
+        try:
+            from phone_agent.spatial.schema_registry import get_default_registry
+            schema = get_default_registry().merged(schema_name)
+            task = build_default_task(schema)
+            if task and task != "广度优先探索所有主要页面类型":
+                return task
+        except Exception:
+            pass
+    return _build_taobao_task()
 
 
 def main() -> int:
@@ -46,6 +61,13 @@ def main() -> int:
     parser.add_argument("--auto-import-graph", action="store_true", help="Promote collected staging graph into Neo4j.")
     parser.add_argument("--database", default="shopping-spatial-v2", help="Neo4j database for --auto-import-graph.")
     parser.add_argument("--active-exploration", action="store_true", help="Use AMSG frontier scoring hints during exploration.")
+    parser.add_argument("--schema", default=None, help="Domain schema name (e.g. shopping). Defaults to app registry lookup.")
+    parser.add_argument(
+        "--transition-policy",
+        choices=["strict", "schema_guided", "permissive"],
+        default="strict",
+        help="Transition validation policy: strict (default), schema_guided, permissive.",
+    )
     parser.add_argument("--quiet", action="store_true")
     args = parser.parse_args()
 
@@ -69,7 +91,7 @@ def main() -> int:
             ),
             storage_dir=args.storage_dir,
             max_steps=args.max_steps,
-            task_description=args.task or _build_taobao_task(),
+            task_description=args.task or _resolve_default_task(args.schema),
             classifier_api_key=args.classifier_apikey,
             classifier_base_url=args.classifier_base_url,
             classifier_model=args.classifier_model,
@@ -82,6 +104,8 @@ def main() -> int:
             device_id=args.device_id,
             active_exploration=args.active_exploration,
             verbose=not args.quiet,
+            schema_name=args.schema,
+            transition_policy=args.transition_policy,
         )
         trajectories = explorer.explore()
         report = {

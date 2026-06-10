@@ -16,11 +16,16 @@ from phone_agent.spatial.hypothesis import EdgeHypothesisGenerator
 from phone_agent.spatial.semantics import ScreenSemanticsExtractor
 
 from .classifier import PageClassifier
+from .page_evidence import infer_page_type_from_reasoning
 from .prompts import _build_exploration_system_prompt
+from .safety import SafetyPolicy
+from .task_builder import build_default_task, coverage_from_schema
+from .transition_rules import TransitionRuleEngine
 from .types import (
     CoverageReport,
     CoverageTarget,
     PageInfo,
+    PageTypeSpace,
     ShoppingPageType,
     Trajectory,
     _HIGH_RISK_PAGE_TYPES,
@@ -29,6 +34,22 @@ from .types import (
     _SPEC_TRIGGER_TOKENS,
     _UNSAFE_ACTION_TOKENS,
 )
+
+
+def _get_default_safety() -> SafetyPolicy:
+    """Lazy-build a default shopping SafetyPolicy (used for backward-compat method calls)."""
+    from phone_agent.spatial.schema_registry import get_default_registry
+    schema = get_default_registry().merged("shopping")
+    return SafetyPolicy.from_schema(schema)
+
+
+def _page_type_str(page_info: Any) -> str:
+    if page_info is None:
+        return ""
+    pt = getattr(page_info, "page_type", "")
+    if hasattr(pt, "value"):
+        return str(pt.value)
+    return str(pt)
 
 
 class OfflineExplorer:
@@ -66,6 +87,8 @@ class OfflineExplorer:
         classifier_max_image_width: int = 720,
         active_exploration: bool = False,
         verbose: bool = True,
+        schema_name: str | None = None,
+        transition_policy: str = "strict",
     ):
         self.app_name = app_name
         self.device = device_factory
@@ -78,19 +101,39 @@ class OfflineExplorer:
         self.graph_store = graph_store
         self.device_id = device_id
         self.classifier_timing = classifier_timing
-        self.coverage_targets = coverage_targets or CoverageTarget()
-        self.coverage_report = CoverageReport((), self.coverage_targets.page_types, (), self.coverage_targets.transitions)
-        self.last_import_result = None
         self.verbose = verbose
         self.active_exploration = active_exploration
-        self.semantics_extractor = ScreenSemanticsExtractor(schema_name="shopping")
-        self.edge_hypothesis_generator = EdgeHypothesisGenerator(schema_name="shopping")
+
+        # Resolve schema
+        resolved_schema_name = schema_name
+        if resolved_schema_name is None:
+            from phone_agent.spatial.app_registry import get_default_app_registry
+            record = get_default_app_registry().resolve(app_name)
+            if record:
+                resolved_schema_name = record.schema
+        if resolved_schema_name is None:
+            resolved_schema_name = "shopping"
+        self._schema_name = resolved_schema_name
+
+        from phone_agent.spatial.schema_registry import get_default_registry
+        self.schema = get_default_registry().merged(self._schema_name)
+        self.space = PageTypeSpace.from_schema(self.schema)
+        self.safety = SafetyPolicy.from_schema(self.schema)
+        self.rules = TransitionRuleEngine(self.schema, self.safety, transition_policy)
+
+        # Coverage and task
+        self.coverage_targets = coverage_targets or coverage_from_schema(self.schema)
+        self.coverage_report = CoverageReport((), self.coverage_targets.page_types, (), self.coverage_targets.transitions)
+        self.last_import_result = None
+
+        self.semantics_extractor = ScreenSemanticsExtractor(schema_name=self._schema_name)
+        self.edge_hypothesis_generator = EdgeHypothesisGenerator(schema_name=self._schema_name)
         self.active_builder = ActiveGraphBuilder()
 
         # Action handler for executing VLM-decided actions
         self.action_handler = ActionHandler(device_id=device_id)
 
-        # Page classifier using dedicated fast VLM with cropped screenshots
+        # Page classifier
         self.classifier = PageClassifier(
             api_key=classifier_api_key,
             base_url=classifier_base_url,
@@ -98,6 +141,8 @@ class OfflineExplorer:
             mode=classifier_mode,
             timeout=classifier_timeout,
             max_image_width=classifier_max_image_width,
+            page_type_space=self.space,
+            schema=self.schema,
         )
 
         # Collected data
@@ -107,20 +152,18 @@ class OfflineExplorer:
         self.last_rejection_reason = ""
         self.transitions: List[Dict[str, Any]] = []  # from → action → to
 
+        # Open-vocabulary page type proposals
+        self.page_type_proposals: Dict[str, Dict[str, Any]] = {}
+
     # ── Top-Level Entry ────────────────────────────────────────
 
     def explore(self) -> List[Trajectory]:
-        """Run VLM exploration guided by natural language task description.
-
-        Returns:
-            List of exploration trajectories.
-        """
+        """Run VLM exploration guided by natural language task description."""
         self._log(f"\n{'='*60}")
         self._log(f"  Offline Explorer: {self.app_name}")
         self._log(f"  Task: {self.task_description}")
         self._log(f"{'='*60}\n")
 
-        # Launch the target app
         self._log(f"[0] Launching {self.app_name}...")
         package = get_package_name(self.app_name)
         if not package:
@@ -128,13 +171,11 @@ class OfflineExplorer:
             return []
 
         self.device.launch_app(self.app_name, self.device_id)
-        time.sleep(4)  # Wait for app to fully load
+        time.sleep(4)
 
-        # Run the VLM-driven exploration loop
         traj = self._exploration_loop()
         self.trajectories = [traj]
 
-        # Save results
         self._save_results(traj)
 
         self._log(f"\n{'='*60}")
@@ -146,43 +187,30 @@ class OfflineExplorer:
     # ── VLM-Driven Exploration Loop ────────────────────────────
 
     def _exploration_loop(self) -> Trajectory:
-        """Run the task-directed closed-loop VLM exploration.
-
-        Loop: screenshot → VLM decides action → classify page via
-        dedicated classifier VLM (cropped screenshot) → record transition
-        → execute action → repeat.
-        """
+        """Run the task-directed closed-loop VLM exploration."""
         if self.classifier_timing == "after_action":
             return self._exploration_loop_action_first()
 
         task_desc = self.task_description
-        traj = Trajectory(
-            task=task_desc,
-            app=self.app_name,
-        )
+        traj = Trajectory(task=task_desc, app=self.app_name)
         context: List[Dict[str, Any]] = []
 
-        # Build system prompt from natural language task description
         system_prompt = _build_exploration_system_prompt(task_desc)
         context.append(MessageBuilder.create_system_message(system_prompt))
 
-        # Track previous page and action for transition recording
         prev_page_key: Optional[str] = None
         prev_action: Optional[Dict[str, Any]] = None
         prev_screenshot_hash: str = ""
 
         for step_idx in range(self.max_steps):
-            # Capture current screen
             screenshot = self.device.get_screenshot(self.device_id)
             current_app = self.device.get_current_app(self.device_id)
 
-            # ── Screen change detection ──
             cur_hash = screenshot.base64_data[:_SCREEN_CHANGE_HASH_LEN]
             if step_idx > 0 and prev_screenshot_hash and cur_hash == prev_screenshot_hash:
-                self._log(f"  ⚠ 屏幕无变化，上次操作可能未生效")
+                self._log("  ⚠ 屏幕无变化，上次操作可能未生效")
             prev_screenshot_hash = cur_hash
 
-            # Build user message for this step
             screen_info = MessageBuilder.build_screen_info(current_app)
             discovered_summary = self._build_discovered_summary()
 
@@ -205,26 +233,22 @@ class OfflineExplorer:
                 text=task_text, image_base64=screenshot.base64_data
             ))
 
-            # Get VLM's decision for next action (thinking describes current page)
             try:
                 response = self.vlm.request(context)
             except Exception as e:
                 self._log(f"  VLM error: {e}")
                 break
 
-            # Parse the action
             try:
                 action = parse_action(response.action)
             except ValueError as e:
                 self._log(f"  Parse error: {e}")
                 action = {"_metadata": "finish", "message": str(e)}
 
-            # ── Classify page via dedicated VLM with cropped screenshot ──
             page_info = self._classify_page_info(screenshot, current_app or self.app_name, step_idx + 1)
             self._record_page(page_info)
-            self._log(f"  [{step_idx+1}] {page_info.page_type.value}: {page_info.semantic_summary[:60]}")
+            self._log(f"  [{step_idx+1}] {_page_type_str(page_info)}: {page_info.semantic_summary[:60]}")
 
-            # ── Record transition from previous step ──
             if prev_page_key is not None and prev_action is not None:
                 recorded = self._record_transition(prev_page_key, prev_action, page_info.state_key())
                 if not recorded and self._should_stop_after_rejected_transition(self.last_rejection_reason):
@@ -233,27 +257,23 @@ class OfflineExplorer:
                     break
             self._update_coverage_report()
 
-            # Check if exploration is complete
             if action.get("_metadata") == "finish":
                 traj.add_step(page_info, action, response.thinking)
                 self._log(f"  VLM finished: {action.get('message', '')[:100]}")
                 break
 
-            # Record step (current page + action about to execute)
             traj.add_step(page_info, action, response.thinking)
 
             if self.coverage_report.complete:
                 self._log("  Coverage target reached; stopping exploration.")
                 break
 
-            # Update context
             context[-1] = MessageBuilder.remove_images_from_message(context[-1])
             assistant_content = (
                 f" thinking{response.thinking} response<answer>{response.action}</answer>"
             )
             context.append(MessageBuilder.create_assistant_message(assistant_content))
 
-            # Execute the action
             if not self._is_safe_action(page_info, action):
                 self._log("  Unsafe exploration action blocked; recording page only.")
                 prev_page_key = None
@@ -267,19 +287,16 @@ class OfflineExplorer:
                     self._log(f"  Action result: {result.message}")
             except Exception as e:
                 self._log(f"  Execute error: {e}")
-                prev_page_key = None  # Invalidate transition tracking on failure
+                prev_page_key = None
                 prev_action = None
                 continue
 
-            # Brief pause for UI to settle
             time.sleep(2)
 
-            # Track for next transition
             prev_page_key = page_info.state_key()
             prev_action = action
 
         else:
-            # Max steps reached
             self._log(f"  Max steps ({self.max_steps}) reached")
             traj.success = True
 
@@ -351,11 +368,13 @@ class OfflineExplorer:
             reasoning_for_repair = response.thinking
             if action.get("_metadata") == "finish" and str(action.get("message") or "").startswith("Failed to parse action"):
                 reasoning_for_repair = f"{response.thinking}\n{response.action}"
-            inferred_page_type = self._infer_page_type_from_reasoning(reasoning_for_repair)
-            if inferred_page_type and inferred_page_type != current_page.page_type:
+            inferred_page_type = OfflineExplorer._infer_page_type_from_reasoning(reasoning_for_repair)
+            current_pt_str = _page_type_str(current_page)
+            inferred_str = inferred_page_type.value if hasattr(inferred_page_type, "value") else inferred_page_type
+            if inferred_str and inferred_str != current_pt_str:
                 self._log(
-                    f"  belief repair: classifier={current_page.page_type.value} "
-                    f"reasoning={inferred_page_type.value}"
+                    f"  belief repair: classifier={current_pt_str} "
+                    f"reasoning={inferred_str}"
                 )
                 current_page = self._relabel_page_info(current_page, inferred_page_type)
             self._record_page(current_page)
@@ -371,7 +390,7 @@ class OfflineExplorer:
                     break
 
             traj.add_step(current_page, action, response.thinking)
-            self._log(f"  [{step_idx+1}] {current_page.page_type.value}: {current_page.semantic_summary[:60]}")
+            self._log(f"  [{step_idx+1}] {_page_type_str(current_page)}: {current_page.semantic_summary[:60]}")
 
             if action.get("_metadata") == "finish":
                 self._log(f"  VLM finished: {action.get('message', '')[:100]}")
@@ -383,10 +402,11 @@ class OfflineExplorer:
 
             if not self._is_safe_action(current_page, action, response.thinking):
                 self._log("  Unsafe exploration action blocked; recording page only.")
-                if current_page.page_type in _HIGH_RISK_PAGE_TYPES:
+                pt_str = _page_type_str(current_page)
+                if pt_str in self.safety.high_risk_page_types:
                     self._rollback_from_risky_page(screenshot.width, screenshot.height)
                 last_step_note = (
-                    f"Last action was blocked as unsafe on {current_page.page_type.value}. "
+                    f"Last action was blocked as unsafe on {pt_str}. "
                     "Choose a rollback, close, or safe navigation action from the current screenshot."
                 )
                 current_page = None
@@ -416,7 +436,7 @@ class OfflineExplorer:
             }
             last_step_note = (
                 f"Last action executed from {current_page.state_key()}; raw post-action "
-                f"classifier saw {next_page.page_type.value}:{next_page.semantic_summary}. "
+                f"classifier saw {_page_type_str(next_page)}:{next_page.semantic_summary}. "
                 "The next step must verify the actual landing page before planning."
             )
             current_page = next_page
@@ -433,13 +453,17 @@ class OfflineExplorer:
     # ── Helpers ─────────────────────────────────────────────────
 
     def _classify_page_info(self, screenshot: Any, app: str, step: int, prefix: str = "classifier") -> PageInfo:
-        page_type, summary, elements = self.classifier.classify(
+        page_type_str, summary, elements, extras = self.classifier.classify_page(
             screenshot.base64_data,
             screenshot.width,
             screenshot.height,
         )
+        # Handle new: open-vocabulary types
+        if page_type_str.startswith("new:"):
+            self._record_page_type_proposal(page_type_str, extras, screenshot.base64_data)
+
         page_info = PageInfo(
-            page_type=page_type,
+            page_type=page_type_str,
             semantic_summary=summary,
             elements=elements,
             screenshot_hash=hashlib.md5(screenshot.base64_data.encode()).hexdigest(),
@@ -452,9 +476,27 @@ class OfflineExplorer:
             f"  {prefix} step={step} mode={self.classifier.mode} "
             f"source={self.classifier.source} model={self.classifier.model} "
             f"time={self.classifier.last_duration:.2f}s "
-            f"-> {page_info.page_type.value}"
+            f"-> {page_type_str}"
         )
         return page_info
+
+    def _record_page_type_proposal(self, page_type: str, extras: Dict[str, Any], screenshot_b64: str) -> None:
+        """Track open-vocabulary page type proposals from the classifier."""
+        name = page_type  # e.g. "new:coupon_center"
+        description = str(extras.get("new_type_description") or "")
+        screenshot_hash = hashlib.md5(screenshot_b64.encode()).hexdigest()
+        if name not in self.page_type_proposals:
+            self.page_type_proposals[name] = {
+                "description": description,
+                "count": 0,
+                "screenshot_hashes": [],
+            }
+        proposal = self.page_type_proposals[name]
+        proposal["count"] = proposal["count"] + 1  # type: ignore[assignment]
+        if screenshot_hash not in proposal["screenshot_hashes"]:  # type: ignore[operator]
+            proposal["screenshot_hashes"].append(screenshot_hash)  # type: ignore[union-attr]
+        if description and not proposal["description"]:
+            proposal["description"] = description  # type: ignore[assignment]
 
     def _record_page(self, page_info: PageInfo):
         """Record a discovered page, deduplicating by state_key."""
@@ -462,7 +504,7 @@ class OfflineExplorer:
         if key not in self.discovered_pages:
             self.discovered_pages[key] = page_info
             if self.verbose:
-                self._log(f"    NEW: {page_info.page_type.value}")
+                self._log(f"    NEW: {_page_type_str(page_info)}")
 
     @staticmethod
     def _build_current_state_note(page_info: PageInfo | None, last_step_note: str) -> str:
@@ -472,161 +514,49 @@ class OfflineExplorer:
                 f"Verifier note: {last_step_note}\n"
                 "Use the screenshot as ground truth; explicitly state what the current screen appears to be."
             )
+        pt_str = _page_type_str(page_info)
         return (
-            f"Classifier hypothesis (may be wrong): {page_info.page_type.value} - {page_info.semantic_summary}.\n"
+            f"Classifier hypothesis (may be wrong): {pt_str} - {page_info.semantic_summary}.\n"
             f"Verifier note: {last_step_note}\n"
             "Use the screenshot as ground truth; if the screenshot conflicts with the hypothesis, correct it."
         )
 
     @staticmethod
-    def _infer_page_type_from_reasoning(text: str) -> ShoppingPageType | None:
-        """Infer a weak page belief from the action model's current-screen reasoning."""
-        if not text:
+    def _infer_page_type_from_reasoning(text: str) -> Any:
+        """Infer page type from reasoning text; returns ShoppingPageType for backward compat."""
+        from .types import _PAGE_TYPE_MAP
+        result_str = infer_page_type_from_reasoning(text)
+        if result_str is None:
             return None
-        excluded_markers = (
-            "classifier hypothesis",
-            "verifier note",
-            "raw post-action",
-            "核心空间骨架",
-            "用户要求",
-            "任务要求",
-            "system-reminder",
-        )
-        visual_markers = (
-            "当前截图",
-            "当前页面是",
-            "当前状态",
-            "当前已经",
-            "从截图",
-            "截图显示",
-            "屏幕显示",
-            "我可以看到",
-            "我看到",
-            "看起来",
-            "当前界面显示",
-            "现在看到",
-            "显示的是",
-        )
-        lines = []
-        capturing_visual_context = False
-        for raw_line in text.splitlines():
-            line = raw_line.strip().lower()
-            if not line or any(marker in line for marker in excluded_markers):
-                continue
-            if any(marker in line for marker in visual_markers):
-                capturing_visual_context = True
-            if capturing_visual_context:
-                lines.append(line)
-            if len(lines) >= 12:
-                break
-        if not lines:
-            return None
-
-        for scoped in ["\n".join(lines), *lines[:8]]:
-            if "权限" in scoped or "permission" in scoped:
-                return ShoppingPageType.PERMISSION
-            if OfflineExplorer._is_settings_page_evidence(scoped):
-                return ShoppingPageType.SETTINGS
-            if any(token in scoped for token in ("支付页", "付款页面", "收银台", "支付密码", "付款方式", "payment page")):
-                return ShoppingPageType.PAYMENT
-            if any(token in scoped for token in ("地址", "address")):
-                return ShoppingPageType.ADDRESS
-            if OfflineExplorer._is_login_page_evidence(scoped):
-                return ShoppingPageType.LOGIN
-            if any(token in scoped for token in ("订单确认", "确认订单", "checkout")):
-                return ShoppingPageType.CHECKOUT
-            if any(
-                token in scoped
-                for token in ("规格选择", "规格弹窗", "适用手机型号", "颜色分类", "型号选项", "sku")
-            ):
-                return ShoppingPageType.SPEC_SELECTION
-            if any(token in scoped for token in ("弹窗", "优惠券", "广告", "活动面板", "dialog")):
-                return ShoppingPageType.DIALOG
-            if any(token in scoped for token in ("搜索输入", "搜索建议", "历史搜索", "猜你想搜", "键盘", "search_input")):
-                return ShoppingPageType.SEARCH_INPUT
-            if any(token in scoped for token in ("商品详情", "详情页", "product_detail")):
-                return ShoppingPageType.PRODUCT_DETAIL
-            if any(token in scoped for token in ("规格", "spec_selection")) and any(
-                token in scoped for token in ("弹窗", "半屏", "选择", "选项")
-            ):
-                return ShoppingPageType.SPEC_SELECTION
-            if any(token in scoped for token in ("筛选面板", "筛选条件", "filter_panel")):
-                return ShoppingPageType.FILTER_PANEL
-            if OfflineExplorer._is_cart_page_evidence(scoped):
-                return ShoppingPageType.CART
-            if any(token in scoped for token in ("搜索结果", "结果页面", "商品列表", "search_result")):
-                return ShoppingPageType.SEARCH_RESULT
-            if any(token in scoped for token in ("首页", "home")):
-                return ShoppingPageType.HOME
-        return None
+        # Return enum for backward compat (existing tests compare to ShoppingPageType.X)
+        return _PAGE_TYPE_MAP.get(result_str)
 
     @staticmethod
     def _is_settings_page_evidence(text: str) -> bool:
-        settings_tokens = (
-            "设置页",
-            "设置页面",
-            "账号与安全",
-            "隐私设置",
-            "通用设置",
-            "消息通知",
-            "支付设置",
-            "国家与地区",
-            "切换账号",
-            "退出登录",
-            "settings page",
-        )
-        return any(token.lower() in text for token in settings_tokens)
+        from .page_evidence import is_settings_page_evidence
+        return is_settings_page_evidence(text)
 
     @staticmethod
     def _is_login_page_evidence(text: str) -> bool:
-        login_page_tokens = (
-            "登录页",
-            "登录页面",
-            "手机号输入",
-            "密码输入",
-            "验证码",
-            "login page",
-        )
-        return any(token.lower() in text for token in login_page_tokens) or (
-            "登录按钮" in text and ("手机号" in text or "验证码" in text or "密码" in text)
-        )
+        from .page_evidence import is_login_page_evidence
+        return is_login_page_evidence(text)
 
     @staticmethod
     def _is_cart_page_evidence(text: str) -> bool:
-        """Return true only when the line describes the cart page itself.
+        from .page_evidence import is_cart_page_evidence
+        return is_cart_page_evidence(text)
 
-        Product detail pages often expose a top-right cart entry with a badge.
-        That should remain product_detail; cart requires page-level evidence
-        such as item checkboxes, all-select, or checkout controls.
-        """
-        cart_page_tokens = (
-            "购物车页面",
-            "购物车页",
-            "购物车列表",
-            "我的购物车",
-            "购物车中",
-            "cart page",
-            "cart list",
-        )
-        cart_control_tokens = (
-            "全选",
-            "去结算",
-            "结算按钮",
-            "编辑/管理",
-            "管理按钮",
-            "商品复选框",
-            "checkbox",
-            "checkout button",
-        )
-        return any(token in text for token in cart_page_tokens) or (
-            "购物车" in text and any(token in text for token in cart_control_tokens)
-        )
-
-    @staticmethod
-    def _relabel_page_info(page_info: PageInfo, page_type: ShoppingPageType) -> PageInfo:
-        summary = _PAGE_TYPE_SUMMARY.get(page_type, page_info.semantic_summary)
+    def _relabel_page_info(self, page_info: PageInfo, page_type: Any) -> PageInfo:
+        """Relabel a page with a new type (accepts enum or str)."""
+        pt_str: str
+        if hasattr(page_type, "value"):
+            pt_str = page_type.value
+        else:
+            pt_str = str(page_type)
+        # Use summaries from space if available
+        summary = self.space.summaries.get(pt_str, page_info.semantic_summary)
         return PageInfo(
-            page_type=page_type,
+            page_type=pt_str,
             semantic_summary=summary,
             elements=page_info.elements,
             screenshot_hash=page_info.screenshot_hash,
@@ -661,6 +591,22 @@ class OfflineExplorer:
         """Record a page transition: from_page → action → to_page."""
         source = self.discovered_pages.get(from_key)
         target = self.discovered_pages.get(to_key)
+
+        # Reject transitions involving new: page types (open-vocab) before other checks
+        source_pt = _page_type_str(source) if source else ""
+        target_pt = _page_type_str(target) if target else ""
+        if source_pt.startswith("new:") or target_pt.startswith("new:"):
+            item = {
+                "from": from_key,
+                "action": action,
+                "to": to_key,
+                "reason": "unreviewed page type",
+            }
+            self.rejected_transitions.append(item)
+            self.last_rejection_reason = "unreviewed page type"
+            self._log(f"  rejected transition (new: type): {from_key} -> {to_key}")
+            return False
+
         rejection = self._transition_rejection_reason(source, action, target)
         self.last_rejection_reason = rejection
         if rejection:
@@ -673,6 +619,7 @@ class OfflineExplorer:
             self.rejected_transitions.append(item)
             self._log(f"  rejected transition: {from_key} -> {to_key}; {rejection}")
             return False
+
         self.transitions.append({
             "from": from_key,
             "action": action,
@@ -684,8 +631,14 @@ class OfflineExplorer:
     def _update_coverage_report(self) -> CoverageReport:
         if not hasattr(self, "coverage_targets"):
             self.coverage_targets = CoverageTarget()
-        covered_pages = tuple(sorted({page.page_type.value for page in self.discovered_pages.values()}))
-        missing_pages = tuple(page_type for page_type in self.coverage_targets.page_types if page_type not in covered_pages)
+        covered_pages = tuple(sorted({
+            _page_type_str(page)
+            for page in self.discovered_pages.values()
+        }))
+        missing_pages = tuple(
+            page_type for page_type in self.coverage_targets.page_types
+            if page_type not in covered_pages
+        )
 
         covered_edges_set: set[tuple[str, str]] = set()
         for item in self.transitions:
@@ -703,48 +656,22 @@ class OfflineExplorer:
         )
         return self.coverage_report
 
-    def _is_safe_action(self, page_info: PageInfo, action: Dict[str, Any], reasoning: str = "") -> bool:
-        if page_info.page_type in _HIGH_RISK_PAGE_TYPES:
-            return False
-        if action.get("_metadata") == "finish":
-            return True
-        action_text = json.dumps(action, ensure_ascii=False).lower()
-        if OfflineExplorer._action_text_has_unsafe_token(action_text, page_info):
-            return False
-        return not OfflineExplorer._unsafe_intent_mentioned(reasoning or "", page_info)
+    def _is_safe_action(self, page_info: Any, action: Dict[str, Any], reasoning: str = "") -> bool:
+        """Delegate to SafetyPolicy; lazy-default for backward-compat calls with self=None."""
+        safety = getattr(self, "safety", None) or _get_default_safety()
+        return safety.is_safe_action(page_info, action, reasoning)
 
     @staticmethod
-    def _action_text_has_unsafe_token(text: str, page_info: PageInfo) -> bool:
-        if any(token.lower() in text for token in _UNSAFE_ACTION_TOKENS):
-            return True
-        if page_info.page_type in {ShoppingPageType.PRODUCT_DETAIL, ShoppingPageType.SPEC_SELECTION}:
-            return False
-        return any(token.lower() in text for token in _SPEC_TRIGGER_TOKENS)
+    def _action_text_has_unsafe_token(text: str, page_info: Any) -> bool:
+        """Legacy static wrapper — uses default shopping SafetyPolicy."""
+        safety = _get_default_safety()
+        return safety.action_text_has_unsafe_token(text, page_info)
 
     @staticmethod
-    def _unsafe_intent_mentioned(reasoning: str, page_info: PageInfo | None = None) -> bool:
-        action_markers = ("我将", "我要", "准备", "下一步", "接下来", "现在", "让我", "tap")
-        negation_markers = ("不要", "不能", "禁止", "避免", "不应该", "不会", "不点击", "不要点击")
-        task_markers = ("用户要求", "任务流程", "具体步骤", "根据任务", "给出了", "包括：", "需要：")
-        page_type = page_info.page_type if page_info else None
-        for raw_line in reasoning.splitlines():
-            line = raw_line.strip().lower()
-            if not line:
-                continue
-            if any(marker in line for marker in task_markers):
-                continue
-            if line[:2].rstrip(".、").isdigit():
-                continue
-            if any(marker in line for marker in negation_markers):
-                continue
-            if not any(marker in line for marker in action_markers):
-                continue
-            if any(token.lower() in line for token in _UNSAFE_ACTION_TOKENS):
-                return True
-            if page_type not in {ShoppingPageType.PRODUCT_DETAIL, ShoppingPageType.SPEC_SELECTION}:
-                if any(token.lower() in line for token in _SPEC_TRIGGER_TOKENS):
-                    return True
-        return False
+    def _unsafe_intent_mentioned(reasoning: str, page_info: Any = None) -> bool:
+        """Legacy static wrapper — uses default shopping SafetyPolicy."""
+        safety = _get_default_safety()
+        return safety.unsafe_intent_mentioned(reasoning, page_info)
 
     def _rollback_from_risky_page(self, screen_width: int, screen_height: int) -> None:
         try:
@@ -756,93 +683,26 @@ class OfflineExplorer:
 
     def _transition_rejection_reason(
         self,
-        source: PageInfo | None,
+        source: Any,
         action: Dict[str, Any],
-        target: PageInfo | None,
+        target: Any,
     ) -> str:
-        """Reject noisy exploration edges before they reach saved artifacts."""
-        if not source or not target:
-            return "missing page metadata"
-        source_type = source.page_type.value
-        target_type = target.page_type.value
-        if source.page_type in _HIGH_RISK_PAGE_TYPES or target.page_type in _HIGH_RISK_PAGE_TYPES:
-            return "high-risk page boundary"
-        if source_type == "dialog":
-            return ""
-        action_type = str(action.get("action") or action.get("action_type") or "").lower()
-        if source_type == target_type:
-            if source_type in {"search_input", "filter_panel"} and action_type in {"tap", "type", "type_name", "input"}:
-                return ""
-            return "self-loop or unchanged screen"
-        if action_type in {"type", "wait"}:
-            return "non-navigation action"
+        """Reject noisy exploration edges. Delegates to TransitionRuleEngine.
 
-        pair = (source_type, target_type)
-        if pair in {
-            ("home", "search_input"),
-            ("search_input", "search_result"),
-            ("filter_panel", "search_result"),
-            ("product_detail", "spec_selection"),
-            ("spec_selection", "cart"),
-            ("spec_selection", "product_detail"),
-        }:
-            return ""
-        if pair == ("product_detail", "cart"):
-            if OfflineExplorer._looks_like_top_cart_entry_tap(action):
-                return ""
-            return "product_detail->cart must use top cart entry, not bottom add-to-cart CTA"
-        if pair == ("search_result", "product_detail") and self._looks_like_product_card_tap(action):
-            return ""
-        if pair == ("search_result", "filter_panel") and self._looks_like_filter_button_tap(action):
-            return ""
-        if pair == ("search_result", "spec_selection") and self._looks_like_product_card_tap(action):
-            return ""
-        return "unexpected shopping flow transition"
-
-    @staticmethod
-    def _looks_like_product_card_tap(action: Dict[str, Any]) -> bool:
-        element = action.get("element")
-        if not isinstance(element, list):
-            return False
-        if len(element) == 1 and isinstance(element[0], list):
-            element = element[0]
-        try:
-            y = float(element[1]) if len(element) >= 2 else -1
-        except (TypeError, ValueError):
-            return False
-        return y >= 250
-
-    @staticmethod
-    def _looks_like_filter_button_tap(action: Dict[str, Any]) -> bool:
-        element = action.get("element")
-        if not isinstance(element, list):
-            return False
-        if len(element) == 1 and isinstance(element[0], list):
-            element = element[0]
-        try:
-            x = float(element[0])
-            y = float(element[1])
-        except (TypeError, ValueError, IndexError):
-            return False
-        return x >= 800 and 150 <= y <= 420
-
-    @staticmethod
-    def _looks_like_top_cart_entry_tap(action: Dict[str, Any]) -> bool:
-        element = action.get("element")
-        if not isinstance(element, list):
-            return False
-        if len(element) == 1 and isinstance(element[0], list):
-            element = element[0]
-        try:
-            x = float(element[0])
-            y = float(element[1])
-        except (TypeError, ValueError, IndexError):
-            return False
-        return x >= 650 and y <= 220
+        NOTE: Also called as OfflineExplorer._transition_rejection_reason(None, source, action, target)
+        in tests (first arg is 'self'=None).  Handles that by lazily building a default engine.
+        """
+        rules = getattr(self, "rules", None)
+        if rules is None:
+            from phone_agent.spatial.schema_registry import get_default_registry
+            schema = get_default_registry().merged("shopping")
+            safety = SafetyPolicy.from_schema(schema)
+            rules = TransitionRuleEngine(schema, safety, "strict")
+        return rules.rejection_reason(source, action, target)
 
     @staticmethod
     def _should_stop_after_rejected_transition(reason: str) -> bool:
-        return reason == "high-risk page boundary"
+        return TransitionRuleEngine.should_stop_after_rejection(reason)
 
     def _build_discovered_summary(self) -> str:
         """Build a summary of discovered pages for the VLM context."""
@@ -852,7 +712,7 @@ class OfflineExplorer:
 
         by_type: Dict[str, int] = {}
         for p in self.discovered_pages.values():
-            t = p.page_type.value
+            t = _page_type_str(p)
             by_type[t] = by_type.get(t, 0) + 1
 
         type_lines = "\n".join(f"  - {t}: {c}个" for t, c in sorted(by_type.items()))
@@ -873,7 +733,7 @@ class OfflineExplorer:
         node = self.semantics_extractor.node_from_exploration_page(
             {
                 "app": page_info.app,
-                "page_type": page_info.page_type.value,
+                "page_type": _page_type_str(page_info),
                 "summary": page_info.semantic_summary,
                 "elements": page_info.elements,
                 "screenshot_hash": page_info.screenshot_hash,
@@ -895,22 +755,14 @@ class OfflineExplorer:
                 f"- {hyp.source_page_type} --{hyp.intent}/{hyp.semantic_target}--> "
                 f"{hyp.expected_page_type}; score={item.score:.2f}; risk={hyp.risk}"
             )
-        if page_info.page_type == ShoppingPageType.PRODUCT_DETAIL:
-            lines.append(
-                "For product_detail -> spec_selection, Taobao usually opens the spec sheet only after "
-                "tapping a bottom CTA such as '加入购物车', '立即购买', '领券购买', or a campaign-specific "
-                "buy CTA. Do not hard-code the label; tap the CTA only to verify that the postcondition "
-                "is spec_selection, and roll back if it lands on checkout/payment/address."
-            )
-            lines.append(
-                "For product_detail -> cart, use only the top-right cart entry/icon. Do not use the bottom "
-                "加入购物车/立即购买 CTA for this edge, because that CTA opens spec_selection."
-            )
-        if page_info.page_type == ShoppingPageType.SPEC_SELECTION:
-            lines.append(
-                "For spec_selection -> cart/checkout, choose required specs first, then tap the second-stage "
-                "confirm CTA. Do not submit order, pay, or confirm address after landing."
-            )
+
+        pt_str = _page_type_str(page_info)
+        # Build hints from schema transitions for the current page type
+        for transition in self.schema.outgoing(pt_str):
+            hint = getattr(transition, "exploration_hint", "")
+            if hint:
+                lines.append(hint)
+
         lines.append("After action, stop before payment, order submission, login, or address confirmation.")
         return "\n".join(lines)
 
@@ -924,7 +776,6 @@ class OfflineExplorer:
         """Save all exploration data to JSON files."""
         timestamp = int(time.time())
 
-        # Save pages catalog
         pages_data = {
             "app": self.app_name,
             "task": self.task_description,
@@ -933,7 +784,7 @@ class OfflineExplorer:
             "coverage": self._update_coverage_report().to_dict(),
             "pages": [
                 {
-                    "page_type": p.page_type.value,
+                    "page_type": _page_type_str(p),
                     "summary": p.semantic_summary,
                     "elements": p.elements,
                     "screenshot_hash": p.screenshot_hash,
@@ -947,7 +798,6 @@ class OfflineExplorer:
             json.dump(pages_data, f, ensure_ascii=False, indent=2)
         self._log(f"  saved: {pages_path.name}")
 
-        # Save trajectory
         traj_data = {
             "task": traj.task,
             "app": traj.app,
@@ -956,7 +806,7 @@ class OfflineExplorer:
             "steps": [
                 {
                     "step": i + 1,
-                    "page_type": s.page_info.page_type.value,
+                    "page_type": _page_type_str(s.page_info),
                     "page_summary": s.page_info.semantic_summary,
                     "page_elements": s.page_info.elements,
                     "screenshot_hash": s.page_info.screenshot_hash,
@@ -972,7 +822,6 @@ class OfflineExplorer:
             json.dump(traj_data, f, ensure_ascii=False, indent=2)
         self._log(f"  saved: {traj_path.name}")
 
-        # Save transitions (edges)
         trans_path = None
         if self.transitions or self.rejected_transitions:
             transitions_data = {
@@ -983,6 +832,9 @@ class OfflineExplorer:
                 "transitions": self.transitions,
                 "rejected_transitions": self.rejected_transitions,
             }
+            proposals = getattr(self, "page_type_proposals", {})
+            if proposals:
+                transitions_data["page_type_proposals"] = proposals  # type: ignore[assignment]
             trans_path = self.storage_dir / f"{self.app_name}_explore_transitions_{timestamp}.json"
             with open(trans_path, "w", encoding="utf-8") as f:
                 json.dump(transitions_data, f, ensure_ascii=False, indent=2)
@@ -1023,6 +875,15 @@ class OfflineExplorer:
 
 
 def _build_taobao_task() -> str:
+    """Return the default Taobao exploration task (from shopping schema YAML)."""
+    try:
+        from phone_agent.spatial.schema_registry import get_default_registry
+        schema = get_default_registry().load("shopping")
+        task = schema.exploration.default_task
+        if task:
+            return task
+    except Exception:
+        pass
     return (
         "覆盖淘宝购物核心空间骨架：home -> search_input -> search_result -> "
         "product_detail -> spec_selection -> cart。"
