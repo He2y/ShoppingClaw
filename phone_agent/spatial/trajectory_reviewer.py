@@ -357,6 +357,7 @@ class TrajectoryReviewer:
 
                 registry = get_default_app_registry()
                 canonical_app = registry.canonical_id(app) or app
+                app = registry.display_name(app) or app  # app_raw alignment
                 app_domain = registry.domain_of(app)
                 if not src_rec:
                     s.run(

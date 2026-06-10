@@ -63,3 +63,24 @@ def test_register_and_resolve_in_memory():
     assert registry.canonical_id("小红书") == "xiaohongshu"
     assert registry.canonical_id("com.xingin.xhs") == "xiaohongshu"
     assert "小红书" in registry.mention_tokens()
+
+
+def test_display_name_for_app_raw_alignment():
+    registry = get_default_app_registry()
+
+    assert registry.display_name("jd") == "京东"
+    assert registry.display_name("京东") == "京东"
+    assert registry.display_name("com.jingdong.app.mall") == "京东"
+    assert registry.display_name("taobao") == "淘宝"
+    assert registry.display_name("UnknownApp") == "UnknownApp"
+
+
+def test_canonical_app_fields_use_display_name():
+    from phone_agent.memory.graph_store import GraphStore
+
+    canonical, display, domain = GraphStore._canonical_app_fields("jd")
+    assert canonical == "jd"
+    assert display == "京东"
+    assert domain == "shopping"
+    canonical2, display2, _ = GraphStore._canonical_app_fields("京东")
+    assert (canonical2, display2) == ("jd", "京东")

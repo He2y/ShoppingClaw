@@ -141,6 +141,18 @@ class AppRegistry:
         record = self.resolve(value)
         return record.app_id if record else _slugify(value)
 
+    def display_name(self, raw: str) -> str:
+        """Primary human-readable name (e.g. 京东), used for app_raw alignment.
+
+        Graph nodes store app=canonical_id for queries and app_raw=display
+        name for human browsing - mixed raw values (jd vs 京东) made Neo4j
+        Browser filtering inconsistent.
+        """
+        record = self.resolve(raw)
+        if record and record.display_names:
+            return record.display_names[0]
+        return (raw or "").strip()
+
     def domain_of(self, raw: str) -> str:
         record = self.resolve(raw)
         return record.domain if record else _UNKNOWN_DOMAIN

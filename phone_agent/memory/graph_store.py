@@ -393,17 +393,20 @@ class GraphStore:
 
     @staticmethod
     def _canonical_app_fields(value: Any) -> tuple[Optional[str], Optional[str], Optional[str]]:
-        """Return (canonical_app, raw_app, domain) for node writes.
+        """Return (canonical_app, display_app, domain) for node writes.
 
         Canonicalization happens at this storage boundary only - PageState
-        and runtime observations keep the raw value. ``None`` passthrough
-        preserves the coalesce() semantics of partial metadata updates.
+        and runtime observations keep the raw value. ``app_raw`` stores the
+        registry's primary display name (京东, not jd) so Neo4j Browser
+        filtering stays consistent regardless of which alias the write path
+        happened to carry. ``None`` passthrough preserves the coalesce()
+        semantics of partial metadata updates.
         """
         raw = str(value or "").strip()
         if not raw:
             return None, None, None
         registry = get_default_app_registry()
-        return registry.canonical_id(raw), raw, registry.domain_of(raw)
+        return registry.canonical_id(raw), registry.display_name(raw), registry.domain_of(raw)
 
     def get_page_type_coverage(self, app: str = "") -> Dict[str, int]:
         """Return canonical page coverage counts grouped by page_type."""
