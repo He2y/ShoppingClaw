@@ -171,6 +171,14 @@ def main() -> int:
         default=None,
         help="AppProfile app_id to load for coverage/safety overrides (e.g. jd, pinduoduo).",
     )
+    parser.add_argument(
+        "--focus",
+        default=None,
+        help=(
+            "本轮探索焦点: 页面类型或转移, 逗号分隔 (e.g. 'category,my_account' 或 "
+            "'search_result->filter_panel'). 缺省时自动从历史覆盖缺口中选取."
+        ),
+    )
     args = parser.parse_args()
 
     set_device_type(DeviceType(args.device_type))
@@ -239,6 +247,7 @@ def main() -> int:
             human_gate=human_gate,
             wait_stable=not args.no_wait_stable,
             app_profile=app_profile,
+            focus=args.focus,
         )
         trajectories = explorer.explore()
         report = {

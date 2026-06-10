@@ -102,6 +102,7 @@ class OfflineExplorer:
         save_screenshots: bool = True,
         direct_import: bool = False,
         app_profile: Any | None = None,
+        focus: str | None = None,
     ):
         self.app_name = app_name
         self.device = device_factory
@@ -153,6 +154,22 @@ class OfflineExplorer:
         self.coverage_targets = coverage_targets or coverage_from_schema(self.schema, profile=app_profile)
         self.coverage_report = CoverageReport((), self.coverage_targets.page_types, (), self.coverage_targets.transitions)
         self.last_import_result = None
+
+        # Session goal: one focused sub-target per round. Previous rounds'
+        # coverage (saved artifacts in storage_dir) decides what's still
+        # missing; the round ends (and saves) as soon as the goal is reached.
+        from .task_builder import describe_session_goal, load_historical_coverage, select_session_goal
+
+        hist_pages, hist_transitions = load_historical_coverage(self.storage_dir)
+        self.session_goal = select_session_goal(
+            self.coverage_targets,
+            hist_pages,
+            hist_transitions,
+            focus=focus,
+        )
+        goal_note = describe_session_goal(self.session_goal)
+        if goal_note and goal_note not in self.task_description:
+            self.task_description = f"{self.task_description}\n{goal_note}"
 
         self.semantics_extractor = ScreenSemanticsExtractor(schema_name=self._schema_name)
         self.edge_hypothesis_generator = EdgeHypothesisGenerator(schema_name=self._schema_name)
@@ -231,13 +248,27 @@ class OfflineExplorer:
         self.device.launch_app(self.app_name, self.device_id)
         time.sleep(4)
 
-        traj = self._exploration_loop()
+        # Interrupt-safe: hours of device time must survive Ctrl+C and crashes.
+        self._current_traj = Trajectory(task=self.task_description, app=self.app_name)
+        interrupted = False
+        try:
+            traj = self._exploration_loop()
+        except KeyboardInterrupt:
+            interrupted = True
+            traj = self._current_traj
+            traj.success = False
+            self._log("\n  ⚠ 探索被中断 (Ctrl+C) — 正在保存已采集的部分数据...")
+        except Exception as exc:
+            traj = self._current_traj
+            traj.success = False
+            self._log(f"\n  ⚠ 探索异常终止 ({exc}) — 正在保存已采集的部分数据...")
         self.trajectories = [traj]
 
         self._save_results(traj)
 
         self._log(f"\n{'='*60}")
-        self._log(f"  Done: {len(self.discovered_pages)} unique pages discovered")
+        status = "Interrupted" if interrupted else "Done"
+        self._log(f"  {status}: {len(self.discovered_pages)} unique pages discovered")
         self._log(f"  {len(traj.steps)} exploration steps taken")
         self._log(f"{'='*60}\n")
         return self.trajectories
@@ -250,7 +281,8 @@ class OfflineExplorer:
             return self._exploration_loop_action_first()
 
         task_desc = self.task_description
-        traj = Trajectory(task=task_desc, app=self.app_name)
+        traj = getattr(self, "_current_traj", None) or Trajectory(task=task_desc, app=self.app_name)
+        self._current_traj = traj
         context: List[Dict[str, Any]] = []
 
         system_prompt = _build_exploration_system_prompt(task_desc)
@@ -322,7 +354,7 @@ class OfflineExplorer:
 
             traj.add_step(page_info, action, response.thinking)
 
-            if self.coverage_report.complete:
+            if self.coverage_report.complete or self._session_goal_reached():
                 self._log("  Coverage target reached; stopping exploration.")
                 break
 
@@ -376,7 +408,8 @@ class OfflineExplorer:
         - trap_edges / avoid-hint injection
         """
         task_desc = self.task_description
-        traj = Trajectory(task=task_desc, app=self.app_name)
+        traj = getattr(self, "_current_traj", None) or Trajectory(task=task_desc, app=self.app_name)
+        self._current_traj = traj
         system_message = MessageBuilder.create_system_message(_build_exploration_system_prompt(task_desc))
         current_page: Optional[PageInfo] = None
         prev_screenshot_hash = ""
@@ -470,7 +503,7 @@ class OfflineExplorer:
 
             if current_page is None or current_page.screenshot_hash != hashlib.md5(screenshot.base64_data.encode()).hexdigest():
                 current_page = self._classify_page_info(screenshot, current_app or self.app_name, step_idx + 1)
-            if step_idx > 0 and self.coverage_report.complete:
+            if step_idx > 0 and (self.coverage_report.complete or self._session_goal_reached()):
                 self._log("  Coverage target reached; stopping exploration.")
                 break
 
@@ -595,7 +628,7 @@ class OfflineExplorer:
                 self._log(f"  VLM finished: {action.get('message', '')[:100]}")
                 break
 
-            if self.coverage_report.complete:
+            if self.coverage_report.complete or self._session_goal_reached():
                 self._log("  Coverage target reached; stopping exploration.")
                 break
 
@@ -972,6 +1005,22 @@ class OfflineExplorer:
         self.transitions.append(trans_item)
         self._update_coverage_report()
         return True
+
+    def _session_goal_reached(self) -> bool:
+        """True when this round's focused sub-goal is fully covered (this run)."""
+        goal = getattr(self, "session_goal", None)
+        if goal is None or not goal.transitions:
+            return False
+        covered = set()
+        for item in self.transitions:
+            source_type = str(item.get("from") or "").partition(":")[0]
+            target_type = str(item.get("to") or "").partition(":")[0]
+            if source_type and target_type:
+                covered.add((source_type, target_type))
+        if all(pair in covered for pair in goal.transitions):
+            self._log("  [session goal] 本轮焦点转移已全部覆盖")
+            return True
+        return False
 
     def _update_coverage_report(self) -> CoverageReport:
         if not hasattr(self, "coverage_targets"):

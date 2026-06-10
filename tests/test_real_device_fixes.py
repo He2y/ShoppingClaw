@@ -256,3 +256,78 @@ def test_captcha_without_gate_falls_back_to_dismissal():
     handler = _make_captcha_handler(None, [after_back])
     outcome = handler.handle(captcha_page, 100, 100, "src")
     assert outcome.status in {"resolved", "needs_restart"}
+
+
+# ── fourth issue: no round-end mechanism, Ctrl+C lost all data ──
+
+
+def test_select_session_goal_picks_uncovered_skeleton_first():
+    from phone_agent.memory.exploration.task_builder import select_session_goal
+    from phone_agent.memory.exploration.types import CoverageTarget
+
+    coverage = CoverageTarget(
+        page_types=("home", "search_input", "search_result", "category"),
+        transitions=(
+            ("home", "search_input"),
+            ("search_input", "search_result"),
+            ("home", "category"),
+        ),
+    )
+    # First round: nothing covered → skeleton head
+    goal = select_session_goal(coverage, set(), set(), max_edges=2)
+    assert goal.transitions == (("home", "search_input"), ("search_input", "search_result"))
+    # Second round: skeleton done → remaining gap
+    covered = {("home", "search_input"), ("search_input", "search_result")}
+    goal2 = select_session_goal(coverage, set(), covered, max_edges=2)
+    assert goal2.transitions == (("home", "category"),)
+
+
+def test_select_session_goal_honors_focus():
+    from phone_agent.memory.exploration.task_builder import select_session_goal
+    from phone_agent.memory.exploration.types import CoverageTarget
+
+    coverage = CoverageTarget(
+        page_types=("home", "category", "my_account"),
+        transitions=(("home", "category"), ("home", "my_account")),
+    )
+    goal = select_session_goal(coverage, set(), set(), focus="category")
+    assert goal.transitions == (("home", "category"),)
+    goal2 = select_session_goal(coverage, set(), set(), focus="home->my_account")
+    assert ("home", "my_account") in goal2.transitions
+
+
+def test_load_historical_coverage_merges_previous_runs(tmp_path):
+    import json as _json
+    from phone_agent.memory.exploration.task_builder import load_historical_coverage
+
+    (tmp_path / "jd_explore_transitions_1.json").write_text(_json.dumps({
+        "coverage": {
+            "covered_page_types": ["home", "search_input"],
+            "covered_transitions": [["home", "search_input"]],
+        }
+    }), encoding="utf-8")
+    (tmp_path / "jd_explore_transitions_2.json").write_text(_json.dumps({
+        "coverage": {
+            "covered_page_types": ["search_result"],
+            "covered_transitions": [["search_input", "search_result"]],
+        }
+    }), encoding="utf-8")
+    pages, transitions = load_historical_coverage(tmp_path)
+    assert pages == {"home", "search_input", "search_result"}
+    assert transitions == {("home", "search_input"), ("search_input", "search_result")}
+
+
+def test_session_goal_reached_ends_round():
+    from phone_agent.memory.exploration.explorer import OfflineExplorer
+    from phone_agent.memory.exploration.types import CoverageTarget
+
+    explorer = object.__new__(OfflineExplorer)
+    explorer.session_goal = CoverageTarget(
+        page_types=("home", "search_input"),
+        transitions=(("home", "search_input"),),
+    )
+    explorer.transitions = []
+    explorer.verbose = False
+    assert not explorer._session_goal_reached()
+    explorer.transitions = [{"from": "home:首页", "action": {}, "to": "search_input:搜索"}]
+    assert explorer._session_goal_reached()
