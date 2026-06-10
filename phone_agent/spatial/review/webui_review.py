@@ -298,11 +298,18 @@ def _build_app(storage_root: str = "memory_db/staging") -> Any:
                     graph_store.close()
                 except Exception:
                     pass
-        return (
-            f"✅ 已应用: {result.get('approved',0)} 条采纳, "
-            f"{result.get('rejected',0)} 条拒绝, "
-            f"persisted={result.get('persisted', False)}"
+        report = result.get("promote_report") or {}
+        promoted = report.get("transitions_promoted", "?")
+        filtered = report.get("transitions_filtered", 0)
+        text = (
+            f"✅ 已应用: 批准 {result.get('approved', 0)} 条 / 拒绝 {result.get('rejected', 0)} 条；"
+            f"实际入图 {promoted} 条, persisted={result.get('persisted', False)}"
         )
+        if filtered:
+            text += f"\n⚠️ 有 {filtered} 条批准的边在入图阶段被内部规则过滤，请检查日志"
+        if not result.get("persisted", False):
+            text += "\n⚠️ Neo4j 未连接，本次未持久化"
+        return text
 
     def _img_path(batch_dir: Path | None, rel: str) -> str | None:
         if not batch_dir or not rel:
