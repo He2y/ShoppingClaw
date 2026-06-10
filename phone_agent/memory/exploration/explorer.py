@@ -16,9 +16,13 @@ from phone_agent.spatial.hypothesis import EdgeHypothesisGenerator
 from phone_agent.spatial.semantics import ScreenSemanticsExtractor
 
 from .classifier import PageClassifier
+from .confidence import PageConfidence, assess_page_confidence
+from .human_gate import HumanGate
+from .interference import InterferenceHandler, InterferencePolicy
 from .page_evidence import infer_page_type_from_reasoning
 from .prompts import _build_exploration_system_prompt
 from .safety import SafetyPolicy
+from .stability import StabilityResult, wait_for_stable_screen
 from .task_builder import build_default_task, coverage_from_schema
 from .transition_rules import TransitionRuleEngine
 from .types import (
@@ -34,6 +38,7 @@ from .types import (
     _SPEC_TRIGGER_TOKENS,
     _UNSAFE_ACTION_TOKENS,
 )
+from .watchdog import ProgressWatchdog, StuckDetector, WatchdogConfig
 
 
 def _get_default_safety() -> SafetyPolicy:
@@ -89,6 +94,11 @@ class OfflineExplorer:
         verbose: bool = True,
         schema_name: str | None = None,
         transition_policy: str = "strict",
+        *,
+        interference_policy: InterferencePolicy | None = None,
+        watchdog_config: WatchdogConfig | None = None,
+        human_gate: HumanGate | None = None,
+        wait_stable: bool = True,
     ):
         self.app_name = app_name
         self.device = device_factory
@@ -103,6 +113,7 @@ class OfflineExplorer:
         self.classifier_timing = classifier_timing
         self.verbose = verbose
         self.active_exploration = active_exploration
+        self.wait_stable = wait_stable
 
         # Resolve schema
         resolved_schema_name = schema_name
@@ -154,6 +165,36 @@ class OfflineExplorer:
 
         # Open-vocabulary page type proposals
         self.page_type_proposals: Dict[str, Dict[str, Any]] = {}
+
+        # Phase 4: interference, watchdog, trap tracking
+        self.interference_events: List[Dict[str, Any]] = []
+        self.interference_log: List[Dict[str, Any]] = []  # interference-rejected transitions
+        self.trap_edges: List[Dict[str, Any]] = []
+        self.transition_observations: Dict[tuple, int] = {}  # (src_type, action_intent, tgt_type) → count
+        self._restart_count: int = 0
+
+        # Phase 4 component setup
+        _wdog_cfg = watchdog_config or WatchdogConfig()
+        self.watchdog = StuckDetector(_wdog_cfg)
+        self.progress_watchdog = ProgressWatchdog(_wdog_cfg)
+        self.interference_policy = interference_policy or InterferencePolicy()
+
+        def _capture_fn() -> Any:
+            return self.device.get_screenshot(self.device_id)
+
+        def _classify_fn(screenshot: Any, app: str, step: int) -> Any:
+            return self._classify_page_info(screenshot, app, step)
+
+        self.interference = InterferenceHandler(
+            policy=self.interference_policy,
+            space=self.space,
+            action_handler=self.action_handler,
+            classify_fn=_classify_fn,
+            capture_fn=_capture_fn,
+            log_fn=self._log,
+            human_gate=human_gate,
+            vlm_close_fn=self._vlm_find_close_button,
+        )
 
     # ── Top-Level Entry ────────────────────────────────────────
 
@@ -303,7 +344,20 @@ class OfflineExplorer:
         return traj
 
     def _exploration_loop_action_first(self) -> Trajectory:
-        """Run exploration with action execution before post-action classification."""
+        """Run exploration with action execution before post-action classification.
+
+        Phase 4 additions:
+        - StuckDetector: phash ring buffer; escalation: Back → Back → relaunch
+        - Foreground drift detection: if current app ≠ target, press Back; relaunch if persists
+        - Interference landing handling via InterferenceHandler
+        - Stability-based wait (wait_for_stable_screen) instead of fixed sleep(2)
+        - Trap-token pre-filter before action execution
+        - ProgressWatchdog: relaunch if no new coverage for no_progress_limit steps
+        Phase 4.5 additions:
+        - assess_page_confidence for each landing page
+        - Transient landings rejected from transitions
+        - trap_edges / avoid-hint injection
+        """
         task_desc = self.task_description
         traj = Trajectory(task=task_desc, app=self.app_name)
         system_message = MessageBuilder.create_system_message(_build_exploration_system_prompt(task_desc))
@@ -311,6 +365,12 @@ class OfflineExplorer:
         prev_screenshot_hash = ""
         last_step_note = "No action has been verified yet."
         pending_transition: Optional[Dict[str, Any]] = None
+        pending_confidence: Optional[PageConfidence] = None  # Phase 4.5
+        restarts = 0
+        _wdog_cfg = getattr(self.watchdog, "_config", WatchdogConfig())
+
+        def _capture_fn() -> Any:
+            return self.device.get_screenshot(self.device_id)
 
         for step_idx in range(self.max_steps):
             screenshot = self.device.get_screenshot(self.device_id)
@@ -319,6 +379,71 @@ class OfflineExplorer:
             if step_idx > 0 and prev_screenshot_hash and cur_hash == prev_screenshot_hash:
                 self._log("  ⚠ 屏幕无变化，上次操作可能未生效")
             prev_screenshot_hash = cur_hash
+
+            # Phase 4: StuckDetector
+            wd = getattr(self, "watchdog", None)
+            if wd is not None:
+                wd.observe(screenshot.base64_data)
+                if wd.is_stuck():
+                    self._log("  [watchdog] stuck detected — escalating")
+                    # Level 1: Back
+                    self._rollback_from_risky_page(screenshot.width, screenshot.height)
+                    screenshot = self.device.get_screenshot(self.device_id)
+                    wd.observe(screenshot.base64_data)
+                    if wd.is_stuck():
+                        # Level 2: another Back
+                        self._rollback_from_risky_page(screenshot.width, screenshot.height)
+                        screenshot = self.device.get_screenshot(self.device_id)
+                        wd.observe(screenshot.base64_data)
+                        if wd.is_stuck():
+                            # Level 3: relaunch
+                            ok = self._escape_and_restart("stuck detector")
+                            if not ok:
+                                traj.success = True
+                                break
+                            restarts += 1
+                            pending_transition = None
+                            current_page = None
+                            pending_confidence = None
+                            continue
+
+            # Phase 4: foreground drift check
+            if current_app and current_app.lower() and step_idx > 0:
+                try:
+                    from phone_agent.spatial.app_registry import get_default_app_registry
+                    reg = get_default_app_registry()
+                    target_canon = reg.canonical_id(self.app_name)
+                    current_canon = reg.canonical_id(current_app)
+                    is_system = any(
+                        tok in current_app.lower()
+                        for tok in ("home", "launcher", "systemui", "settings")
+                    )
+                    if not is_system and current_canon != target_canon:
+                        self._log(
+                            f"  [watchdog] foreground drift: expected={self.app_name} "
+                            f"got={current_app} — pressing Back"
+                        )
+                        self._rollback_from_risky_page(screenshot.width, screenshot.height)
+                        screenshot = self.device.get_screenshot(self.device_id)
+                        current_app2 = self.device.get_current_app(self.device_id)
+                        if current_app2:
+                            canon2 = reg.canonical_id(current_app2)
+                            is_system2 = any(
+                                tok in current_app2.lower()
+                                for tok in ("home", "launcher", "systemui", "settings")
+                            )
+                            if not is_system2 and canon2 != target_canon:
+                                ok = self._escape_and_restart("foreground drift")
+                                if not ok:
+                                    traj.success = True
+                                    break
+                                restarts += 1
+                                pending_transition = None
+                                current_page = None
+                                pending_confidence = None
+                                continue
+                except Exception as exc:
+                    self._log(f"  [watchdog] foreground check error: {exc}")
 
             if current_page is None or current_page.screenshot_hash != hashlib.md5(screenshot.base64_data.encode()).hexdigest():
                 current_page = self._classify_page_info(screenshot, current_app or self.app_name, step_idx + 1)
@@ -330,6 +455,9 @@ class OfflineExplorer:
             discovered_summary = self._build_discovered_summary()
             current_state_note = self._build_current_state_note(current_page, last_step_note)
             active_frontier_hint = self._build_active_frontier_hint(current_page)
+
+            # Phase 4: inject trap-avoid hint into task_text
+            trap_hint = self._build_trap_avoid_hint()
             if step_idx == 0:
                 task_text = (
                     f"【本次任务】{task_desc}\n"
@@ -348,6 +476,9 @@ class OfflineExplorer:
                 )
             if active_frontier_hint:
                 task_text = f"{task_text}\n\n{active_frontier_hint}"
+            if trap_hint:
+                task_text = f"{task_text}\n\n{trap_hint}"
+
             request_context = [
                 system_message,
                 MessageBuilder.create_user_message(text=task_text, image_base64=screenshot.base64_data),
@@ -369,8 +500,11 @@ class OfflineExplorer:
             if action.get("_metadata") == "finish" and str(action.get("message") or "").startswith("Failed to parse action"):
                 reasoning_for_repair = f"{response.thinking}\n{response.action}"
             inferred_page_type = OfflineExplorer._infer_page_type_from_reasoning(reasoning_for_repair)
+            inferred_str_raw: Optional[str] = None  # Phase 4.5: pure str for confidence
             current_pt_str = _page_type_str(current_page)
             inferred_str = inferred_page_type.value if hasattr(inferred_page_type, "value") else inferred_page_type
+            if inferred_str:
+                inferred_str_raw = str(inferred_str)
             if inferred_str and inferred_str != current_pt_str:
                 self._log(
                     f"  belief repair: classifier={current_pt_str} "
@@ -383,8 +517,10 @@ class OfflineExplorer:
                 recorded, last_step_note = self._finalize_pending_transition(
                     pending_transition,
                     current_page,
+                    landing_confidence=pending_confidence,
                 )
                 pending_transition = None
+                pending_confidence = None
                 if not recorded and self._should_stop_after_rejected_transition(self.last_rejection_reason):
                     self._log(f"  stop exploration after rejected transition: {self.last_rejection_reason}")
                     break
@@ -399,6 +535,23 @@ class OfflineExplorer:
             if self.coverage_report.complete:
                 self._log("  Coverage target reached; stopping exploration.")
                 break
+
+            # Phase 4: trap-token pre-filter
+            if self._action_has_trap_token(action, response.thinking):
+                self._log("  [trap] action blocked by trap-token pre-filter; skipping.")
+                current_pt = _page_type_str(current_page)
+                element_desc = json.dumps(action.get("element", ""), ensure_ascii=False)
+                getattr(self, "trap_edges", []).append({
+                    "semantic_target": element_desc,
+                    "page": current_page.state_key() if current_page else "",
+                    "reason": "trap_token",
+                })
+                last_step_note = (
+                    f"Last action blocked by trap-token on {current_pt}. "
+                    "Choose a different safe action."
+                )
+                current_page = None
+                continue
 
             if not self._is_safe_action(current_page, action, response.thinking):
                 self._log("  Unsafe exploration action blocked; recording page only.")
@@ -422,31 +575,121 @@ class OfflineExplorer:
                 current_page = None
                 continue
 
-            time.sleep(2)
+            # Phase 4.5a: stability-based wait (replaces fixed sleep(2))
+            _stability_result: Optional[StabilityResult] = None
+            if getattr(self, "wait_stable", False):
+                try:
+                    next_screenshot, _stability_result = wait_for_stable_screen(_capture_fn)
+                except Exception as exc:
+                    self._log(f"  [stability] wait_for_stable_screen error: {exc}")
+                    time.sleep(2)
+                    next_screenshot = self.device.get_screenshot(self.device_id)
+            else:
+                time.sleep(2)
+                next_screenshot = self.device.get_screenshot(self.device_id)
+
             if not result.success:
                 last_step_note = f"Last action failed: {result.message}. Do not repeat the same action blindly."
                 continue
 
-            next_screenshot = self.device.get_screenshot(self.device_id)
             next_app = self.device.get_current_app(self.device_id) or self.app_name
             next_page = self._classify_page_info(next_screenshot, next_app, step_idx + 1, prefix="post-action")
+
+            # Phase 4.5b: assess confidence of landing page
+            _stable_flag = (_stability_result.stable if _stability_result is not None else True)
+            landing_confidence = assess_page_confidence(
+                next_page,
+                self.schema,
+                reasoning_inferred=inferred_str_raw,
+                stable=_stable_flag,
+            )
+            if landing_confidence.level != "confident":
+                self._log(
+                    f"  [confidence] landing={landing_confidence.level} "
+                    f"signals={landing_confidence.signals}"
+                )
+
+            # Phase 4: interference landing check
+            source_key = current_page.state_key() if current_page else ""
+            interference_handler = getattr(self, "interference", None)
+            if interference_handler is not None and interference_handler.is_interference(next_page):
+                self._log(
+                    f"  [interference] landing on {_page_type_str(next_page)} — handling"
+                )
+                # Log to interference_log (not transitions)
+                getattr(self, "interference_log", []).append({
+                    "from": source_key,
+                    "action": action,
+                    "to": next_page.state_key(),
+                    "reason": "interference",
+                })
+                outcome = interference_handler.handle(
+                    next_page,
+                    next_screenshot.width,
+                    next_screenshot.height,
+                    source_page_key=source_key,
+                )
+                for evt in outcome.events:
+                    getattr(self, "interference_events", []).append(evt.to_dict())
+
+                if outcome.status in ("resolved", "human_resumed"):
+                    # Human gate: caller must clear pending_transition
+                    current_page = outcome.resumed_page
+                    pending_transition = None
+                    pending_confidence = None
+                    self._log(f"  [interference] resolved → resumed at {_page_type_str(current_page)}")
+                    continue
+                else:
+                    # needs_restart / unresolved
+                    ok = self._escape_and_restart("interference unresolved")
+                    if not ok:
+                        traj.success = True
+                        break
+                    restarts += 1
+                    pending_transition = None
+                    pending_confidence = None
+                    current_page = None
+                    continue
+
             pending_transition = {
-                "from_key": current_page.state_key(),
+                "from_key": source_key,
                 "action": action,
             }
+            pending_confidence = landing_confidence  # Phase 4.5
             last_step_note = (
-                f"Last action executed from {current_page.state_key()}; raw post-action "
+                f"Last action executed from {source_key}; raw post-action "
                 f"classifier saw {_page_type_str(next_page)}:{next_page.semantic_summary}. "
                 "The next step must verify the actual landing page before planning."
             )
             current_page = next_page
+
+            # Phase 4c: progress watchdog
+            pw = getattr(self, "progress_watchdog", None)
+            if pw is not None:
+                coverage_key_count = (
+                    len(getattr(self, "transitions", []))
+                    + len(getattr(self, "discovered_pages", {}))
+                )
+                pw.observe(coverage_key_count)
+                if pw.is_wandering():
+                    self._log("  [watchdog] no coverage progress — restarting")
+                    ok = self._escape_and_restart("no coverage progress")
+                    if not ok:
+                        traj.success = True
+                        break
+                    restarts += 1
+                    pending_transition = None
+                    pending_confidence = None
+                    current_page = None
 
         else:
             self._log(f"  Max steps ({self.max_steps}) reached")
             traj.success = True
 
         if pending_transition and current_page is not None:
-            _, last_step_note = self._finalize_pending_transition(pending_transition, current_page)
+            _, last_step_note = self._finalize_pending_transition(
+                pending_transition, current_page, landing_confidence=pending_confidence
+            )
 
         return traj
 
@@ -570,12 +813,13 @@ class OfflineExplorer:
         self,
         pending_transition: Dict[str, Any],
         current_page: PageInfo,
+        landing_confidence: Optional["PageConfidence"] = None,
     ) -> tuple[bool, str]:
         self._record_page(current_page)
         from_key = str(pending_transition.get("from_key") or "")
         action = pending_transition.get("action") or {}
         to_key = current_page.state_key()
-        recorded = self._record_transition(from_key, action, to_key)
+        recorded = self._record_transition(from_key, action, to_key, landing_confidence)
         self._update_coverage_report()
         if recorded:
             note = f"Last verified transition accepted: {from_key} -> {to_key}."
@@ -587,8 +831,19 @@ class OfflineExplorer:
             )
         return recorded, note
 
-    def _record_transition(self, from_key: str, action: Dict[str, Any], to_key: str) -> bool:
-        """Record a page transition: from_page → action → to_page."""
+    def _record_transition(
+        self,
+        from_key: str,
+        action: Dict[str, Any],
+        to_key: str,
+        landing_confidence: Optional["PageConfidence"] = None,
+    ) -> bool:
+        """Record a page transition: from_page → action → to_page.
+
+        Phase 4.5c: increments transition_observations counter; tags saved
+        transitions with observations count and confidence level; routes
+        transient-landing transitions to rejected_transitions.
+        """
         source = self.discovered_pages.get(from_key)
         target = self.discovered_pages.get(to_key)
 
@@ -620,11 +875,38 @@ class OfflineExplorer:
             self._log(f"  rejected transition: {from_key} -> {to_key}; {rejection}")
             return False
 
-        self.transitions.append({
+        # Phase 4.5c: update transition_observations
+        action_intent = str(action.get("action") or action.get("action_type") or "")
+        obs_key = (source_pt, action_intent, target_pt)
+        obs_count = getattr(self, "transition_observations", {})
+        obs_count[obs_key] = obs_count.get(obs_key, 0) + 1
+        self.transition_observations = obs_count
+        n_obs = obs_count[obs_key]
+
+        conf_level = landing_confidence.level if landing_confidence is not None else "confident"
+
+        trans_item: Dict[str, Any] = {
             "from": from_key,
             "action": action,
             "to": to_key,
-        })
+            "observations": n_obs,
+            "confidence": conf_level,
+        }
+
+        if conf_level == "transient":
+            # Route to rejected_transitions — transient landing is too unreliable
+            trans_item["reason"] = "low-confidence landing page"
+            trans_item["low_confidence"] = True
+            getattr(self, "rejected_transitions", []).append(trans_item)
+            self._log(
+                f"  rejected transition (transient landing): {from_key} -> {to_key}"
+            )
+            return False
+
+        if conf_level == "low_confidence":
+            trans_item["low_confidence"] = True
+
+        self.transitions.append(trans_item)
         self._update_coverage_report()
         return True
 
@@ -766,6 +1048,117 @@ class OfflineExplorer:
         lines.append("After action, stop before payment, order submission, login, or address confirmation.")
         return "\n".join(lines)
 
+    # ── Phase 4 helpers ─────────────────────────────────────────
+
+    def _action_has_trap_token(self, action: Dict[str, Any], reasoning: str = "") -> bool:
+        """Return True if the action or reasoning contains a trap token."""
+        safety = getattr(self, "safety", None)
+        if safety is None:
+            return False
+        trap_tokens = getattr(safety, "trap_tokens", ())
+        if not trap_tokens:
+            return False
+        action_text = json.dumps(action, ensure_ascii=False).lower()
+        for token in trap_tokens:
+            if token.lower() in action_text:
+                return True
+        # Also check element description in reasoning
+        if reasoning:
+            reasoning_lower = reasoning.lower()
+            for token in trap_tokens:
+                if token.lower() in reasoning_lower:
+                    return True
+        return False
+
+    def _build_trap_avoid_hint(self) -> str:
+        """Build a short avoid-hint based on recent trap edges."""
+        trap_edges = getattr(self, "trap_edges", [])
+        if not trap_edges:
+            return ""
+        recent_targets = []
+        seen: set[str] = set()
+        for edge in reversed(trap_edges[-10:]):
+            tgt = str(edge.get("semantic_target", ""))
+            if tgt and tgt not in seen:
+                seen.add(tgt)
+                recent_targets.append(tgt)
+            if len(recent_targets) >= 3:
+                break
+        if not recent_targets:
+            return ""
+        targets_str = "、".join(recent_targets)
+        return f"[注意] 请避免点击以下已知陷阱目标：{targets_str}"
+
+    def _vlm_find_close_button(
+        self, screenshot_b64: str, w: int, h: int, hint: str = ""
+    ) -> tuple[int, int] | None:
+        """Use the main VLM to find a close-button tap coordinate in a dialog.
+
+        Returns (x, y) tap coords or None on any error / no result.
+        """
+        hint_text = f" {hint}" if hint else ""
+        micro_prompt = (
+            f"这是一个弹窗截图。{hint_text}"
+            "请输出关闭/退出该弹窗的Tap坐标，格式为：do(action=\"Tap\", element=[x,y])。"
+            "只输出操作，不要其他文字。"
+        )
+        try:
+            context = [
+                MessageBuilder.create_user_message(
+                    text=micro_prompt, image_base64=screenshot_b64
+                )
+            ]
+            response = self.vlm.request(context)
+            action = parse_action(response.action)
+            element = action.get("element")
+            if isinstance(element, list) and len(element) >= 2:
+                if isinstance(element[0], list):
+                    element = element[0]
+                x = int(float(element[0]))
+                y = int(float(element[1]))
+                return (x, y)
+        except Exception as exc:
+            self._log(f"  [vlm_find_close_button] error: {exc}")
+        return None
+
+    def _escape_and_restart(self, reason: str) -> bool:
+        """Attempt to escape the current stuck/wandering state by restarting the app.
+
+        Returns:
+            True  — restart succeeded; exploration may continue.
+            False — restart budget exhausted; exploration should end.
+        """
+        wdog_cfg = getattr(self, "watchdog", None)
+        wdog_cfg_obj: WatchdogConfig = WatchdogConfig()
+        if wdog_cfg is not None and hasattr(wdog_cfg, "_config"):
+            wdog_cfg_obj = wdog_cfg._config
+
+        max_restarts = wdog_cfg_obj.max_restarts
+        restarts = getattr(self, "_restart_count", 0)
+
+        if restarts >= max_restarts:
+            self._log(
+                f"  [escape] restart budget exhausted ({restarts}/{max_restarts}); "
+                f"ending trajectory. reason={reason}"
+            )
+            return False
+
+        self._log(f"  [escape] restarting app due to: {reason} (restart {restarts + 1}/{max_restarts})")
+        try:
+            self.device.launch_app(self.app_name, self.device_id)
+            time.sleep(4)
+        except Exception as exc:
+            self._log(f"  [escape] launch_app failed: {exc}")
+
+        self._restart_count = restarts + 1
+        wd = getattr(self, "watchdog", None)
+        if wd is not None:
+            wd.reset()
+        pw = getattr(self, "progress_watchdog", None)
+        if pw is not None:
+            pw.reset_after_restart()
+        return True
+
     def _log(self, msg: str):
         if self.verbose:
             print(msg)
@@ -824,7 +1217,7 @@ class OfflineExplorer:
 
         trans_path = None
         if self.transitions or self.rejected_transitions:
-            transitions_data = {
+            transitions_data: Dict[str, Any] = {
                 "app": self.app_name,
                 "task": self.task_description,
                 "total_transitions": len(self.transitions),
@@ -834,7 +1227,38 @@ class OfflineExplorer:
             }
             proposals = getattr(self, "page_type_proposals", {})
             if proposals:
-                transitions_data["page_type_proposals"] = proposals  # type: ignore[assignment]
+                transitions_data["page_type_proposals"] = proposals
+
+            # Phase 4: interference + trap metadata
+            interference_events = getattr(self, "interference_events", [])
+            if interference_events:
+                transitions_data["interference_events"] = interference_events
+
+            trap_edges = getattr(self, "trap_edges", [])
+            if trap_edges:
+                transitions_data["trap_edges"] = trap_edges
+
+            interference_log = getattr(self, "interference_log", [])
+            if interference_log:
+                transitions_data["interference_log"] = interference_log
+
+            # Aggregate interference sources
+            src_counts: Dict[str, int] = {}
+            for evt in interference_events:
+                src_pt = evt.get("page_type", "unknown") if isinstance(evt, dict) else "unknown"
+                src_counts[src_pt] = src_counts.get(src_pt, 0) + 1
+            if src_counts:
+                transitions_data["interference_sources"] = src_counts
+
+            # Phase 4.5c: transition_observations summary (convert tuple keys to strings)
+            obs = getattr(self, "transition_observations", {})
+            if obs:
+                obs_summary = {
+                    f"{k[0]}|{k[1]}|{k[2]}": v
+                    for k, v in obs.items()
+                }
+                transitions_data["transition_observations"] = obs_summary
+
             trans_path = self.storage_dir / f"{self.app_name}_explore_transitions_{timestamp}.json"
             with open(trans_path, "w", encoding="utf-8") as f:
                 json.dump(transitions_data, f, ensure_ascii=False, indent=2)

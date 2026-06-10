@@ -10,7 +10,10 @@ from phone_agent.device_factory import DeviceType, get_device_factory, set_devic
 from phone_agent.model.client import ModelClient, ModelConfig
 
 from .explorer import OfflineExplorer, _build_taobao_task
+from .human_gate import ConsoleHumanGate
+from .interference import InterferencePolicy
 from .task_builder import build_default_task
+from .watchdog import WatchdogConfig
 
 
 def _resolve_default_task(schema_name: str | None) -> str:
@@ -69,6 +72,21 @@ def main() -> int:
         help="Transition validation policy: strict (default), schema_guided, permissive.",
     )
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument(
+        "--pause-on-login",
+        action="store_true",
+        help="Pause and prompt the user when a login wall is encountered.",
+    )
+    parser.add_argument(
+        "--no-human",
+        action="store_true",
+        help="Force non-interactive mode (skip all HumanGate prompts).",
+    )
+    parser.add_argument(
+        "--no-wait-stable",
+        action="store_true",
+        help="Disable stability-based screen wait after actions (use fixed sleep instead).",
+    )
     args = parser.parse_args()
 
     set_device_type(DeviceType(args.device_type))
@@ -78,6 +96,17 @@ def main() -> int:
             from ..graph_store import GraphStore
 
             graph_store = GraphStore(database=args.database)
+
+        # Phase 4: interference policy + human gate
+        login_action = "pause_for_human" if args.pause_on_login else "back_out"
+        interference_policy = InterferencePolicy(login_action=login_action)
+        human_gate = None
+        if args.pause_on_login:
+            human_gate = ConsoleHumanGate(
+                timeout_s=interference_policy.pause_timeout_s,
+                interactive=not args.no_human,
+            )
+
         explorer = OfflineExplorer(
             app_name=args.app,
             device_factory=get_device_factory(),
@@ -106,6 +135,10 @@ def main() -> int:
             verbose=not args.quiet,
             schema_name=args.schema,
             transition_policy=args.transition_policy,
+            interference_policy=interference_policy,
+            watchdog_config=WatchdogConfig(),
+            human_gate=human_gate,
+            wait_stable=not args.no_wait_stable,
         )
         trajectories = explorer.explore()
         report = {
