@@ -1324,6 +1324,8 @@ class MemoryManager:
 
         try:
             app = current_app or ""
+            from phone_agent.spatial.app_registry import get_default_app_registry
+            app_aliases = list(get_default_app_registry().storage_aliases(app))
             with self.graph_store.driver.session(database=self.graph_store.database) as s:
                 # 1) Canonical roles available on this page_type
                 roles_query = """
@@ -1331,12 +1333,12 @@ class MemoryManager:
                     WHERE i.type = 'functionality'
                       AND i.is_promotable = true
                       AND i.page_type = $page_type
-                      AND ($app = '' OR i.app CONTAINS $app OR i.app = '')
+                      AND (size($app_aliases) = 0 OR i.app IN $app_aliases OR i.app = '')
                     RETURN DISTINCT i.canonical_role AS role, count(*) AS cnt
                     ORDER BY cnt DESC
                 """
                 roles = [
-                    dict(r) for r in s.run(roles_query, page_type=page_type, app=app)
+                    dict(r) for r in s.run(roles_query, page_type=page_type, app_aliases=app_aliases)
                 ]
                 result["available_roles"] = roles
 
@@ -1347,13 +1349,13 @@ class MemoryManager:
                       AND i.page_type = $page_type
                       AND i.canonical_role IS NOT NULL
                       AND i.canonical_role <> ''
-                      AND ($app = '' OR i.app CONTAINS $app OR i.app = '')
+                      AND (size($app_aliases) = 0 OR i.app IN $app_aliases OR i.app = '')
                     RETURN DISTINCT i.canonical_role AS role, i.description AS sample, i.confidence AS conf
                     ORDER BY conf DESC
                     LIMIT 12
                 """
                 data_items = [
-                    dict(r) for r in s.run(data_query, page_type=page_type, app=app)
+                    dict(r) for r in s.run(data_query, page_type=page_type, app_aliases=app_aliases)
                 ]
                 result["data_items"] = data_items
 
@@ -1376,13 +1378,13 @@ class MemoryManager:
                 impl_query = """
                     MATCH (a:Action)-[:IMPLEMENTS_FUNCTION]->(i:FunctionalityItem)
                     WHERE i.page_type = $page_type
-                      AND ($app = '' OR i.app CONTAINS $app OR i.app = '')
+                      AND (size($app_aliases) = 0 OR i.app IN $app_aliases OR i.app = '')
                     RETURN a.type AS action_type, a.semantic_target AS target,
                            i.canonical_role AS role, a.region AS region
                     LIMIT 10
                 """
                 impls = [
-                    dict(r) for r in s.run(impl_query, page_type=page_type, app=app)
+                    dict(r) for r in s.run(impl_query, page_type=page_type, app_aliases=app_aliases)
                 ]
                 result["implemented_actions"] = impls
 

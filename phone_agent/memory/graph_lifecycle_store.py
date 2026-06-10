@@ -66,7 +66,7 @@ class GraphLifecycleStore:
         query = """
         MATCH (s:UIState)-[r:NEXT_ACTION]->(a:Action)-[p:PRODUCES]->(t:UIState)
         WHERE a.lifecycle_stage IS NOT NULL
-        """ + ("  AND ($app = '' OR s.app = $app)" if app else "") + """
+        """ + ("  AND s.app IN $app_aliases" if app else "") + """
         RETURN a.action_id AS action_id,
                a.lifecycle_stage AS lifecycle_stage,
                a.source_page_type AS source_page_type,
@@ -82,9 +82,14 @@ class GraphLifecycleStore:
                a.last_traversed AS last_traversed,
                r.frequency AS frequency
         """
+        from phone_agent.spatial.app_registry import get_default_app_registry
+
         try:
             with self.driver.session(database=self.database) as session:
-                result = session.run(query, app=app or "")
+                result = session.run(
+                    query,
+                    app_aliases=list(get_default_app_registry().storage_aliases(app)),
+                )
                 records: list[dict[str, Any]] = []
                 outcomes: list[dict[str, Any]] = []
                 seen_outcome_keys: set[str] = set()

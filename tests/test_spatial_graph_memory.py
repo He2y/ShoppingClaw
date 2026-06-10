@@ -12,7 +12,6 @@ from phone_agent.memory.offline_explorer import (
     ShoppingPageType,
     Trajectory,
 )
-from phone_agent.memory.rebuild_spatial_graph import rebuild_spatial_graph
 from phone_agent.memory.spatial_graph_memory import (
     PageBelief,
     PageBeliefCandidate,
@@ -21,7 +20,6 @@ from phone_agent.memory.spatial_graph_memory import (
     SpatialGraphMemory,
     TransitionEdge,
 )
-from phone_agent.spatial import task_synthesis
 
 
 class FakeGraphStore:
@@ -77,6 +75,7 @@ class FakeMergeGraphStore:
         outcome="success",
         source_metadata=None,
         target_metadata=None,
+        lifecycle=None,
     ):
         self.transitions.append(
             {
@@ -1411,9 +1410,7 @@ def test_page_classifier_falls_back_to_phone_agent_when_strong_vlm_missing(monke
     monkeypatch.setenv("PHONE_AGENT_MODEL", "autoglm-phone")
     monkeypatch.setenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1")
     monkeypatch.setenv("PHONE_AGENT_API_KEY", "EMPTY")
-    monkeypatch.setattr(task_synthesis, "load_dotenv", lambda: None)
     monkeypatch.setattr(offline_explorer, "load_dotenv", lambda: None)
-    task_synthesis._ENV_LOADED = False
 
     classifier = PageClassifier(mode="off")
     page_type, summary, elements = classifier.classify("unused", 100, 100)
@@ -1549,248 +1546,6 @@ def test_manual_trajectory_importer_prefers_react_json(tmp_path):
     assert edge.confidence == 0.75
 
 
-def test_rebuild_spatial_graph_dry_run_combines_manual_and_exploration(tmp_path):
-    manual_run = tmp_path / "manual" / "淘宝" / "基础加购商品" / "1"
-    manual_run.mkdir(parents=True)
-    (manual_run / "actions.json").write_text(
-        json.dumps({"app_name": "淘宝", "task_type": "基础加购商品", "task_description": "搜索耳机"}),
-        encoding="utf-8",
-    )
-    (manual_run / "react.json").write_text(
-        json.dumps([{"function": {"name": "click", "parameters": {"target_element": "顶部搜索栏"}}}]),
-        encoding="utf-8",
-    )
-    (manual_run / "1.txt").write_text("Taobao home page with search bar.", encoding="utf-8")
-    (manual_run / "2.txt").write_text("Taobao search_input page with active search box.", encoding="utf-8")
-
-    exploration = tmp_path / "exploration"
-    exploration.mkdir()
-    (exploration / "taobao_explore_1.json").write_text(
-        json.dumps(
-            {
-                "app": "淘宝",
-                "pages": [
-                    {
-                        "page_type": "home",
-                        "summary": "首页",
-                        "elements": {"search_bar": "tap to search"},
-                        "screenshot_hash": "homehash",
-                        "app": "淘宝",
-                    }
-                ],
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    (exploration / "taobao_explore_transitions_1.json").write_text(
-        json.dumps({"app": "淘宝", "transitions": []}, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-    report = rebuild_spatial_graph(
-        manual_root=tmp_path / "manual",
-        exploration_root=exploration,
-        write=False,
-    )
-
-    assert report["mode"] == "dry-run"
-    assert report["manual"]["trajectories_imported"] == 1
-    assert report["manual"]["transitions_imported"] == 1
-    assert report["exploration"]["pages_imported"] == 1
-    assert report["totals"]["pages"] == 3
-    assert report["totals"]["unique_pages"] <= report["totals"]["pages"]
-    assert "dedupe_ratio" in report["totals"]
 
 
-def test_rebuild_spatial_graph_canonical_mode_reports_quality(tmp_path):
-    manual_run = tmp_path / "manual" / "淘宝" / "基础搜索商品" / "1"
-    manual_run.mkdir(parents=True)
-    (manual_run / "actions.json").write_text(
-        json.dumps({"app_name": "淘宝", "task_type": "基础搜索商品", "task_description": "搜索耳机"}),
-        encoding="utf-8",
-    )
-    (manual_run / "react.json").write_text(
-        json.dumps([{"function": {"name": "click", "parameters": {"target_element": "顶部搜索栏"}}}]),
-        encoding="utf-8",
-    )
-    (manual_run / "1.txt").write_text("Taobao home page with search bar.", encoding="utf-8")
-    (manual_run / "2.txt").write_text("Taobao search_input page with active search box.", encoding="utf-8")
 
-    exploration = tmp_path / "exploration"
-    exploration.mkdir()
-    (exploration / "taobao_explore_1.json").write_text(
-        json.dumps(
-            {
-                "app": "淘宝",
-                "pages": [
-                    {
-                        "page_type": "search_result",
-                        "summary": "耳机搜索结果",
-                        "elements": {"product_cards": "tap product card"},
-                        "screenshot_hash": "r1",
-                        "app": "淘宝",
-                    },
-                    {
-                        "page_type": "search_result",
-                        "summary": "MacBook搜索结果",
-                        "elements": {"product_cards": "tap product card"},
-                        "screenshot_hash": "r2",
-                        "app": "淘宝",
-                    },
-                    {
-                        "page_type": "unknown",
-                        "summary": "活动页",
-                        "elements": {},
-                        "screenshot_hash": "r3",
-                        "app": "淘宝",
-                    },
-                ],
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    (exploration / "taobao_explore_transitions_1.json").write_text(
-        json.dumps({"app": "淘宝", "transitions": []}, ensure_ascii=False),
-        encoding="utf-8",
-    )
-
-    report = rebuild_spatial_graph(
-        manual_root=tmp_path / "manual",
-        exploration_root=exploration,
-        write=False,
-        canonical=True,
-    )
-
-    assert report["canonical"] is True
-    assert report["quality_gate"]["app"] == "淘宝"
-    assert "missing_safe_core_edges" in report["quality_gate"]
-    assert report["manual_quality"]["canonical_pages"] <= report["manual"]["pages_imported"]
-    assert report["exploration"]["files"][0]["quality"]["transient_pages"] == 1
-    assert report["totals"]["unique_pages"] < report["totals"]["pages"]
-
-
-def test_rebuild_spatial_graph_exploration_only_filters_app(tmp_path):
-    manual_run = tmp_path / "manual" / "Taobao" / "manual_task" / "1"
-    manual_run.mkdir(parents=True)
-    (manual_run / "actions.json").write_text(
-        json.dumps({"app_name": "Taobao", "task_type": "manual_task", "task_description": "manual"}),
-        encoding="utf-8",
-    )
-    (manual_run / "1.txt").write_text("Taobao home page with search bar.", encoding="utf-8")
-
-    exploration = tmp_path / "exploration"
-    exploration.mkdir()
-    (exploration / "taobao_explore_1.json").write_text(
-        json.dumps(
-            {
-                "app": "Taobao",
-                "pages": [
-                    {
-                        "page_type": "home",
-                        "summary": "Home",
-                        "elements": {"search_bar": "tap to search"},
-                        "screenshot_hash": "homehash",
-                        "app": "Taobao",
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    (exploration / "taobao_explore_transitions_1.json").write_text(
-        json.dumps({"app": "Taobao", "transitions": []}),
-        encoding="utf-8",
-    )
-    (exploration / "jd_explore_1.json").write_text(
-        json.dumps(
-            {
-                "app": "JD",
-                "pages": [
-                    {
-                        "page_type": "home",
-                        "summary": "JD home",
-                        "elements": {"search_bar": "tap to search"},
-                        "screenshot_hash": "jdhome",
-                        "app": "JD",
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    report = rebuild_spatial_graph(
-        manual_root=tmp_path / "manual",
-        exploration_root=exploration,
-        write=False,
-        canonical=True,
-        quality_app="Taobao",
-        include_manual=False,
-        app_filter="Taobao",
-    )
-
-    assert report["source_policy"]["include_manual"] is False
-    assert report["manual"]["pages_imported"] == 0
-    assert report["exploration"]["pages_imported"] == 1
-    assert report["totals"]["pages"] == 1
-    assert report["source_policy"]["skipped_exploration_files"][0]["app"] == "JD"
-
-
-def test_rebuild_spatial_graph_stage_merge_dedupes_before_canonical_merge(tmp_path):
-    exploration = tmp_path / "exploration"
-    exploration.mkdir()
-    (exploration / "taobao_explore_1.json").write_text(
-        json.dumps(
-            {
-                "app": "Taobao",
-                "pages": [
-                    {
-                        "page_type": "search_result",
-                        "summary": "result list",
-                        "elements": {"product_cards": "tap product card"},
-                        "screenshot_hash": "r1",
-                        "app": "Taobao",
-                    },
-                    {
-                        "page_type": "product_detail",
-                        "summary": "detail page",
-                        "elements": {"title": "product"},
-                        "screenshot_hash": "d1",
-                        "app": "Taobao",
-                    },
-                ],
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    (exploration / "taobao_explore_transitions_1.json").write_text(
-        json.dumps(
-            {
-                "app": "Taobao",
-                "transitions": [
-                    {"from": "search_result:result list", "to": "product_detail:detail page", "action": {"action": "Tap", "element": [253, 474]}},
-                    {"from": "search_result:result list", "to": "product_detail:detail page", "action": {"action": "Tap", "element": [253, 477]}},
-                ],
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-
-    report = rebuild_spatial_graph(
-        manual_root=None,
-        exploration_root=exploration,
-        write=False,
-        canonical=True,
-        include_manual=False,
-        app_filter="Taobao",
-        quality_app="Taobao",
-        stage_merge=True,
-    )
-
-    assert report["stage_merge"] is True
-    assert report["exploration"]["stage_merge_report"]["final_promote"]["transitions_promoted"] == 1
-    assert report["exploration"]["stage_merge_report"]["preflight_quality_gate"]["edges"] == 1

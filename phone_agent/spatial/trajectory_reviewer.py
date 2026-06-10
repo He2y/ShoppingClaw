@@ -21,6 +21,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from phone_agent.spatial.app_registry import get_default_app_registry
+
 
 @dataclass(frozen=True)
 class TransitionCandidate:
@@ -229,13 +231,13 @@ class TrajectoryReviewer:
                     MATCH (src:UIState)-[:NEXT_ACTION]->(a:Action)-[:PRODUCES]->(tgt:UIState)
                     WHERE src.page_type IN $src_list AND tgt.page_type IN $tgt_list
                       AND a.type = $atype
-                      AND ($app = '' OR src.app CONTAINS $app)
+                      AND (size($app_aliases) = 0 OR src.app IN $app_aliases)
                     RETURN count(*) AS cnt
                     """,
                     src_list=list(src_variants),
                     tgt_list=list(tgt_variants),
                     atype=candidate.action_type,
-                    app=app,
+                    app_aliases=list(get_default_app_registry().storage_aliases(app)),
                 )
                 return result.single()["cnt"] > 0
         except Exception:
@@ -323,17 +325,20 @@ class TrajectoryReviewer:
         try:
             with self._graph_store.driver.session(database=self._graph_store.database) as s:
                 # Find existing UIState nodes
+                app_aliases = list(get_default_app_registry().storage_aliases(app))
                 src_result = s.run(
-                    "MATCH (n:UIState) WHERE n.page_type = $pt AND n.app CONTAINS $app "
+                    "MATCH (n:UIState) WHERE n.page_type = $pt "
+                    "AND (size($app_aliases) = 0 OR n.app IN $app_aliases) "
                     "RETURN n.state_id AS sid LIMIT 1",
-                    pt=candidate.source_page, app=app,
+                    pt=candidate.source_page, app_aliases=app_aliases,
                 )
                 src_rec = src_result.single()
 
                 tgt_result = s.run(
-                    "MATCH (n:UIState) WHERE n.page_type = $pt AND n.app CONTAINS $app "
+                    "MATCH (n:UIState) WHERE n.page_type = $pt "
+                    "AND (size($app_aliases) = 0 OR n.app IN $app_aliases) "
                     "RETURN n.state_id AS sid LIMIT 1",
-                    pt=candidate.target_page, app=app,
+                    pt=candidate.target_page, app_aliases=app_aliases,
                 )
                 tgt_rec = tgt_result.single()
 
@@ -341,15 +346,22 @@ class TrajectoryReviewer:
                 src_id = src_rec["sid"] if src_rec else f"state_{app}_{candidate.source_page}_auto_{now_ms}"
                 tgt_id = tgt_rec["sid"] if tgt_rec else f"state_{app}_{candidate.target_page}_auto_{now_ms}"
 
+                registry = get_default_app_registry()
+                canonical_app = registry.canonical_id(app) or app
+                app_domain = registry.domain_of(app)
                 if not src_rec:
                     s.run(
-                        "CREATE (n:UIState {state_id: $sid, app: $app, page_type: $pt})",
-                        sid=src_id, app=app, pt=candidate.source_page,
+                        "MERGE (n:UIState {state_id: $sid}) "
+                        "SET n.app = $app, n.app_raw = $app_raw, n.domain = $domain, n.page_type = $pt",
+                        sid=src_id, app=canonical_app, app_raw=app, domain=app_domain,
+                        pt=candidate.source_page,
                     )
                 if not tgt_rec:
                     s.run(
-                        "CREATE (n:UIState {state_id: $sid, app: $app, page_type: $pt})",
-                        sid=tgt_id, app=app, pt=candidate.target_page,
+                        "MERGE (n:UIState {state_id: $sid}) "
+                        "SET n.app = $app, n.app_raw = $app_raw, n.domain = $domain, n.page_type = $pt",
+                        sid=tgt_id, app=canonical_app, app_raw=app, domain=app_domain,
+                        pt=candidate.target_page,
                     )
 
                 # Create Action node + relationships

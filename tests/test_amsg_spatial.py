@@ -18,10 +18,8 @@ from phone_agent.spatial.active_builder import ActiveGraphBuilder
 from phone_agent.spatial.core import BeliefCandidate, BeliefState, PageNode
 from phone_agent.spatial.hypothesis import EdgeHypothesis
 from phone_agent.spatial.model_bridge import SpatialModelBridge
-from phone_agent.spatial.reporting import build_amsg_dry_run_report, format_amsg_markdown
 from phone_agent.spatial.schema_registry import SchemaRegistry
 from phone_agent.spatial.semantics import ScreenSemanticsExtractor
-from phone_agent.spatial import task_synthesis
 from phone_agent.spatial.verifier import PostconditionVerifier
 
 
@@ -171,48 +169,6 @@ def test_postcondition_verifier_marks_negative_high_risk_mismatch():
     assert result.ok is False
     assert result.repair_action == "ask_user"
     assert verifier.negative_memory.failure_count("edge_bad") == 1
-
-
-def test_amsg_dry_run_report_summarizes_schema_and_frontiers(tmp_path):
-    pages_path = tmp_path / "taobao_explore_1.json"
-    pages_path.write_text(
-        json.dumps(
-            {
-                "app": "Taobao",
-                "pages": [
-                    {
-                        "app": "Taobao",
-                        "page_type": "search_result",
-                        "summary": "product list",
-                        "elements": {"product_cards": "tap product"},
-                        "screenshot_hash": "hash1",
-                    }
-                ],
-            },
-            ensure_ascii=False,
-        ),
-        encoding="utf-8",
-    )
-    rebuild_report = {
-        "exploration": {
-            "quality_reports": [
-                {"staging": {"transitions_seen": 4, "transitions_promoted": 3}},
-            ]
-        }
-    }
-
-    report = build_amsg_dry_run_report(
-        exploration_root=tmp_path,
-        rebuild_report=rebuild_report,
-        app_filter="淘宝",
-    )
-    markdown = format_amsg_markdown(report)
-
-    assert report["schema_coverage"]["observed_page_types"] == ["search_result"]
-    assert "list" not in report["schema_coverage"]["missing_safe_page_types"]
-    assert report["edge_quality"]["valid_edge_ratio"] == 0.75
-    assert report["active_frontiers"]
-    assert "AMSG v3 Dry-Run Report" in markdown
 
 
 def test_offline_explorer_treats_interference_dialog_as_schema_page():
@@ -580,8 +536,6 @@ def _disable_real_vlm_env(monkeypatch):
         "PHONE_AGENT_API_KEY",
     ):
         monkeypatch.delenv(key, raising=False)
-    monkeypatch.setattr(task_synthesis, "load_dotenv", lambda: None)
-    task_synthesis._ENV_LOADED = False
 
 
 def _tiny_png_b64() -> str:

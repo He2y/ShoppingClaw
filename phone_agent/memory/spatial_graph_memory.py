@@ -18,37 +18,17 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-_SHOPPING_APPS = {
-    "taobao",
-    "tmall",
-    "jd",
-    "jingdong",
-    "pinduoduo",
-    "meituan",
-    "eleme",
-    "淘宝",
-    "天猫",
-    "京东",
-    "拼多多",
-    "美团",
-    "饿了么",
-    # Keep mojibake variants because existing exploration fixtures were saved
-    # with a broken encoding and still need to be importable.
-    "å¨£æ¨ºç–‚",
-}
+from phone_agent.spatial.app_registry import get_default_app_registry
 
-_APP_ALIASES = {
-    "淘宝": {"淘宝", "天猫", "娣樺疂", "澶╃尗", "taobao", "tmall"},
-    "天猫": {"淘宝", "天猫", "娣樺疂", "澶╃尗", "taobao", "tmall"},
-    "京东": {"京东", "浜笢", "jd", "jingdong"},
-    "拼多多": {"拼多多", "鎷煎澶?", "pinduoduo"},
-    "美团": {"美团", "缇庡洟", "meituan"},
-    "饿了么": {"饿了么", "楗夸簡涔?", "eleme"},
-    "叮咚买菜": {"叮咚买菜"},
-    "盒马": {"盒马"},
-    "瑞幸": {"瑞幸", "luckin"},
-}
-_APP_MENTION_TOKENS = tuple(sorted({token for tokens in _APP_ALIASES.values() for token in tokens}, key=len, reverse=True))
+
+def _same_app(left: str, right: str) -> bool:
+    """Alias-aware app equality (raw runtime value vs canonical graph value)."""
+    if not left or not right:
+        return False
+    if left == right:
+        return True
+    registry = get_default_app_registry()
+    return registry.canonical_id(left) == registry.canonical_id(right)
 
 _HIGH_RISK_PAGE_TYPES = {"payment", "address", "login", "confirm"}
 _MEDIUM_RISK_PAGE_TYPES = {"spec_selection", "cart", "checkout", "order_list", "refund"}
@@ -152,6 +132,7 @@ class PageState:
     risk_level: str = "normal"
     screenshot_hash: str = ""
     semantic_signature: str = ""
+    domain: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -165,6 +146,7 @@ class PageState:
             "risk_level": self.risk_level,
             "screenshot_hash": self.screenshot_hash,
             "semantic_signature": self.semantic_signature,
+            "domain": self.domain,
         }
 
 
@@ -330,7 +312,7 @@ class GoalSpec:
         if not target_page_types:
             target_page_types = ["search_result", "product_detail", "spec_selection"]
 
-        domain = "shopping" if _contains_any(f"{task} {app}", _SHOPPING_APPS) else "general"
+        domain = get_default_app_registry().infer_domain_from_text(f"{task} {app}") or "general"
         slots = SpatialGraphMemory.extract_slots_from_text(task)
         return cls(domain=domain, target_page_types=tuple(dict.fromkeys(target_page_types)), slots=slots)
 
@@ -576,6 +558,7 @@ class SpatialGraphMemory:
             risk_level=risk_level,
             screenshot_hash=ui_hash,
             semantic_signature=signature,
+            domain=get_default_app_registry().domain_of(app_name),
         )
 
     def page_state_from_exploration_page(self, page: dict[str, Any], fallback_app: str = "") -> PageState:
@@ -1873,7 +1856,7 @@ class SpatialGraphMemory:
 
         for candidate in candidates:
             candidate_state = self._page_state_from_graph(candidate, fallback=state)
-            if candidate_state.app == state.app and candidate_state.page_type == state.page_type:
+            if _same_app(candidate_state.app, state.app) and candidate_state.page_type == state.page_type:
                 return candidate_state
         return None
 
@@ -2084,12 +2067,13 @@ class SpatialGraphMemory:
         app = state.app.strip()
         if not app:
             return True
-        allowed = _APP_ALIASES.get(app, {app.lower()})
+        registry = get_default_app_registry()
+        allowed = registry.aliases_of(app) or {app.lower()}
         text = f"{state.summary} {state.semantic_signature}".lower()
-        mentioned = {token for token in _APP_MENTION_TOKENS if token.lower() in text}
+        mentioned = {token for token in registry.mention_tokens() if token.lower() in text}
         if not mentioned:
             return True
-        return all(token.lower() in {item.lower() for item in allowed} for token in mentioned)
+        return all(token.lower() in allowed for token in mentioned)
 
     @staticmethod
     def _read_json(path: Path) -> dict[str, Any]:
@@ -2139,7 +2123,7 @@ class SpatialGraphMemory:
     @staticmethod
     def _page_similarity(observed: PageState, candidate: PageState) -> float:
         score = 0.0
-        if observed.app and observed.app == candidate.app:
+        if observed.app and _same_app(observed.app, candidate.app):
             score += 0.35
         if observed.page_type and observed.page_type == candidate.page_type:
             score += 0.35
@@ -2157,7 +2141,7 @@ class SpatialGraphMemory:
         local_edges = []
         for edge in self._local_edges.get(state_id, []):
             target_state = self._local_states.get(edge.target_id)
-            if allowed_app and target_state and target_state.app != allowed_app:
+            if allowed_app and target_state and not _same_app(target_state.app, allowed_app):
                 continue
             local_edges.append(edge)
         graph_edges: list[TransitionEdge] = []
@@ -2270,7 +2254,7 @@ class SpatialGraphMemory:
                     result = s.run(
                         """
                         MATCH (src:UIState)-[:NEXT_ACTION]->(a:Action)-[:PRODUCES]->(tgt:UIState)
-                        WHERE ($app = '' OR src.app CONTAINS $app OR src.app = '')
+                        WHERE (size($app_aliases) = 0 OR src.app IN $app_aliases OR src.app = '')
                           AND src.page_type IN ['home', 'unknown']
                         RETURN src.state_id AS src_id, src.page_type AS src_pt,
                                a.type AS action_type, a.semantic_target AS action_target,
@@ -2283,14 +2267,14 @@ class SpatialGraphMemory:
                         ORDER BY freq DESC, confidence DESC
                         LIMIT 12
                         """,
-                        app=app,
+                        app_aliases=list(get_default_app_registry().storage_aliases(app)),
                     )
                 else:
                     result = s.run(
                         """
                         MATCH (src:UIState)-[:NEXT_ACTION]->(a:Action)-[:PRODUCES]->(tgt:UIState)
                         WHERE src.page_type = $page_type
-                          AND ($app = '' OR src.app CONTAINS $app OR src.app = '')
+                          AND (size($app_aliases) = 0 OR src.app IN $app_aliases OR src.app = '')
                         RETURN src.state_id AS src_id, a.type AS action_type,
                                a.semantic_target AS action_target, a.region AS region,
                                a.target_locator AS target_locator,
@@ -2302,7 +2286,7 @@ class SpatialGraphMemory:
                         LIMIT 8
                         """,
                         page_type=page_type,
-                        app=app,
+                        app_aliases=list(get_default_app_registry().storage_aliases(app)),
                     )
                 for rec in result:
                     r = dict(rec)
@@ -2554,10 +2538,7 @@ class SpatialGraphMemory:
         )
 
     def _infer_app(self, text: str) -> str:
-        for app in _SHOPPING_APPS:
-            if app and app in text:
-                return app
-        return ""
+        return get_default_app_registry().infer_from_text(text)
 
     def _infer_page_type(self, text: str) -> str:
         extra_keywords = [

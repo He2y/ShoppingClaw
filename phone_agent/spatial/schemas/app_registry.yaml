@@ -1,0 +1,66 @@
+{
+  "_comment": "Single source of truth for app identity. JSON-compatible YAML (parsed with json.loads, same convention as the domain schemas - do NOT use YAML-only syntax). canonical app_id -> domain -> schema. legacy_aliases keep mojibake variants from old exploration fixtures importable.",
+  "version": 1,
+  "domains": {
+    "shopping": {"schema": "shopping"},
+    "utility": {"schema": "utility"},
+    "system": {"schema": "common_mobile"},
+    "unknown": {"schema": "common_mobile"}
+  },
+  "apps": {
+    "system_home": {
+      "domain": "system",
+      "display_names": ["system home", "System Home", "home_screen", "桌面", "launcher"],
+      "package_names": [],
+      "legacy_aliases": ["System Home home"]
+    },
+    "taobao": {
+      "domain": "shopping",
+      "display_names": ["淘宝", "天猫", "Taobao", "Tmall", "tmall"],
+      "package_names": ["com.taobao.taobao", "com.tmall.wireless", "com.taobao.taobao4iphone"],
+      "legacy_aliases": ["娣樺疂", "澶╃尗", "å¨£æ¨ºç–‚"]
+    },
+    "jd": {
+      "domain": "shopping",
+      "display_names": ["京东", "JD", "jingdong"],
+      "package_names": ["com.jingdong.app.mall"],
+      "legacy_aliases": ["浜笢"]
+    },
+    "pinduoduo": {
+      "domain": "shopping",
+      "display_names": ["拼多多", "Pinduoduo"],
+      "package_names": ["com.xunmeng.pinduoduo"],
+      "legacy_aliases": ["鎷煎澶?"]
+    },
+    "meituan": {
+      "domain": "shopping",
+      "display_names": ["美团", "Meituan"],
+      "package_names": ["com.sankuai.meituan"],
+      "legacy_aliases": ["缇庡洟"]
+    },
+    "eleme": {
+      "domain": "shopping",
+      "display_names": ["饿了么", "Eleme"],
+      "package_names": ["me.ele"],
+      "legacy_aliases": ["楗夸簡涔?"]
+    },
+    "dingdong": {
+      "domain": "shopping",
+      "display_names": ["叮咚买菜"],
+      "package_names": ["com.yaya.zone"],
+      "legacy_aliases": []
+    },
+    "hema": {
+      "domain": "shopping",
+      "display_names": ["盒马"],
+      "package_names": ["com.wudaokou.hippo"],
+      "legacy_aliases": []
+    },
+    "luckin": {
+      "domain": "shopping",
+      "display_names": ["瑞幸", "luckin"],
+      "package_names": ["com.lucky.luckyclient"],
+      "legacy_aliases": []
+    }
+  }
+}

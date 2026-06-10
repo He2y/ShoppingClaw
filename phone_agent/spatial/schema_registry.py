@@ -120,6 +120,13 @@ class SchemaRegistry:
         value = (app or "").strip()
         if not value:
             return ""
+        # AppRegistry is the single source of truth for app identity.
+        from phone_agent.spatial.app_registry import get_default_app_registry
+
+        record = get_default_app_registry().resolve(value)
+        if record:
+            return record.app_id
+        # Fallback: legacy schema-level aliases (kept for custom schema dirs).
         lowered = value.lower()
         for schema in self._all_loaded_and_default(schema_name):
             for canonical, aliases in schema.app_aliases.items():

@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from phone_agent.agent import PhoneAgent
 from phone_agent.config.shopping_config import ShoppingConfig
+from phone_agent.core.spec_guard import SpecGuard
 from phone_agent.memory.memory_manager import MemoryManager
 from phone_agent.memory.spatial_graph_memory import RuntimeDAG, SpatialGraphMemory, TransitionEdge
 
@@ -21,8 +22,21 @@ def _agent_for_spec_guard(task: str) -> PhoneAgent:
     agent._current_task = task
     agent._vlm_plan = {}
     agent._shopping_config = ShoppingConfig.load()
+    agent._spec_guard = SpecGuard(agent._shopping_config)
     agent.memory_manager = SimpleNamespace(_vlm_plan={})
     return agent
+
+
+def _spec_guard_check(agent: PhoneAgent, action, thinking, current_app, page_type):
+    """Mirror PhoneAgent's runtime SpecGuard invocation (agent.py)."""
+    return agent._spec_guard.check(
+        action=action,
+        thinking=thinking,
+        current_app=current_app,
+        page_type=page_type,
+        task=agent._current_task,
+        vlm_plan=agent._vlm_plan,
+    )
 
 
 def _shopping_app(agent: PhoneAgent) -> str:
@@ -39,7 +53,7 @@ def test_spec_guard_does_not_ask_user_when_task_has_explicit_specs():
     }
     thinking = "我需要在规格弹窗点击确认加入购物车。"
 
-    guarded = agent._spec_guard_check(action, thinking, _shopping_app(agent), page_type="spec_selection")
+    guarded = _spec_guard_check(agent, action, thinking, _shopping_app(agent), page_type="spec_selection")
 
     assert guarded is None
 
@@ -54,7 +68,7 @@ def test_spec_guard_asks_only_when_committing_without_explicit_specs():
     }
     thinking = "这里需要选择规格，然后确认加入购物车。"
 
-    guarded = agent._spec_guard_check(action, thinking, _shopping_app(agent), page_type="spec_selection")
+    guarded = _spec_guard_check(agent, action, thinking, _shopping_app(agent), page_type="spec_selection")
 
     assert guarded is not None
     assert guarded["action"] == "Interact"
@@ -71,7 +85,7 @@ def test_spec_guard_uses_vlm_plan_specs_as_explicit_requirements():
     }
     thinking = "我需要在规格弹窗点击确认加入购物车。"
 
-    guarded = agent._spec_guard_check(action, thinking, _shopping_app(agent), page_type="spec_selection")
+    guarded = _spec_guard_check(agent, action, thinking, _shopping_app(agent), page_type="spec_selection")
 
     assert guarded is None
 

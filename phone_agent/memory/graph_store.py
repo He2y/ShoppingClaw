@@ -5,6 +5,9 @@ import os
 import re
 from typing import List, Dict, Any, Optional
 from dotenv import load_dotenv
+
+from phone_agent.spatial.app_registry import get_default_app_registry
+
 from .task_index import TaskIndex
 
 try:
@@ -84,6 +87,33 @@ class GraphStore:
         with self.driver.session(database="system") as session:
             session.run(f"CREATE DATABASE `{name}` IF NOT EXISTS WAIT").consume()
 
+    def ensure_indexes(self) -> list[str]:
+        """Create the constraints/indexes the multi-app runtime queries rely on.
+
+        Idempotent (IF NOT EXISTS). Returns the list of statements applied.
+        """
+        if not self.driver:
+            return []
+        statements = [
+            "CREATE CONSTRAINT uistate_id IF NOT EXISTS FOR (s:UIState) REQUIRE s.state_id IS UNIQUE",
+            "CREATE CONSTRAINT action_id IF NOT EXISTS FOR (a:Action) REQUIRE a.action_id IS UNIQUE",
+            "CREATE INDEX uistate_app_page IF NOT EXISTS FOR (s:UIState) ON (s.app, s.page_type)",
+            "CREATE INDEX uistate_domain_page IF NOT EXISTS FOR (s:UIState) ON (s.domain, s.page_type)",
+            "CREATE INDEX uistate_signature IF NOT EXISTS FOR (s:UIState) ON (s.semantic_signature)",
+            "CREATE INDEX action_lifecycle IF NOT EXISTS FOR (a:Action) ON (a.lifecycle_stage)",
+            "CREATE INDEX action_src_tgt IF NOT EXISTS FOR (a:Action) ON (a.source_page_type, a.target_page_type)",
+            "CREATE INDEX func_item_app_page IF NOT EXISTS FOR (i:FunctionalityItem) ON (i.app, i.page_type)",
+        ]
+        applied: list[str] = []
+        with self.driver.session(database=self.database) as session:
+            for statement in statements:
+                try:
+                    session.run(statement).consume()
+                    applied.append(statement)
+                except Exception as exc:
+                    print(f"⚠️ index statement failed ({exc}): {statement}")
+        return applied
+
     def get_current_state(self, state_hash: str) -> Optional[Dict[str, Any]]:
         """Retrieve a specific UI state by its hash."""
         if not self.driver:
@@ -121,7 +151,7 @@ class GraphStore:
         query = """
         MATCH (s:UIState)
         WHERE s.page_type = $page_type
-          AND ($app = "" OR s.app = $app)
+          AND (size($app_aliases) = 0 OR s.app IN $app_aliases)
         OPTIONAL MATCH (s)-[rel]-()
         WITH s, count(rel) AS degree
         RETURN s
@@ -130,7 +160,12 @@ class GraphStore:
         """
         candidates = []
         with self.driver.session(database=self.database) as session:
-            for record in session.run(query, app=app or "", page_type=page_type, limit=limit):
+            for record in session.run(
+                query,
+                app_aliases=self._runtime_app_aliases(app),
+                page_type=page_type,
+                limit=limit,
+            ):
                 candidates.append(dict(record["s"]))
         return candidates
 
@@ -350,18 +385,25 @@ class GraphStore:
 
     @staticmethod
     def _runtime_app_aliases(app: str = "") -> List[str]:
+        """All storage values this app may appear as (AppRegistry-driven)."""
         normalized = str(app or "").strip()
         if not normalized:
             return []
-        aliases = {normalized}
-        lowered = normalized.lower()
-        if "taobao" in lowered or "淘宝" in normalized:
-            aliases.update({"taobao", "Taobao", "淘宝", "com.taobao.taobao"})
-        if "tmall" in lowered or "天猫" in normalized:
-            aliases.update({"tmall", "Tmall", "天猫"})
-        if "jd" in lowered or "jingdong" in lowered or "京东" in normalized:
-            aliases.update({"jd", "jingdong", "JD", "京东"})
-        return sorted(aliases)
+        return list(get_default_app_registry().storage_aliases(normalized))
+
+    @staticmethod
+    def _canonical_app_fields(value: Any) -> tuple[Optional[str], Optional[str], Optional[str]]:
+        """Return (canonical_app, raw_app, domain) for node writes.
+
+        Canonicalization happens at this storage boundary only - PageState
+        and runtime observations keep the raw value. ``None`` passthrough
+        preserves the coalesce() semantics of partial metadata updates.
+        """
+        raw = str(value or "").strip()
+        if not raw:
+            return None, None, None
+        registry = get_default_app_registry()
+        return registry.canonical_id(raw), raw, registry.domain_of(raw)
 
     def get_page_type_coverage(self, app: str = "") -> Dict[str, int]:
         """Return canonical page coverage counts grouped by page_type."""
@@ -369,13 +411,13 @@ class GraphStore:
             return {}
         query = """
         MATCH (s:UIState)
-        WHERE ($app = "" OR s.app = $app)
+        WHERE (size($app_aliases) = 0 OR s.app IN $app_aliases)
         RETURN coalesce(s.page_type, "unknown") AS page_type, count(s) AS count
         ORDER BY count DESC
         """
         coverage: Dict[str, int] = {}
         with self.driver.session(database=self.database) as session:
-            for record in session.run(query, app=app or ""):
+            for record in session.run(query, app_aliases=self._runtime_app_aliases(app)):
                 coverage[str(record["page_type"])] = int(record["count"] or 0)
         return coverage
 
@@ -386,7 +428,7 @@ class GraphStore:
         query = """
         MATCH (s:UIState)-[:NEXT_ACTION]->(:Action)-[:PRODUCES]->(t:UIState)
         WHERE coalesce(s.app, "") = coalesce(t.app, "")
-          AND ($app = "" OR s.app = $app)
+          AND (size($app_aliases) = 0 OR s.app IN $app_aliases)
         RETURN coalesce(s.page_type, "unknown") AS source_type,
                coalesce(t.page_type, "unknown") AS target_type,
                count(*) AS count
@@ -394,7 +436,7 @@ class GraphStore:
         """
         coverage: Dict[str, int] = {}
         with self.driver.session(database=self.database) as session:
-            for record in session.run(query, app=app or ""):
+            for record in session.run(query, app_aliases=self._runtime_app_aliases(app)):
                 key = f"{record['source_type']}->{record['target_type']}"
                 coverage[key] = int(record["count"] or 0)
         return coverage
@@ -424,7 +466,7 @@ class GraphStore:
         query = """
         MATCH (s:UIState)-[r:NEXT_ACTION]->(a:Action)-[p:PRODUCES]->(t:UIState)
         WHERE coalesce(s.app, "") = coalesce(t.app, "")
-          AND ($app = "" OR s.app = $app)
+          AND (size($app_aliases) = 0 OR s.app IN $app_aliases)
           AND (
             size($starts) = 0 OR s.state_id IN $starts OR
             size($targets) = 0 OR t.page_type IN $targets OR s.page_type IN $targets
@@ -447,7 +489,7 @@ class GraphStore:
         with self.driver.session(database=self.database) as session:
             for record in session.run(
                 query,
-                app=app or "",
+                app_aliases=self._runtime_app_aliases(app),
                 targets=target_page_types,
                 starts=start_candidates,
                 limit=max_nodes,
@@ -956,9 +998,12 @@ class GraphStore:
             return
 
         state_id = self._normalize_state_id(str(state_metadata.get("state_id") or ""))
+        canonical_app, app_raw, app_domain = self._canonical_app_fields(state_metadata.get("app"))
         query = """
         MERGE (s:UIState {state_id: $state_id})
         SET s.app = coalesce($app, s.app),
+            s.app_raw = coalesce($app_raw, s.app_raw),
+            s.domain = coalesce($domain, s.domain),
             s.page_type = coalesce($page_type, s.page_type),
             s.summary = coalesce($summary, s.summary),
             s.semantic_layout = coalesce($semantic_signature, s.semantic_layout),
@@ -974,7 +1019,9 @@ class GraphStore:
             session.run(
                 query,
                 state_id=state_id,
-                app=state_metadata.get("app"),
+                app=canonical_app,
+                app_raw=app_raw,
+                domain=app_domain,
                 page_type=state_metadata.get("page_type"),
                 summary=state_metadata.get("summary"),
                 semantic_signature=state_metadata.get("semantic_signature"),
@@ -1083,11 +1130,16 @@ class GraphStore:
         source_metadata = source_metadata or {}
         target_metadata = target_metadata or {}
 
+        s1_app, s1_app_raw, s1_domain = self._canonical_app_fields(source_metadata.get("app"))
+        s2_app, s2_app_raw, s2_domain = self._canonical_app_fields(target_metadata.get("app"))
+
         query = """
         MERGE (s1:UIState {state_id: $s1_id})
         SET s1.semantic_layout = coalesce($s1_semantic_layout, s1.semantic_layout),
             s1.semantic_signature = coalesce($s1_semantic_layout, s1.semantic_signature),
             s1.app = coalesce($s1_app, s1.app),
+            s1.app_raw = coalesce($s1_app_raw, s1.app_raw),
+            s1.domain = coalesce($s1_domain, s1.domain),
             s1.page_type = coalesce($s1_page_type, s1.page_type),
             s1.summary = coalesce($s1_summary, s1.summary),
             s1.landmarks = coalesce($s1_landmarks, s1.landmarks),
@@ -1099,6 +1151,8 @@ class GraphStore:
         SET s2.semantic_layout = coalesce($s2_semantic_layout, s2.semantic_layout),
             s2.semantic_signature = coalesce($s2_semantic_layout, s2.semantic_signature),
             s2.app = coalesce($s2_app, s2.app),
+            s2.app_raw = coalesce($s2_app_raw, s2.app_raw),
+            s2.domain = coalesce($s2_domain, s2.domain),
             s2.page_type = coalesce($s2_page_type, s2.page_type),
             s2.summary = coalesce($s2_summary, s2.summary),
             s2.landmarks = coalesce($s2_landmarks, s2.landmarks),
@@ -1156,7 +1210,9 @@ class GraphStore:
                 s1_id=source_state_id,
                 s2_id=target_state_id,
                 s1_semantic_layout=source_metadata.get("semantic_signature") or source_metadata.get("semantic_layout"),
-                s1_app=source_metadata.get("app"),
+                s1_app=s1_app,
+                s1_app_raw=s1_app_raw,
+                s1_domain=s1_domain,
                 s1_page_type=source_metadata.get("page_type"),
                 s1_summary=source_metadata.get("summary"),
                 s1_landmarks=list(source_metadata["landmarks"]) if "landmarks" in source_metadata else None,
@@ -1164,7 +1220,9 @@ class GraphStore:
                 s1_slots=json.dumps(source_metadata.get("slots") or {}, ensure_ascii=False) if "slots" in source_metadata else None,
                 s1_risk_level=source_metadata.get("risk_level"),
                 s2_semantic_layout=target_metadata.get("semantic_signature") or target_metadata.get("semantic_layout"),
-                s2_app=target_metadata.get("app"),
+                s2_app=s2_app,
+                s2_app_raw=s2_app_raw,
+                s2_domain=s2_domain,
                 s2_page_type=target_metadata.get("page_type"),
                 s2_summary=target_metadata.get("summary"),
                 s2_landmarks=list(target_metadata["landmarks"]) if "landmarks" in target_metadata else None,
@@ -1262,6 +1320,7 @@ class GraphStore:
                 source_action = item.get("source_action") if isinstance(item.get("source_action"), dict) else {}
                 bbox = item.get("bbox") if isinstance(item.get("bbox"), list) else []
                 app = str(item.get("app") or app_filter or "")
+                canonical_app, app_raw, app_domain = self._canonical_app_fields(app)
                 page_type = str(item.get("page_type") or "")
                 item_type = str(item.get("type") or "functionality")
                 is_promotable = bool(item.get("is_promotable", True))
@@ -1275,6 +1334,8 @@ class GraphStore:
                     MERGE (i:FunctionalityItem {functionality_id: $functionality_id})
                     SET i.page_node_id = $page_node_id,
                         i.app = $app,
+                        i.app_raw = coalesce($app_raw, i.app_raw),
+                        i.domain = coalesce($domain, i.domain),
                         i.page_type = $page_type,
                         i.type = $type,
                         i.source_kind = $source_kind,
@@ -1297,7 +1358,9 @@ class GraphStore:
                     """,
                     functionality_id=item_id,
                     page_node_id=str(item.get("page_node_id") or ""),
-                    app=app,
+                    app=canonical_app or app,
+                    app_raw=app_raw,
+                    domain=app_domain,
                     page_type=page_type,
                     type=item_type,
                     source_kind=str(item.get("source_kind") or ""),
@@ -1335,13 +1398,13 @@ class GraphStore:
                         """
                         MATCH (s:UIState)
                         WHERE s.page_type = $page_type
-                          AND ($app = "" OR s.app = $app)
+                          AND (size($app_aliases) = 0 OR s.app IN $app_aliases)
                         MATCH (i:FunctionalityItem {functionality_id: $functionality_id})
                         MERGE (s)-[:EXPOSES_FUNCTION]->(i)
                         RETURN count(s) AS linked
                         """,
                         page_type=page_type,
-                        app=app,
+                        app_aliases=self._runtime_app_aliases(app),
                         functionality_id=item_id,
                     ).single()
                     counts["ui_links"] += int(result["linked"] or 0) if result else 0
@@ -1383,13 +1446,13 @@ class GraphStore:
                             MATCH (c:FunctionalityCluster {cluster_id: $cluster_id})
                             MATCH (t:UIState)
                             WHERE t.page_type = $postcondition
-                              AND ($app = "" OR t.app = $app)
+                              AND (size($app_aliases) = 0 OR t.app IN $app_aliases)
                             MERGE (c)-[:LEADS_TO]->(t)
                             RETURN count(t) AS linked
                             """,
                             cluster_id=cluster_id,
                             postcondition=observed_postcondition,
-                            app=app,
+                            app_aliases=self._runtime_app_aliases(app),
                         ).single()
                         counts["postcondition_links"] += int(result["linked"] or 0) if result else 0
 
@@ -1406,7 +1469,7 @@ class GraphStore:
         query = """
         MATCH (s:UIState {state_id: $state_id})-[r:NEXT_ACTION]->(a:Action)-[p:PRODUCES]->(t:UIState)
         WHERE coalesce(t.app, "") = coalesce(s.app, "")
-          AND ($app = "" OR s.app = $app)
+          AND (size($app_aliases) = 0 OR s.app IN $app_aliases)
         RETURN s.state_id AS source_id,
                t.state_id AS target_id,
                t.page_type AS target_page_type,
@@ -1425,7 +1488,12 @@ class GraphStore:
         """
         edges = []
         with self.driver.session(database=self.database) as session:
-            for record in session.run(query, state_id=normalized_state_id, limit=limit, app=app or ""):
+            for record in session.run(
+                query,
+                state_id=normalized_state_id,
+                limit=limit,
+                app_aliases=self._runtime_app_aliases(app),
+            ):
                 target_page_type = record["target_page_type"] or ""
                 target_risk = record["target_risk"] or "normal"
                 edges.append(
