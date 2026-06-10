@@ -310,6 +310,20 @@ def _build_app(storage_root: str = "memory_db/staging") -> Any:
         p = batch_dir / rel
         return str(p) if p.exists() else None
 
+    _EMPTY_VIEW = ("暂无批次", "", None, None, "approve", "0 / 0")
+
+    def _init_load() -> tuple:
+        """Populate the dropdown AND load the first batch.
+
+        A dropdown whose initial value never *changes* (single batch) fires
+        no change event, leaving the page stuck at 0/0 — load explicitly.
+        """
+        choices = _get_batch_choices()
+        if not choices:
+            return (gr.Dropdown(choices=[], value=None), *_EMPTY_VIEW)
+        first = choices[0]
+        return (gr.Dropdown(choices=choices, value=first), *_load_batch(first))
+
     with gr.Blocks(title="AMSG Staging Review") as app:
         gr.Markdown("## AMSG 探索批次人工审核")
 
@@ -353,28 +367,43 @@ def _build_app(storage_root: str = "memory_db/staging") -> Any:
 
         # ── Event bindings ──────────────────────────────────────────
 
+        view_outputs = [card_text, item_id_box, before_img, after_img, decision_radio, progress_label]
+
+        # Load on page open — a single-batch dropdown never fires change.
+        app.load(
+            fn=_init_load,
+            inputs=[],
+            outputs=[batch_dropdown, *view_outputs],
+        )
+
         batch_dropdown.change(
             fn=_load_batch,
             inputs=[batch_dropdown],
-            outputs=[card_text, item_id_box, before_img, after_img, decision_radio, progress_label],
+            outputs=view_outputs,
+        )
+        # select fires even when the same value is re-picked.
+        batch_dropdown.select(
+            fn=_load_batch,
+            inputs=[batch_dropdown],
+            outputs=view_outputs,
         )
 
         refresh_btn.click(
-            fn=lambda: gr.Dropdown(choices=_get_batch_choices()),
+            fn=_init_load,
             inputs=[],
-            outputs=[batch_dropdown],
+            outputs=[batch_dropdown, *view_outputs],
         )
 
         prev_btn.click(
             fn=lambda: _navigate(-1),
             inputs=[],
-            outputs=[card_text, item_id_box, before_img, after_img, decision_radio, progress_label],
+            outputs=view_outputs,
         )
 
         next_btn.click(
             fn=lambda: _navigate(1),
             inputs=[],
-            outputs=[card_text, item_id_box, before_img, after_img, decision_radio, progress_label],
+            outputs=view_outputs,
         )
 
         decision_radio.change(
