@@ -405,3 +405,93 @@ def test_trap_filter_ignores_reasoning_text():
     assert not explorer._action_has_trap_token(action, reasoning)
     trap_action = {"_metadata": "do", "action": "Tap", "semantic_target": "以旧换新入口"}
     assert explorer._action_has_trap_token(trap_action, "")
+
+
+# ── sixth issue: small model can't plan — strong VLM plans, GUI model executes ──
+
+
+def test_parse_focus_supports_natural_language():
+    from phone_agent.memory.exploration.task_builder import parse_focus
+
+    pages, transitions, natural = parse_focus("探索个人中心和订单列表,category,home->search_input")
+    assert pages == {"category"}
+    assert transitions == {("home", "search_input")}
+    assert natural == "探索个人中心和订单列表"
+
+
+def test_focus_task_has_no_skeleton_chain():
+    from phone_agent.memory.exploration.task_builder import build_focus_task
+
+    task = build_focus_task("search_result->filter_panel", "京东")
+    assert "核心空间骨架" not in task
+    assert "home ->" not in task and "home->search_input" not in task
+    assert "search_result->filter_panel" in task
+
+    natural_task = build_focus_task("探索京东的国家补贴频道", "京东")
+    assert "国家补贴频道" in natural_task
+    assert "核心空间骨架" not in natural_task
+
+
+def test_pure_natural_focus_yields_empty_structured_goal():
+    from phone_agent.memory.exploration.task_builder import select_session_goal
+    from phone_agent.memory.exploration.types import CoverageTarget
+
+    coverage = CoverageTarget(
+        page_types=("home", "category"), transitions=(("home", "category"),),
+    )
+    goal = select_session_goal(coverage, set(), set(), focus="探索个人中心")
+    assert goal.transitions == ()  # planner owns the natural goal
+
+
+def test_planner_plan_step_parses_vlm_json(monkeypatch):
+    from types import SimpleNamespace
+    from phone_agent.memory.exploration.planner import PlanContext, StrongPlanner
+
+    planner = StrongPlanner.__new__(StrongPlanner)
+    fake_raw = (
+        '{"thought": "需要打开筛选", "instruction": "点击右上角的\\"筛选\\"按钮", '
+        '"target_transition": ["search_result", "filter_panel"], '
+        '"expected_page": "filter_panel", "finish": false, "message": ""}'
+    )
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=fake_raw))])
+
+    class FakeProxy:
+        providers = [SimpleNamespace(source="fake", model="m", base_url="u", api_key="k")]
+        max_image_width = 720
+
+        def _crop_screenshot(self, b64, w, h, mw):
+            return b64
+
+        def _client_for_provider(self, p):
+            return SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+
+    planner._proxy = FakeProxy()
+    planner.last_raw = ""
+    ctx = PlanContext(remaining_edges=(("search_result", "filter_panel"),))
+    step = planner.plan_step("b64", 100, 100, current_page_type="search_result", context=ctx)
+    assert step is not None
+    assert "筛选" in step.instruction
+    assert step.target_transition == ("search_result", "filter_panel")
+    assert step.expected_page == "filter_panel"
+    assert not step.finish
+
+
+def test_planner_finishes_when_no_goal_left():
+    from phone_agent.memory.exploration.planner import PlanContext, StrongPlanner
+
+    planner = StrongPlanner.__new__(StrongPlanner)
+    planner._proxy = None
+    step = planner.plan_step("b64", 100, 100, current_page_type="home", context=PlanContext())
+    assert step is not None and step.finish
+
+
+def test_plan_context_natural_goal_keeps_planner_running():
+    from phone_agent.memory.exploration.planner import PlanContext
+
+    ctx = PlanContext(natural_goal="探索个人中心")
+    assert ctx.natural_goal
+    ctx.push_result("指令『点击我的』→ 落到 my_account")
+    assert len(ctx.recent_results) == 1

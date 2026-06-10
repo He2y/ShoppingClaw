@@ -103,6 +103,7 @@ class OfflineExplorer:
         direct_import: bool = False,
         app_profile: Any | None = None,
         focus: str | None = None,
+        use_strong_planner: bool = True,
     ):
         self.app_name = app_name
         self.device = device_factory
@@ -158,7 +159,12 @@ class OfflineExplorer:
         # Session goal: one focused sub-target per round. Previous rounds'
         # coverage (saved artifacts in storage_dir) decides what's still
         # missing; the round ends (and saves) as soon as the goal is reached.
-        from .task_builder import describe_session_goal, load_historical_coverage, select_session_goal
+        from .task_builder import (
+            build_focus_task,
+            describe_session_goal,
+            load_historical_coverage,
+            select_session_goal,
+        )
 
         hist_pages, hist_transitions = load_historical_coverage(self.storage_dir)
         self.session_goal = select_session_goal(
@@ -167,9 +173,30 @@ class OfflineExplorer:
             hist_transitions,
             focus=focus,
         )
+        if focus and "核心空间骨架" in self.task_description:
+            # Explicit focus owns the round: a skeleton-chain task text
+            # misleads the model back onto the main path (the CLI already
+            # builds a focus task; this guards direct constructor calls).
+            self.task_description = build_focus_task(focus, app_name)
         goal_note = describe_session_goal(self.session_goal)
         if goal_note and goal_note not in self.task_description:
             self.task_description = f"{self.task_description}\n{goal_note}"
+
+        # Strong-VLM planner: plans each step; the GUI model only executes.
+        from .planner import PlanContext, StrongPlanner, strong_planner_enabled
+
+        self.use_strong_planner = use_strong_planner and strong_planner_enabled()
+        self.strong_planner = StrongPlanner() if self.use_strong_planner else None
+        if self.strong_planner is not None and not self.strong_planner.available():
+            self.strong_planner = None
+            self.use_strong_planner = False
+        from .task_builder import focus_natural_text
+
+        self.session_goal_text = focus_natural_text(focus) if focus else ""
+        self.plan_context = PlanContext(
+            remaining_edges=tuple(self.session_goal.transitions),
+            natural_goal=self.session_goal_text,
+        )
 
         self.semantics_extractor = ScreenSemanticsExtractor(schema_name=self._schema_name)
         self.edge_hypothesis_generator = EdgeHypothesisGenerator(schema_name=self._schema_name)
@@ -541,6 +568,45 @@ class OfflineExplorer:
             if trap_hint:
                 task_text = f"{task_text}\n\n{trap_hint}"
 
+            # Strong-VLM planner: it decides the next move; the GUI model
+            # receives ONE concrete instruction instead of the whole task.
+            current_plan = None
+            planner = getattr(self, "strong_planner", None)
+            if planner is not None:
+                covered_pairs = self._covered_transition_pairs()
+                goal_edges = tuple(getattr(self, "session_goal", CoverageTarget((), ())).transitions)
+                self.plan_context.remaining_edges = tuple(p for p in goal_edges if p not in covered_pairs)
+                self.plan_context.covered_edges = tuple(p for p in goal_edges if p in covered_pairs)
+                try:
+                    current_plan = planner.plan_step(
+                        screenshot.base64_data,
+                        screenshot.width,
+                        screenshot.height,
+                        current_page_type=_page_type_str(current_page),
+                        context=self.plan_context,
+                    )
+                except Exception as exc:
+                    self._log(f"  [planner] error: {exc}")
+                    current_plan = None
+                if current_plan is not None and current_plan.finish:
+                    self._log(f"  [planner] finish: {current_plan.message[:100]}")
+                    break
+                if current_plan is not None and current_plan.instruction:
+                    target = (
+                        f"{current_plan.target_transition[0]}->{current_plan.target_transition[1]}"
+                        if current_plan.target_transition
+                        else ""
+                    )
+                    self._log(f"  [planner] 指令: {current_plan.instruction}" + (f" (目标 {target})" if target else ""))
+                    task_text = (
+                        f"【当前指令】{current_plan.instruction}\n"
+                        "只执行这一条指令对应的操作，不要做任何其他操作，不要自行规划后续步骤。\n\n"
+                        f"{screen_info}"
+                    )
+                else:
+                    current_plan = None  # planner unusable this step → full prompt fallback
+            self._current_plan = current_plan
+
             request_context = [
                 system_message,
                 MessageBuilder.create_user_message(text=task_text, image_base64=screenshot.base64_data),
@@ -760,6 +826,14 @@ class OfflineExplorer:
                 f"classifier saw {_page_type_str(next_page)}:{next_page.semantic_summary}. "
                 "The next step must verify the actual landing page before planning."
             )
+            # Feed the outcome back to the strong planner
+            plan = getattr(self, "_current_plan", None)
+            if plan is not None and getattr(self, "plan_context", None) is not None:
+                landing_pt = _page_type_str(next_page)
+                outcome = f"指令『{plan.instruction}』→ 落到 {landing_pt}"
+                if plan.expected_page and plan.expected_page != landing_pt:
+                    outcome += f"（预期 {plan.expected_page}，未达成）"
+                self.plan_context.push_result(outcome)
             current_page = next_page
 
             # Phase 4c: progress watchdog
@@ -1470,6 +1544,24 @@ class OfflineExplorer:
                     for k, v in obs.items()
                 }
                 transitions_data["transition_observations"] = obs_summary
+
+            # Strong-VLM round summary: what got done, where it stalled,
+            # what the next round should focus on.
+            planner = getattr(self, "strong_planner", None)
+            if planner is not None:
+                try:
+                    goal_edges = tuple(getattr(self, "session_goal", CoverageTarget((), ())).transitions)
+                    covered_edges = tuple(self._covered_transition_pairs())
+                    step_dicts = [
+                        {"step": i + 1, "page_type": _page_type_str(s.page_info), "action": s.action}
+                        for i, s in enumerate(traj.steps)
+                    ]
+                    summary = planner.summarize_round(self.app_name, goal_edges, covered_edges, step_dicts)
+                    if summary:
+                        transitions_data["round_summary"] = summary
+                        self._log(f"  [round summary] {summary}")
+                except Exception:
+                    pass
 
             trans_path = self.storage_dir / f"{self.app_name}_explore_transitions_{timestamp}.json"
             with open(trans_path, "w", encoding="utf-8") as f:

@@ -95,12 +95,25 @@ def load_historical_coverage(storage_dir: str | Path) -> tuple[set[str], set[tup
     return pages, transitions
 
 
-def parse_focus(focus: str | None) -> tuple[set[str], set[tuple[str, str]]]:
-    """Parse a --focus string: "category,my_account" or "home->category,search_result->filter_panel"."""
+def _is_page_type_token(item: str) -> bool:
+    """ASCII snake_case tokens are page types; anything else is natural language."""
+    return bool(item) and all(ch.isascii() and (ch.isalnum() or ch == "_") for ch in item)
+
+
+def parse_focus(focus: str | None) -> tuple[set[str], set[tuple[str, str]], str]:
+    """Parse a --focus string into (page_types, transitions, natural_text).
+
+    Supports three forms, mixed freely (comma-separated):
+      - transitions: "search_result->filter_panel"
+      - page types:  "category,my_account"
+      - natural language: "探索个人中心和订单列表" — anything that isn't an
+        ASCII page-type token; understood by the strong planner directly.
+    """
     pages: set[str] = set()
     transitions: set[tuple[str, str]] = set()
+    natural: list[str] = []
     if not focus:
-        return pages, transitions
+        return pages, transitions, ""
     for item in focus.replace("，", ",").split(","):
         item = item.strip()
         if not item:
@@ -108,9 +121,17 @@ def parse_focus(focus: str | None) -> tuple[set[str], set[tuple[str, str]]]:
         if "->" in item:
             src, _, tgt = item.partition("->")
             transitions.add((src.strip(), tgt.strip()))
-        else:
+        elif _is_page_type_token(item):
             pages.add(item)
-    return pages, transitions
+        else:
+            natural.append(item)
+    return pages, transitions, "；".join(natural)
+
+
+def focus_natural_text(focus: str | None) -> str:
+    """Return only the natural-language part of a --focus string."""
+    _, _, natural = parse_focus(focus)
+    return natural
 
 
 def select_session_goal(
@@ -126,7 +147,11 @@ def select_session_goal(
     Priority: explicit --focus → first ``max_edges`` uncovered transitions
     (declaration order = skeleton first) → whole remaining gap.
     """
-    focus_pages, focus_transitions = parse_focus(focus)
+    focus_pages, focus_transitions, focus_natural = parse_focus(focus)
+    if focus_natural and not (focus_pages or focus_transitions):
+        # Pure natural-language focus: no structured edges to chase — the
+        # strong planner owns the goal; the round ends via finish/max_steps.
+        return CoverageTarget(page_types=(), transitions=())
     if focus_pages or focus_transitions:
         goal_transitions = tuple(
             pair for pair in coverage.transitions
@@ -157,4 +182,29 @@ def describe_session_goal(goal: CoverageTarget) -> str:
     return (
         f"【本轮焦点】本轮只需覆盖这些页面转移: {edges}。"
         "全部完成后立即调用 finish(message=...) 结束本轮探索，不要继续闲逛。"
+    )
+
+
+def build_focus_task(focus: str, app_display_name: str = "") -> str:
+    """Task text for an explicit --focus round: NO skeleton chain.
+
+    The skeleton text ("覆盖...核心空间骨架: home -> search_input -> ...")
+    misleads the model into replaying the main chain instead of the focus.
+    """
+    pages, transitions, natural = parse_focus(focus)
+    parts = []
+    if natural:
+        parts.append(natural)
+    if transitions:
+        parts.append("、".join(f"{a}->{b}" for a, b in sorted(transitions)))
+    if pages:
+        parts.append("、".join(sorted(pages)))
+    target_text = "；".join(parts) or focus
+    app = app_display_name or "目标App"
+    return (
+        f"在{app}中定向探索，本轮目标仅为: {target_text}。"
+        "不要执行与目标无关的页面跳转。"
+        "可以点击『加入购物车』按钮打开规格选择弹窗（这不会下单）。"
+        "只执行安全探索动作，不提交订单、不支付、不确认地址。"
+        "如果进入登录、支付、地址或订单确认页，立刻返回。"
     )

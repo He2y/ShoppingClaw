@@ -79,7 +79,13 @@ def _resolve_schema_name(args: Any, app_profile: Any) -> str:
 
 
 def _resolve_default_task(args: Any, app_profile: Any, schema_name: str) -> str:
-    """Profile task → schema {app}-templated task → Taobao legacy fallback."""
+    """Focus task (no skeleton) → profile task → schema {app} task → legacy fallback."""
+    if getattr(args, "focus", None):
+        # An explicit focus owns the round: the skeleton-chain text would
+        # mislead the model back onto the main path.
+        from .task_builder import build_focus_task
+
+        return build_focus_task(args.focus, args.app)
     try:
         from phone_agent.spatial.schema_registry import get_default_registry
 
@@ -172,6 +178,11 @@ def main() -> int:
         help="AppProfile app_id to load for coverage/safety overrides (e.g. jd, pinduoduo).",
     )
     parser.add_argument(
+        "--no-strong-planner",
+        action="store_true",
+        help="禁用强VLM逐步规划器(默认开启: 强VLM规划,GUI模型只执行单条指令).",
+    )
+    parser.add_argument(
         "--focus",
         default=None,
         help=(
@@ -248,6 +259,7 @@ def main() -> int:
             wait_stable=not args.no_wait_stable,
             app_profile=app_profile,
             focus=args.focus,
+            use_strong_planner=not args.no_strong_planner,
         )
         trajectories = explorer.explore()
         report = {
