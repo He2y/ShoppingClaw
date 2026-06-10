@@ -530,6 +530,9 @@ class OfflineExplorer:
                     f"{discovered_summary}\n\n"
                     f"{screen_info}"
                 )
+            goal_progress = self._build_session_goal_progress()
+            if goal_progress:
+                task_text = f"{goal_progress}\n\n{task_text}"
             if active_frontier_hint:
                 task_text = f"{task_text}\n\n{active_frontier_hint}"
             schema_hint = self._build_schema_transition_hint(current_page)
@@ -1006,21 +1009,48 @@ class OfflineExplorer:
         self._update_coverage_report()
         return True
 
-    def _session_goal_reached(self) -> bool:
-        """True when this round's focused sub-goal is fully covered (this run)."""
-        goal = getattr(self, "session_goal", None)
-        if goal is None or not goal.transitions:
-            return False
+    def _covered_transition_pairs(self) -> set:
         covered = set()
         for item in self.transitions:
             source_type = str(item.get("from") or "").partition(":")[0]
             target_type = str(item.get("to") or "").partition(":")[0]
             if source_type and target_type:
                 covered.add((source_type, target_type))
+        return covered
+
+    def _session_goal_reached(self) -> bool:
+        """True when this round's focused sub-goal is fully covered (this run)."""
+        goal = getattr(self, "session_goal", None)
+        if goal is None or not goal.transitions:
+            return False
+        covered = self._covered_transition_pairs()
         if all(pair in covered for pair in goal.transitions):
             self._log("  [session goal] 本轮焦点转移已全部覆盖")
             return True
         return False
+
+    def _build_session_goal_progress(self) -> str:
+        """Per-step focus reminder: done vs remaining goal transitions.
+
+        Long runs drift back to the memorized main chain; restating the
+        remaining focus every step is what keeps the model on target.
+        """
+        goal = getattr(self, "session_goal", None)
+        if goal is None or not goal.transitions:
+            return ""
+        covered = self._covered_transition_pairs()
+        done = [pair for pair in goal.transitions if pair in covered]
+        remaining = [pair for pair in goal.transitions if pair not in covered]
+        if not remaining:
+            return ""
+        lines = ["【本轮焦点进度】"]
+        if done:
+            lines.append("已完成(不要重复): " + "、".join(f"{a}->{b}" for a, b in done))
+        lines.append(
+            "仅剩: " + "、".join(f"{a}->{b}" for a, b in remaining)
+            + "。下一步必须直接朝剩余转移行动。已完成的转移(包括加购/规格弹窗)不要再执行。"
+        )
+        return "\n".join(lines)
 
     def _update_coverage_report(self) -> CoverageReport:
         if not hasattr(self, "coverage_targets"):
@@ -1099,8 +1129,17 @@ class OfflineExplorer:
         return TransitionRuleEngine.should_stop_after_rejection(reason)
 
     def _build_discovered_summary(self) -> str:
-        """Build a summary of discovered pages for the VLM context."""
+        """Build a summary of discovered pages for the VLM context.
+
+        When a session goal exists, the "missing" guidance shows ONLY this
+        round's remaining focus edges — listing the full coverage gap (11
+        page types) competes with the focus and sends the model wandering.
+        """
+        goal = getattr(self, "session_goal", None)
         if not self.discovered_pages:
+            if goal is not None and goal.transitions:
+                missing = ", ".join(f"{a}->{b}" for a, b in goal.transitions)
+                return f"尚未发现任何页面。本轮只需覆盖这些转移: {missing}"
             missing = ", ".join(self.coverage_targets.page_types)
             return f"尚未发现任何页面。请优先覆盖这些页面类型: {missing}"
 
@@ -1110,7 +1149,17 @@ class OfflineExplorer:
             by_type[t] = by_type.get(t, 0) + 1
 
         type_lines = "\n".join(f"  - {t}: {c}个" for t, c in sorted(by_type.items()))
-        coverage = self._update_coverage_report()
+        self._update_coverage_report()
+        if goal is not None and goal.transitions:
+            covered = self._covered_transition_pairs()
+            remaining = [pair for pair in goal.transitions if pair not in covered]
+            missing_edges = ", ".join(f"{a}->{b}" for a, b in remaining) or "无（本轮焦点已完成）"
+            return (
+                f"已发现 {len(self.discovered_pages)} 个页面:\n{type_lines}\n"
+                f"本轮剩余焦点转移: {missing_edges}\n"
+                "请只选择能补齐剩余焦点转移的安全动作，避免支付、提交订单和地址确认。"
+            )
+        coverage = self.coverage_report
         missing_pages = ", ".join(coverage.missing_page_types) or "无"
         missing_edges = ", ".join(f"{a}->{b}" for a, b in coverage.missing_transitions) or "无"
         return (
@@ -1184,7 +1233,13 @@ class OfflineExplorer:
     # ── Phase 4 helpers ─────────────────────────────────────────
 
     def _action_has_trap_token(self, action: Dict[str, Any], reasoning: str = "") -> bool:
-        """Return True if the action or reasoning contains a trap token."""
+        """Return True if the ACTION ITSELF targets a trap element.
+
+        Only the serialized action (semantic target / typed text) is checked.
+        Reasoning text is deliberately ignored: it routinely quotes product
+        titles and promo banners ("以旧换新", "百亿补贴"), which blocked a
+        legitimate add-to-cart tap on a real device.
+        """
         safety = getattr(self, "safety", None)
         if safety is None:
             return False
@@ -1192,16 +1247,7 @@ class OfflineExplorer:
         if not trap_tokens:
             return False
         action_text = json.dumps(action, ensure_ascii=False).lower()
-        for token in trap_tokens:
-            if token.lower() in action_text:
-                return True
-        # Also check element description in reasoning
-        if reasoning:
-            reasoning_lower = reasoning.lower()
-            for token in trap_tokens:
-                if token.lower() in reasoning_lower:
-                    return True
-        return False
+        return any(token.lower() in action_text for token in trap_tokens)
 
     def _build_trap_avoid_hint(self) -> str:
         """Build a short avoid-hint based on recent trap edges."""

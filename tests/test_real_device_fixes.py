@@ -331,3 +331,77 @@ def test_session_goal_reached_ends_round():
     assert not explorer._session_goal_reached()
     explorer.transitions = [{"from": "home:首页", "action": {}, "to": "search_input:搜索"}]
     assert explorer._session_goal_reached()
+
+
+# ── fifth issue: model forgets the round focus and loops the main chain ──
+
+
+def _explorer_with_goal(transitions_done):
+    from phone_agent.memory.exploration.explorer import OfflineExplorer
+    from phone_agent.memory.exploration.types import CoverageTarget
+
+    explorer = object.__new__(OfflineExplorer)
+    explorer.session_goal = CoverageTarget(
+        page_types=("home", "search_input", "search_result", "filter_panel"),
+        transitions=(
+            ("home", "search_input"),
+            ("search_input", "search_result"),
+            ("search_result", "filter_panel"),
+        ),
+    )
+    explorer.transitions = [
+        {"from": f"{a}:x", "action": {}, "to": f"{b}:y"} for a, b in transitions_done
+    ]
+    explorer.verbose = False
+    return explorer
+
+
+def test_session_goal_progress_lists_only_remaining_edges():
+    explorer = _explorer_with_goal([("home", "search_input"), ("search_input", "search_result")])
+    note = explorer._build_session_goal_progress()
+    assert "search_result->filter_panel" in note
+    assert "已完成" in note and "home->search_input" in note
+    assert "不要重复" in note
+
+
+def test_session_goal_progress_empty_when_goal_done():
+    explorer = _explorer_with_goal([
+        ("home", "search_input"),
+        ("search_input", "search_result"),
+        ("search_result", "filter_panel"),
+    ])
+    assert explorer._build_session_goal_progress() == ""
+
+
+def test_discovered_summary_shows_round_focus_not_full_gap():
+    from phone_agent.memory.exploration.types import PageInfo
+
+    explorer = _explorer_with_goal([("home", "search_input")])
+    explorer.discovered_pages = {
+        "home:x": PageInfo(page_type="home", semantic_summary="x", elements={},
+                           screenshot_hash="h", app="京东"),
+    }
+    explorer.coverage_targets = explorer.session_goal
+    summary = explorer._build_discovered_summary()
+    assert "本轮剩余焦点转移" in summary
+    assert "search_result->filter_panel" in summary
+    assert "缺失页面类型" not in summary
+
+
+def test_trap_filter_ignores_reasoning_text():
+    from phone_agent.memory.exploration.explorer import OfflineExplorer
+    from phone_agent.memory.exploration.safety import SafetyPolicy
+
+    explorer = object.__new__(OfflineExplorer)
+    explorer.safety = SafetyPolicy(
+        high_risk_page_types=frozenset(),
+        unsafe_tokens=(),
+        risky_cta_tokens=(),
+        risky_cta_allowed_pages=frozenset(),
+        trap_tokens=("以旧换新",),
+    )
+    action = {"_metadata": "do", "action": "Tap", "element": [518, 949]}
+    reasoning = "商品标题是小米空调 以旧换新 高效节能，我点击加入购物车按钮。"
+    assert not explorer._action_has_trap_token(action, reasoning)
+    trap_action = {"_metadata": "do", "action": "Tap", "semantic_target": "以旧换新入口"}
+    assert explorer._action_has_trap_token(trap_action, "")
