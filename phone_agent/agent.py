@@ -442,10 +442,6 @@ class PhoneAgent:
         if plan_step is None:
             return True
 
-        # search_input with pending query → VLM must type the search term
-        if page_type == "search_input" and self._task_plan.goal_slots.get("query"):
-            return True
-
         for hint in available_actions:
             if (
                 hint.target_page == plan_step.target_page
@@ -500,6 +496,13 @@ class PhoneAgent:
             print(f"🚀 Fast Path: {hint.action_type} → {hint.target_page} (conf={hint.confidence:.2f})")
 
         result = self.action_handler.execute(action, screenshot.width, screenshot.height)
+        if not result.success:
+            # Device-level execution failure is not transition evidence —
+            # fall back to the VLM without polluting lifecycle statistics.
+            if self.agent_config.verbose:
+                print(f"⚠️ Fast Path execution failed: {result.message}")
+            self._tele(dispatch="fast_path_fallback", actual_postcondition="(执行失败)")
+            return None
 
         # Postcondition verification
         device_factory = get_device_factory()
@@ -521,6 +524,10 @@ class PhoneAgent:
             # Clear stale RuntimeDAG to force PageClassifier on next step
             if self.memory_manager and hasattr(self.memory_manager, "_runtime_dag"):
                 self.memory_manager._runtime_dag = None
+            # Record the observed (wrong) target so the lifecycle can demote
+            # the edge — previously failures were never recorded and bad
+            # edges stayed promoted forever.
+            self._record_and_evolve(source_page_type, action, new_page_type)
             self._tele(dispatch="fast_path_fallback", actual_postcondition=new_page_type or "")
             return None  # Fall through to Full Path
 
@@ -542,7 +549,11 @@ class PhoneAgent:
                     expected_postcondition=hint.target_page,
                 )
 
-        self._record_and_evolve(source_page_type, action, new_page_type or hint.target_page)
+        # Lifecycle bookkeeping is handled exclusively by the pending
+        # transition set above and verified at t+1 (single channel) —
+        # recording here as well double-counted every Fast Path success,
+        # and `new_page_type or hint.target_page` fabricated observations
+        # when classification failed.
 
         if self.tracer:
             self.tracer.record_step(
@@ -567,12 +578,13 @@ class PhoneAgent:
         action: dict[str, Any],
         observed_page_type: str | None = None,
     ) -> None:
-        """Feed execution result to EdgeLifecycleManager for self-evolution.
+        """Feed an in-step observation to EdgeLifecycleManager.
 
-        Called after every action execution (both Fast Path and Full Path).
-        If ``observed_page_type`` is provided (e.g. from Fast Path postcondition
-        check), it is used directly. Otherwise the method is a no-op — the
-        next step's PageClassifier result will provide the observation.
+        Only used when a step has direct evidence the pending-transition
+        channel cannot capture — currently the Fast Path postcondition
+        mismatch (the wrong observed page must reach the lifecycle so the
+        edge can be demoted). Successful transitions are recorded solely
+        via the pending transition verified at t+1.
         """
         if not observed_page_type:
             return
@@ -595,26 +607,48 @@ class PhoneAgent:
                 action_target=action_target,
                 observed_target=observed_page_type,
             )
+        except Exception:
+            pass
+
+    def _advance_lifecycle_step(self) -> None:
+        """Advance the lifecycle's global step counter (once per agent step)."""
+        memory_manager = getattr(self, "memory_manager", None)
+        lifecycle = getattr(
+            getattr(memory_manager, "spatial_graph_memory", None),
+            "_edge_lifecycle", None,
+        )
+        if lifecycle is None:
+            return
+        try:
             lifecycle.advance_step()
         except Exception:
             pass
 
     @staticmethod
     def _fill_action_slots(action: dict, slots: dict[str, str]) -> dict:
-        """Fill <placeholder> slots in Compound action steps."""
-        if action.get("action") != "Compound":
+        """Fill <placeholder> slots inside Compound action steps.
+
+        Substring-safe: "搜索<query>" is filled too, matching the RuntimeDAG
+        path's _fill_runtime_slots semantics (the old whole-string check left
+        partial templates unfilled and the handler then rejected them).
+        """
+        if action.get("action") != "Compound" or not slots:
             return action
-        steps = action.get("steps", [])
+
+        def _sub(text: str) -> str:
+            return re.sub(
+                r"<([a-zA-Z0-9_]+)>",
+                lambda m: str(slots.get(m.group(1)) or m.group(0)),
+                text,
+            )
+
         filled_steps = []
-        for step in steps:
+        for step in action.get("actions", []):
             step = dict(step)
-            text = step.get("text", "")
-            if isinstance(text, str) and text.startswith("<") and text.endswith(">"):
-                slot_name = text[1:-1]
-                if slot_name in slots:
-                    step["text"] = slots[slot_name]
+            if isinstance(step.get("text"), str):
+                step["text"] = _sub(step["text"])
             filled_steps.append(step)
-        return {**action, "steps": filled_steps}
+        return {**action, "actions": filled_steps}
 
     def _handle_verification_takeover(
         self,
@@ -802,8 +836,17 @@ class PhoneAgent:
                 action, screenshot.width, screenshot.height
             )
         except Exception as e:
-            result = self.action_handler.execute(
-                finish(message=str(e)), screenshot.width, screenshot.height
+            # Never route exceptions through finish(): the handler reports
+            # finish as success=True, which would mark the task successful
+            # and flush the failed trajectory into Neo4j (quality gate 1).
+            if self.agent_config.verbose:
+                traceback.print_exc()
+            return StepResult(
+                success=False,
+                finished=True,
+                action=action,
+                thinking=f"[Graph: {action_type}→{postcondition}]",
+                message=f"图谱捷径执行异常: {e}",
             )
 
         # Record
@@ -1119,6 +1162,7 @@ class PhoneAgent:
             "graph_hint": "",
         }
         result = self._execute_step_impl(user_prompt, is_first)
+        self._advance_lifecycle_step()
         info = dict(self._step_telemetry)
         info.update(
             success=result.success,
@@ -1658,9 +1702,11 @@ class PhoneAgent:
             except Exception as e:
                 if self.agent_config.verbose:
                     traceback.print_exc()
-                result = self.action_handler.execute(
-                    finish(message=str(e)), screenshot.width, screenshot.height
-                )
+                # Terminate as a failure — routing through finish() would
+                # report success=True and flush the failed trajectory into
+                # Neo4j (quality gate 1).
+                from phone_agent.actions.handler import ActionResult
+                result = ActionResult(success=False, should_finish=True, message=str(e))
 
         # Add assistant response to context based on model type
         if self._model_type in (ModelType.QWENVL, ModelType.GUIOWL):

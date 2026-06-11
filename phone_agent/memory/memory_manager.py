@@ -26,6 +26,11 @@ from .spatial_graph_memory import PageBelief, RuntimeDAG, SpatialGraphMemory
 _LEGACY_VLM_VERIFY_TRANSITIONS: frozenset[tuple[str, str]] = frozenset({
     ("search_result", "product_detail"),
     ("product_detail", "spec_selection"),
+    # Purchase-commit boundary: graph must never replay historical
+    # coordinates here — VLM (and SpecGuard) decide.
+    ("spec_selection", "cart"),
+    ("spec_selection", "checkout"),
+    ("cart", "checkout"),
 })
 # Backward-compat alias so any import of _VLM_VERIFY_TRANSITIONS still works.
 _VLM_VERIFY_TRANSITIONS = _LEGACY_VLM_VERIFY_TRANSITIONS

@@ -588,6 +588,18 @@
       [
         "product_detail",
         "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "spec_selection",
+        "checkout"
+      ],
+      [
+        "cart",
+        "checkout"
       ]
     ]
   }

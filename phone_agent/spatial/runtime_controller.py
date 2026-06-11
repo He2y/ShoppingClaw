@@ -23,6 +23,10 @@ VLM_VERIFY_TRANSITIONS: frozenset[tuple[str, str]] = frozenset(
     {
         ("search_result", "product_detail"),
         ("product_detail", "spec_selection"),
+        # Purchase-commit boundary — never graph-replayed
+        ("spec_selection", "cart"),
+        ("spec_selection", "checkout"),
+        ("cart", "checkout"),
     }
 )
 

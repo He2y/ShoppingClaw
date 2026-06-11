@@ -24,6 +24,7 @@ _UNGROUNDED_TRANSITIONS = frozenset({
     ("product_detail", "spec_selection"),
     ("spec_selection", "cart"),
     ("spec_selection", "checkout"),
+    ("cart", "checkout"),
 })
 
 
@@ -153,10 +154,13 @@ class ActionAdvisor:
         Used by Fast Path when VLM is skipped for mechanical navigation.
         """
         if hint.compound_steps:
+            # Key must be "actions" — ActionHandler._handle_compound reads
+            # action["actions"]; the old "steps" key made every compound
+            # Fast Path fail with "Compound action has no steps".
             return {
                 "_metadata": "do",
                 "action": "Compound",
-                "steps": list(hint.compound_steps),
+                "actions": list(hint.compound_steps),
             }
         if hint.action_type in ("Back", "Home"):
             return {"_metadata": "do", "action": hint.action_type}

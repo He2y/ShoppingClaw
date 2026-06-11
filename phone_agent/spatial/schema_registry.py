@@ -309,6 +309,11 @@ def get_default_registry() -> SchemaRegistry:
 _LEGACY_VLM_VERIFY_TRANSITIONS: frozenset[tuple[str, str]] = frozenset({
     ("search_result", "product_detail"),
     ("product_detail", "spec_selection"),
+    # Purchase-commit boundary: graph must never replay historical
+    # coordinates here — VLM (and SpecGuard) decide.
+    ("spec_selection", "cart"),
+    ("spec_selection", "checkout"),
+    ("cart", "checkout"),
 })
 
 
