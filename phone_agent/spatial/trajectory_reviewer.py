@@ -328,7 +328,10 @@ class TrajectoryReviewer:
             return False
 
         now_ms = int(time.time() * 1000)
-        element = candidate.action_params.get("element", [500, 500])
+        # Only real executed coordinates may enter the graph. The old
+        # [500, 500] screen-center default fabricated coordinates that a
+        # promoted edge would later fast-replay onto a random position.
+        element = candidate.action_params.get("element") or None
         region = candidate.action_params.get("region", "")
 
         try:
