@@ -28,6 +28,10 @@ _UNGROUNDED_TRANSITIONS = frozenset({
     # A bare Tap on the search button would submit whatever stale text is in
     # the box — only the synthesized Compound (type query + tap) is grounded.
     ("search_input", "search_result"),
+    # Leaving the filter panel correctly requires content decisions (fill
+    # price bounds, pick features, tap 确认) — a replayed Tap/Back discards
+    # the user's filter intent.
+    ("filter_panel", "search_result"),
 })
 
 
@@ -47,12 +51,18 @@ class ActionHint:
     compound_steps: tuple[dict[str, Any], ...] | None = None
 
     def is_fast_executable(self) -> bool:
-        """Can this hint be auto-executed on the Fast Path?"""
+        """Can this hint be auto-executed on the Fast Path?
+
+        Back/Home are deliberately excluded: rollback edges fight the VLM's
+        intentional detours (real-device loop: every time the VLM opened the
+        filter panel, a promoted Back edge instantly closed it). Undo is
+        repair territory — the VLM or repair_hint must decide it.
+        """
         return (
             self.grounded
             and self.confidence >= 0.9
             and (self.coordinates is not None or self.compound_steps is not None
-                 or self.action_type in ("Back", "Home", "Launch", "Wait"))
+                 or self.action_type in ("Launch", "Wait"))
         )
 
 

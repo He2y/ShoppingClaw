@@ -229,3 +229,54 @@ def test_append_search_compound_noop_when_compound_exists():
 def test_bare_search_tap_classified_ungrounded():
     from phone_agent.spatial.action_advisor import _UNGROUNDED_TRANSITIONS
     assert ("search_input", "search_result") in _UNGROUNDED_TRANSITIONS
+    assert ("filter_panel", "search_result") in _UNGROUNDED_TRANSITIONS
+
+
+# ── Back must never be Fast Path (filter-panel death loop) ───────────────────
+
+
+def test_back_hint_is_not_fast_executable():
+    back = ActionHint(
+        target_page="search_result", action_type="Back", region="",
+        grounded=True, confidence=0.95, description="rollback",
+    )
+    assert back.is_fast_executable() is False
+
+
+def _plan(steps_spec: list[tuple[str, str]]):
+    steps = [SimpleNamespace(target_page=t, status=s) for t, s in steps_spec]
+    current = next((s for s in steps if s.status == "current"), None)
+    return SimpleNamespace(
+        steps=steps,
+        goal_slots={"query": "蓝牙耳机"},
+        current_step=lambda: current,
+    )
+
+
+def test_effective_plan_target_advances_past_reached_step():
+    agent = _bare_agent()
+    agent._task_plan = _plan([
+        ("search_input", "current"),
+        ("search_result", "pending"),
+    ])
+
+    # Standing ON the current step's target page → next step's target
+    assert agent._effective_plan_target("search_input") == "search_result"
+    # Elsewhere → current step's target unchanged
+    assert agent._effective_plan_target("home") == "search_input"
+
+
+def test_compound_search_selected_when_standing_on_search_input():
+    agent = _bare_agent()
+    agent._task_plan = _plan([
+        ("search_input", "current"),
+        ("search_result", "pending"),
+    ])
+    compound = ActionHint(
+        target_page="search_result", action_type="Compound", region="top",
+        grounded=True, confidence=0.96, description="输入并搜索",
+        compound_steps=({"action": "Type", "text": "<query>"},),
+    )
+
+    assert agent._needs_vlm([compound], page_type="search_input") is False
+    assert agent._select_fast_action([compound], "search_input") is compound

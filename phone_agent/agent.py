@@ -444,23 +444,48 @@ class PhoneAgent:
         if plan_step is None:
             return True
 
+        effective_target = self._effective_plan_target(page_type)
         for hint in available_actions:
             if (
-                hint.target_page == plan_step.target_page
+                hint.target_page == effective_target
                 and hint.is_fast_executable()
             ):
                 return False
         return True
 
-    def _select_fast_action(self, available_actions: list) -> Any | None:
-        """Pick the best Grounded Action matching the current plan step."""
-        plan_step = self._task_plan.current_step() if self._task_plan else None
-        if plan_step is None:
+    def _effective_plan_target(self, page_type: str) -> str | None:
+        """Plan target for fast dispatch; advances past already-reached steps.
+
+        The plan only marks a step done on explicit progress, so while we
+        stand ON the current step's target page (e.g. search_input), the raw
+        target would match arrival edges instead of the next move — the
+        compound search edge (→ search_result) was never selected because of
+        this.
+        """
+        if not self._task_plan:
+            return None
+        step = self._task_plan.current_step()
+        if step is None:
+            return None
+        if page_type and step.target_page == page_type:
+            steps = self._task_plan.steps
+            try:
+                idx = steps.index(step)
+            except ValueError:
+                return step.target_page
+            if idx + 1 < len(steps):
+                return steps[idx + 1].target_page
+        return step.target_page
+
+    def _select_fast_action(self, available_actions: list, page_type: str = "") -> Any | None:
+        """Pick the best Grounded Action matching the effective plan target."""
+        effective_target = self._effective_plan_target(page_type)
+        if effective_target is None:
             return None
         best = None
         for hint in available_actions:
             if (
-                hint.target_page == plan_step.target_page
+                hint.target_page == effective_target
                 and hint.is_fast_executable()
                 and (best is None or hint.confidence > best.confidence)
             ):
@@ -1488,7 +1513,7 @@ class PhoneAgent:
                     f"executable={[h.target_page for h in _available_actions if h.is_fast_executable()]}"
                 )
             if _available_actions and not self._needs_vlm(_available_actions, page_type or ""):
-                fast_hint = self._select_fast_action(_available_actions)
+                fast_hint = self._select_fast_action(_available_actions, page_type or "")
                 if fast_hint is not None:
                     fast_result = self._execute_fast_path(
                         fast_hint, screenshot, current_app, ui_hash, semantic_layout,
