@@ -1051,8 +1051,13 @@ class PhoneAgent:
         page_type: str | None,
         available_actions: list | None,
         graph_hint: str,
+        include_screen_info: bool = True,
     ) -> list[str]:
-        """Build the structured per-step user message parts (AutoGLM path).
+        """Build the structured per-step context parts (all model families).
+
+        AutoGLM embeds them in its per-step user message (with screen info);
+        the other adapters receive them via supplementary-context prepend
+        (without screen info — their adapters render it themselves).
 
         Note: consumes self._last_user_reply (cleared after inclusion).
         """
@@ -1122,8 +1127,9 @@ class PhoneAgent:
                     f"如果当前商品超出预算，立即 Back 返回。"
                 )
 
-        screen_info = MessageBuilder.build_screen_info(current_app)
-        parts.append(f"** Screen Info **\n\n{screen_info}")
+        if include_screen_info:
+            screen_info = MessageBuilder.build_screen_info(current_app)
+            parts.append(f"** Screen Info **\n\n{screen_info}")
 
         if getattr(self, "_last_user_reply", None):
             parts.append(f"[用户补充约束]: {self._last_user_reply}")
@@ -1470,6 +1476,21 @@ class PhoneAgent:
                 # UI-TARS: 保留最近 5 张图片
                 if hasattr(self._adapter, 'limit_context'):
                     self._context = self._adapter.limit_context(self._context, max_images=5)
+
+            # Model-agnostic structured context (task plan / constraints /
+            # history / action hints / SpecGuard / price red-line / user
+            # reply). Previously AutoGLM-only — other model families ran
+            # without plan progress or safety reminders.
+            step_parts = self._build_step_user_parts(
+                current_app=current_app,
+                page_type=page_type,
+                available_actions=_available_actions,
+                graph_hint=graph_hint,
+                include_screen_info=False,
+            )
+            if step_parts:
+                self._inject_supplementary_context(["\n\n".join(step_parts)])
+                graph_hint_in_message = bool(graph_hint)
         else:
             # AutoGLM: original message building logic
             if is_first:
@@ -1631,19 +1652,35 @@ class PhoneAgent:
             # Execute action with specialized handler
             try:
                 if parsed_action and parsed_action.action_type and parsed_action.action_type != "unknown":
-                    result = self._specialized_handler.execute(
-                        parsed_action, screenshot.width, screenshot.height
-                    )
-                    # Sync action history to adapter (for QwenVL message building)
-                    if result.success and hasattr(self._specialized_handler, 'action_history'):
-                        if hasattr(self._adapter, '_action_history'):
-                            self._adapter._action_history = list(self._specialized_handler.action_history)
-                    
                     action = self._canonical_action_from_model_output(
                         parsed_action,
                         screen_width=screenshot.width,
                         screen_height=screenshot.height,
                     )
+                    # SpecGuard on the canonical action BEFORE execution —
+                    # previously only the AutoGLM branch was guarded, so the
+                    # other model families could commit purchases unchecked.
+                    guarded = self._spec_guard.check(
+                        action=action,
+                        thinking=thinking,
+                        current_app=current_app,
+                        page_type=page_type or ("payment" if screenshot.is_sensitive else None),
+                        task=self._current_task,
+                        vlm_plan=getattr(self, "_vlm_plan", None),
+                    )
+                    if guarded is not None:
+                        action = guarded
+                        result = self.action_handler.execute(
+                            guarded, screenshot.width, screenshot.height
+                        )
+                    else:
+                        result = self._specialized_handler.execute(
+                            parsed_action, screenshot.width, screenshot.height
+                        )
+                        # Sync action history to adapter (for QwenVL message building)
+                        if result.success and hasattr(self._specialized_handler, 'action_history'):
+                            if hasattr(self._adapter, '_action_history'):
+                                self._adapter._action_history = list(self._specialized_handler.action_history)
                 else:
                     # Fallback to AutoGLM handler
                     action_str = response.action if hasattr(response, 'action') else ""
@@ -1682,12 +1719,14 @@ class PhoneAgent:
             if self.action_advisor and _available_actions:
                 action = self.action_advisor.try_ground(action, _available_actions)
 
-            # SpecGuard: prevent model from skipping Interact on spec pages
+            # SpecGuard: prevent model from skipping Interact on spec pages.
+            # FLAG_SECURE (sensitive) screenshots skip classification — treat
+            # them as payment pages so the guard stays armed where it matters.
             guarded = self._spec_guard.check(
                 action=action,
                 thinking=thinking,
                 current_app=current_app,
-                page_type=page_type,
+                page_type=page_type or ("payment" if screenshot.is_sensitive else None),
                 task=self._current_task,
                 vlm_plan=getattr(self, "_vlm_plan", None),
             )
@@ -1820,6 +1859,12 @@ class PhoneAgent:
         if action.get("action_type") == "Interact" or action.get("action") == "Interact" or (action.get("_metadata") == "do" and action.get("action") == "Interact"):
             if hasattr(result, "message") and result.message:
                 self._last_user_reply = result.message
+                # Fold the answer into the task text so SpecGuard and
+                # TaskSpecExtractor see the new constraint — otherwise the
+                # guard re-asks the same question until max_steps.
+                reply = result.message.strip()
+                if reply and reply not in self._current_task:
+                    self._current_task = f"{self._current_task}（用户补充：{reply}）"
 
         # Check if finished
         finished = action.get("_metadata") == "finish" or result.should_finish
