@@ -312,6 +312,8 @@ class PhoneAgent:
         self._anomaly_consecutive: int = 0
         self._last_planner_instruction = ""
         self._visited_pages: set[str] = set()
+        self._unparseable_count = 0
+        self._finish_rejected_count = 0
         if self.step_planner is not None:
             from phone_agent.step_planner import TaskPlanContext
             self._planner_context = TaskPlanContext()
@@ -1066,6 +1068,28 @@ class PhoneAgent:
                 cleaned = cleaned.replace(token, " ")
         cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,，、")
         return cleaned or (query or "").strip()
+
+    def _reset_dialogue_context(self, reason: str) -> None:
+        """Drop the (possibly poisoned) dialogue and re-analyze from memory.
+
+        The milestone architecture makes this safe: everything durable lives
+        in the session memory file / session state — the dialogue context is
+        disposable. The next step rebuilds: system prompt + memory digest +
+        current objective + fresh screenshot.
+        """
+        system_prompt = self.agent_config.system_prompt
+        try:
+            self._context = [MessageBuilder.create_system_message(system_prompt)]
+        except Exception:
+            self._context = []
+        if self._specialized_handler is not None and hasattr(self._specialized_handler, "clear_history"):
+            self._specialized_handler.clear_history()
+        if hasattr(self._adapter, "clear_history"):
+            self._adapter.clear_history()
+        note = f"[上下文重置] {reason}"
+        self._step_summaries.append(note)
+        if self.agent_config.verbose:
+            print(f"🔄 {note}")
 
     def _finalize_session_memory(self, success: bool) -> None:
         """Persist the session memory file's terminal state (best-effort)."""
@@ -2057,10 +2081,31 @@ class PhoneAgent:
 
             try:
                 action = parse_action(action_str)
+                self._unparseable_count = 0
             except ValueError:
                 if self.agent_config.verbose:
                     traceback.print_exc()
-                action = finish(message=action_str)
+                # Empty/garbage output must NOT become finish() — that was
+                # another success-laundering path (the model emitted empty
+                # responses in a loop and each one "finished" the task).
+                # Recover instead: reset the poisoned dialogue context (the
+                # session memory file is the durable state) and retry.
+                self._unparseable_count = getattr(self, "_unparseable_count", 0) + 1
+                if self._unparseable_count >= 4:
+                    return StepResult(
+                        success=False, finished=True, action=None,
+                        thinking=thinking or "",
+                        message="执行模型连续无有效输出，任务失败",
+                    )
+                if self._unparseable_count >= 2:
+                    self._reset_dialogue_context(
+                        "执行模型输出为空/不可解析，重置上下文后基于会话记忆重新分析"
+                    )
+                return StepResult(
+                    success=False, finished=False, action=None,
+                    thinking=thinking or "",
+                    message="模型输出不可解析，已跳过本步并准备重试",
+                )
 
             if self.agent_config.verbose:
                 print("-" * 50)
@@ -2277,13 +2322,29 @@ class PhoneAgent:
                     message=ckpt.message or "监督者判定任务无法继续推进",
                 )
             elif ckpt is not None and not ckpt.task_complete:
-                note = "[里程碑] 监督者判定任务未完成：" + (
-                    ckpt.current_situation or ckpt.message or "请继续执行"
-                )
-                if self.agent_config.verbose:
-                    print(f"⛔ {note}")
-                self._step_summaries.append(note)
-                finished = False
+                self._finish_rejected_count = getattr(self, "_finish_rejected_count", 0) + 1
+                situation = ckpt.current_situation or ckpt.message or "请继续执行"
+                if self._finish_rejected_count >= 3:
+                    # Three rejected completion claims — the executor cannot
+                    # close the gap; terminate deterministically as a failure
+                    # instead of stalling until max_steps.
+                    from phone_agent.actions.handler import ActionResult
+                    result = ActionResult(
+                        success=False, should_finish=True,
+                        message=f"任务未能完成（监督者三次否决完成声明）：{situation}",
+                    )
+                else:
+                    note = f"[里程碑] 监督者判定任务未完成：{situation}"
+                    if self.agent_config.verbose:
+                        print(f"⛔ {note}")
+                    self._step_summaries.append(note)
+                    # Recovery: the dialogue that produced the false finish is
+                    # poisoned — drop it and re-analyze from the revised
+                    # session memory (回退重新分析).
+                    self._reset_dialogue_context(
+                        f"完成声明被否决，按修订后的子任务继续：{situation}"
+                    )
+                    finished = False
 
         # Record step trace
         if self.tracer:

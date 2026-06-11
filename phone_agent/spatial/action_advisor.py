@@ -32,6 +32,10 @@ _UNGROUNDED_TRANSITIONS = frozenset({
     # price bounds, pick features, tap 确认) — a replayed Tap/Back discards
     # the user's filter intent.
     ("filter_panel", "search_result"),
+    # Leaving the spec popup is a commit/cancel decision; the replayed Tap
+    # kept closing the popup right when the executor was about to confirm
+    # add-to-cart (real-device stall at the final step).
+    ("spec_selection", "product_detail"),
 })
 
 

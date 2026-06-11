@@ -175,3 +175,28 @@ def test_mechanical_price_verdict_injected():
     text = "\n\n".join(parts)
     assert "⛔ 系统判定" in text
     assert "1424.05" in text
+
+
+def test_reset_dialogue_context_rebuilds_system_message():
+    """Recovery primitive: drop poisoned dialogue, keep durable memory."""
+    agent = object.__new__(PhoneAgent)
+    agent.agent_config = SimpleNamespace(system_prompt="SYS", verbose=False)
+    agent._context = [
+        {"role": "system", "content": "SYS"},
+        {"role": "user", "content": "task"},
+        {"role": "assistant", "content": ""},  # poisoned empty turn
+    ]
+    agent._step_summaries = []
+    agent._specialized_handler = None
+    agent._adapter = SimpleNamespace()
+
+    agent._reset_dialogue_context("完成声明被否决")
+
+    assert len(agent._context) == 1
+    assert agent._context[0]["role"] == "system"
+    assert agent._step_summaries[-1].startswith("[上下文重置]")
+
+
+def test_spec_popup_exit_is_ungrounded():
+    from phone_agent.spatial.action_advisor import _UNGROUNDED_TRANSITIONS
+    assert ("spec_selection", "product_detail") in _UNGROUNDED_TRANSITIONS
