@@ -1705,7 +1705,11 @@ class PhoneAgent:
                     stagnating=stagnating,
                 )
                 if _ms_trigger:
-                    self._run_milestone_checkpoint(_ms_trigger, screenshot, page_type)
+                    try:
+                        self._run_milestone_checkpoint(_ms_trigger, screenshot, page_type)
+                    except Exception:
+                        if self.agent_config.verbose:
+                            traceback.print_exc()
 
             # ── Action Library advisory ──
             _available_actions: list | None = None
@@ -2283,17 +2287,26 @@ class PhoneAgent:
                 print("⛔ [Planner] 执行模型试图提前 finish，已拦截（任务结束由规划器判定）")
             finished = False
 
+        # Single completion authority: when the supervisor can still confirm,
+        # final_confirm (screenshot verdict) decides; the mechanical
+        # page-visitation gate is the fallback when it cannot (no supervisor,
+        # disabled after failures, or call budget exhausted). Page-visitation
+        # evidence is noisy — spec popups frequently classify as
+        # product_detail, so a genuinely successful add-to-cart was once
+        # blocked for "never visiting spec_selection".
+        supervisor_can_confirm = (
+            self.milestone_supervisor is not None
+            and self._milestone_trigger is not None
+            and not self._milestone_trigger.disabled
+            and self._milestone_trigger.call_count < self._milestone_trigger.max_calls
+        )
         if (
             finished
             and action.get("_metadata") == "finish"
             and result.success
+            and not supervisor_can_confirm
             and not self._completion_evidence()
         ):
-            # Mechanical finish gate: a success claim requires having reached
-            # the pre-plan's target page at least once. Fabricated completions
-            # ("已成功加入购物车" while never leaving product_detail) are the
-            # small model's most damaging hallucination — success finishes
-            # feed the graph quality gates.
             target = str((getattr(self, "_vlm_plan", {}) or {}).get("target_page") or "")
             note = f"[FinishGate] 完成证据不足（目标页 {target} 未到达过），已拦截 finish，请继续执行任务"
             if self.agent_config.verbose:
@@ -2309,12 +2322,14 @@ class PhoneAgent:
             finished
             and action.get("_metadata") == "finish"
             and result.success
-            and self.milestone_supervisor is not None
-            and self._milestone_trigger is not None
-            and not self._milestone_trigger.disabled
-            and self._milestone_trigger.call_count < self._milestone_trigger.max_calls
+            and supervisor_can_confirm
         ):
-            ckpt = self._run_milestone_checkpoint("final_confirm", screenshot, page_type or "")
+            try:
+                ckpt = self._run_milestone_checkpoint("final_confirm", screenshot, page_type or "")
+            except Exception:
+                if self.agent_config.verbose:
+                    traceback.print_exc()
+                ckpt = None  # supervisor crash must not block a finish
             if ckpt is not None and ckpt.task_blocked:
                 from phone_agent.actions.handler import ActionResult
                 result = ActionResult(
