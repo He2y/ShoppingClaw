@@ -90,6 +90,7 @@ class SpecGuard:
         page_type: str | None,
         task: str,
         vlm_plan: dict[str, Any] | None = None,
+        current_price: float | None = None,
     ) -> dict[str, Any] | None:
         """Cross-reference user specs before purchase commit.
 
@@ -114,6 +115,32 @@ class SpecGuard:
             return None
         if not self._is_spec_commit_action(action, thinking, page_type):
             return None
+
+        # Mechanical price-bound enforcement. Prompt-level red lines are
+        # advisory only — the VLM has been observed committing a ¥1424 item
+        # against a 500-1000 budget while claiming it fits. Hard-stop here.
+        bounds = self._extract_price_bounds(task, vlm_plan)
+        if bounds and current_price is not None:
+            low, high = bounds
+            if (low is not None and current_price < low) or (
+                high is not None and current_price > high
+            ):
+                question = (
+                    f"当前商品价格 ¥{current_price:g} 超出您要求的价格范围"
+                    f"（{self._format_bounds(bounds)}）。价格筛选可能未生效。"
+                    f"请确认：是否仍要购买该商品？（回复“是”继续购买，"
+                    f"否则我将返回重新筛选符合价格的商品）"
+                )
+                print(f"\n{'─' * 50}")
+                print("🛑 [SpecGuard] 价格红线拦截")
+                print(f"   商品价格: ¥{current_price:g} | 用户预算: {self._format_bounds(bounds)}")
+                print(f"{'─' * 50}")
+                return {
+                    "_metadata": "do",
+                    "action": "Interact",
+                    "action_type": "Interact",
+                    "message": question,
+                }
 
         # Cross-reference user's original task
         user_requested_specs = self._requested_spec_slots(task, vlm_plan)
@@ -182,6 +209,45 @@ class SpecGuard:
                         if cn_key not in specs:
                             specs[cn_key] = str(value)
         return specs
+
+    _PRICE_RANGE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[-~～到至]\s*(\d+(?:\.\d+)?)\s*元?")
+    _PRICE_MAX_RE = re.compile(r"(?:不超过|低于|最多)\s*(\d+(?:\.\d+)?)\s*元?|(\d+(?:\.\d+)?)\s*元?\s*(?:以内|以下|之内)")
+    _PRICE_MIN_RE = re.compile(r"(?:不低于|高于|至少)\s*(\d+(?:\.\d+)?)\s*元?|(\d+(?:\.\d+)?)\s*元?\s*以上")
+
+    @classmethod
+    def _extract_price_bounds(
+        cls, task: str, vlm_plan: dict[str, Any] | None,
+    ) -> tuple[float | None, float | None] | None:
+        """Parse the user's price constraint into (low, high) bounds."""
+        sources = [task or ""]
+        if isinstance(vlm_plan, dict):
+            specs = vlm_plan.get("specs")
+            if isinstance(specs, dict):
+                for key in ("price_range", "price", "价格"):
+                    if specs.get(key):
+                        sources.append(str(specs[key]))
+        for text in sources:
+            m = cls._PRICE_RANGE_RE.search(text)
+            if m:
+                return (float(m.group(1)), float(m.group(2)))
+            m = cls._PRICE_MAX_RE.search(text)
+            if m:
+                value = m.group(1) or m.group(2)
+                return (None, float(value))
+            m = cls._PRICE_MIN_RE.search(text)
+            if m:
+                value = m.group(1) or m.group(2)
+                return (float(value), None)
+        return None
+
+    @staticmethod
+    def _format_bounds(bounds: tuple[float | None, float | None]) -> str:
+        low, high = bounds
+        if low is not None and high is not None:
+            return f"{low:g}-{high:g}元"
+        if high is not None:
+            return f"{high:g}元以内"
+        return f"{low:g}元以上"
 
     @staticmethod
     def _is_spec_commit_action(

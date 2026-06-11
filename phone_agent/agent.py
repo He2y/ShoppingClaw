@@ -154,6 +154,7 @@ class PhoneAgent:
         self._context: list[dict[str, Any]] = []
         self._step_count = 0
         self._current_task = ""
+        self._anomaly_consecutive = 0
         # Cooperative cancellation + per-step telemetry surface for frontends
         # (WebUI streams these; CLI ignores them).
         self.abort_requested = False
@@ -274,6 +275,7 @@ class PhoneAgent:
         self._graph_fail_count: int = 0
         self._graph_fail_page: str = ""
         self._verification_consecutive: int = 0
+        self._anomaly_consecutive: int = 0
         self._task_plan: TaskPlan | None = None
         self._step_summaries: list[str] = []
 
@@ -939,6 +941,40 @@ class PhoneAgent:
             return None, SpatialModelBridge.grounding_instruction(semantic_action)
         return action, ""
 
+    _PRICE_TOKEN_RE = re.compile(
+        r"\d+\s*[-~～到至]\s*\d+\s*元?"
+        r"|\d+\s*元\s*(?:以内|以下|以上|之内|左右)?"
+        r"|(?:低于|高于|不超过|不低于)\s*\d+\s*元?"
+    )
+
+    @classmethod
+    def _sanitize_search_query(cls, query: str, specs: dict | None = None) -> str:
+        """Strip price ranges and spec/feature tokens from the search query.
+
+        Typing "蓝牙耳机 降噪 500-1000元" into the search box artificially
+        narrows results; only the product noun belongs in the query — price
+        and features are applied afterwards via filter actions.
+        """
+        cleaned = cls._PRICE_TOKEN_RE.sub(" ", query or "")
+        for value in (specs or {}).values():
+            token = str(value).strip()
+            if token and token in cleaned:
+                cleaned = cleaned.replace(token, " ")
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,，、")
+        return cleaned or (query or "").strip()
+
+    def _current_product_price(self) -> float | None:
+        """Price of the most recently tracked product (for the price guard)."""
+        try:
+            products = self.memory_manager.state.products
+            for product in reversed(products):
+                price = getattr(product, "price", None)
+                if price:
+                    return float(price)
+        except (AttributeError, TypeError, ValueError):
+            pass
+        return None
+
     def _canonical_action_from_model_output(
         self,
         parsed_action,
@@ -987,10 +1023,13 @@ class PhoneAgent:
             "  target_page is the expected page type AFTER completing that step.\n"
             "  Valid page types: home, search_input, search_result, product_detail,\n"
             "  spec_selection, cart, checkout, store, my_account, filter_panel\n"
-            "- search_query: best keywords for product search\n"
+            '- search_query: ONLY the bare product noun (e.g. "蓝牙耳机"). NEVER put\n'
+            "  price ranges, feature words (降噪/防水/无线...) or qualifiers into the\n"
+            '  query — searching "蓝牙耳机 降噪 500-1000元" artificially narrows results.\n'
+            "  Prices and features are applied LATER via filter steps.\n"
             "- specs: ONLY explicitly mentioned attributes. Omit unmentioned keys.\n"
             "- If user specified a price range, include a filter step (target_page: filter_panel)\n"
-            "  BEFORE browsing products. Also put the price in specs.\n\n"
+            "  BEFORE browsing products. Also put the price in specs (NOT in search_query).\n\n"
             'Example for "去淘宝买iPhone 17 pro max，银色 512G，加入购物车":\n'
             "{\n"
             '  "search_query": "iPhone 17 pro max",\n'
@@ -1032,6 +1071,10 @@ class PhoneAgent:
             json_match = re.search(r"\{[\s\S]*\}", content)
             if json_match:
                 plan = json.loads(json_match.group())
+                if isinstance(plan.get("search_query"), str):
+                    plan["search_query"] = self._sanitize_search_query(
+                        plan["search_query"], plan.get("specs"),
+                    )
                 if self.agent_config.verbose:
                     steps = plan.get("steps", [])
                     step_count = len(steps)
@@ -1125,6 +1168,9 @@ class PhoneAgent:
                     f"⛔ 价格红线: {price_slot}。"
                     f"超出此范围的商品不要选择、不要加入购物车。"
                     f"如果当前商品超出预算，立即 Back 返回。"
+                    f"注意：筛选器可能未生效——如果结果中出现超出区间的价格，"
+                    f"说明价格筛选失败，必须重新打开筛选面板、"
+                    f"依次填写最低价和最高价两个输入框并确认后再继续。"
                 )
 
         if include_screen_info:
@@ -1301,6 +1347,24 @@ class PhoneAgent:
 
             # Keep semantic_layout variable for backward compatibility
             semantic_layout = screen_dict["semantic_layout"]
+
+            # --- Anomaly watchdog: consecutive broken screens → human ---
+            # Real-device failure mode: SMS-verification popup → screenshot
+            # capture fails (black fallback, is_sensitive=True) → page stays
+            # unknown → the VLM keeps acting blind and reports success.
+            if screenshot.is_sensitive or (used_page_classifier and page_type in (None, "unknown")):
+                self._anomaly_consecutive += 1
+            else:
+                self._anomaly_consecutive = 0
+            if self._anomaly_consecutive >= 2:
+                self._anomaly_consecutive = 0
+                return self._handle_verification_takeover(
+                    screenshot, current_app,
+                    "连续多步无法获取有效屏幕（黑屏或无法识别页面），"
+                    "可能出现了验证码、短信验证或安全弹窗。"
+                    "请在手机上人工处理后继续。",
+                    "anomaly",
+                )
 
             # --- Verification detection (Layer 1): before VLM ---
             if used_page_classifier:
@@ -1667,6 +1731,7 @@ class PhoneAgent:
                         page_type=page_type or ("payment" if screenshot.is_sensitive else None),
                         task=self._current_task,
                         vlm_plan=getattr(self, "_vlm_plan", None),
+                        current_price=self._current_product_price(),
                     )
                     if guarded is not None:
                         action = guarded
@@ -1729,6 +1794,7 @@ class PhoneAgent:
                 page_type=page_type or ("payment" if screenshot.is_sensitive else None),
                 task=self._current_task,
                 vlm_plan=getattr(self, "_vlm_plan", None),
+                current_price=self._current_product_price(),
             )
             if guarded is not None:
                 action = guarded
