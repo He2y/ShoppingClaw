@@ -33,6 +33,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
+import queue
 import shutil
 import subprocess
 import threading
@@ -82,6 +83,7 @@ class AppState:
     # Take_over 人工介入状态
     waiting_for_takeover: bool = False
     takeover_message: str = ""
+    takeover_reply: str = ""
     takeover_continue_event: threading.Event | None = None
     # 记忆管理器
     memory_manager: "MemoryManager | None" = None
@@ -428,849 +430,314 @@ def refresh_screenshot(device_type: str, device_id: str, wda_url: str) -> Image.
 
 
 # ==================== 对话控制功能 ====================
+GRAPH_PANEL_PLACEHOLDER = (
+    "### 🗺️ 图谱协同面板\n\n"
+    "任务开始后，这里实时展示每一步的图谱定位、调度路径与 Co-pilot 提示。"
+)
+
+MODE_LABELS = {
+    "navigate": "🟢 navigate · 图谱导航",
+    "verify_with_vlm": "🤝 verify_with_vlm · Co-pilot",
+    "explore": "🔵 explore · VLM 探索",
+    "goal_reached": "🏁 goal_reached · 目标已达",
+}
+
+DISPATCH_LABELS = {
+    "fast_path": "⚡ Fast Path（跳过 VLM）",
+    "fast_path_fallback": "⚡→🧠 Fast Path 失配，回退 VLM",
+    "graph_shortcut": "🗺️ 图谱捷径",
+    "vlm": "🧠 VLM 推理",
+}
+
+
+def _b64_to_pil(b64: str) -> "Image.Image | None":
+    try:
+        return Image.open(BytesIO(base64.b64decode(b64)))
+    except Exception:
+        return None
+
+
+def format_graph_panel(info: dict, counters: dict) -> str:
+    """Render the per-step graph co-pilot panel (pure function, unit-tested).
+
+    ``info`` is one PhoneAgent.step_observer telemetry event; ``counters``
+    accumulates dispatch counts across the task.
+    """
+    lines = ["### 🗺️ 图谱协同面板", ""]
+    step = info.get("step", "?")
+    page = info.get("page_type") or "unknown"
+    mode = info.get("mode", "explore")
+    dispatch = info.get("dispatch", "vlm")
+
+    lines.append(f"**第 {step} 步** · 页面 `{page}` · {MODE_LABELS.get(mode, mode)}")
+    lines.append(f"**调度**: {DISPATCH_LABELS.get(dispatch, dispatch)}")
+
+    expected = info.get("expected_postcondition")
+    if expected:
+        actual = info.get("actual_postcondition") or "(未观测)"
+        if dispatch == "fast_path_fallback":
+            mark = "⚠️ 失配回退"
+        elif actual == expected:
+            mark = "✅"
+        else:
+            mark = "❔"
+        lines.append(f"**后条件**: 预期 `{expected}` → 实际 `{actual}` {mark}")
+
+    hint = (info.get("graph_hint") or "").strip()
+    if hint:
+        quoted = "\n".join(f"> {ln}" for ln in hint.splitlines() if ln.strip())
+        lines.append("**图谱导航提示（已注入 VLM）**:")
+        lines.append(quoted)
+
+    n_actions = info.get("available_actions") or 0
+    if n_actions:
+        lines.append(f"**动作库**: 当前页 {n_actions} 条已提升动作")
+
+    metrics = info.get("runtime_metrics") or {}
+    dag_hits = metrics.get("runtime_dag_hits", 0)
+    dag_misses = metrics.get("runtime_dag_misses", 0)
+    cls_skips = metrics.get("page_classifier_skips", 0)
+    fast_total = counters.get("fast_path", 0) + counters.get("fast_path_fallback", 0)
+    lines.append("")
+    lines.append(
+        "**累计**: "
+        f"⚡ Fast×{fast_total} · "
+        f"🤝 Co-pilot×{counters.get('copilot', 0)} · "
+        f"🧠 VLM×{counters.get('vlm', 0)} · "
+        f"DAG 命中 {dag_hits}/{dag_hits + dag_misses} · "
+        f"省分类器 {cls_skips} 次"
+    )
+    return "\n".join(lines)
+
+
 class StreamingAgent:
-    """支持流式输出的 Agent 包装器"""
-    
+    """Streaming wrapper around the real PhoneAgent.
+
+    历史版本在这里复制了一份独立的执行循环——没有图谱运行时、Fast Path、
+    SpecGuard、澄清，也没有 co-pilot 提示通道。现在 WebUI 与 CLI 共享同一个
+    编排入口 ``PhoneAgent._execute_step``：worker 线程跑 ``agent.run()``，
+    通过三个钩子流式化到 Gradio：
+
+    - ``ModelClient.stream_callback``  → 思考过程逐 token 流式输出
+    - ``PhoneAgent.step_observer``     → 每步遥测（模式/调度/图谱提示/后条件）
+    - ``takeover_callback``            → 人工接管 / Interact 问答（阻塞等 UI）
+
+    iOS 走 IOSPhoneAgent（无图谱栈）：仅思考流式与最终结果，无每步遥测。
+    """
+
     def __init__(
         self,
         model_config: ModelConfig,
-        agent_config: AgentConfig | IOSAgentConfig,
+        agent_config: "AgentConfig | IOSAgentConfig",
         device_type: DeviceType,
-        model_type: str = "auto",  # 新增：模型类型 (auto/autoglm/uitars)
-        user_id: str = "default",  # 用户 ID 用于记忆
+        model_type: str = "auto",
+        user_id: str = "default",
     ):
         self.model_config = model_config
         self.agent_config = agent_config
         self.device_type = device_type
-        self._context: list[dict[str, Any]] = []
-        self._step_count = 0
+        self.model_type = model_type
+        self.user_id = user_id
+        self.agent: "PhoneAgent | IOSPhoneAgent | None" = None
+        self._events: "queue.Queue[tuple[str, Any]]" = queue.Queue()
         self._should_stop = False
-        
-        # 初始化模型客户端
-        self.client = OpenAI(base_url=model_config.base_url, api_key=model_config.api_key)
-        
-        # 初始化记忆管理器
-        self.memory_manager = None
-        if HAS_MEMORY:
-            try:
-                self.memory_manager = get_memory_manager(user_id)
-            except Exception as e:
-                print(f"记忆系统初始化失败: {e}")
-        
-        # 确定模型类型并获取适配器
-        if model_type == "auto":
-            self._model_type = detect_model_type(model_config.model_name)
-        elif model_type == "uitars":
-            self._model_type = ModelType.UITARS
-        elif model_type == "qwenvl":
-            self._model_type = ModelType.QWENVL
-        elif model_type == "maiui":
-            self._model_type = ModelType.MAIUI
-        elif model_type == "guiowl":
-            self._model_type = ModelType.GUIOWL
-        else:
-            self._model_type = ModelType.AUTOGLM
-        
-        self._adapter = get_adapter(self._model_type)
-        
-        self._is_uitars = self._model_type == ModelType.UITARS
-        self._is_qwenvl = self._model_type == ModelType.QWENVL
-        self._is_maiui = self._model_type == ModelType.MAIUI
-        self._is_guiowl = self._model_type == ModelType.GUIOWL
-        
-        # 保存原始任务用于 UI-TARS
-        self._original_task = ""
-        self._task_success = False
-    
-    def stop(self):
-        """停止执行"""
-        self._should_stop = True
-    
-    def reset(self):
-        """重置状态"""
-        self._context = []
-        self._step_count = 0
-        self._should_stop = False
-        self._task_success = False
-    
-    def _prepare_message_for_print(self, message: dict) -> dict:
-        """准备消息用于打印，移除base64图片数据以便显示"""
-        import copy
-        msg_copy = copy.deepcopy(message)
-        
-        if "content" in msg_copy:
-            if isinstance(msg_copy["content"], list):
-                for item in msg_copy["content"]:
-                    if isinstance(item, dict) and item.get("type") == "image_url":
-                        if "image_url" in item and "url" in item["image_url"]:
-                            url = item["image_url"]["url"]
-                            if url.startswith("data:image"):
-                                # 截断base64数据，只显示前缀
-                                item["image_url"]["url"] = url[:50] + "...[truncated]"
-        
-        return msg_copy
-    
-    def run_streaming(self, task: str) -> Generator[tuple[str, str, Image.Image | None], None, None]:
-        """
-        流式执行任务
-        
-        Yields:
-            (thinking_log, action_log, screenshot) 元组
-        """
-        self._context = []
-        self._step_count = 0
-        self._should_stop = False
-        self._task_success = False
-        self._original_task = task  # 保存原始任务
-        
-        # 清除 adapter 操作历史（QwenVL / GUI-Owl 使用）
-        if hasattr(self._adapter, 'clear_history'):
-            self._adapter.clear_history()
-        
-        # 🧠 记忆系统：任务开始
-        if self.memory_manager:
-            self.memory_manager.start_task(task)
-        
-        thinking_log = ""
-        action_log = ""
-        
-        # 显示使用的模型类型
-        if self._is_uitars:
-            model_type_name = "UI-TARS"
-        elif self._is_qwenvl:
-            model_type_name = "Qwen-VL"
-        elif self._is_maiui:
-            model_type_name = "MAI-UI"
-        elif self._is_guiowl:
-            model_type_name = "GUI-Owl"
-        else:
-            model_type_name = "AutoGLM"
-        action_log += f"🤖 使用模型适配器: **{model_type_name}**\n"
-        
-        # 显示记忆系统状态
-        if self.memory_manager:
-            action_log += f"🧠 记忆系统: **已启用** (用户: {self.memory_manager.user_id})\n"
-            # 显示检索到的相关记忆
-            try:
-                context = self.memory_manager.get_relevant_context(task)
-                if context:
-                    action_log += f"\n📋 **检索到的用户记忆:**\n```\n{context}\n```\n"
-                else:
-                    action_log += f"📋 暂无相关记忆\n"
-            except Exception as e:
-                action_log += f"⚠️ 记忆检索失败: {e}\n"
+        self._dispatch_counters: dict[str, int] = {}
 
-            # 🗺️ 知识图谱：三层匹配诊断（仅打印，不阻塞）
-            try:
-                from phone_agent.memory.graph_store import GraphStore
-                gs = GraphStore()
-                if gs.driver:
-                    # Task semantic search
-                    similar = gs.find_similar_tasks(task, top_k=1)
-                    if similar:
-                        best = similar[0]
-                        traj = gs.get_task_trajectory(best.get("task_id", ""))
-                        steps = traj.get("steps", [])
-                        action_log += (
-                            f"\n🗺️ **知识图谱匹配** [{best.get('app','?')}] "
-                            f"「{best.get('description','')[:40]}」\n"
-                        )
-                        if steps:
-                            action_log += "📋 **参考轨迹**（将注入 VLM 上下文）:\n"
-                            for s in steps[:5]:
-                                action_log += f"  {s['step']}. {s['action_type']} → {s['action_target'][:40]}\n"
-                            if len(steps) > 5:
-                                action_log += f"  ... (共 {len(steps)} 步)\n"
-                    gs.close()
-            except Exception as e:
-                pass  # 图谱检索不影响主流程
-        
-        # 定义 takeover 回调函数（用于人工介入场景）
-        def takeover_callback(message: str) -> None:
-            """WebUI 的 takeover 回调：设置状态并等待用户继续"""
-            global app_state
-            app_state.waiting_for_takeover = True
-            app_state.takeover_message = message
-            app_state.takeover_continue_event = threading.Event()
-            # 等待用户点击"继续执行"按钮
-            app_state.takeover_continue_event.wait()
-            # 重置状态
-            app_state.waiting_for_takeover = False
-            app_state.takeover_message = ""
-            app_state.takeover_continue_event = None
-        
-        # 初始化 action handler
-        if self._is_uitars:
-            # UI-TARS 使用专用的 action handler
-            action_handler = UITarsActionHandler(
-                device_id=self.agent_config.device_id,
-                takeover_callback=takeover_callback,
-            )
-        elif self._is_qwenvl:
-            # Qwen-VL 使用专用的 action handler
-            action_handler = QwenVLActionHandler(
-                device_id=self.agent_config.device_id,
-                takeover_callback=takeover_callback,
-            )
-        elif self._is_maiui:
-            # MAI-UI 使用专用的 action handler
-            from phone_agent.actions.handler_maiui import MAIUIActionHandler
-            action_handler = MAIUIActionHandler(
-                device_id=self.agent_config.device_id,
-                takeover_callback=takeover_callback,
-            )
-        elif self._is_guiowl:
-            # GUI-Owl 使用专用的 action handler
-            action_handler = GUIOwlActionHandler(
-                device_id=self.agent_config.device_id,
-                takeover_callback=takeover_callback,
-            )
-        elif self.device_type == DeviceType.IOS:
-            from phone_agent.actions.handler_ios import IOSActionHandler
-            action_handler = IOSActionHandler(
-                wda_url=self.agent_config.wda_url,
-                device_id=self.agent_config.device_id,
-                takeover_callback=takeover_callback,
-            )
-        else:
-            from phone_agent.actions import ActionHandler
-            action_handler = ActionHandler(
-                device_id=self.agent_config.device_id,
-                takeover_callback=takeover_callback,
-            )
-        
-        # 获取设备工厂和截图函数
+    def stop(self):
+        """请求停止：在下一个步边界生效（PhoneAgent.abort_requested）。"""
+        self._should_stop = True
+        if self.agent is not None:
+            self.agent.abort_requested = True
+
+    def reset(self):
+        self._should_stop = False
+        self._dispatch_counters = {}
+        self.agent = None
+
+    # ── 回调 ────────────────────────────────────────────────────────────
+
+    def _takeover_callback(self, message: str) -> str:
+        """阻塞等待用户点击「继续执行」；返回回复框中的文本（Interact 答案）。"""
+        global app_state
+        app_state.waiting_for_takeover = True
+        app_state.takeover_message = message
+        app_state.takeover_reply = ""
+        app_state.takeover_continue_event = threading.Event()
+        self._events.put(("takeover", message))
+        app_state.takeover_continue_event.wait()
+        reply = app_state.takeover_reply
+        app_state.waiting_for_takeover = False
+        app_state.takeover_message = ""
+        app_state.takeover_continue_event = None
+        if reply:
+            self._events.put(("user_reply", reply))
+        return reply
+
+    def _build_agent(self):
         if self.device_type == DeviceType.IOS:
-            from phone_agent.xctest import get_screenshot as ios_get_screenshot
-            get_screenshot_func = lambda: ios_get_screenshot(wda_url=self.agent_config.wda_url)
-            get_current_app_func = lambda: action_handler.connection.get_current_app() or "Unknown"
-        else:
-            set_device_type(self.device_type)
-            device_factory = get_device_factory()
-            get_screenshot_func = lambda: device_factory.get_screenshot(self.agent_config.device_id)
-            get_current_app_func = lambda: device_factory.get_current_app(self.agent_config.device_id)
-        
-        # 执行第一步
-        result = yield from self._execute_step_streaming(
-            task, True, thinking_log, action_log,
-            get_screenshot_func, get_current_app_func, action_handler
-        )
-        
-        if result["finished"]:
-            return
-        
-        thinking_log = result["thinking_log"]
-        action_log = result["action_log"]
-        
-        # 继续执行直到完成或达到最大步数
-        while self._step_count < self.agent_config.max_steps and not self._should_stop:
-            result = yield from self._execute_step_streaming(
-                None, False, thinking_log, action_log,
-                get_screenshot_func, get_current_app_func, action_handler
+            return IOSPhoneAgent(
+                model_config=self.model_config,
+                agent_config=self.agent_config,
+                takeover_callback=self._takeover_callback,
             )
-            
-            if result["finished"]:
-                return
-                
-            thinking_log = result["thinking_log"]
-            action_log = result["action_log"]
-        
+        set_device_type(self.device_type)
+        return PhoneAgent(
+            model_config=self.model_config,
+            agent_config=self.agent_config,
+            takeover_callback=self._takeover_callback,
+            clarification_callback=self._takeover_callback,
+        )
+
+    # ── 流式主循环 ──────────────────────────────────────────────────────
+
+    def run_streaming(
+        self, task: str
+    ) -> Generator[tuple[str, str, Image.Image | None, str], None, None]:
+        """流式执行任务。
+
+        Yields:
+            (thinking_log, action_log, screenshot, graph_panel_markdown)
+        """
+        self._should_stop = False
+        self._dispatch_counters = {}
+        graph_panel = GRAPH_PANEL_PLACEHOLDER
+        screenshot_img: Image.Image | None = None
+        thinking_log = ""
+
+        action_log = (
+            f"🤖 模型: **{self.model_config.model_name}**"
+            f"（适配器: {self.model_type}）\n"
+            f"🧠 记忆/图谱: 由 PhoneAgent 统一管理（用户: {self.user_id}）\n"
+        )
+        if self.device_type == DeviceType.IOS:
+            action_log += "ℹ️ iOS 模式：无图谱栈，仅流式思考与结果；不支持中途停止\n"
+        yield thinking_log, action_log, None, graph_panel
+
+        try:
+            self.agent = self._build_agent()
+        except Exception:
+            action_log += f"\n❌ Agent 初始化失败:\n```\n{traceback.format_exc()}\n```"
+            yield thinking_log, action_log, None, graph_panel
+            return
+
+        self.agent.model_client.stream_callback = (
+            lambda text: self._events.put(("delta", text))
+        )
+        if hasattr(self.agent, "step_observer"):
+            self.agent.step_observer = lambda info: self._events.put(("step", info))
+
+        result_box: dict[str, str] = {}
+
+        def _worker() -> None:
+            try:
+                result_box["result"] = self.agent.run(task)
+            except Exception:
+                result_box["error"] = traceback.format_exc()
+            finally:
+                self._events.put(("done", None))
+
+        worker = threading.Thread(target=_worker, daemon=True)
+        worker.start()
+
+        current_thinking = ""
+        last_delta_yield = 0.0
+        while True:
+            try:
+                kind, payload = self._events.get(timeout=0.5)
+            except queue.Empty:
+                if not worker.is_alive():
+                    break
+                continue
+
+            if kind == "delta":
+                current_thinking += payload
+                now = time.time()
+                if now - last_delta_yield >= 0.15:  # throttle UI repaint
+                    last_delta_yield = now
+                    yield (
+                        thinking_log + self._fmt_current(current_thinking),
+                        action_log, screenshot_img, graph_panel,
+                    )
+            elif kind == "takeover":
+                action_log += (
+                    f"\n⏸️ **需要人工介入**: {payload}\n"
+                    f"请在手机上完成操作后点击「⏩ 继续执行」；"
+                    f"如是提问，可先在回复框输入答案再点继续。\n"
+                )
+                yield (
+                    thinking_log + self._fmt_current(current_thinking),
+                    action_log, screenshot_img, graph_panel,
+                )
+            elif kind == "user_reply":
+                action_log += f"\n💬 用户回复: {payload}\n"
+            elif kind == "step":
+                info = payload
+                self._count_dispatch(info)
+                graph_panel = format_graph_panel(info, self._dispatch_counters)
+                b64 = info.get("screenshot_b64") or ""
+                if b64:
+                    screenshot_img = _b64_to_pil(b64) or screenshot_img
+                thinking_log += self._fmt_step_thinking(info, current_thinking)
+                current_thinking = ""
+                action_log += self._fmt_step_action(info)
+                yield thinking_log, action_log, screenshot_img, graph_panel
+            elif kind == "done":
+                break
+
         if self._should_stop:
             action_log += "\n\n⚠️ 任务已被用户终止"
-            # 🧠 记忆系统：任务被终止
-            if self.memory_manager:
-                self.memory_manager.end_task(success=False, result="用户终止")
-            yield thinking_log, action_log, None
-    
-    def _execute_step_streaming(
-        self,
-        user_prompt: str | None,
-        is_first: bool,
-        thinking_log: str,
-        action_log: str,
-        get_screenshot_func,
-        get_current_app_func,
-        action_handler,
-    ) -> Generator[tuple[str, str, Image.Image | None], None, dict]:
-        """执行单个步骤并流式输出"""
-        from phone_agent.actions.handler import parse_action, finish
-        from phone_agent.config import get_system_prompt
-        
-        # 导入记忆相关模块
-        if HAS_MEMORY:
-            from phone_agent.memory.memory_manager import build_personalized_prompt
-        
-        self._step_count += 1
-        
-        # 添加步骤标题
-        step_header = f"\n\n{'='*50}\n## 步骤 {self._step_count}\n{'='*50}\n"
-        thinking_log += step_header
-        action_log += step_header
-        thinking_log += "\n### 💭 思考过程\n"
-        
-        # 获取截图
-        try:
-            screenshot = get_screenshot_func()
-            current_app = get_current_app_func()
-        except Exception as e:
-            action_log += f"\n❌ 获取截图失败: {str(e)}"
-            yield thinking_log, action_log, None
-            return {"finished": True, "thinking_log": thinking_log, "action_log": action_log}
-        
-        # 转换截图为 PIL Image
-        screenshot_img = None
-        if screenshot and screenshot.base64_data:
-            try:
-                img_data = base64.b64decode(screenshot.base64_data)
-                screenshot_img = Image.open(BytesIO(img_data))
-            except:
-                pass
-        
-        yield thinking_log, action_log, screenshot_img
-        
-        # 根据模型类型构建消息
-        if self._is_uitars or self._is_qwenvl or self._is_maiui or self._is_guiowl:
-            # 记录构建前是否为空（首轮）
-            is_first_build = len(self._context) == 0
-            
-            # UI-TARS、Qwen-VL、MAI-UI、GUI-Owl 使用专用的消息格式
-            self._context = self._adapter.build_messages(
-                task=self._original_task,
-                image_base64=screenshot.base64_data,
-                current_app=current_app,
-                context=self._context,
-                lang=self.agent_config.lang,
-                screen_width=screenshot.width,
-                screen_height=screenshot.height,
-            )
-            
-            # 🧠 首轮注入个性化记忆上下文（所有非 AutoGLM 模型都需要）
-            if is_first_build and self.memory_manager and HAS_MEMORY:
-                memory_context = self.memory_manager.get_relevant_context(self._original_task)
-                if memory_context:
-                    self._inject_memory_into_context(memory_context)
-                    action_log += f"\n📋 **检索到的用户记忆:**\n```\n{memory_context}\n```\n"
-            
-            # 限制上下文中的图片数量
-            if self._is_qwenvl or self._is_guiowl:
-                # QwenVL / GUI-Owl: 只保留 1 张图片（当前）
-                pass
-            elif self._is_maiui:
-                # MAI-UI: 保留最近 3 张图片
-                if hasattr(self._adapter, 'limit_context'):
-                    self._context = self._adapter.limit_context(self._context, max_images=3)
-            elif hasattr(self._adapter, 'limit_context'):
-                # UI-TARS: 保留最近 5 张图片
-                self._context = self._adapter.limit_context(self._context, max_images=5)
-            
-            # # 打印当前构建的 messages
-            # print("\n" + "="*80)
-            # print("📨 当前 Messages:")
-            # print("="*80)
-            # import json
-            # for msg in self._context:
-            #     msg_to_print = self._prepare_message_for_print(msg)
-            #     print(json.dumps(msg_to_print, ensure_ascii=False, indent=2))
-            # print("="*80 + "\n")
+        if "error" in result_box:
+            action_log += f"\n\n❌ 执行异常:\n```\n{result_box['error']}\n```"
+        elif "result" in result_box:
+            action_log += f"\n\n🏁 **任务结束**: {result_box['result']}"
+        yield thinking_log, action_log, screenshot_img, graph_panel
+
+    # ── 渲染辅助 ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _fmt_current(current: str) -> str:
+        if not current.strip():
+            return ""
+        return f"\n\n---\n💭 *正在思考...*\n\n{current}"
+
+    def _count_dispatch(self, info: dict) -> None:
+        dispatch = info.get("dispatch", "vlm")
+        if dispatch == "vlm" and info.get("mode") == "verify_with_vlm":
+            key = "copilot"  # Co-pilot 档：图谱给方向，VLM 做语义决策
+        elif dispatch == "vlm":
+            key = "vlm"
         else:
-            # AutoGLM 使用相同的消息格式
-            if is_first:
-                # 获取基础 system prompt
-                base_prompt = get_system_prompt(self.agent_config.lang)
-                
-                # 🧠 注入个性化记忆上下文
-                if self.memory_manager and HAS_MEMORY:
-                    system_prompt = build_personalized_prompt(
-                        base_prompt, self.memory_manager, user_prompt
-                    )
-                    # 显示个性化信息
-                    context = self.memory_manager.get_relevant_context(user_prompt)
-                    if context:
-                        action_log_extra = f"\n\n📋 **检索到的用户记忆:**\n```\n{context}\n```\n"
-                else:
-                    system_prompt = base_prompt
-                    action_log_extra = ""
-                
-                self._context.append(
-                    MessageBuilder.create_system_message(system_prompt)
-                )
-                screen_info = MessageBuilder.build_screen_info(current_app)
-                text_content = f"{user_prompt}\n\n{screen_info}"
-                self._context.append(
-                    MessageBuilder.create_user_message(
-                        text=text_content, image_base64=screenshot.base64_data
-                    )
-                )
-            else:
-                screen_info = MessageBuilder.build_screen_info(current_app)
-                text_content = f"** Screen Info **\n\n{screen_info}"
-                self._context.append(
-                    MessageBuilder.create_user_message(
-                        text=text_content, image_base64=screenshot.base64_data
-                    )
-                )
-            
-            # # 打印当前构建的 messages
-            # print("\n" + "="*80)
-            # print("📨 当前 Messages:")
-            # print("="*80)
-            # import json
-            # for msg in self._context:
-            #     msg_to_print = self._prepare_message_for_print(msg)
-            #     print(json.dumps(msg_to_print, ensure_ascii=False, indent=2))
-            # print("="*80 + "\n")
-        
-        # 流式请求模型
-        yield thinking_log, action_log, screenshot_img
-        
-        # UI-TARS 使用不同的推理参数
-        if self._is_uitars:
-            temperature = 0.0  # UI-TARS 建议使用 0
-            top_p = 0.7
-            frequency_penalty = 0.0
+            key = dispatch
+        self._dispatch_counters[key] = self._dispatch_counters.get(key, 0) + 1
+
+    @staticmethod
+    def _fmt_step_thinking(info: dict, current: str) -> str:
+        step = info.get("step", "?")
+        text = (info.get("thinking") or current or "").strip()
+        if not text:
+            return ""
+        return f"\n\n---\n**Step {step}**\n\n{text}\n"
+
+    @staticmethod
+    def _fmt_step_action(info: dict) -> str:
+        step = info.get("step", "?")
+        dispatch = info.get("dispatch", "vlm")
+        badge = DISPATCH_LABELS.get(dispatch, dispatch)
+        action = info.get("action")
+        if isinstance(action, dict):
+            act_type = action.get("action", action.get("_metadata", ""))
+            target = action.get("element") or action.get("text") or action.get("app") or ""
+            action_desc = f"`{act_type}` {str(target)[:60]}"
         else:
-            temperature = self.model_config.temperature
-            top_p = 0.85
-            frequency_penalty = 0.2
-        
-        try:
-            stream = self.client.chat.completions.create(
-                messages=self._context,
-                model=self.model_config.model_name,
-                max_tokens=self.model_config.max_tokens,
-                temperature=temperature,
-                top_p=top_p,
-                frequency_penalty=frequency_penalty,
-                stream=True,
-            )
-            
-            raw_content = ""
-            in_action_phase = False
-            # 根据模型类型使用不同的 action 标记
-            if self._is_uitars:
-                action_markers = ["Action:", "click(", "long_press(", "type(", "scroll(", 
-                                  "open_app(", "drag(", "press_home(", "press_back(", 
-                                  "finished(", "wait("]
-            elif self._is_qwenvl:
-                action_markers = ["<tool_call>", '"action":', "Action:", "tap(", "long_press(", "double_tap(", "swipe(",
-                                  "type(", "type_name(", "open_app(", "back(", "home(",
-                                  "wait(", "finish(", "terminate("]
-            elif self._is_maiui:
-                # MAI-UI 使用 <tool_call> 格式的 action
-                action_markers = ["<tool_call>", '"action":', "terminate", "answer"]
-            elif self._is_guiowl:
-                # GUI-Owl 1.5 使用 <tool_call> 格式（官方格式）
-                action_markers = ["<tool_call>", '"action":', "Action:", "terminate", "answer"]
-            else:
-                action_markers = ["finish(message=", "do(action="]
-            
-            pending_content = ""  # 待输出的内容缓冲
-            last_yield_time = time.time()
-            yield_interval = 0.3  # 300ms 更新一次界面
-            
-            import re as _re
-            def _clean_thinking_tags(text: str) -> str:
-                """清理 thinking/think 标签，避免 Markdown 渲染时被当作 HTML 吞掉"""
-                return _re.sub(r'</?(?:thinking|think)>', '', text)
-            
-            for chunk in stream:
-                if self._should_stop:
-                    break
-                    
-                if len(chunk.choices) == 0:
-                    continue
-                
-                # Handle reasoning_content (for reasoning models like MAI-UI-2B)
-                reasoning_content = getattr(chunk.choices[0].delta, 'reasoning_content', None)
-                if reasoning_content is not None:
-                    raw_content += reasoning_content
-                    if not in_action_phase:
-                        pending_content += reasoning_content
-                        current_time = time.time()
-                        if current_time - last_yield_time >= yield_interval or len(pending_content) > 100:
-                            thinking_log += _clean_thinking_tags(pending_content)
-                            pending_content = ""
-                            last_yield_time = current_time
-                            yield thinking_log, action_log, None
-                
-                if chunk.choices[0].delta.content is not None:
-                    content = chunk.choices[0].delta.content
-                    raw_content += content
-                    
-                    if not in_action_phase:
-                        # 检查是否进入动作阶段
-                        for marker in action_markers:
-                            if marker in raw_content:
-                                in_action_phase = True
-                                break
-                        
-                        if in_action_phase:
-                            # 刚进入 action 阶段，先把缓冲中的 thinking 内容 flush 出去
-                            if pending_content:
-                                thinking_log += _clean_thinking_tags(pending_content)
-                                pending_content = ""
-                                yield thinking_log, action_log, None
-                        else:
-                            pending_content += content
-                            # 批量更新：每隔一段时间或内容较多时才更新
-                            current_time = time.time()
-                            if current_time - last_yield_time >= yield_interval or len(pending_content) > 100:
-                                thinking_log += _clean_thinking_tags(pending_content)
-                                pending_content = ""
-                                last_yield_time = current_time
-                                yield thinking_log, action_log, None
-            
-            # 输出剩余的内容
-            if pending_content:
-                thinking_log += _clean_thinking_tags(pending_content)
-            
-        except Exception as e:
-            action_log += f"\n❌ 模型请求错误: {str(e)}"
-            yield thinking_log, action_log, screenshot_img
-            return {"finished": True, "thinking_log": thinking_log, "action_log": action_log}
-        
-        # 根据模型类型解析响应
-        if self._is_uitars:
-            # UI-TARS 响应解析
-            thinking, action_str = self._adapter.parse_response(raw_content)
-            
-            # 使用 UI-TARS action handler 解析
-            uitars_action = action_handler.parse_response(raw_content)
-            
-            # 添加屏幕分辨率信息到日志（帮助调试坐标问题）
-            action_log += f"\n### 🎯 执行动作\n📐 屏幕分辨率: {screenshot.width}x{screenshot.height}px\n```\nAction: {action_str}\n```\n"
-            yield thinking_log, action_log, screenshot_img
-            
-            # 执行动作
-            try:
-                result = action_handler.execute(uitars_action, screenshot.width, screenshot.height)
-                
-                if result.success:
-                    # 显示坐标转换信息（帮助调试定位问题）
-                    if result.message:
-                        action_log += f"\n✅ {result.message}"
-                    else:
-                        action_log += f"\n✅ 动作执行成功"
-                else:
-                    action_log += f"\n⚠️ 动作执行: {result.message}"
-                    
-            except Exception as e:
-                action_log += f"\n❌ 动作执行失败: {str(e)}"
-                yield thinking_log, action_log, screenshot_img
-                return {"finished": True, "thinking_log": thinking_log, "action_log": action_log}
-            
-            # 移除上下文中的图片（UI-TARS 保留最近 5 张由 limit_context 处理）
-            # 这里不需要 remove_images_from_message，因为 limit_context 已经限制了数量
-            
-            # 添加助手响应到上下文（保留模型的全部输出）
-            self._context.append({
-                "role": "assistant",
-                "content": raw_content
-            })
-            
-            # 检查是否完成
-            finished = uitars_action.action_type == "finished" or result.should_finish
-        elif self._is_qwenvl:
-            # Qwen-VL 响应解析
-            thinking, action_str = self._adapter.parse_response(raw_content)
-            
-            # 使用 Qwen-VL action handler 解析
-            qwenvl_action = action_handler.parse_response(raw_content)
-            
-            # 添加屏幕分辨率信息到日志（帮助调试坐标问题）
-            action_log += f"\n### 🎯 执行动作\n📐 屏幕分辨率: {screenshot.width}x{screenshot.height}px\n```\nAction: {action_str}\n```\n"
-            yield thinking_log, action_log, screenshot_img
-            
-            # 执行动作
-            try:
-                result = action_handler.execute(qwenvl_action, screenshot.width, screenshot.height)
-                
-                if result.success:
-                    action_log += f"\n✅ 动作执行成功"
-                else:
-                    action_log += f"\n⚠️ 动作执行: {result.message}"
-                    
-            except Exception as e:
-                action_log += f"\n❌ 动作执行失败: {str(e)}"
-                yield thinking_log, action_log, screenshot_img
-                return {"finished": True, "thinking_log": thinking_log, "action_log": action_log}
-            
-            # QwenVL: 不添加 assistant 消息到历史
-            # 只提取 Action 描述文本，通过 adapter.add_history() 添加到历史
-            # 这样下一轮的 user message 会包含这个描述
-            if hasattr(qwenvl_action, 'action_desc') and qwenvl_action.action_desc:
-                action_description = qwenvl_action.action_desc.strip()
-            else:
-                # Fallback: 从 raw_content 中提取 Action: 后面的描述文本
-                import re
-                action_match = re.search(r'Action:\s*"([^"]+)"', raw_content)
-                if action_match:
-                    action_description = action_match.group(1).strip()
-                else:
-                    lines = raw_content.split('\n')
-                    action_description = ""
-                    for line in lines:
-                        if line.strip().startswith('Action:'):
-                            action_description = line.strip()[7:].strip()
-                            action_description = action_description.strip('"').strip("'")
-                            break
-            
-            # 添加到 adapter 的历史记录
-            if action_description and hasattr(self._adapter, 'add_history'):
-                self._adapter.add_history(action_description)
-            
-            # 检查是否完成（tool_call 格式用 terminate，旧格式用 finish）
-            finished = qwenvl_action.action_type in ("finish", "terminate") or result.should_finish
-        elif self._is_maiui:
-            # MAI-UI 响应解析
-            from phone_agent.actions.handler_maiui import MAIUIActionHandler, convert_maiui_to_autoglm
-            
-            thinking, action_str = self._adapter.parse_response(raw_content)
-            
-            # 使用 MAI-UI action handler 解析
-            maiui_action = action_handler.parse_response(raw_content)
-            
-            # 转换为 AutoGLM 格式用于日志显示
-            action_for_log = convert_maiui_to_autoglm(maiui_action, screenshot.width, screenshot.height)
-            
-            # 添加屏幕分辨率信息到日志
-            action_log += f"\n### 🎯 执行动作\n📐 屏幕分辨率: {screenshot.width}x{screenshot.height}px\n```json\n{json.dumps(action_for_log, ensure_ascii=False, indent=2)}\n```\n"
-            yield thinking_log, action_log, screenshot_img
-            
-            # 执行动作
-            try:
-                result = action_handler.execute(maiui_action, screenshot.width, screenshot.height)
-                
-                if result.success:
-                    if result.message:
-                        action_log += f"\n✅ {result.message}"
-                    else:
-                        action_log += f"\n✅ 动作执行成功"
-                else:
-                    action_log += f"\n⚠️ 动作执行: {result.message}"
-                    
-            except Exception as e:
-                action_log += f"\n❌ 动作执行失败: {str(e)}"
-                yield thinking_log, action_log, screenshot_img
-                return {"finished": True, "thinking_log": thinking_log, "action_log": action_log}
-            
-            # 移除上下文中的图片（MAI-UI 保留最近 3 张由 limit_context 处理）
-            # 这里不需要 remove_images_from_message，因为 limit_context 已经限制了数量
-            
-            # 添加助手响应到上下文（MAI-UI 使用纯字符串格式的 assistant 消息）
-            self._context.append({
-                "role": "assistant",
-                "content": raw_content
-            })
-            
-            # 检查是否完成
-            finished = maiui_action.action_type in ["terminate", "answer"] or result.should_finish
-        elif self._is_guiowl:
-            # GUI-Owl 1.5 响应解析（官方 tool_call 格式）
-            from phone_agent.actions.handler_guiowl import convert_guiowl_to_autoglm
-            
-            thinking, action_str = self._adapter.parse_response(raw_content)
-            
-            # 使用 GUI-Owl action handler 解析
-            guiowl_action = action_handler.parse_response(raw_content)
-            
-            # 转换为 AutoGLM 格式用于日志显示
-            action_for_log = convert_guiowl_to_autoglm(guiowl_action, screenshot.width, screenshot.height)
-            
-            # 添加屏幕分辨率信息到日志
-            action_log += f"\n### 🎯 执行动作\n📐 屏幕分辨率: {screenshot.width}x{screenshot.height}px\n```json\n{json.dumps(action_for_log, ensure_ascii=False, indent=2)}\n```\n"
-            yield thinking_log, action_log, screenshot_img
-            
-            # 执行动作
-            try:
-                result = action_handler.execute(guiowl_action, screenshot.width, screenshot.height)
-                
-                if result.success:
-                    if result.message:
-                        action_log += f"\n✅ {result.message}"
-                    else:
-                        action_log += f"\n✅ 动作执行成功"
-                else:
-                    action_log += f"\n⚠️ 动作执行: {result.message}"
-                    
-            except Exception as e:
-                action_log += f"\n❌ 动作执行失败: {str(e)}"
-                yield thinking_log, action_log, screenshot_img
-                return {"finished": True, "thinking_log": thinking_log, "action_log": action_log}
-            
-            # GUI-Owl（官方格式）: 不添加 assistant 消息到历史
-            # 只提取 Action 描述文本，通过 adapter.add_history() 添加到历史
-            # 这样下一轮的 user message 会包含 Previous actions 历史
-            action_description = ""
-            if hasattr(guiowl_action, 'action_desc') and guiowl_action.action_desc:
-                action_description = guiowl_action.action_desc.strip()
-            elif hasattr(guiowl_action, 'description') and guiowl_action.description:
-                action_description = guiowl_action.description.strip()
-            else:
-                # Fallback: 从 raw_content 中提取 Action: 后面的描述文本
-                import re
-                action_match_re = re.search(r'Action:\s*"?([^"\n]+)"?', raw_content)
-                if action_match_re:
-                    action_description = action_match_re.group(1).strip()
-            
-            # 添加到 adapter 的历史记录
-            if action_description and hasattr(self._adapter, 'add_history'):
-                self._adapter.add_history(action_description)
-            
-            # 同步 handler 的 action_history 到 adapter
-            if hasattr(action_handler, 'action_history') and hasattr(self._adapter, '_action_history'):
-                self._adapter._action_history = list(action_handler.action_history)
-            
-            # 检查是否完成
-            finished = guiowl_action.action_type in ["terminate", "answer"] or result.should_finish
-        else:
-            # AutoGLM 响应解析
-            thinking, action_str = self._parse_response(raw_content)
-            
-            # 解析动作
-            try:
-                action = parse_action(action_str)
-            except ValueError:
-                action = finish(message=action_str)
-            
-            # Auto-detect verification when VLM fails to output Take_over
-            _vlm_v = detect_verification_from_vlm(thinking, raw_content)
-            if _vlm_v is not None and action.get("action") != "Take_over":
-                action = {"_metadata": "do", "action": "Take_over", "message": _vlm_v.message}
-                action_log += f"\n🔒 **自动检测到人机验证** ({_vlm_v.verification_type})\n"
-
-            action_log += f"\n### 🎯 执行动作\n```json\n{json.dumps(action, ensure_ascii=False, indent=2)}\n```\n"
-            yield thinking_log, action_log, screenshot_img
-
-            # 移除上下文中的图片
-            self._context[-1] = MessageBuilder.remove_images_from_message(self._context[-1])
-
-            # 检查是否是 Take_over 动作（需要人工介入）
-            is_takeover = action.get("action") == "Take_over"
-            if is_takeover:
-                takeover_msg = action.get("message", "需要用户人工操作")
-                action_log += f"\n\n⏸️ **需要人工介入**: {takeover_msg}\n"
-                action_log += f"👉 请在手机上完成操作（如登录、验证码等），然后点击 **继续执行** 按钮\n"
-                yield thinking_log, action_log, screenshot_img
-            
-            # 执行动作
-            try:
-                result = action_handler.execute(action, screenshot.width, screenshot.height)
-                
-                if result.success:
-                    if is_takeover:
-                        action_log += f"\n✅ 人工操作已完成，继续执行任务"
-                    else:
-                        action_log += f"\n✅ 动作执行成功"
-                else:
-                    action_log += f"\n⚠️ 动作执行: {result.message}"
-                    
-            except Exception as e:
-                action_log += f"\n❌ 动作执行失败: {str(e)}"
-                yield thinking_log, action_log, screenshot_img
-                return {"finished": True, "thinking_log": thinking_log, "action_log": action_log}
-            
-            # 添加助手响应到上下文
-            self._context.append(
-                MessageBuilder.create_assistant_message(
-                    f"<think>{thinking}</think><answer>{action_str}</answer>"
-                )
-            )
-            
-            # 检查是否完成
-            finished = action.get("_metadata") == "finish" or result.should_finish
-        
-        # 🧠 记忆系统：记录每一步执行
-        if self.memory_manager:
-            try:
-                self.memory_manager.add_step(
-                    thinking=thinking,
-                    action={"raw": raw_content[-300:]},
-                    screenshot_app=current_app,
-                )
-            except Exception:
-                pass  # 记忆追踪失败不影响主流程
-        
-        if finished:
-            action_log += f"\n\n🎉 **任务完成**: {result.message or '已完成'}"
-            self._task_success = True
-            # 🧠 记忆系统：任务成功完成
-            if self.memory_manager:
-                self.memory_manager.end_task(
-                    success=True,
-                    result=result.message or "已完成"
-                )
-                action_log += f"\n🧠 记忆已更新"
-        
-        yield thinking_log, action_log, screenshot_img
-        
-        return {"finished": finished, "thinking_log": thinking_log, "action_log": action_log}
-    
-    def _inject_memory_into_context(self, memory_context: str):
-        """
-        将记忆上下文注入到对话的系统/首条消息中。
-        
-        遍历已构建的消息，找到 system 或第一条含文本的 user 消息，
-        将记忆上下文追加到其文本内容末尾。
-        支持 content 为 str 或 list[dict] 两种格式。
-        """
-        for i, msg in enumerate(self._context):
-            role = msg.get("role", "")
-            content = msg.get("content", "")
-            
-            if role == "system":
-                self._append_to_message(i, content, memory_context)
-                return
-            
-            # 如果没有 system 消息（如 UI-TARS），注入到第一条 user 消息
-            if role == "user":
-                if isinstance(content, str) and len(content) > 50:
-                    self._context[i]["content"] = content + f"\n\n{memory_context}"
-                    return
-                elif isinstance(content, list):
-                    self._append_to_message(i, content, memory_context)
-                    return
-    
-    def _append_to_message(self, msg_idx: int, content, text_to_append: str):
-        """将文本追加到消息内容的文本部分（支持 str 和 list 格式）。"""
-        if isinstance(content, str):
-            self._context[msg_idx]["content"] = content + f"\n\n{text_to_append}"
-        elif isinstance(content, list):
-            for j, item in enumerate(content):
-                if isinstance(item, dict) and item.get("type") == "text":
-                    self._context[msg_idx]["content"][j]["text"] = item["text"] + f"\n\n{text_to_append}"
-                    return
-            # 如果没找到 text 类型的 item，追加一个新的
-            self._context[msg_idx]["content"].append({
-                "type": "text",
-                "text": text_to_append,
-            })
-    
-    def _parse_response(self, content: str) -> tuple[str, str]:
-        """解析模型响应"""
-        # <answer> 标签优先（因为 <answer> 可能包裹 do()/finish()）
-        if "<answer>" in content:
-            parts = content.split("<answer>", 1)
-            thinking = parts[0].replace("<think>", "").replace("</think>", "").strip()
-            action = parts[1].replace("</answer>", "").strip()
-            return thinking, action
-        
-        if "finish(message=" in content:
-            parts = content.split("finish(message=", 1)
-            thinking = parts[0].strip()
-            action = "finish(message=" + parts[1]
-            return thinking, action
-        
-        if "do(action=" in content:
-            parts = content.split("do(action=", 1)
-            thinking = parts[0].strip()
-            action = "do(action=" + parts[1]
-            return thinking, action
-        
-        return "", content
+            action_desc = str(action)[:80] if action else "(无动作)"
+        page = info.get("page_type") or "?"
+        status = "✅" if info.get("success") else "❌"
+        line = f"\n**Step {step}** {status} [{page}] {badge} → {action_desc}"
+        if info.get("finished"):
+            line += f"\n  🏁 {str(info.get('message') or '')[:120]}"
+        return line
 
 
-# 全局流式 Agent
 streaming_agent: StreamingAgent | None = None
 
 
@@ -1286,17 +753,17 @@ def execute_task(
     model_type: str = "auto",  # 模型类型参数
     user_id: str = "default",  # 用户 ID（用于记忆系统）
     lang: str = "cn",  # Prompt 语言 (cn/en)
-) -> Generator[tuple[str, str, Image.Image | None, gr.update], None, None]:
-    """执行任务并流式输出结果"""
+) -> Generator[tuple[str, str, Image.Image | None, str, gr.update], None, None]:
+    """执行任务并流式输出（思考 / 动作日志 / 截图 / 图谱面板 / 按钮状态）"""
     global streaming_agent, app_state
-    
+
     if not task.strip():
-        yield "请输入任务描述", "", None, gr.update(interactive=True)
+        yield "请输入任务描述", "", None, GRAPH_PANEL_PLACEHOLDER, gr.update(interactive=True)
         return
-    
+
     # 检查是否已有任务在运行
     if app_state.is_running:
-        yield "⚠️ 已有任务在运行中，请先停止当前任务", "", None, gr.update(interactive=True)
+        yield "⚠️ 已有任务在运行中，请先停止当前任务", "", None, GRAPH_PANEL_PLACEHOLDER, gr.update(interactive=True)
         return
     
     app_state.is_running = True
@@ -1327,6 +794,9 @@ def execute_task(
             device_id=device_id.strip() if device_id.strip() else None,
             verbose=True,
             lang=lang,
+            enable_memory=True,
+            user_id=user_id.strip() or "default",
+            model_type=model_type,
         )
     
     # 创建流式 Agent，传入模型类型和用户 ID（用于记忆系统）
@@ -1338,21 +808,21 @@ def execute_task(
     
     try:
         # 禁用开始按钮
-        yield "", "", None, gr.update(interactive=False)
-        
+        yield "", "", None, GRAPH_PANEL_PLACEHOLDER, gr.update(interactive=False)
+
         # 执行任务
-        for thinking, action, screenshot in streaming_agent.run_streaming(task):
+        for thinking, action, screenshot, graph_panel in streaming_agent.run_streaming(task):
             if app_state.should_stop:
                 break
-            yield thinking, action, screenshot, gr.update(interactive=False)
-        
+            yield thinking, action, screenshot, graph_panel, gr.update(interactive=False)
+
     except Exception as e:
-        yield f"❌ 执行错误:\n{traceback.format_exc()}", "", None, gr.update(interactive=True)
+        yield f"❌ 执行错误:\n{traceback.format_exc()}", "", None, GRAPH_PANEL_PLACEHOLDER, gr.update(interactive=True)
     finally:
         app_state.is_running = False
         app_state.should_stop = False
         streaming_agent = None
-        yield gr.update(), gr.update(), gr.update(), gr.update(interactive=True)
+        yield gr.update(), gr.update(), gr.update(), gr.update(), gr.update(interactive=True)
 
 
 def stop_task():
@@ -1369,12 +839,15 @@ def stop_task():
     return "⚠️ 正在停止任务..."
 
 
-def continue_after_takeover():
-    """人工操作完成后继续执行"""
+def continue_after_takeover(reply: str = ""):
+    """人工操作完成后继续执行；reply 作为 Interact/澄清提问的答案传回 Agent"""
     global app_state
-    
+
     if app_state.waiting_for_takeover and app_state.takeover_continue_event:
+        app_state.takeover_reply = (reply or "").strip()
         app_state.takeover_continue_event.set()
+        if app_state.takeover_reply:
+            return f"✅ 继续执行中...（已回复: {app_state.takeover_reply}）"
         return "✅ 继续执行中..."
     else:
         return "⚠️ 当前没有需要人工介入的任务"
@@ -1390,8 +863,8 @@ def new_conversation():
     
     if streaming_agent:
         streaming_agent.reset()
-    
-    return "", "", "", None
+
+    return "", "", "", None, GRAPH_PANEL_PLACEHOLDER
 
 
 # ==================== 记忆 & 图谱管理功能 ====================
@@ -2404,7 +1877,13 @@ def create_ui():
                             stop_btn = gr.Button("⏹️ 停止", variant="stop", scale=1)
                             continue_btn = gr.Button("⏩ 继续执行", variant="secondary", scale=1)
                             new_btn = gr.Button("🔄 新对话", variant="secondary", scale=1)
-                        
+
+                        takeover_reply_input = gr.Textbox(
+                            label="人工介入回复（可选）",
+                            placeholder="Agent 提问时（Interact/澄清），在此输入答案后点「⏩ 继续执行」",
+                            lines=1,
+                        )
+
                         gr.Markdown("### 💭 AI 思考过程")
                         thinking_output = gr.Markdown(
                             "",
@@ -2433,7 +1912,12 @@ def create_ui():
                                 value=False,
                                 info="自动定时刷新截图"
                             )
-                
+
+                        graph_panel_output = gr.Markdown(
+                            GRAPH_PANEL_PLACEHOLDER,
+                            elem_classes=["action-box"],
+                        )
+
                 # 事件绑定
                 start_btn.click(
                     fn=execute_task,
@@ -2444,22 +1928,23 @@ def create_ui():
                         memory_user_id_config,  # 用户 ID（记忆系统）
                         prompt_lang  # Prompt 语言 (cn/en)
                     ],
-                    outputs=[thinking_output, action_output, screenshot_display, start_btn]
+                    outputs=[thinking_output, action_output, screenshot_display, graph_panel_output, start_btn]
                 )
-                
+
                 stop_btn.click(
                     fn=stop_task,
                     outputs=[action_output]
                 )
-                
+
                 continue_btn.click(
                     fn=continue_after_takeover,
+                    inputs=[takeover_reply_input],
                     outputs=[action_output]
                 )
-                
+
                 new_btn.click(
                     fn=new_conversation,
-                    outputs=[task_input, thinking_output, action_output, screenshot_display]
+                    outputs=[task_input, thinking_output, action_output, screenshot_display, graph_panel_output]
                 )
                 
                 refresh_screenshot_btn.click(

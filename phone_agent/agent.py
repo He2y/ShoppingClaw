@@ -154,6 +154,12 @@ class PhoneAgent:
         self._context: list[dict[str, Any]] = []
         self._step_count = 0
         self._current_task = ""
+        # Cooperative cancellation + per-step telemetry surface for frontends
+        # (WebUI streams these; CLI ignores them).
+        self.abort_requested = False
+        self.step_observer: Callable[[dict[str, Any]], None] | None = None
+        self.last_step_info: dict[str, Any] = {}
+        self._step_telemetry: dict[str, Any] = {}
 
         # Load externalized shopping config (JSON with code defaults)
         from phone_agent.config.shopping_config import ShoppingConfig
@@ -261,6 +267,8 @@ class PhoneAgent:
         self._context = []
         self._step_count = 0
         self._current_task = task
+        self.abort_requested = False
+        self._last_thinking = ""
         self._last_state_hash: str | None = None
         self._last_user_reply: str | None = None
         self._graph_fail_count: int = 0
@@ -309,8 +317,10 @@ class PhoneAgent:
                 )
             return result.message or "Task completed"
 
-        # Continue until finished or max steps reached
+        # Continue until finished, aborted, or max steps reached
         while self._step_count < self.agent_config.max_steps:
+            if self.abort_requested:
+                break
             result = self._execute_step(is_first=False)
 
             if result.finished:
@@ -326,6 +336,16 @@ class PhoneAgent:
                         total_steps=self._step_count,
                     )
                 return result.message or "Task completed"
+
+        # Aborted by user (frontend stop button)
+        if self.abort_requested:
+            if self.memory_manager:
+                self.memory_manager.end_task(
+                    success=False, result="Aborted by user", end_state_id=self._last_state_hash
+                )
+            if self.tracer:
+                self.tracer.end_task(result="Aborted by user", total_steps=self._step_count)
+            return "任务已终止"
 
         # Task timeout
         if self.memory_manager:
@@ -466,6 +486,11 @@ class PhoneAgent:
         verification fails (caller falls through to Full Path).
         """
         action = self.action_advisor.get_fast_action(hint)
+        self._tele(
+            dispatch="fast_path",
+            fast_action=str(hint.description),
+            expected_postcondition=str(hint.target_page),
+        )
 
         # Fill slots for Compound actions (e.g. <query> → "无线耳机")
         if self._task_plan and self._task_plan.goal_slots:
@@ -496,11 +521,13 @@ class PhoneAgent:
             # Clear stale RuntimeDAG to force PageClassifier on next step
             if self.memory_manager and hasattr(self.memory_manager, "_runtime_dag"):
                 self.memory_manager._runtime_dag = None
+            self._tele(dispatch="fast_path_fallback", actual_postcondition=new_page_type or "")
             return None  # Fall through to Full Path
 
         # Success — record summary (plan advancement handled at next step start)
         desc = f"[Fast] {hint.description}"
         self._step_summaries.append(desc)
+        self._tele(actual_postcondition=new_page_type or "")
 
         if self.memory_manager:
             self.memory_manager.add_step(
@@ -1078,6 +1105,43 @@ class PhoneAgent:
     def _execute_step(
         self, user_prompt: str | None = None, is_first: bool = False
     ) -> StepResult:
+        """Execute a single step and publish per-step telemetry.
+
+        Wraps _execute_step_impl so every return path (Fast Path, graph
+        shortcut, VLM path, takeover, errors) emits exactly one telemetry
+        event for frontends (mode / dispatch / graph_hint / postcondition).
+        """
+        self._step_telemetry = {
+            "step": self._step_count + 1,
+            "dispatch": "vlm",
+            "mode": "explore",
+            "page_type": "",
+            "graph_hint": "",
+        }
+        result = self._execute_step_impl(user_prompt, is_first)
+        info = dict(self._step_telemetry)
+        info.update(
+            success=result.success,
+            finished=result.finished,
+            thinking=result.thinking or "",
+            action=result.action,
+            message=result.message or "",
+        )
+        self.last_step_info = info
+        if self.step_observer:
+            try:
+                self.step_observer(info)
+            except Exception:
+                pass
+        return result
+
+    def _tele(self, **kwargs: Any) -> None:
+        """Record per-step telemetry fields (merged into last_step_info)."""
+        self._step_telemetry.update(kwargs)
+
+    def _execute_step_impl(
+        self, user_prompt: str | None = None, is_first: bool = False
+    ) -> StepResult:
         """Execute a single step of the agent loop."""
         self._step_count += 1
 
@@ -1085,7 +1149,8 @@ class PhoneAgent:
         device_factory = get_device_factory()
         screenshot = device_factory.get_screenshot(self.agent_config.device_id)
         current_app = device_factory.get_current_app(self.agent_config.device_id)
-        
+        self._tele(app=current_app or "", screenshot_b64=screenshot.base64_data)
+
         # Phase 3: Locate context and switch modes
         mode = "explore"
         current_state_id = None
@@ -1292,6 +1357,14 @@ class PhoneAgent:
                 except Exception:
                     _available_actions = None
 
+            self._tele(
+                mode=mode,
+                page_type=page_type or "",
+                graph_hint=str(context_data.get("graph_hint", "") or ""),
+                runtime_metrics=dict(context_data.get("runtime_metrics") or {}),
+                available_actions=len(_available_actions or []),
+            )
+
             # ── Dual-speed dispatch: Fast Path for Grounded Actions ──
             if _available_actions and not self._needs_vlm(_available_actions, page_type or ""):
                 fast_hint = self._select_fast_action(_available_actions)
@@ -1310,6 +1383,7 @@ class PhoneAgent:
                     context_data, mode, screenshot, current_app, ui_hash, semantic_layout,
                 )
                 if graph_result is not None:
+                    self._tele(dispatch="graph_shortcut")
                     return graph_result
 
         # Get model response (Full Path)
