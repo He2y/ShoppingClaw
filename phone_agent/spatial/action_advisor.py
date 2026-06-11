@@ -25,6 +25,9 @@ _UNGROUNDED_TRANSITIONS = frozenset({
     ("spec_selection", "cart"),
     ("spec_selection", "checkout"),
     ("cart", "checkout"),
+    # A bare Tap on the search button would submit whatever stale text is in
+    # the box — only the synthesized Compound (type query + tap) is grounded.
+    ("search_input", "search_result"),
 })
 
 
@@ -108,8 +111,45 @@ class ActionAdvisor:
             except Exception:
                 pass
 
+        # Doc §5.3: search_input → search_result is a mechanical compound
+        # (type query + tap search). Online trajectories only ever record
+        # the bare Tap, so the compound fast edge never exists organically —
+        # synthesize it from the verified Tap coordinates; slot filling
+        # supplies the query text at execution time.
+        if page_type == "search_input":
+            self._append_search_compound(hints)
+
         hints.sort(key=lambda h: (-h.confidence, h.grounded is False))
         return hints[:8]
+
+    @staticmethod
+    def _append_search_compound(hints: list["ActionHint"]) -> None:
+        if any(h.compound_steps for h in hints if h.target_page == "search_result"):
+            return
+        tap = next(
+            (
+                h for h in hints
+                if h.target_page == "search_result"
+                and h.coordinates
+                and str(h.action_type).lower() == "tap"
+            ),
+            None,
+        )
+        if tap is None:
+            return
+        hints.append(ActionHint(
+            target_page="search_result",
+            action_type="Compound",
+            region=tap.region,
+            grounded=True,
+            # Slightly above the source Tap so selection prefers the compound
+            confidence=min(1.0, tap.confidence + 0.01),
+            description="输入搜索词并点击搜索",
+            compound_steps=(
+                {"action": "Type", "text": "<query>"},
+                {"action": "Tap", "element": list(tap.coordinates)},
+            ),
+        ))
 
     def try_ground(
         self,

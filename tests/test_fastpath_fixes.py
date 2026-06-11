@@ -172,3 +172,60 @@ def test_needs_vlm_allows_fast_path_on_search_input_with_query():
     )
 
     assert agent._needs_vlm([hint], page_type="search_input") is False
+
+
+# ── Compound search-edge synthesis (grounded dispatch for search) ────────────
+
+
+def _tap_search_hint(confidence: float = 0.95) -> ActionHint:
+    return ActionHint(
+        target_page="search_result",
+        action_type="Tap",
+        region="top_right",
+        grounded=False,  # bare tap submits stale text — co-pilot only
+        confidence=confidence,
+        description="点击搜索按钮",
+        coordinates=(893, 71),
+    )
+
+
+def test_append_search_compound_synthesizes_from_tap():
+    hints = [_tap_search_hint()]
+
+    ActionAdvisor._append_search_compound(hints)
+
+    assert len(hints) == 2
+    compound = hints[1]
+    assert compound.action_type == "Compound"
+    assert compound.grounded is True
+    assert compound.is_fast_executable()
+    assert compound.confidence > 0.95
+    assert compound.compound_steps[0] == {"action": "Type", "text": "<query>"}
+    assert compound.compound_steps[1] == {"action": "Tap", "element": [893, 71]}
+
+
+def test_append_search_compound_noop_without_tap_coordinates():
+    hints = [
+        ActionHint(
+            target_page="search_result", action_type="Tap", region="top",
+            grounded=True, confidence=0.9, description="无坐标", coordinates=None,
+        )
+    ]
+    ActionAdvisor._append_search_compound(hints)
+    assert len(hints) == 1
+
+
+def test_append_search_compound_noop_when_compound_exists():
+    existing = ActionHint(
+        target_page="search_result", action_type="Compound", region="top",
+        grounded=True, confidence=0.95, description="已有",
+        compound_steps=({"action": "Type", "text": "<query>"},),
+    )
+    hints = [_tap_search_hint(), existing]
+    ActionAdvisor._append_search_compound(hints)
+    assert len(hints) == 2
+
+
+def test_bare_search_tap_classified_ungrounded():
+    from phone_agent.spatial.action_advisor import _UNGROUNDED_TRANSITIONS
+    assert ("search_input", "search_result") in _UNGROUNDED_TRANSITIONS

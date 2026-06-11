@@ -1480,6 +1480,13 @@ class PhoneAgent:
             )
 
             # ── Dual-speed dispatch: Fast Path for Grounded Actions ──
+            if _available_actions and self.agent_config.verbose:
+                plan_step = self._task_plan.current_step() if self._task_plan else None
+                print(
+                    f"[FastPath] page={page_type} hints={len(_available_actions)} "
+                    f"plan_target={getattr(plan_step, 'target_page', None)} "
+                    f"executable={[h.target_page for h in _available_actions if h.is_fast_executable()]}"
+                )
             if _available_actions and not self._needs_vlm(_available_actions, page_type or ""):
                 fast_hint = self._select_fast_action(_available_actions)
                 if fast_hint is not None:
