@@ -131,3 +131,47 @@ def test_planner_instruction_leads_step_parts():
 
     assert parts[0].startswith("【当前指令】")
     assert "在最低价输入框输入500" in parts[0]
+
+
+def test_main_planner_default_off(monkeypatch):
+    monkeypatch.delenv("PHONE_AGENT_STRONG_PLANNER", raising=False)
+    from phone_agent.step_planner import main_planner_enabled
+    assert main_planner_enabled() is False
+    monkeypatch.setenv("PHONE_AGENT_STRONG_PLANNER", "1")
+    assert main_planner_enabled() is True
+
+
+def test_completion_evidence_gate():
+    agent = object.__new__(PhoneAgent)
+    agent._vlm_plan = {"target_page": "spec_selection"}
+    agent._visited_pages = {"home", "search_result"}
+    assert agent._completion_evidence() is False
+
+    agent._visited_pages.add("spec_selection")
+    assert agent._completion_evidence() is True
+
+    agent._vlm_plan = {}
+    agent._visited_pages = set()
+    assert agent._completion_evidence() is True
+
+
+def test_mechanical_price_verdict_injected():
+    agent = object.__new__(PhoneAgent)
+    agent._task_plan = None
+    agent._step_summaries = []
+    agent.action_advisor = None
+    agent._current_task = "买蓝牙耳机，要求500-1000元内"
+    agent._last_user_reply = None
+    agent._vlm_plan = {}
+    agent._spec_guard = SpecGuard(ShoppingConfig.load())
+    agent.memory_manager = SimpleNamespace(
+        state=SimpleNamespace(products=[SimpleNamespace(price=1424.05)]),
+    )
+
+    parts = agent._build_step_user_parts(
+        current_app="淘宝", page_type="product_detail",
+        available_actions=None, graph_hint="", include_screen_info=False,
+    )
+    text = "\n\n".join(parts)
+    assert "⛔ 系统判定" in text
+    assert "1424.05" in text

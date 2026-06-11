@@ -293,6 +293,7 @@ class PhoneAgent:
         self._verification_consecutive: int = 0
         self._anomaly_consecutive: int = 0
         self._last_planner_instruction = ""
+        self._visited_pages: set[str] = set()
         if self.step_planner is not None:
             from phone_agent.step_planner import TaskPlanContext
             self._planner_context = TaskPlanContext()
@@ -1008,6 +1009,17 @@ class PhoneAgent:
         cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,，、")
         return cleaned or (query or "").strip()
 
+    def _completion_evidence(self) -> bool:
+        """Mechanical evidence that the task goal is plausibly reached.
+
+        Conservative: only blocks success-finishes when the pre-plan declared
+        a target page and it was never visited during this task.
+        """
+        target = str((getattr(self, "_vlm_plan", {}) or {}).get("target_page") or "")
+        if not target:
+            return True
+        return target in getattr(self, "_visited_pages", set())
+
     def _current_product_price(self) -> float | None:
         """Price of the most recently tracked product (for the price guard)."""
         try:
@@ -1158,6 +1170,17 @@ class PhoneAgent:
                 "【当前指令】（来自任务规划器——只执行这一条指令，"
                 f"不要自行规划下一步）\n{planner_instruction}"
             )
+        else:
+            # Single-focus objective from the static pre-plan: small models
+            # lose track across long contexts — give one explicit current
+            # goal instead of relying on free-form reasoning.
+            current_step_fn = getattr(self._task_plan, "current_step", None) if self._task_plan else None
+            step = current_step_fn() if current_step_fn else None
+            if step is not None and getattr(step, "description", ""):
+                parts.append(
+                    f"【当前目标】{step.description}"
+                    + (f"（预期到达: {step.target_page}）" if getattr(step, "target_page", "") else "")
+                )
 
         # Task plan with progress markers
         if self._task_plan and self._task_plan.steps:
@@ -1207,6 +1230,29 @@ class PhoneAgent:
             )
             if critical_hints:
                 parts.append("\n".join(critical_hints))
+
+        # Mechanical constraint verdict — never ask a small model to compare
+        # numbers; compute in code and state the conclusion (the model
+        # declared ¥1424 / ¥172 "within 500-1000元" three runs in a row).
+        spec_guard = getattr(self, "_spec_guard", None)
+        if spec_guard and page_type in ("search_result", "product_detail", "spec_selection"):
+            bounds = spec_guard._extract_price_bounds(
+                self._current_task, getattr(self, "_vlm_plan", None),
+            )
+            price = self._current_product_price()
+            if bounds and price is not None:
+                low, high = bounds
+                out_of_budget = (low is not None and price < low) or (
+                    high is not None and price > high
+                )
+                if out_of_budget:
+                    parts.append(
+                        f"⛔ 系统判定: 当前商品价格 ¥{price:g} 不符合预算"
+                        f"（{spec_guard._format_bounds(bounds)}）。"
+                        f"禁止选择或加购该商品，应 Back 返回更换商品或重新筛选。"
+                    )
+                else:
+                    parts.append(f"✅ 系统判定: 当前商品价格 ¥{price:g} 在预算范围内")
 
         # Price red-line on decision pages — last text before screenshot
         if page_type in ("search_result", "product_detail", "spec_selection"):
@@ -1524,6 +1570,8 @@ class PhoneAgent:
                 except Exception:
                     _available_actions = None
 
+            if page_type:
+                self._visited_pages.add(page_type)
             self._tele(
                 mode=mode,
                 page_type=page_type or "",
@@ -2065,6 +2113,24 @@ class PhoneAgent:
             # (real-device run: "任务完成" while nothing was verified).
             if self.agent_config.verbose:
                 print("⛔ [Planner] 执行模型试图提前 finish，已拦截（任务结束由规划器判定）")
+            finished = False
+
+        if (
+            finished
+            and action.get("_metadata") == "finish"
+            and result.success
+            and not self._completion_evidence()
+        ):
+            # Mechanical finish gate: a success claim requires having reached
+            # the pre-plan's target page at least once. Fabricated completions
+            # ("已成功加入购物车" while never leaving product_detail) are the
+            # small model's most damaging hallucination — success finishes
+            # feed the graph quality gates.
+            target = str((getattr(self, "_vlm_plan", {}) or {}).get("target_page") or "")
+            note = f"[FinishGate] 完成证据不足（目标页 {target} 未到达过），已拦截 finish，请继续执行任务"
+            if self.agent_config.verbose:
+                print(f"⛔ {note}")
+            self._step_summaries.append(note)
             finished = False
 
         # Record step trace

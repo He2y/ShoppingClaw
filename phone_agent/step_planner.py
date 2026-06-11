@@ -163,5 +163,10 @@ class TaskStepPlanner:
 
 
 def main_planner_enabled() -> bool:
-    """Strong step planner defaults ON; PHONE_AGENT_STRONG_PLANNER=0 disables."""
-    return os.environ.get("PHONE_AGENT_STRONG_PLANNER", "1").strip() != "0"
+    """Strong step planner is opt-in (PHONE_AGENT_STRONG_PLANNER=1).
+
+    Default OFF: per-step cloud planning tripled latency and contradicts the
+    on-device deployment goal — the small model stays primary; kept for
+    ablation experiments.
+    """
+    return os.environ.get("PHONE_AGENT_STRONG_PLANNER", "0").strip() == "1"
