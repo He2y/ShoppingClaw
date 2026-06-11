@@ -1092,52 +1092,14 @@ class MemoryManager:
         return ""
 
     def compress_session_history(self) -> str | None:
+        """Deprecated no-op — replaced by the milestone supervisor.
+
+        The old implementation asked the small model to compress its own
+        recent steps and wrote "[压缩] ..." into overall_progress, which was
+        injected back into the main dialogue: the executor once treated the
+        compression instruction as the task itself and declared completion.
+        overall_progress is now written by SessionMemoryFile.brief_line().
         """
-        Compress every 5 steps into one concise summary using a lightweight VLM call.
-
-        Uses UnifiedSessionState steps (thinking_short) instead of old StepSummary.
-        Returns the compressed summary string, or None if compression was skipped.
-        """
-        if not self.state.should_compress():
-            return None
-
-        recent = self.state.steps[-5:]
-        summaries_text = "\n".join(
-            f"Step {s.step}: {s.thinking_short or s.action_type}" for s in recent
-        )
-
-        try:
-            from openai import OpenAI
-            import os
-
-            model_name = os.getenv("PHONE_AGENT_MODEL", "autoglm-phone-9b")
-            base_url = os.getenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1")
-            api_key = os.getenv("PHONE_AGENT_API_KEY", "EMPTY")
-            client = OpenAI(base_url=base_url, api_key=api_key)
-
-            prompt = (
-                "将以下手机购物操作的 5 个步骤压缩为一句简洁的进展描述"
-                "（保留关键信息：App、商品名、价格、动作结果）：\n"
-                + summaries_text
-                + "\n\n压缩为一句："
-            )
-
-            response = client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model=model_name,
-                temperature=0.1,
-                max_tokens=80,
-            )
-            compressed = (response.choices[0].message.content or "").strip()
-
-            if compressed and len(compressed) >= 5:
-                # Store compressed summary as overall progress
-                self.state.overall_progress = f"[压缩] {compressed}"
-                return compressed
-
-        except Exception:
-            pass
-
         return None
 
     def _auto_add_contact(self, name: str, context: str):

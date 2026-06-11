@@ -170,6 +170,24 @@ class PhoneAgent:
         except Exception:
             self.step_planner = None
 
+        # Milestone supervisor: low-frequency strong-VLM oversight (mutually
+        # exclusive with the per-step planner — planner wins when enabled).
+        self.milestone_supervisor = None
+        self._memory_file = None
+        self._milestone_trigger = None
+        try:
+            from phone_agent.milestone_supervisor import MilestoneSupervisor, milestone_enabled
+            if milestone_enabled() and self.step_planner is None:
+                supervisor = MilestoneSupervisor()
+                if supervisor.available():
+                    self.milestone_supervisor = supervisor
+                    if self.agent_config.verbose:
+                        print("🏁 里程碑监督者已启用 (PHONE_AGENT_MILESTONE=0 可关闭)")
+            elif self.step_planner is not None and self.agent_config.verbose:
+                print("ℹ️ STRONG_PLANNER 已启用，里程碑监督自动停用")
+        except Exception:
+            self.milestone_supervisor = None
+
         self._anomaly_consecutive = 0
         # Cooperative cancellation + per-step telemetry surface for frontends
         # (WebUI streams these; CLI ignores them).
@@ -312,9 +330,20 @@ class PhoneAgent:
 
         # Start memory tracking + task planning
         self._vlm_plan: dict[str, Any] = {}
+        self._memory_file = None
+        self._milestone_trigger = None
         if self.memory_manager:
             self.memory_manager.start_task(task)
-            self._vlm_plan = self._vlm_pre_plan(task)
+            if self.milestone_supervisor is not None:
+                self._vlm_plan = self.milestone_supervisor.initialize(task)
+                if isinstance(self._vlm_plan.get("search_query"), str):
+                    self._vlm_plan["search_query"] = self._sanitize_search_query(
+                        self._vlm_plan["search_query"], self._vlm_plan.get("specs"),
+                    )
+                if not self._vlm_plan:
+                    self._vlm_plan = self._vlm_pre_plan(task)
+            else:
+                self._vlm_plan = self._vlm_pre_plan(task)
             if self._vlm_plan:
                 self.memory_manager.set_vlm_plan(self._vlm_plan)
                 self._task_plan = TaskPlan.from_vlm_output(task, self._vlm_plan)
@@ -322,6 +351,32 @@ class PhoneAgent:
                 self._task_plan = TaskPlan(original_task=task)
         else:
             self._task_plan = TaskPlan(original_task=task)
+
+        # Session memory file + milestone trigger (anti-forgetting anchor)
+        if self.milestone_supervisor is not None:
+            try:
+                from pathlib import Path
+                from phone_agent.milestone_supervisor import (
+                    MilestoneTrigger, milestone_interval,
+                    milestone_max_calls, milestone_min_gap,
+                )
+                from phone_agent.session_memory_file import SessionMemoryFile
+                sessions_dir = (
+                    Path(self.agent_config.memory_dir)
+                    / self.agent_config.user_id / "sessions"
+                )
+                self._memory_file = SessionMemoryFile.create(
+                    task, self._vlm_plan, sessions_dir=sessions_dir,
+                )
+                self._memory_file.save()
+                self._milestone_trigger = MilestoneTrigger(
+                    interval=milestone_interval(),
+                    min_gap=milestone_min_gap(),
+                    max_calls=milestone_max_calls(self.agent_config.max_steps),
+                )
+            except Exception:
+                self._memory_file = None
+                self._milestone_trigger = None
 
         # First step with user prompt
         result = self._execute_step(task, is_first=True)
@@ -333,6 +388,7 @@ class PhoneAgent:
                     result=result.message or "Task completed",
                     end_state_id=self._last_state_hash,
                 )
+            self._finalize_session_memory(result.success)
             if self.tracer:
                 self.tracer.end_task(
                     result=result.message or "Task completed",
@@ -368,6 +424,7 @@ class PhoneAgent:
                 )
             if self.tracer:
                 self.tracer.end_task(result="Aborted by user", total_steps=self._step_count)
+            self._finalize_session_memory(False)
             return "任务已终止"
 
         # Task timeout
@@ -375,6 +432,7 @@ class PhoneAgent:
             self.memory_manager.end_task(success=False, result="Max steps reached", end_state_id=self._last_state_hash)
         if self.tracer:
             self.tracer.end_task(result="Max steps reached", total_steps=self._step_count)
+        self._finalize_session_memory(False)
 
         return "Max steps reached"
 
@@ -1009,6 +1067,96 @@ class PhoneAgent:
         cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,，、")
         return cleaned or (query or "").strip()
 
+    def _finalize_session_memory(self, success: bool) -> None:
+        """Persist the session memory file's terminal state (best-effort)."""
+        memory_file = getattr(self, "_memory_file", None)
+        if memory_file is not None:
+            try:
+                memory_file.finalize(success)
+            except Exception:
+                pass
+
+    def _run_milestone_checkpoint(self, trigger: str, screenshot: Any, page_type: str):
+        """Run one supervisor checkpoint and apply its revision (best-effort).
+
+        Failure semantics: keep the old plan, log a revision entry, advance
+        the trigger baseline (no retry storm); two consecutive failures
+        disable supervision for the rest of the task.
+        """
+        memory_file = self._memory_file
+        trigger_state = self._milestone_trigger
+        if memory_file is None or trigger_state is None:
+            return None
+
+        mech_facts = ""
+        try:
+            price = self._current_product_price()
+            products = self.memory_manager.state.products
+            mech_facts = (
+                f"会话追踪商品数={len(products)}，"
+                f"最近商品价格={'¥%g' % price if price else '未知'}"
+            )
+        except Exception:
+            pass
+
+        if self.agent_config.verbose:
+            print(f"🏁 [Milestone] checkpoint trigger={trigger} step={self._step_count}")
+        result = self.milestone_supervisor.checkpoint(
+            screenshot.base64_data, screenshot.width, screenshot.height,
+            memory_render=memory_file.render_injection(),
+            recent_steps=self._step_summaries,
+            page_type=page_type or "",
+            trigger=trigger,
+            mechanical_facts=mech_facts,
+        )
+        trigger_state.record_fired(self._step_count, trigger)
+
+        if result is None:
+            trigger_state.record_failure()
+            from phone_agent.session_memory_file import RevisionEntry
+            memory_file.revisions.append(RevisionEntry(
+                step=self._step_count, trigger=trigger, summary="checkpoint_failed",
+            ))
+            memory_file.save()
+            if trigger_state.disabled and self.agent_config.verbose:
+                print("⚠️ [Milestone] 连续失败，本任务内停用监督者")
+            return None
+
+        trigger_state.record_success()
+        changes = ""
+        if self._task_plan:
+            changes = self._task_plan.apply_revision(
+                result.completed_step_ids, result.revised_subtasks,
+            )
+        from dataclasses import replace as dc_replace
+        result = dc_replace(result, changes=changes)
+        memory_file.apply_checkpoint(result, self._step_count)
+        if self._task_plan:
+            memory_file.sync_subtasks_from_plan(self._task_plan)
+        memory_file.save()
+
+        # Mirror into the session state (progress line replaces the old
+        # leak-prone compression text)
+        try:
+            state = self.memory_manager.state
+            state.subtasks_completed = [
+                s.description for s in memory_file.subtasks if s.status == "done"
+            ]
+            state.subtasks_remaining = [
+                s.description for s in memory_file.subtasks
+                if s.status in ("pending", "current")
+            ]
+            state.current_subtask = next(
+                (s.description for s in memory_file.subtasks if s.status == "current"), "",
+            )
+            state.overall_progress = memory_file.brief_line()
+        except Exception:
+            pass
+
+        if self.agent_config.verbose and result.current_situation:
+            print(f"🏁 [Milestone] {result.current_situation} | {changes}")
+        return result
+
     def _completion_evidence(self) -> bool:
         """Mechanical evidence that the task goal is plausibly reached.
 
@@ -1059,51 +1207,8 @@ class PhoneAgent:
         VLM-enriched goal information instead of only regex-based extraction.
         Returns empty dict on failure (caller falls back to rule-based path).
         """
-        prompt = (
-            "You are a mobile shopping task planner. Decompose the task into "
-            "ordered execution steps and extract structured information.\n\n"
-            f'Task: "{task}"\n\n'
-            "Return ONLY valid JSON:\n"
-            "{\n"
-            '  "search_query": "best search keywords",\n'
-            '  "product": "target product name",\n'
-            '  "specs": {"color": "...", "storage": "...", "size": "..."},\n'
-            '  "target_action": "add_to_cart|buy_now|checkout|view_cart",\n'
-            '  "target_page": "search_input|search_result|product_detail|spec_selection|cart|checkout",\n'
-            '  "steps": [\n'
-            '    {"description": "step description", "target_page": "page_type"},\n'
-            "    ...\n"
-            "  ]\n"
-            "}\n\n"
-            "Rules:\n"
-            "- steps: 3-8 ordered steps. Each step has description + target_page.\n"
-            "  target_page is the expected page type AFTER completing that step.\n"
-            "  Valid page types: home, search_input, search_result, product_detail,\n"
-            "  spec_selection, cart, checkout, store, my_account, filter_panel\n"
-            '- search_query: ONLY the bare product noun (e.g. "蓝牙耳机"). NEVER put\n'
-            "  price ranges, feature words (降噪/防水/无线...) or qualifiers into the\n"
-            '  query — searching "蓝牙耳机 降噪 500-1000元" artificially narrows results.\n'
-            "  Prices and features are applied LATER via filter steps.\n"
-            "- specs: ONLY explicitly mentioned attributes. Omit unmentioned keys.\n"
-            "- If user specified a price range, include a filter step (target_page: filter_panel)\n"
-            "  BEFORE browsing products. Also put the price in specs (NOT in search_query).\n\n"
-            'Example for "去淘宝买iPhone 17 pro max，银色 512G，加入购物车":\n'
-            "{\n"
-            '  "search_query": "iPhone 17 pro max",\n'
-            '  "product": "iPhone 17 pro max",\n'
-            '  "specs": {"color": "银色", "storage": "512G"},\n'
-            '  "target_action": "add_to_cart",\n'
-            '  "target_page": "spec_selection",\n'
-            '  "steps": [\n'
-            '    {"description": "搜索iPhone 17 pro max", "target_page": "search_result"},\n'
-            '    {"description": "从搜索结果选择合适商品", "target_page": "product_detail"},\n'
-            '    {"description": "确认商品参数符合要求", "target_page": "product_detail"},\n'
-            '    {"description": "选择银色和512G规格", "target_page": "spec_selection"},\n'
-            '    {"description": "点击加入购物车", "target_page": "cart"}\n'
-            "  ]\n"
-            "}\n\n"
-            "JSON:"
-        )
+        from phone_agent.milestone_supervisor import build_preplan_prompt
+        prompt = build_preplan_prompt(task)
         try:
             import os
             from dotenv import load_dotenv
@@ -1182,8 +1287,12 @@ class PhoneAgent:
                     + (f"（预期到达: {step.target_page}）" if getattr(step, "target_page", "") else "")
                 )
 
-        # Task plan with progress markers
-        if self._task_plan and self._task_plan.steps:
+        # Session memory digest (original task / verified facts / subtask
+        # progress) — superset of the plan; plain plan without supervisor
+        memory_file = getattr(self, "_memory_file", None)
+        if memory_file is not None:
+            parts.append(memory_file.render_injection())
+        elif self._task_plan and self._task_plan.steps:
             parts.append(f"【任务计划】\n{self._task_plan.status_text()}")
 
         # Key constraints (price, specs) — prominent reminder
@@ -1497,9 +1606,8 @@ class PhoneAgent:
             mode = context_data.get("mode", "explore")
             current_state_id = context_data.get("current_state_id")
 
-            # Phase 2.5: SessionMemory compression (every 5 steps)
-            if current_app:
-                self.memory_manager.compress_session_history()
+            # (SessionMemory compression removed — it leaked its own prompt
+            # into the dialogue; the milestone supervisor owns progress now.)
 
             # [HITL Active Clarification] - Use ClarificationAgent on first step
             if is_first and self.clarification_agent:
@@ -1541,24 +1649,39 @@ class PhoneAgent:
                     current_state_id = context_data.get("current_state_id")
 
             # ── Sync plan with current page state ──
-            # Skip plan steps whose target_page we've already passed through.
-            # This handles transitions completed by Fast Path in previous steps.
+            # If current page matches a FUTURE step (Fast Path jumped ahead),
+            # advance past completed intermediate steps.
+            milestone_subtask_done = False
             if self._task_plan and page_type:
-                while (self._task_plan.current_step()
-                       and self._task_plan.current_step().target_page
-                       and self._task_plan.current_step().target_page != page_type
-                       and self._task_plan.current_step().status == "done"):
-                    pass  # already done, move on
-                # If current page matches a FUTURE step (Fast Path jumped ahead),
-                # advance past completed intermediate steps.
                 for i, step in enumerate(self._task_plan.steps):
                     if step.status == "pending" and step.target_page == page_type:
                         # Mark all steps before this one as done
                         for j in range(self._task_plan.current_index, i):
                             self._task_plan.steps[j].status = "done"
+                        if i > self._task_plan.current_index:
+                            milestone_subtask_done = True
                         self._task_plan.current_index = i
                         self._task_plan.steps[i].status = "current"
                         break
+
+            # ── Milestone supervision (strong VLM, low frequency) ──
+            if (
+                self.milestone_supervisor is not None
+                and self._milestone_trigger is not None
+                and page_type
+            ):
+                stagnating = False
+                try:
+                    stagnating = bool(self.memory_manager.state.is_stagnating())
+                except Exception:
+                    pass
+                _ms_trigger = self._milestone_trigger.evaluate(
+                    self._step_count,
+                    subtask_done=milestone_subtask_done,
+                    stagnating=stagnating,
+                )
+                if _ms_trigger:
+                    self._run_milestone_checkpoint(_ms_trigger, screenshot, page_type)
 
             # ── Action Library advisory ──
             _available_actions: list | None = None
@@ -2131,7 +2254,36 @@ class PhoneAgent:
             if self.agent_config.verbose:
                 print(f"⛔ {note}")
             self._step_summaries.append(note)
+            if self._milestone_trigger is not None:
+                self._milestone_trigger.pending_finish_gate = True
             finished = False
+
+        # Final confirmation: the supervisor verifies success claims against
+        # the screenshot (the executor's self-report is untrusted).
+        if (
+            finished
+            and action.get("_metadata") == "finish"
+            and result.success
+            and self.milestone_supervisor is not None
+            and self._milestone_trigger is not None
+            and not self._milestone_trigger.disabled
+            and self._milestone_trigger.call_count < self._milestone_trigger.max_calls
+        ):
+            ckpt = self._run_milestone_checkpoint("final_confirm", screenshot, page_type or "")
+            if ckpt is not None and ckpt.task_blocked:
+                from phone_agent.actions.handler import ActionResult
+                result = ActionResult(
+                    success=False, should_finish=True,
+                    message=ckpt.message or "监督者判定任务无法继续推进",
+                )
+            elif ckpt is not None and not ckpt.task_complete:
+                note = "[里程碑] 监督者判定任务未完成：" + (
+                    ckpt.current_situation or ckpt.message or "请继续执行"
+                )
+                if self.agent_config.verbose:
+                    print(f"⛔ {note}")
+                self._step_summaries.append(note)
+                finished = False
 
         # Record step trace
         if self.tracer:

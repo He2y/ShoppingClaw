@@ -367,10 +367,6 @@ class UnifiedSessionState:
     def is_stagnating(self) -> bool:
         return self._consecutive_same >= 2
 
-    def should_compress(self) -> bool:
-        """True every 5 steps — trigger VLM history compression."""
-        return len(self.steps) > 0 and len(self.steps) % 5 == 0
-
     # ────────────────────────────────────────────────────────────────
     # Intent detection — parse VLM thinking for retrieval signals
     # ────────────────────────────────────────────────────────────────
