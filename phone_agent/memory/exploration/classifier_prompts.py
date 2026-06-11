@@ -16,7 +16,7 @@ _CLASSIFIER_SYSTEM_PROMPT = (
     "2. home 允许出现顶部搜索框；只有搜索框已激活、键盘/搜索历史/搜索建议出现时才判为 search_input。\n"
     "3. search_input 必须是输入态或建议态；如果已经出现商品卡片、价格、店铺/销量等结果信息，判为 search_result。\n"
     "4. search_result 可以包含筛选/排序按钮；只有展开了筛选条件面板、价格区间、品牌/属性选项或确认筛选按钮时才判为 filter_panel。\n"
-    "5. product_detail 是完整商品详情页；只有规格选项以弹窗/半屏面板出现时才判为 spec_selection。\n\n"
+    "5. 判断以最上层内容为准：背景是商品详情页但前景有规格选择弹层时，判为 spec_selection 而不是 product_detail；没有任何弹层时才判 product_detail。\n\n"
     "=== 页面类型定义 ===\n"
     "- home: 首页 — Banner轮播图、推荐商品网格、搜索框入口、活动入口图标\n"
     "- search_input: 搜索输入页 — 搜索框已激活(有光标)、键盘已弹出、显示搜索历史或热门搜索词\n"
@@ -64,6 +64,10 @@ _CLASSIFIER_FAST_SYSTEM_PROMPT = (
 _PROMPT_HEADER = (
     "**重要**: 截图已经裁剪掉了顶部状态栏和底部导航栏（首页/购物车/我的等Tab）。\n"
     "你只能看到页面的主内容区域。请仅根据主内容区域判断页面类型，不要猜测被裁剪掉的部分。\n"
+    "**浮层优先**: 页面存在弹窗/半屏面板/浮层时，page_type 以最上层的弹层内容为准，"
+    "不以背景页面为准（半屏弹层可能没有明显的灰色蒙层）。\n"
+    "**自洽性**: page_type 必须与你的 summary 一致——如果摘要描述的是弹层内容"
+    "（规格选择、登录弹窗、权限请求等），page_type 必须是对应弹层的类型。\n"
 )
 
 _ELEMENTS_SECTION = (

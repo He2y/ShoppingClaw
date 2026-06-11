@@ -72,7 +72,7 @@
         "go_cart"
       ],
       "description": "商品详情页 — 单个商品大图、价格(¥符号)、商品名称、顶部购物车入口、底部加入购物车/立即购买按钮",
-      "vlm_hint": "product_detail 是完整商品详情页；只有规格选项以弹窗/半屏面板出现时才判为 spec_selection。"
+      "vlm_hint": "判断以最上层内容为准：背景是商品详情页但前景有规格选择弹层时，判为 spec_selection 而不是 product_detail；没有任何弹层时才判 product_detail。"
     },
     "spec_selection": {
       "risk": "medium",
@@ -90,7 +90,8 @@
         "confirm_spec",
         "close_dialog"
       ],
-      "description": "规格选择 — 弹窗或半屏面板、颜色/尺寸/容量等选项按钮、数量选择器、显示价格"
+      "description": "规格选择 — 弹窗或半屏面板、颜色/尺寸/容量等选项按钮、数量选择器、显示价格",
+      "vlm_hint": "屏幕出现颜色分类/套餐/尺寸等选项加上确认按钮（加入购物车/立即购买/确定）的底部弹层时，必须判为 spec_selection——即使背景商品详情页仍然可见。半屏弹层在截图中可能不带明显蒙层，凭『颜色分类』『套餐类型』等选项区块识别。"
     },
     "cart": {
       "risk": "medium",
