@@ -1279,7 +1279,7 @@ def test_memory_manager_returns_spatial_context(tmp_path):
     assert context["current_state_id"].startswith("state_")
     assert context["belief"]["current_state_id"] == context["current_state_id"]
     assert context["goal_spec"]["domain"] == "shopping"
-    assert "SpatialGraph" in context["semantic_context"]
+    assert "SpatialGraph" in context["graph_hint"]
 
 
 def test_memory_manager_marks_pending_transition_failure_on_postcondition_mismatch(tmp_path):
@@ -1303,7 +1303,7 @@ def test_memory_manager_marks_pending_transition_failure_on_postcondition_mismat
     assert edge.fail_count == 1
     assert edge.success_count == 0
     assert context["repair_hint"]["action"] == "replan"
-    assert "SpatialGraph Repair" in context["semantic_context"]
+    assert "SpatialGraph Repair" in context["graph_hint"]
 
 
 def test_memory_manager_runtime_dag_fast_path_skips_relocalization(tmp_path):

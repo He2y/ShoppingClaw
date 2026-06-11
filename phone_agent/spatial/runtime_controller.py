@@ -184,9 +184,7 @@ class GraphRuntimeController:
             repair_hint=repair_hint,
         )
         if spatial_context:
-            context_data["semantic_context"] = (
-                f"{spatial_context}\n{context_data.get('semantic_context', '')}"
-            ).strip()
+            self._add_graph_hint(context_data, spatial_context)
         self._inject_task_plan_hint(context_data, goal_spec)
 
         if route_plan.mode == "navigate" and route_plan.next_action:
@@ -218,15 +216,28 @@ class GraphRuntimeController:
 
         context_data["mode"] = "explore"
         # Domain structural priors: inject text hint for cold-start apps.
-        # Only appended to semantic_context — never produces executable actions.
+        # Only appended to graph_hint — never produces executable actions.
         self._inject_domain_priors(context_data, current_page_state, goal_spec)
         return context_data
+
+    @staticmethod
+    def _add_graph_hint(context_data: dict[str, Any], text: str, *, append: bool = False) -> None:
+        """Accumulate graph co-pilot text under the dedicated "graph_hint" key.
+
+        Kept separate from "semantic_context" (the personalized-memory base
+        consumed by ClarificationAgent) so the agent can inject graph guidance
+        into the VLM message as a first-class block.
+        """
+        existing = context_data.get("graph_hint", "")
+        merged = f"{existing}\n{text}" if append else f"{text}\n{existing}"
+        context_data["graph_hint"] = merged.strip()
 
     def _base_context(self, task: str) -> dict[str, Any]:
         return {
             "max_similarity": 0.0,
             "mode": "explore",
             "semantic_context": self.manager.get_relevant_context(task),
+            "graph_hint": "",
             "next_actions": [],
             "current_state_id": None,
             "task_trajectory": None,
@@ -295,12 +306,12 @@ class GraphRuntimeController:
                 "confidence": next_action.get("confidence", 0.0),
                 "coverage_gaps": [],
             }
-            context_data["semantic_context"] = (
+            self._add_graph_hint(
+                context_data,
                 f"[RuntimeDAG] plan={dag.plan_id} "
                 f"step={dag.current_index + 1}/{len(dag.route)} "
-                f"next={next_action.get('type')}:{next_action.get('target')}\n"
-                f"{context_data.get('semantic_context', '')}"
-            ).strip()
+                f"next={next_action.get('type')}:{next_action.get('target')}",
+            )
             return True
         context_data["mode"] = "goal_reached"
         context_data["route_plan"] = {"mode": "goal_reached", "source": "runtime_dag"}
@@ -504,10 +515,7 @@ class GraphRuntimeController:
         if specs:
             parts.append(f"specs: {', '.join(specs)}")
         if parts:
-            context_data["semantic_context"] = (
-                f"[Task Plan] {' | '.join(parts)}\n"
-                f"{context_data.get('semantic_context', '')}"
-            ).strip()
+            self._add_graph_hint(context_data, f"[Task Plan] {' | '.join(parts)}")
 
     def _requires_vlm_verification(self, source_page_type: str, target_page_type: str) -> bool:
         if hasattr(self.manager, "_requires_vlm_verification"):
@@ -551,9 +559,7 @@ class GraphRuntimeController:
             f"你必须根据当前截图内容和用户任务自行判断点击哪个元素。"
             f"绝不要复用图谱中的历史商品信息！"
         )
-        context_data["semantic_context"] = (
-            f"{hint}\n{context_data.get('semantic_context', '')}"
-        ).strip()
+        self._add_graph_hint(context_data, hint)
 
     def _enrich_next_action_with_functionality(
         self,
@@ -567,9 +573,7 @@ class GraphRuntimeController:
     def _inject_v4_hint(self, context_data: dict[str, Any], functionality_context: dict[str, Any]) -> None:
         semantic_hint = functionality_context.get("semantic_hint") if functionality_context else ""
         if semantic_hint:
-            context_data["semantic_context"] = (
-                f"[V4 Knowledge] {semantic_hint}\n{context_data.get('semantic_context', '')}"
-            ).strip()
+            self._add_graph_hint(context_data, f"[V4 Knowledge] {semantic_hint}")
 
     def _get_domain_prior_provider(self) -> Any:
         """Lazily instantiate the DomainPriorProvider, respecting any test injection."""
@@ -590,7 +594,7 @@ class GraphRuntimeController:
         current_page_state: PageState | None,
         goal_spec: Any,
     ) -> None:
-        """Append domain structural prior hint to semantic_context when app is cold."""
+        """Append domain structural prior hint to graph_hint when app is cold."""
         if not _AMSG_DOMAIN_PRIORS_ENABLED:
             return
         try:
@@ -609,9 +613,7 @@ class GraphRuntimeController:
             priors = provider.priors_for(app, page_type, goal_page_types)
             hint = provider.format_hint(priors, app, page_type)
             if hint:
-                context_data["semantic_context"] = (
-                    f"{context_data.get('semantic_context', '')}\n{hint}"
-                ).strip()
+                self._add_graph_hint(context_data, hint, append=True)
         except Exception:
             pass  # domain priors must never break the main loop
 

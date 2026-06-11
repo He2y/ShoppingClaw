@@ -6,7 +6,7 @@ derived from:
   2. Cross-app graph aggregation (same domain, non-own apps, promoted edges)
 
 Hard invariant: priors are NEVER converted to executable next_actions or
-coordinates.  They are appended to ``semantic_context`` as plain Chinese text
+coordinates.  They are appended to ``graph_hint`` as plain Chinese text
 so the VLM can orient itself on unfamiliar apps.
 """
 
@@ -125,7 +125,7 @@ class DomainPriorProvider:
         app: str,
         page_type: str,
     ) -> str:
-        """Format priors as a Chinese text block for ``semantic_context``.
+        """Format priors as a Chinese text block for ``graph_hint``.
 
         Returns "" when *priors* is empty.
         """

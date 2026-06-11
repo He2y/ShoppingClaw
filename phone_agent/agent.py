@@ -665,7 +665,8 @@ class PhoneAgent:
            compound search, back). Returns StepResult.
         2. VLM co-pilot — graph provides direction but the VLM must verify
            the screenshot (product/spec selection). Returns None, but graph
-           hint is already in context_data["semantic_context"].
+           hint is already in context_data["graph_hint"] and will be
+           injected into the per-step VLM message.
         3. Explore mode — no graph route found. Returns None.
         """
         next_action = (
@@ -974,6 +975,106 @@ class PhoneAgent:
                 print("[VLM Pre-Plan] failed, falling back to rule-based extraction")
         return {}
 
+    def _build_step_user_parts(
+        self,
+        current_app: str,
+        page_type: str | None,
+        available_actions: list | None,
+        graph_hint: str,
+    ) -> list[str]:
+        """Build the structured per-step user message parts (AutoGLM path).
+
+        Note: consumes self._last_user_reply (cleared after inclusion).
+        """
+        parts: list[str] = []
+
+        # Task plan with progress markers
+        if self._task_plan and self._task_plan.steps:
+            parts.append(f"【任务计划】\n{self._task_plan.status_text()}")
+
+        # Key constraints (price, specs) — prominent reminder
+        if self._task_plan and self._task_plan.goal_slots:
+            constraints = []
+            slots = self._task_plan.goal_slots
+            for pk in ("price", "price_range", "price_min", "price_max"):
+                if slots.get(pk):
+                    constraints.append(f"价格要求: {slots[pk]}")
+                    break
+            for k in ("color", "storage", "size", "brand"):
+                if slots.get(k):
+                    constraints.append(f"{k}: {slots[k]}")
+            if constraints:
+                parts.append("【关键约束】⚠️ " + "，".join(constraints)
+                             + "\n请严格按照约束选择商品，不符合价格要求的商品不要加入购物车")
+
+        # Execution history (compressed summaries)
+        if self._step_summaries:
+            history_lines = []
+            for i, s in enumerate(self._step_summaries[-8:], 1):
+                history_lines.append(f"Step {i}: {s}")
+            parts.append("【执行历史】\n" + "\n".join(history_lines))
+
+        # Graph co-pilot hint (route direction, VLM-verification warning,
+        # domain priors) — direction only, never historical product data
+        if graph_hint:
+            parts.append(f"【图谱导航】\n{graph_hint}")
+
+        # Action Library hints (navigation advisory)
+        if available_actions and self.action_advisor:
+            hints_text = self.action_advisor.format_for_vlm(available_actions)
+            if hints_text:
+                page_label = page_type or "unknown"
+                parts.append(f"【可用操作】(当前: {page_label})\n{hints_text}")
+
+        # SpecGuard safety hints (critical for spec/payment pages)
+        if self.memory_manager:
+            critical_hints = self._spec_guard.get_context_hints(
+                current_app=current_app,
+                page_type=page_type,
+                task=self._current_task,
+                vlm_plan=getattr(self, "_vlm_plan", None),
+            )
+            if critical_hints:
+                parts.append("\n".join(critical_hints))
+
+        # Price red-line on decision pages — last text before screenshot
+        if page_type in ("search_result", "product_detail", "spec_selection"):
+            price_slot = ""
+            if self._task_plan:
+                for pk in ("price", "price_range", "price_min", "price_max"):
+                    price_slot = self._task_plan.goal_slots.get(pk, "")
+                    if price_slot:
+                        break
+            if price_slot:
+                parts.append(
+                    f"⛔ 价格红线: {price_slot}。"
+                    f"超出此范围的商品不要选择、不要加入购物车。"
+                    f"如果当前商品超出预算，立即 Back 返回。"
+                )
+
+        screen_info = MessageBuilder.build_screen_info(current_app)
+        parts.append(f"** Screen Info **\n\n{screen_info}")
+
+        if getattr(self, "_last_user_reply", None):
+            parts.append(f"[用户补充约束]: {self._last_user_reply}")
+            self._last_user_reply = None
+
+        return parts
+
+    def _inject_supplementary_context(self, extra_context_parts: list[str]) -> None:
+        """Prepend supplementary context to the latest user message text."""
+        if not (extra_context_parts and self._context):
+            return
+        extra_context = "\n\n".join(extra_context_parts)
+        last_msg = self._context[-1]
+        if isinstance(last_msg.get("content"), list):
+            for item in last_msg["content"]:
+                if item.get("type") == "text":
+                    item["text"] = f"{extra_context}\n\n{item['text']}"
+                    break
+        elif isinstance(last_msg.get("content"), str):
+            last_msg["content"] = f"{extra_context}\n\n{last_msg['content']}"
+
     def _execute_step(
         self, user_prompt: str | None = None, is_first: bool = False
     ) -> StepResult:
@@ -988,7 +1089,7 @@ class PhoneAgent:
         # Phase 3: Locate context and switch modes
         mode = "explore"
         current_state_id = None
-        context_data = {"mode": "explore", "semantic_context": "", "next_actions": [], "current_state_id": None}
+        context_data = {"mode": "explore", "semantic_context": "", "graph_hint": "", "next_actions": [], "current_state_id": None}
         _available_actions: list | None = None
 
         # Initialize page_type for SpecGuard
@@ -1136,7 +1237,14 @@ class PhoneAgent:
                     task=user_prompt or self._current_task,
                     image_base64=screenshot.base64_data,
                     current_app=current_app,
-                    memory_context=context_data.get("semantic_context", ""),
+                    memory_context="\n".join(
+                        part
+                        for part in (
+                            str(context_data.get("graph_hint", "") or ""),
+                            str(context_data.get("semantic_context", "") or ""),
+                        )
+                        if part
+                    ),
                     user_preferences=user_prefs,
                     clarification_callback=self.clarification_callback,
                     verbose=self.agent_config.verbose,
@@ -1205,6 +1313,12 @@ class PhoneAgent:
                     return graph_result
 
         # Get model response (Full Path)
+        # Graph co-pilot hint (route direction / VLM-verification warning /
+        # domain priors), produced by GraphRuntimeController under the
+        # "graph_hint" key.  Must reach the VLM regardless of model family.
+        graph_hint = str(context_data.get("graph_hint", "") or "")
+        graph_hint_in_message = False
+
         is_non_autoglm = self._model_type in (
             ModelType.UITARS, ModelType.QWENVL,
             ModelType.MAIUI, ModelType.GUIOWL,
@@ -1266,88 +1380,32 @@ class PhoneAgent:
                 )
             else:
                 # Build structured per-step context
-                parts: list[str] = []
+                parts = self._build_step_user_parts(
+                    current_app=current_app,
+                    page_type=page_type,
+                    available_actions=_available_actions,
+                    graph_hint=graph_hint,
+                )
+                graph_hint_in_message = bool(graph_hint)
 
-                # Task plan with progress markers
-                if self._task_plan and self._task_plan.steps:
-                    parts.append(f"【任务计划】\n{self._task_plan.status_text()}")
-
-                # Key constraints (price, specs) — prominent reminder
-                if self._task_plan and self._task_plan.goal_slots:
-                    constraints = []
-                    slots = self._task_plan.goal_slots
-                    for pk in ("price", "price_range", "price_min", "price_max"):
-                        if slots.get(pk):
-                            constraints.append(f"价格要求: {slots[pk]}")
-                            break
-                    for k in ("color", "storage", "size", "brand"):
-                        if slots.get(k):
-                            constraints.append(f"{k}: {slots[k]}")
-                    if constraints:
-                        parts.append("【关键约束】⚠️ " + "，".join(constraints)
-                                     + "\n请严格按照约束选择商品，不符合价格要求的商品不要加入购物车")
-
-                # Execution history (compressed summaries)
-                if self._step_summaries:
-                    history_lines = []
-                    for i, s in enumerate(self._step_summaries[-8:], 1):
-                        history_lines.append(f"Step {i}: {s}")
-                    parts.append("【执行历史】\n" + "\n".join(history_lines))
-
-                # Action Library hints (navigation advisory)
-                if _available_actions and self.action_advisor:
-                    hints_text = self.action_advisor.format_for_vlm(_available_actions)
-                    if hints_text:
-                        page_label = page_type or "unknown"
-                        parts.append(f"【可用操作】(当前: {page_label})\n{hints_text}")
-
-                # SpecGuard safety hints (critical for spec/payment pages)
-                if self.memory_manager:
-                    critical_hints = self._spec_guard.get_context_hints(
-                        current_app=current_app,
-                        page_type=page_type,
-                        task=self._current_task,
-                        vlm_plan=getattr(self, "_vlm_plan", None),
-                    )
-                    if critical_hints:
-                        parts.append("\n".join(critical_hints))
-
-                # Price red-line on decision pages — last text before screenshot
-                if page_type in ("search_result", "product_detail", "spec_selection"):
-                    price_slot = ""
-                    if self._task_plan:
-                        for pk in ("price", "price_range", "price_min", "price_max"):
-                            price_slot = self._task_plan.goal_slots.get(pk, "")
-                            if price_slot:
-                                break
-                    if price_slot:
-                        parts.append(
-                            f"⛔ 价格红线: {price_slot}。"
-                            f"超出此范围的商品不要选择、不要加入购物车。"
-                            f"如果当前商品超出预算，立即 Back 返回。"
-                        )
-
-                screen_info = MessageBuilder.build_screen_info(current_app)
-                parts.append(f"** Screen Info **\n\n{screen_info}")
-
-                if getattr(self, "_last_user_reply", None):
-                    parts.append(f"[用户补充约束]: {self._last_user_reply}")
-                    self._last_user_reply = None
-
-                text_content = "\n\n".join(parts)
                 self._context.append(
                     MessageBuilder.create_user_message(
-                        text=text_content, image_base64=screenshot.base64_data
+                        text="\n\n".join(parts), image_base64=screenshot.base64_data
                     )
                 )
 
         # =============================================
-        # Phase ⑥: Memory context injection (lightweight)
+        # Phase ⑥: Supplementary context injection (lightweight)
         # Task plan, action hints, and spec guard are already in the per-step
-        # user message (built above).  Here we only inject on-demand retrieval
-        # and graph semantic context as supplementary information.
+        # user message (built above).  Two supplements are prepended here:
+        # the graph co-pilot hint — when the structured builder did not
+        # already carry it (first step, non-AutoGLM models) — and on-demand
+        # memory retrieval.
         # =============================================
         extra_context_parts: list[str] = []
+
+        if graph_hint and not graph_hint_in_message:
+            extra_context_parts.append(graph_hint)
 
         if self.memory_manager and current_app:
             last_thinking = getattr(self, "_last_thinking", "")
@@ -1359,16 +1417,7 @@ class PhoneAgent:
             if injection_ctx:
                 extra_context_parts.append(injection_ctx)
 
-        if extra_context_parts and self._context:
-            extra_context = "\n\n".join(extra_context_parts)
-            last_msg = self._context[-1]
-            if isinstance(last_msg.get("content"), list):
-                for item in last_msg["content"]:
-                    if item.get("type") == "text":
-                        item["text"] = f"{extra_context}\n\n{item['text']}"
-                        break
-            elif isinstance(last_msg.get("content"), str):
-                last_msg["content"] = f"{extra_context}\n\n{last_msg['content']}"
+        self._inject_supplementary_context(extra_context_parts)
 
         # Get model response (with smart retry)
         msgs = get_messages(self.agent_config.lang)

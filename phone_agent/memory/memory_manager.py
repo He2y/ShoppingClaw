@@ -256,8 +256,8 @@ class MemoryManager:
             f"你必须根据当前截图内容和用户任务自行判断点击哪个元素。"
             f"绝不要复用图谱中的历史商品信息！"
         )
-        context_data["semantic_context"] = (
-            f"{hint}\n{context_data.get('semantic_context', '')}"
+        context_data["graph_hint"] = (
+            f"{hint}\n{context_data.get('graph_hint', '')}"
         ).strip()
 
     def end_task(self, success: bool, result: str = "", end_state_id: str | None = None):

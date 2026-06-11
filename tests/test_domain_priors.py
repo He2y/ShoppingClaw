@@ -339,7 +339,7 @@ def _make_manager(tmp_path):
 
 
 def test_explore_mode_injects_prior_hint_when_cold(tmp_path, monkeypatch):
-    """When provider returns priors for a cold app, hint appears in semantic_context."""
+    """When provider returns priors for a cold app, hint appears in graph_hint."""
     monkeypatch.setenv("AMSG_DOMAIN_PRIORS", "1")
 
     from phone_agent.spatial import runtime_controller as rc_mod
@@ -397,14 +397,13 @@ def test_explore_mode_injects_prior_hint_when_cold(tmp_path, monkeypatch):
         )
 
         assert context["mode"] == "explore"
-        semantic = context.get("semantic_context", "")
-        assert "同域结构先验" in semantic
+        assert "同域结构先验" in context.get("graph_hint", "")
     finally:
         rc_mod._AMSG_DOMAIN_PRIORS_ENABLED = original_flag
 
 
 def test_explore_mode_no_injection_when_priors_disabled(tmp_path, monkeypatch):
-    """AMSG_DOMAIN_PRIORS=0 → semantic_context unchanged."""
+    """AMSG_DOMAIN_PRIORS=0 → no prior hint injected anywhere."""
     monkeypatch.setenv("AMSG_DOMAIN_PRIORS", "0")
 
     from phone_agent.spatial import domain_priors as dp_mod
@@ -445,8 +444,8 @@ def test_explore_mode_no_injection_when_priors_disabled(tmp_path, monkeypatch):
             screen_dict={"ui_hash": "x", "semantic_layout": "jd home",
                          "app": "jd", "page_type": "home"},
         )
-        semantic = context.get("semantic_context", "")
-        assert "不应出现" not in semantic
+        combined = context.get("graph_hint", "") + context.get("semantic_context", "")
+        assert "不应出现" not in combined
     finally:
         dp_mod._DOMAIN_PRIORS_ENABLED = original_dp
         rc_mod._AMSG_DOMAIN_PRIORS_ENABLED = original_rc
@@ -488,8 +487,8 @@ def test_explore_mode_no_injection_when_not_cold(tmp_path, monkeypatch):
             screen_dict={"ui_hash": "x", "semantic_layout": "taobao home",
                          "app": "taobao", "page_type": "home"},
         )
-        semantic = context.get("semantic_context", "")
-        assert "不应注入" not in semantic
+        combined = context.get("graph_hint", "") + context.get("semantic_context", "")
+        assert "不应注入" not in combined
     finally:
         rc_mod._AMSG_DOMAIN_PRIORS_ENABLED = original_flag
 
