@@ -110,8 +110,10 @@ class SpecGuard:
         if _action_name in ("terminate", "answer"):
             return None
 
-        # Only guard spec-commit pages
-        if page_type not in ("spec_selection", "checkout", "payment"):
+        # Only guard spec-commit pages. product_detail is included because
+        # spec popups are frequently classified as product_detail — a ¥172
+        # add-to-cart against a 500-1000 budget slipped through this gate.
+        if page_type not in ("product_detail", "spec_selection", "checkout", "payment"):
             return None
         if not self._is_spec_commit_action(action, thinking, page_type):
             return None
@@ -254,7 +256,7 @@ class SpecGuard:
         action: dict[str, Any], thinking: str, page_type: str | None,
     ) -> bool:
         """Return True only for actions that commit a spec/purchase choice."""
-        if page_type not in ("spec_selection", "checkout", "payment"):
+        if page_type not in ("product_detail", "spec_selection", "checkout", "payment"):
             return False
 
         action_name = str(action.get("action") or action.get("action_type") or "").lower()

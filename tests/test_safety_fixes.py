@@ -91,3 +91,43 @@ def test_step_parts_without_screen_info_for_adapter_models():
     assert "** Screen Info **" not in text
     # reply is consumed exactly once
     assert agent._last_user_reply is None
+
+
+def test_price_guard_engages_on_product_detail_popup():
+    """Spec popups are often classified product_detail — the price guard
+    must engage there too (a ¥172 add-to-cart slipped through)."""
+    guard, app = _spec_guard()
+
+    guarded = guard.check(
+        action={"_metadata": "do", "action": "Tap", "semantic_target": "add_to_cart"},
+        thinking="点击加入购物车按钮。",
+        current_app=app,
+        page_type="product_detail",
+        task="买蓝牙耳机，要求500-1000元内",
+        vlm_plan={"specs": {"price_range": "500-1000元"}},
+        current_price=172.21,
+    )
+    assert guarded is not None
+    assert "超出" in guarded["message"]
+
+
+def test_planner_instruction_leads_step_parts():
+    agent = object.__new__(PhoneAgent)
+    agent._task_plan = None
+    agent._step_summaries = []
+    agent.action_advisor = None
+    agent.memory_manager = None
+    agent._current_task = "买蓝牙耳机"
+    agent._last_user_reply = None
+
+    parts = agent._build_step_user_parts(
+        current_app="淘宝",
+        page_type="filter_panel",
+        available_actions=None,
+        graph_hint="",
+        include_screen_info=False,
+        planner_instruction="在最低价输入框输入500",
+    )
+
+    assert parts[0].startswith("【当前指令】")
+    assert "在最低价输入框输入500" in parts[0]

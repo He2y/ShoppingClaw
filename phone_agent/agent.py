@@ -154,6 +154,22 @@ class PhoneAgent:
         self._context: list[dict[str, Any]] = []
         self._step_count = 0
         self._current_task = ""
+        # Strong-VLM step planner: plan-then-ground (mirrors the offline
+        # explorer split — the small GUI model only grounds instructions).
+        self.step_planner = None
+        self._planner_context = None
+        self._last_planner_instruction = ""
+        try:
+            from phone_agent.step_planner import TaskStepPlanner, main_planner_enabled
+            if main_planner_enabled():
+                planner = TaskStepPlanner()
+                if planner.available():
+                    self.step_planner = planner
+                    if self.agent_config.verbose:
+                        print("🧭 强VLM任务规划器已启用 (PHONE_AGENT_STRONG_PLANNER=0 可关闭)")
+        except Exception:
+            self.step_planner = None
+
         self._anomaly_consecutive = 0
         # Cooperative cancellation + per-step telemetry surface for frontends
         # (WebUI streams these; CLI ignores them).
@@ -276,6 +292,10 @@ class PhoneAgent:
         self._graph_fail_page: str = ""
         self._verification_consecutive: int = 0
         self._anomaly_consecutive: int = 0
+        self._last_planner_instruction = ""
+        if self.step_planner is not None:
+            from phone_agent.step_planner import TaskPlanContext
+            self._planner_context = TaskPlanContext()
         self._task_plan: TaskPlan | None = None
         self._step_summaries: list[str] = []
 
@@ -1120,6 +1140,7 @@ class PhoneAgent:
         available_actions: list | None,
         graph_hint: str,
         include_screen_info: bool = True,
+        planner_instruction: str = "",
     ) -> list[str]:
         """Build the structured per-step context parts (all model families).
 
@@ -1130,6 +1151,13 @@ class PhoneAgent:
         Note: consumes self._last_user_reply (cleared after inclusion).
         """
         parts: list[str] = []
+
+        # Strong-planner instruction dominates: the GUI model only grounds it
+        if planner_instruction:
+            parts.append(
+                "【当前指令】（来自任务规划器——只执行这一条指令，"
+                f"不要自行规划下一步）\n{planner_instruction}"
+            )
 
         # Task plan with progress markers
         if self._task_plan and self._task_plan.steps:
@@ -1532,12 +1560,62 @@ class PhoneAgent:
                     self._tele(dispatch="graph_shortcut")
                     return graph_result
 
+        # ── Strong-VLM step planning: plan, then let the GUI model ground ──
+        planner_instruction = ""
+        if self.step_planner is not None:
+            if self._planner_context is not None and self._last_planner_instruction:
+                self._planner_context.push_result(
+                    f"指令『{self._last_planner_instruction}』→ 当前页面: {page_type or 'unknown'}"
+                )
+            constraints = ""
+            if self._task_plan and self._task_plan.goal_slots:
+                constraints = "，".join(
+                    f"{k}={v}" for k, v in self._task_plan.goal_slots.items() if v
+                )
+            progress = (
+                self._task_plan.status_text()
+                if self._task_plan and self._task_plan.steps else ""
+            )
+            plan = self.step_planner.plan_step(
+                screenshot.base64_data, screenshot.width, screenshot.height,
+                task=self._current_task,
+                current_page_type=page_type or "",
+                constraints=constraints,
+                progress=progress,
+                context=self._planner_context,
+            )
+            if plan is not None:
+                self._tele(planner_instruction=plan.instruction, planner_finish=plan.finish)
+                if plan.need_human:
+                    return self._handle_verification_takeover(
+                        screenshot, current_app,
+                        plan.message or "规划器检测到验证码/安全弹窗，请人工处理后继续。",
+                        "planner",
+                    )
+                if plan.finish:
+                    self._last_planner_instruction = ""
+                    return StepResult(
+                        success=plan.success,
+                        finished=True,
+                        action={"_metadata": "finish", "message": plan.message},
+                        thinking=plan.thought,
+                        message=plan.message or ("任务完成" if plan.success else "任务无法继续"),
+                    )
+                if plan.instruction:
+                    planner_instruction = plan.instruction
+                    if plan.expected_page:
+                        planner_instruction += f"（预期到达页面: {plan.expected_page}）"
+                    self._last_planner_instruction = plan.instruction
+                    if self.agent_config.verbose:
+                        print(f"🧭 [Planner] {plan.instruction}")
+
         # Get model response (Full Path)
         # Graph co-pilot hint (route direction / VLM-verification warning /
         # domain priors), produced by GraphRuntimeController under the
         # "graph_hint" key.  Must reach the VLM regardless of model family.
         graph_hint = str(context_data.get("graph_hint", "") or "")
         graph_hint_in_message = False
+        planner_in_message = False
 
         is_non_autoglm = self._model_type in (
             ModelType.UITARS, ModelType.QWENVL,
@@ -1583,10 +1661,12 @@ class PhoneAgent:
                 available_actions=_available_actions,
                 graph_hint=graph_hint,
                 include_screen_info=False,
+                planner_instruction=planner_instruction,
             )
             if step_parts:
                 self._inject_supplementary_context(["\n\n".join(step_parts)])
                 graph_hint_in_message = bool(graph_hint)
+                planner_in_message = bool(planner_instruction)
         else:
             # AutoGLM: original message building logic
             if is_first:
@@ -1620,8 +1700,10 @@ class PhoneAgent:
                     page_type=page_type,
                     available_actions=_available_actions,
                     graph_hint=graph_hint,
+                    planner_instruction=planner_instruction,
                 )
                 graph_hint_in_message = bool(graph_hint)
+                planner_in_message = bool(planner_instruction)
 
                 self._context.append(
                     MessageBuilder.create_user_message(
@@ -1638,6 +1720,12 @@ class PhoneAgent:
         # memory retrieval.
         # =============================================
         extra_context_parts: list[str] = []
+
+        if planner_instruction and not planner_in_message:
+            extra_context_parts.append(
+                "【当前指令】（来自任务规划器——只执行这一条指令，"
+                f"不要自行规划下一步）\n{planner_instruction}"
+            )
 
         if graph_hint and not graph_hint_in_message:
             extra_context_parts.append(graph_hint)
@@ -1966,6 +2054,18 @@ class PhoneAgent:
 
         # Check if finished
         finished = action.get("_metadata") == "finish" or result.should_finish
+        if (
+            finished
+            and planner_instruction
+            and action.get("_metadata") == "finish"
+            and result.success
+        ):
+            # The GUI model may not end the task while the planner still has
+            # instructions — fabricated completions slipped through here
+            # (real-device run: "任务完成" while nothing was verified).
+            if self.agent_config.verbose:
+                print("⛔ [Planner] 执行模型试图提前 finish，已拦截（任务结束由规划器判定）")
+            finished = False
 
         # Record step trace
         if self.tracer:
