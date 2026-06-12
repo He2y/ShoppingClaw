@@ -188,10 +188,24 @@ class TransitionEdge:
             or action.get("text")
             or ""
         )
-        success_count = 0 if outcome == "failure" else 1
-        fail_count = 1 if outcome == "failure" else 0
+        # "unverified" = the transition happened but was never checked against
+        # an expected postcondition (no ground truth) — stage it structurally
+        # but cast NO vote (success=fail=0) so it cannot inflate promotion.
+        if outcome == "failure":
+            success_count, fail_count = 0, 1
+        elif outcome == "unverified":
+            success_count, fail_count = 0, 0
+        else:
+            success_count, fail_count = 1, 0
         confidence_value = action.get("confidence")
-        confidence = float(confidence_value) if confidence_value is not None else (0.4 if outcome == "failure" else 1.0)
+        if confidence_value is not None:
+            confidence = float(confidence_value)
+        elif outcome == "failure":
+            confidence = 0.4
+        elif outcome == "unverified":
+            confidence = 0.5
+        else:
+            confidence = 1.0
         evidence = str(action.get("summary") or action.get("reasoning") or "")
         return cls(
             source_id=source_id,
@@ -1636,20 +1650,25 @@ class SpatialGraphMemory:
         )
         self._local_edges.setdefault(source_id, []).append(edge)
 
-        # Feed edge lifecycle manager (Definition 8 & 9)
-        source_page = before.page_type if isinstance(before, PageState) else ""
-        action_type = str(action.get("action_type") or action.get("action") or "unknown")
-        action_target_str = str(
-            action.get("semantic_target") or action.get("target") or action.get("element") or ""
-        )
-        self._edge_lifecycle.record_outcome(
-            source_page_type=source_page,
-            intent=action_type,
-            action_target=action_target_str,
-            observed_target=target_page,
-            action_key=f"{action_type}:{action_target_str}",
-            risk=risk,
-        )
+        # Feed edge lifecycle manager (Definition 8 & 9) — but ONLY for
+        # verified outcomes. An "unverified" observation (no expected
+        # postcondition was checked) must not increment verification_count
+        # or the outcome distribution, otherwise unchecked transitions
+        # inflate the promotion statistics (Definition 8's ground truth).
+        if outcome != "unverified":
+            source_page = before.page_type if isinstance(before, PageState) else ""
+            action_type = str(action.get("action_type") or action.get("action") or "unknown")
+            action_target_str = str(
+                action.get("semantic_target") or action.get("target") or action.get("element") or ""
+            )
+            self._edge_lifecycle.record_outcome(
+                source_page_type=source_page,
+                intent=action_type,
+                action_target=action_target_str,
+                observed_target=target_page,
+                action_key=f"{action_type}:{action_target_str}",
+                risk=risk,
+            )
 
         if persist and self.graph_store and getattr(self.graph_store, "driver", None):
             lifecycle_data = self._build_lifecycle_dict(before, edge, after)
@@ -1681,8 +1700,22 @@ class SpatialGraphMemory:
                 canonical_states, promoted_edges, persist=True,
             )
             self._flush_lifecycle_to_graph()
+            self.clear_staging()  # flushed to Neo4j — drop the in-memory copy
             return promote_report
         return report
+
+    def clear_staging(self) -> None:
+        """Drop the in-memory staged graph (structural observations).
+
+        Must be called at task boundaries. Without it, a failed task's dirty
+        edges (which never flush on their own) linger in `_local_edges` and
+        get swept into the NEXT successful task's flush, polluting Neo4j; and
+        a long-lived process (e.g. WebUI) accumulates staging without bound.
+        Does NOT touch `_edge_lifecycle` records, which are intentionally
+        cumulative across tasks (verification statistics).
+        """
+        self._local_states.clear()
+        self._local_edges.clear()
 
     def _flush_lifecycle_to_graph(self) -> None:
         """Persist all in-memory lifecycle records to Neo4j as a batch."""
@@ -1702,8 +1735,16 @@ class SpatialGraphMemory:
                 dist = self._edge_lifecycle.get_outcome_distribution(
                     rec["source_page_type"], action_key,
                 )
+                # Match Action nodes by their page-type-level semantic identity
+                # — the fields the lifecycle record and the Action node reliably
+                # share — instead of a re-derived action_id hash (which used a
+                # different field order/set than the write path and matched 0
+                # nodes, silently dropping all cumulative lifecycle statistics).
                 batch.append({
-                    "action_id": self._lifecycle_record_to_action_id(rec),
+                    "source_page_type": rec["source_page_type"],
+                    "intent": rec["intent"],
+                    "action_target": rec.get("action_target", ""),
+                    "target_page_type": rec.get("target_page_type", ""),
                     "lifecycle_stage": rec["stage"],
                     "verification_count": rec["verification_count"],
                     "dominance_ratio": rec["dominance_ratio"],
@@ -1712,7 +1753,7 @@ class SpatialGraphMemory:
                     "created_at": rec["created_step"],
                     "last_traversed": rec["last_verified_step"],
                 })
-            batch = [b for b in batch if b["action_id"]]
+            batch = [b for b in batch if b["source_page_type"] and b["intent"]]
             if batch:
                 store.persist_lifecycle_batch(batch)
                 store.demote_stale_edges()
@@ -2280,6 +2321,7 @@ class SpatialGraphMemory:
                         MATCH (src:UIState)-[:NEXT_ACTION]->(a:Action)-[:PRODUCES]->(tgt:UIState)
                         WHERE (size($app_aliases) = 0 OR src.app IN $app_aliases OR src.app = '')
                           AND src.page_type IN ['home', 'unknown']
+                          AND coalesce(a.lifecycle_stage, 'promoted') = 'promoted'
                         RETURN src.state_id AS src_id, src.page_type AS src_pt,
                                a.type AS action_type, a.semantic_target AS action_target,
                                a.region AS region,
@@ -2299,6 +2341,7 @@ class SpatialGraphMemory:
                         MATCH (src:UIState)-[:NEXT_ACTION]->(a:Action)-[:PRODUCES]->(tgt:UIState)
                         WHERE src.page_type = $page_type
                           AND (size($app_aliases) = 0 OR src.app IN $app_aliases OR src.app = '')
+                          AND coalesce(a.lifecycle_stage, 'promoted') = 'promoted'
                         RETURN src.state_id AS src_id, a.type AS action_type,
                                a.semantic_target AS action_target, a.region AS region,
                                a.target_locator AS target_locator,

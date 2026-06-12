@@ -24,16 +24,26 @@ class GraphLifecycleStore:
     def persist_lifecycle_batch(self, batch: list[dict[str, Any]]) -> int:
         """Bulk-update lifecycle fields on existing Action nodes.
 
-        Each item in *batch* must contain at minimum ``action_id`` plus
-        any subset of lifecycle fields.  Action nodes that do not exist
-        are silently skipped (MATCH, not MERGE).
+        Matches Action nodes by their page-type-level semantic identity
+        (source page type, action intent/type, semantic target, target page
+        type) — the fields the in-memory lifecycle record and the persisted
+        Action node reliably share. (The previous action_id match re-derived
+        the id with a different hash than the write path and matched 0 nodes,
+        silently dropping all cumulative verification statistics.) All Action
+        instances of the same semantic transition share one lifecycle stage,
+        so updating every match is correct. Non-existent transitions are
+        silently skipped (MATCH, not MERGE).
         """
         if not self.driver or not batch:
             return 0
 
         query = """
         UNWIND $batch AS row
-        MATCH (a:Action {action_id: row.action_id})
+        MATCH (s:UIState)-[:NEXT_ACTION]->(a:Action)-[:PRODUCES]->(t:UIState)
+        WHERE s.page_type = row.source_page_type
+          AND coalesce(a.type, '') = row.intent
+          AND coalesce(a.semantic_target, '') = row.action_target
+          AND t.page_type = row.target_page_type
         SET a.lifecycle_stage = row.lifecycle_stage,
             a.verification_count = row.verification_count,
             a.dominance_ratio = row.dominance_ratio,

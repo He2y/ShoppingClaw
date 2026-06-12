@@ -1469,10 +1469,15 @@ class GraphStore:
         from .spatial_graph_memory import TransitionEdge
 
         normalized_state_id = self._normalize_state_id(state_id)
+        # Only promoted edges enter the executable action library. Edges
+        # explicitly marked hypothesis/candidate/demoted (e.g. offline-imported
+        # or recently-observed) are invisible to routing/Fast Path until online
+        # verification promotes them. Unmarked legacy edges → treated promoted.
         query = """
         MATCH (s:UIState {state_id: $state_id})-[r:NEXT_ACTION]->(a:Action)-[p:PRODUCES]->(t:UIState)
         WHERE coalesce(t.app, "") = coalesce(s.app, "")
           AND (size($app_aliases) = 0 OR s.app IN $app_aliases)
+          AND coalesce(a.lifecycle_stage, 'promoted') = 'promoted'
         RETURN s.state_id AS source_id,
                t.state_id AS target_id,
                t.page_type AS target_page_type,

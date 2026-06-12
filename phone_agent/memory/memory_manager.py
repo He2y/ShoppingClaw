@@ -143,6 +143,14 @@ class MemoryManager:
         self._last_repair_decision = None
         self._runtime_dag = None
         self._runtime_dag_task = task
+        # Defensive: drop any staged graph left by a previous task (a failed
+        # task never flushes, so without this its dirty edges would be swept
+        # into THIS task's flush). end_task also clears after a successful flush.
+        if self.spatial_graph_memory is not None:
+            try:
+                self.spatial_graph_memory.clear_staging()
+            except Exception:
+                pass
         self._vlm_plan = {}
         self._coverage_gaps = []
         self._runtime_metrics = {

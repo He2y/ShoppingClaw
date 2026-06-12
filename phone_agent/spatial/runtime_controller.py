@@ -272,11 +272,15 @@ class GraphRuntimeController:
                     page_type=(self.manager._pending_transition_action or {}).get("postcondition", ""),
                 )
             if self.manager._pending_transition_action is not None:
+                # The classifier was skipped this step (DAG hint path), so the
+                # target_state is the EXPECTED node, not a classified one — we
+                # never verified the actual page. Record as "unverified" so the
+                # fabricated target cannot inflate promotion statistics.
                 self.spatial_graph_memory.record_observation(
                     self.manager._pending_transition_source,
                     self.manager._pending_transition_action,
                     target_state,
-                    outcome="success",
+                    outcome="unverified",
                 )
             self.manager._pending_transition_source = None
             self.manager._pending_transition_action = None
@@ -367,7 +371,10 @@ class GraphRuntimeController:
         ):
             return None
 
-        outcome = "success"
+        # No expected postcondition → no ground truth → "unverified" (the
+        # lifecycle must not count it as a success). Only when an expectation
+        # exists do we grade success/failure against the actual page.
+        outcome = "unverified"
         pending_repair_hint = None
         if self.manager._pending_expected_postcondition:
             pending_repair_hint = self.spatial_graph_memory.repair(
@@ -383,16 +390,18 @@ class GraphRuntimeController:
             )
             if pending_repair_hint.action != "retry":
                 outcome = "failure"
-            elif (
-                self.manager._runtime_dag
-                and self.manager._pending_transition_action.get("_runtime_plan_id")
-                == self.manager._runtime_dag.plan_id
-            ):
-                self.manager._runtime_dag.advance()
-                node = self.manager._runtime_dag.nodes.get(self.manager._runtime_dag.current_node_id)
-                if node:
-                    self.manager._current_page_state = node
-                    self.manager._current_state_id = node.state_id
+            else:
+                outcome = "success"
+                if (
+                    self.manager._runtime_dag
+                    and self.manager._pending_transition_action.get("_runtime_plan_id")
+                    == self.manager._runtime_dag.plan_id
+                ):
+                    self.manager._runtime_dag.advance()
+                    node = self.manager._runtime_dag.nodes.get(self.manager._runtime_dag.current_node_id)
+                    if node:
+                        self.manager._current_page_state = node
+                        self.manager._current_state_id = node.state_id
 
         self.spatial_graph_memory.record_observation(
             self.manager._pending_transition_source,
