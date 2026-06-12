@@ -1,8 +1,8 @@
 # Shopping-Agent：系统架构文档
 
-> **版本**: 2026-06-11（强 VLM 里程碑监督版，经六轮真机迭代验证）
-> **范围**: 完整 `phone_agent/` 实现，重点覆盖：以小模型为主执行器的混合智能体架构、强 VLM 里程碑监督机制、会话记忆文件、机械反幻觉护栏体系、AMSG 空间图谱与三档调度、异常与恢复机制，以及多 App 图谱组织与陌生 App 离线建图管线（详述见 AMSG_DESIGN.md）。
-> **用途**: 作为学术论文写作的架构基石文档，内容已逐项对照代码核验。已在淘宝（核心购物链路端到端）与京东（含秒送外卖链路）两个真实 App 上验证。
+> **版本**: 2026-06-12（强 VLM 里程碑监督版 + 系统性缺陷审计与鲁棒性强化）
+> **范围**: 完整 `phone_agent/` 实现，重点覆盖：以小模型为主执行器的混合智能体架构、强 VLM 里程碑监督机制（含 provider 链鉴别）、会话记忆文件、机械反幻觉护栏体系、故障模式确定性恢复、AMSG 空间图谱与三档调度，以及多 App 图谱组织与陌生 App 离线建图管线（详述见 AMSG_DESIGN.md）。
+> **用途**: 作为学术论文写作的架构基石文档，内容已逐项对照代码核验，并经三维度并行审计与六项运行时缺陷修复。已在淘宝（核心购物链路端到端）与京东（含秒送外卖链路）两个真实 App 上验证。
 
 Shopping-Agent 是一个**以小型 GUI 模型为主执行器、强 VLM 低频监督、空间图谱引导**的移动 GUI 智能体。系统在 Android、HarmonyOS 与 iOS 设备上自动化执行复杂购物任务，通过截图观测、页面定位、图谱路径规划、模型推理、动作执行、里程碑监督与验证后图谱持久化的闭环循环实现。
 
@@ -42,6 +42,26 @@ Shopping-Agent 是一个**以小型 GUI 模型为主执行器、强 VLM 低频�
 - **强 VLM** 仅在任务开始（拆解）与里程碑（修订/核实）低频介入，是任务结束权威与计划修订权威。
 
 这套分工的关键性质是：**所有护栏都是规则代码，不依赖云**。小模型量化部署到手机本地后，整套约束结构原样成立。
+
+**决策路由——每类问题交给谁**（绘图建议：四象限矩阵，纵轴"确定性 vs 语义性"，横轴"本地 vs 云端"）：
+
+```
+                  本地 (on-device)          │   云端 (cloud)
+   ┌──────────────────────────────────────┼──────────────────────────┐
+确 │  图谱 (AMSG)                           │                          │
+定 │  · 机械导航复用 (首页→搜索)             │   ——（确定性判断不上云）  │
+性 │  机械护栏 (纯代码)                      │                          │
+   │  · 数字比较 / 约束核实 / 完成证据        │                          │
+   ├──────────────────────────────────────┼──────────────────────────┤
+语 │  小模型 (GUI model)                    │  强 VLM (监督者)          │
+义 │  · grounding：元素在哪、点哪里          │  · 任务拆解 (initialize)  │
+性 │  · 每步执行一条动作                     │  · 里程碑修订 (checkpoint)│
+   │                                        │  · 完成核实 (final_confirm)│
+   └──────────────────────────────────────┴──────────────────────────┘
+   高频 (每步)                                低频 (~1+步数/5 次/任务)
+```
+
+每类决策交给"最适合且失败代价最小"的主体：确定性判断绝不上云、也绝不交给小模型推理；语义监督低频上云，执行高频留本地。
 
 ---
 
@@ -100,8 +120,6 @@ Shopping-Agent 是一个**以小型 GUI 模型为主执行器、强 VLM 低频�
 └──────────────────────────┘
 ```
 
-![系统架构图](系统架构图.png)
-
 ### 2.2  三区域的职责边界
 
 **决策区域**回答"做什么"。`PhoneAgent._execute_step_impl()` 是唯一的编排入口，每步调用图谱区域获取定位与动作建议、调用监督层在里程碑处修订计划、应用机械护栏与 SpecGuard，然后在三档调度中选择执行路径。
@@ -152,8 +170,6 @@ flowchart TD
 
 本节按时间顺序描述一个任务从接收到完成的完整过程。入口是 `PhoneAgent.run(task)`，主循环是 `_execute_step_impl()`，出口是 `MemoryManager.end_task()` 与 `SessionMemoryFile.finalize()`。
 
-![](Agent执行闭环.png)
-
 ### 3.1  任务接收：从自然语言到可执行状态
 
 用户输入 `"去淘宝帮我买一个蓝牙耳机，要求500-1000元内"` 后，`run()` 依次执行：
@@ -169,6 +185,35 @@ flowchart TD
 ### 3.2  步骤循环：_execute_step_impl 的完整流程
 
 `run()` 在循环中反复调用 `_execute_step`（遥测包装层）→ `_execute_step_impl`（主体）。遥测包装层确保每步恰好向 `step_observer` 发出一个事件（mode/调度路径/graph_hint/后条件/截图），供 WebUI 图谱协同面板消费。以下是 `_execute_step_impl` 一步的完整流程，按实际代码顺序：
+
+**九阶段执行流**（绘图建议：纵向泳道流程图，左侧标注 Phase 序号，菱形为分支，红色块为提前返回）：
+
+```mermaid
+flowchart TD
+    P1["Phase 1 感知<br/>截图 / 当前app / 分类(浮层优先)<br/>RuntimeDAG hint 可跳过分类器"] --> P2
+    P2{"Phase 2 异常看门狗<br/>连续2步敏感/unknown?"}
+    P2 -->|是| TK["Take_over 人工接管"]:::halt
+    P2 -->|否| P3
+    P3{"Phase 3 验证检测 L1<br/>登录/验证码/短信?"}
+    P3 -->|命中阶梯| TK
+    P3 -->|否| P4["Phase 4 图谱定位 + 首步澄清<br/>locate_and_get_context → mode/graph_hint"]
+    P4 --> P5["Phase 5 计划同步 + 里程碑触发<br/>命中→checkpoint 修订计划"]
+    P5 --> P6{"Phase 6 三档调度"}
+    P6 -->|"锚定+promoted"| FP["Fast Path<br/>同步后条件检查"]
+    P6 -->|"无提示"| GS["图谱捷径(兜底)"]
+    P6 -->|"非锚定"| MP["模型路径<br/>组装消息+机械价格裁决"]
+    FP -->|失配回退| MP
+    P7["Phase 7 执行 + SpecGuard<br/>越界→Interact / 异常→失败StepResult"]
+    MP --> P7
+    GS --> P7
+    P7 --> P8{"Phase 8 完成判定<br/>(仅finish)"}
+    P8 -->|"监督者在场"| FC["final_confirm 截图核实"]
+    P8 -->|"监督者缺位"| MG["机械到访门"]
+    P7 --> P9["Phase 9 状态更新<br/>Interact回填 / pending transition<br/>add_step / 历史压缩"]
+    P9 --> NEXT(["返回 → 下一步"])
+    FC -.->|否决| RS["上下文重置 回退重析"]
+    classDef halt fill:#B23B3B,color:#fff,stroke:none
+```
 
 **Phase 1 — 感知**。`DeviceFactory.get_screenshot()`（截图损坏时返回 `is_sensitive=True` 的兜底图），获取当前 app，计算 `ui_hash`。`PageClassifier.classify()` 输出 `page_type`（提示词由域模式生成，含"浮层优先 + 自洽性"原则，第 8 节）；若 RuntimeDAG hint 可用则跳过分类器省一次调用。到访的页面类型记入 `_visited_pages`。
 
@@ -204,12 +249,28 @@ flowchart TD
 
 循环终止于模型输出 `terminate`/`answer`（finish），或 `max_steps`，或用户 abort，或确定性失败。
 
-**完成判定采用单一权威原则**：
+**完成判定采用单一权威原则**（绘图建议：判定树，强调"机械门让位"的互斥关系）：
 
-- 当 `supervisor_can_confirm`（监督者在场、未因连续失败禁用、调用预算未尽）→ `final_confirm` checkpoint 用强 VLM 看截图核实。三态：`task_complete=true` 放行；`task_blocked=true` 转显式失败；否决 → 上下文重置回退重新分析，连续 3 次否决 → 确定性失败终止。
-- 监督者缺位时 → 机械完成门兜底：success finish 须满足预规划 `target_page` 到访过至少一次（`_completion_evidence`），否则拦截并写入历史引导纠偏。
+```mermaid
+flowchart TD
+    A["模型输出 finish(success=true)"] --> B{"supervisor_can_confirm?<br/>(在场 ∧ 未禁用 ∧ call_count<max_calls)"}
+    B -->|是·监督者独裁| C["final_confirm 强VLM 看截图核实<br/>(不消耗里程碑预算)"]
+    B -->|否·机械门兜底| D{"_completion_evidence<br/>target_page 到访过?"}
+    C --> E{"判定"}
+    E -->|task_complete| OK["✅ 放行 任务成功结束"]:::ok
+    E -->|task_blocked| FAIL["❌ 显式失败终止"]:::fail
+    E -->|否决| R["上下文重置 回退重析<br/>连续3次否决(间隔>5步重置)→失败终止"]:::reset
+    D -->|是| OK
+    D -->|否| BLK["拦截 finish 写历史引导<br/>连续3次拦截→失败终止(逃逸)"]:::reset
+    classDef ok fill:#2E9E44,color:#fff,stroke:none
+    classDef fail fill:#B23B3B,color:#fff,stroke:none
+    classDef reset fill:#C77D00,color:#fff,stroke:none
+```
 
-**为什么用单一权威**：机械到访门依赖页面分类，而分类有噪声（规格弹窗常被判成 product_detail，导致 spec_selection"未到访"）。监督者能看截图直接核实"加购成功"，严格强于到访证据。两者同时运行会让先跑的机械门误拦监督者本可放行的真完成——因此监督者在场时机械门让位。
+- **监督者在场**（`supervisor_can_confirm` = 在场 ∧ 未因连续失败禁用 ∧ `call_count < max_calls`）→ `final_confirm` checkpoint 用强 VLM 看截图核实。三态：`task_complete` 放行；`task_blocked` 转显式失败；否决 → 上下文重置回退重新分析。**否决采用连续计数**（`_finish_rejected_count`，距上次否决 >5 步则重置为 1，避免相隔几十步的三次否决被误判为"连续"）；连续 3 次否决 → 确定性失败终止。**`final_confirm` 不消耗里程碑调用预算**——否则反复的 finish 尝试会快速耗尽 `max_calls`，使判定权悄悄从监督者切到更弱的机械门。
+- **监督者缺位**（或预算耗尽）→ 机械完成门兜底：success finish 须满足预规划 `target_page` 到访过至少一次（`_completion_evidence`），否则拦截并写入历史引导纠偏。**机械门同样有逃逸计数**（`_finish_gate_blocked_count`）：连续 3 次拦截 → 确定性失败终止——因为 `target_page` 可能因分类噪声永远判不到访，否则会陷入 finish→拦截→finish 的慢速死循环直到 `max_steps`。
+
+**为什么用单一权威**：机械到访门依赖页面分类，而分类有噪声（规格弹窗常被判成 product_detail，导致 spec_selection"未到访"）。监督者能看截图直接核实"加购成功"，严格强于到访证据。两者同时运行会让先跑的机械门误拦监督者本可放行的真完成——因此监督者在场时机械门让位。**两条路径都有确定性失败逃逸**（各自连续 3 次），杜绝任何"既不结束也不推进"的死循环。
 
 `MemoryManager.end_task(success, result)` 执行：① 轨迹保存（无论成败，写 `trajectories/`）；② 学习偏好（仅成功，写 FAISS）；③ 图谱刷新（仅成功，规范化→质量过滤→Neo4j）；④ VLM 轨迹审核（仅成功，新转移以 hypothesis 导入）。`SessionMemoryFile.finalize()` 落盘记忆文件终态。
 
@@ -218,6 +279,32 @@ flowchart TD
 ## 4  强 VLM 里程碑监督机制
 
 这是本版本对"小模型长程可靠性"命题的核心回答。设计动机：纯小模型在长任务上能力不足（遗忘、幻觉、伪完成），而每步强 VLM 规划已验证太贵（延迟翻三倍）且违背端侧理念。中间路径是——**强 VLM 任务开始拆解一次、之后只在里程碑处低频介入**，预算约 `1 + 步数/5` 次强 VLM 调用/任务。
+
+**强 VLM 与小模型的交替时序**（绘图建议：泳道时序图，突出强 VLM 介入点稀疏、小模型高频执行）：
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant S as 强 VLM 监督者
+    participant M as 会话记忆文件
+    participant E as 小模型执行器
+    U->>S: 任务文本
+    S->>M: initialize 拆解→商品信息+子任务
+    Note over E: 每步读【会话记忆】+【当前目标】<br/>+ 机械护栏，grounding 执行一条动作
+    loop 每 ~5 步 / 子任务达成 / 停滞
+        E->>E: 执行若干步 (高频, 本地)
+        E->>S: 触发 checkpoint(截图+记忆渲染+近况)
+        S->>M: 修订子任务 / 记录验证事实 / 重规划
+        M-->>E: 新【当前目标】
+    end
+    E->>S: finish(success) 触发 final_confirm
+    S->>S: 看截图核实
+    alt 确认完成
+        S-->>U: ✅ 任务成功
+    else 否决
+        S->>E: 上下文重置, 回退重新分析
+    end
+```
 
 ### 4.1  监督者职责（`milestone_supervisor.py`）
 
@@ -238,15 +325,17 @@ flowchart TD
 | T3 停滞 | `state.is_stagnating()`（连续 2 次同动作同页）且 ≥ MIN_GAP | 同一停滞段不重复触发 |
 | T4 完成门拦截 | 机械完成门拦截 finish 后下一判定点立即触发 | 每任务 ≤ 2 次 |
 
-**优先级** T4 > T3 > T2 > T1。checkpoint 后 `last_checkpoint_step` 前移，所有触发器共享该基准。总预算 `MAX_CALLS`（默认 `2 + max_steps/INTERVAL`）耗尽后全部静默。
+**优先级** T4 > T3 > T2 > T1。checkpoint 后 `last_checkpoint_step` 前移，所有触发器共享该基准。总预算 `MAX_CALLS`（默认 `2 + max_steps/INTERVAL`）耗尽后全部静默——但**完成核实 `final_confirm` 不计入此预算**（它是完成判定的一部分，有自己的连续 3 次否决上限），否则反复的 finish 尝试会与常规里程碑共享预算并快速耗尽它。
 
 ### 4.3  原子修订（`TaskPlan.apply_revision`）
 
 监督者的修订经 `apply_revision(completed_step_ids, revised_subtasks)` 原子应用：done/skipped 步保留原对象不可改写；pending 尾部用修订全量重建（空修订=保留原尾部）；current_index 重定位到首个未完成步；校验（空描述丢弃、≤12 步上限、非法修订整体拒绝）；原子赋值后返回变更摘要。修订同步镜像回会话记忆文件的子任务（`sync_subtasks_from_plan`）。
 
-### 4.4  降级语义（失败=维持现状）
+### 4.4  降级语义与强 VLM 鉴别（失败=维持现状）
 
-checkpoint 失败（网络/解析/超时）→ 保留旧计划、记 `RevisionEntry("checkpoint_failed")`、基准前移（防重试风暴）；连续 2 次失败 → 本任务内禁用监督者；强 VLM 完全不可用 → 不挂载监督者，整体退化为机械护栏 + 纯小模型行为。所有 checkpoint 调用点以 try/except 防御包装，崩溃既不杀任务也不堵 finish。
+**运行期降级**：checkpoint 失败（网络/解析/超时）→ 保留旧计划、记 `RevisionEntry("checkpoint_failed")`、基准前移（防重试风暴）；连续 2 次失败 → 本任务内禁用监督者；强 VLM 完全不可用 → 不挂载监督者，整体退化为机械护栏 + 纯小模型行为。所有 checkpoint 调用点以 try/except 防御包装，崩溃既不杀任务也不堵 finish。
+
+**强 VLM 静默回退鉴别**（关键正确性保障）：监督者、分类器、规划器共用同一条 `PageClassifier` 三级 provider 链——`AMSG_STRONG_VLM_*` → `OFFLINE_VLM_*` → `PHONE_AGENT_*`(autoglm 小模型)。链尾的 `phone_agent` 级默认值齐全（永远存在），因此**若未配置强 VLM，链会静默退化到小模型**——此时"监督者"就是执行器自己的模型，无法纠正同源幻觉，里程碑机制名存实亡。系统通过 `MilestoneSupervisor.is_strong_vlm()` / `provider_label` 鉴别实际 provider：挂载时打印**真实监督模型**（如 `监督模型: amsg_strong_vlm:qwen3-vl-plus`），并在退化到小模型时**大声告警**"监督已退化为小模型自监督，无法纠正幻觉，请配置 AMSG_STRONG_VLM_*"。`_vlm_pre_plan` 降级路径也对齐同一三级链。这道鉴别确保论文实验中"强 VLM 监督"的配置不会被静默掏空。
 
 ### 4.5  与每步规划器的互斥
 
@@ -279,6 +368,22 @@ SessionMemoryFile = {
 - **`render_injection()`**：渲染 ~12 行注入文本（原始任务 / 目标商品+约束 / 已验证事实最多 5 条 / 子任务进度清单），每步注入小模型上下文，取代旧的纯任务计划块。
 - **`brief_line()`**：单行进度（"已完成 X/Y 个子任务；当前：…"），写入 `state.overall_progress`——取代了被废弃的、曾导致小模型把"压缩历史"误当任务的旧压缩文本（`compress_session_history` 现为 no-op）。
 
+**`render_injection()` 实际注入样例**（绘图建议：直接作为代码框/标注框呈现，体现"每步喂给小模型的抗遗忘上下文"）：
+
+```
+【会话记忆】
+原始任务: 去淘宝帮我买一个蓝牙耳机，要求500-1000元内
+目标商品: 蓝牙耳机（约束: price_range=500-1000元）
+已验证事实:                          ← 截图核实过, 最多渲染 5 条
+  ✔ 已应用价格筛选 500-1000（Step 6）
+  ✔ 已选定 JBL Clips ¥966（Step 14）
+子任务进度:
+  1. [done]    搜索蓝牙耳机
+  2. [done]    设置价格筛选
+  3. [current] 进入详情确认参数
+  4. [pending] 选规格并加入购物车
+```
+
 ---
 
 ## 6  机械护栏体系（反幻觉）
@@ -287,23 +392,40 @@ SessionMemoryFile = {
 
 | 护栏 | 接管的判断 | 实现 |
 |---|---|---|
-| **机械价格裁决** | "这个价格符合预算吗" | `SpecGuard._extract_price_bounds` 解析预算区间，对照会话态商品价，在决策页注入 ⛔/✅ 结论。绝不让 9B 模型比数字 |
+| **机械价格裁决** | "这个价格符合预算吗" | `SpecGuard._extract_price_bounds` 解析预算区间，对照会话态商品价，决策页注入三态结论：⛔ 越界禁购 / ✅ 在区间 / ⚠️ **价格未读取到时强制模型先从截图核实价格再加购**（防越界商品在价格未提取时滑过）。绝不让 9B 模型比数字 |
 | **SpecGuard 价格拦截** | 越界商品加购 | commit 动作时硬拦截：越界 → 替换为 Interact 询问用户 |
-| **机械完成门** | "任务真完成了吗"（兜底） | success finish 须到访过预规划 target_page；否则拦截+写历史引导 |
-| **异常看门狗** | "屏幕是否失效" | 连续 2 步敏感/unknown 截图 → 人工接管。机械信号不依赖模型识别 |
+| **机械完成门** | "任务真完成了吗"（兜底） | success finish 须到访过预规划 target_page；否则拦截+写历史引导；**连续 3 次拦截 → 确定性失败终止**（逃逸，防分类噪声导致死循环） |
+| **异常看门狗** | "屏幕是否失效" | 连续 2 步敏感/unknown 截图 → 人工接管。机械信号不依赖模型识别；**接管后复位异常/验证两计数器**（人工已处理，避免下帧重复抢先接管） |
 | **空输出恢复** | "模型卡住了吗" | 不可解析输出不转 finish；2 次重置上下文、4 次失败终止 |
 | **搜索词净化** | "查询词是否被污染" | `_sanitize_search_query` 确定性剥离价格/特征词 |
 | **finish 防洗白** | "异常是否伪装成功" | 执行异常一律构造失败 StepResult，绝不借道 finish |
 
 设计原则：**能用代码确定性判断的，绝不交给小模型推理**。这些护栏与强 VLM 监督互补——监督是语义层（理解进度、修订计划），护栏是符号层（数字、证据、状态）。
 
+### 6.1  故障模式与确定性恢复
+
+系统对每一类真机实测的失败模式都有**确定性**（非概率、非 prompt 依赖）的检测与恢复路径。每条恢复路径都有**有界的终止保证**——绝不存在"既不结束也不推进"的死循环。
+
+| 失败模式（真机实测） | 检测信号 | 确定性响应 | 终止保证 |
+|---|---|---|---|
+| 长任务焦点丢失 | （持续）会话记忆文件每步注入 + 里程碑修订 | 单一【当前目标】替代自由规划 | — |
+| 数字判断幻觉（价格越界判合规） | 代码解析预算 vs 会话态价格 | ⛔/⚠️ 注入 + SpecGuard 硬拦截 | — |
+| 伪完成（虚报成功） | 监督者截图核实 or 机械到访门 | 否决 → 回退重析 | 连续 3 次否决/拦截 → 失败终止 |
+| 空响应（无有效输出） | 解析失败 | 不转 finish + 上下文重置 | 连续 4 次 → 失败终止 |
+| 验证码/安全弹窗 | 截图损坏(is_sensitive) + 连续 unknown | 异常看门狗 → 人工接管 | 验证检测 >5 次 → 失败终止 |
+| 人工接管后计数残留 | — | 接管后复位异常/验证计数器 | — |
+| 图谱对抗模型绕路 | Back/Home 划为非锚定 | 撤销类动作永不自动重放 | — |
+| 强 VLM 配置缺失 | provider 链鉴别(is_strong_vlm) | 退化告警 + 鉴别日志 | — |
+| 监督者 checkpoint 崩溃 | try/except 包装 | 保留旧计划，既不杀任务也不堵 finish | 连续 2 次失败 → 禁用监督者 |
+| Fast Path 后条件失配 | 同步截图分类对比 | 回退模型路径 + 记失败观测 | — |
+
+这张"失败模式 → 确定性响应 → 有界终止"的映射，是本系统区别于"靠模型自我修正"的端侧智能体的关键工程性质：可靠性来自系统设计的确定性兜底，而非寄望小模型自己不犯错。
+
 ---
 
 ## 7  空间图谱（AMSG）与三档调度
 
 图谱负责缓存已验证的机械导航路径，让重复劳动跳过模型推理。详细的图谱设计、生命周期、多 App 组织与离线建图管线见 **AMSG_DESIGN.md**，此处概述与执行循环的接口。
-
-![](图谱设计.png)
 
 ### 7.1  页面状态抽象
 
@@ -419,8 +541,11 @@ spec_selection→product_detail  弹窗关闭/取消决策
 | `PHONE_AGENT_MILESTONE_MIN_GAP` | `2` | 子任务/停滞触发最小间隔 |
 | `PHONE_AGENT_MILESTONE_MAX_CALLS` | `0`（auto=2+步数/N） | 每任务 checkpoint 上限 |
 | `PHONE_AGENT_STRONG_PLANNER` | `0`（关） | 每步强 VLM 规划（消融上界，与里程碑互斥） |
-| `AMSG_STRONG_VLM_*` | — | 强 VLM provider 链（监督/分类/规划共用） |
+| `AMSG_STRONG_VLM_*` (`_API_KEY`/`_BASE_URL`/`_MODEL`) | — | **强 VLM**（监督/分类/规划共用，三级链首选）。**未配置则静默退化到 `PHONE_AGENT_*` 小模型**，挂载时告警（§4.4） |
+| `OFFLINE_VLM_*` | — | 强 VLM 三级链中间级（强 VLM 未配时的次选） |
+| `PHONE_AGENT_*` (`_MODEL` 等) | autoglm-phone-9b | **小模型主执行器**；也是强 VLM 三级链的兜底末级 |
 | `AMSG_CONFIG` | `sava`（推荐） | 图谱生命周期策略预设（见 AMSG_DESIGN.md） |
+| `AMSG_DOMAIN_PRIORS` | `1`（开） | 同域结构先验注入（冷启动借同域方向感，仅文本不含坐标） |
 
 **三档消融矩阵**（论文实验核心）：
 1. **纯小模型基线**（`MILESTONE=0`）：仅机械护栏 + 图谱，无强 VLM 运行期介入
@@ -495,8 +620,6 @@ Shopping-Agent 解决了当前 GUI 智能体领域的若干缺口：
 | 图谱清理工具 | `scripts/purge_invalid_graph_entries.py` |
 | WebUI | `webui.py` |
 | AMSG 图谱详细设计 | `phone_agent/docs/AMSG_DESIGN.md` |
-
-![](图谱构建管线.png)
 
 ---
 
