@@ -1,6 +1,6 @@
 # 主动移动空间图谱（AMSG）：从页面图谱到自进化动作库
 
-> **版本**: 2026-06-10（多 App 泛化版）
+> **版本**: 2026-06-15（多 App 泛化版；运行时契约与 ARCHITECTURE.md 九阶段执行模型对齐）
 > **定位**: 技术方法论文基础文档。从源码 `phone_agent/spatial/` 与 `phone_agent/memory/exploration/` 出发，分析现有页面图谱方法的问题，介绍 AMSG 的设计、与 Agent 执行的集成、面向陌生 App 的建图管线（强 VLM 规划 + 人工审核门）以及图谱的自进化机制。已在淘宝（核心流程）与京东（核心流程 + 秒送外卖链路）两个真实 App 上完成端到端验证。
 
 ---
@@ -122,11 +122,15 @@ AMSG 在每条边上标注**锚定性**：图谱能独立执行（不需要看�
 | 转移 | 锚定？ | 原因 |
 |---|---|---|
 | `home → search_input` | 是 | 搜索按钮位置固定 |
-| `search_input → search_result` | 是 | 输入 + 提交，机械操作 |
+| `search_input → search_result` | 仅合成 Compound | 裸 Tap 会提交搜索框的残留文本，故划为非锚定；只有合成的 `Type <query> + Tap` 复合边才锚定（见下文搜索复合边合成） |
 | `search_result → product_detail` | **否** | 选哪个商品取决于当前任务 |
 | `product_detail → spec_selection` | **否** | 选什么规格取决于用户需求 |
 
-锚定边走快速路径（~0.5s，跳过 VLM），非锚定边走 VLM 路径（~5s，图谱提供方向提示，VLM 选择具体元素）。判断标准在 `ActionAdvisor.is_fast_executable()`：`grounded=True` AND `confidence >= 0.9` AND 有坐标或复合步骤。
+非锚定转移是一个硬编码封闭集合 `_UNGROUNDED_TRANSITIONS`（`spatial/action_advisor.py`，共 **9 对**，完整清单见 ARCHITECTURE.md 第 7.2 节）：商品/店铺/规格选择（`search_result→product_detail`、`search_result→store`、`product_detail→spec_selection`）、购买提交点（`spec_selection→cart`、`spec_selection→checkout`、`cart→checkout`），以及三条由真机回归补入的边——`search_input→search_result`（裸 Tap 提交残留文本）、`filter_panel→search_result`（离开筛选面板需内容决策，否则图谱会反复关闭 VLM 打开的筛选面板）、`spec_selection→product_detail`（弹窗关闭/取消决策，曾在加购瞬间被反复快执行打断）。落在此集合内的边即使带历史坐标也判为非锚定、不携带坐标进入提示。
+
+锚定边走快速路径（~0.5s，跳过 VLM），非锚定边走 VLM 路径（~5s，图谱提供方向提示，VLM 选择具体元素）。快速路径准入判据在 `ActionHint.is_fast_executable()`：`grounded` AND `confidence >= 0.9` AND（有坐标 OR 复合步骤 OR `action_type ∈ {Launch, Wait}`）。**Back/Home 永不快执行**——撤销类动作属修复域，自动重放会对抗 VLM 的有意绕路（真机曾出现 VLM 每打开筛选面板、promoted 的 Back 边立刻关掉的死循环）。
+
+**搜索复合边合成**：`search_input → search_result` 原理上是机械的"输入 + 提交"，但在线轨迹只记录裸 Tap，自然生长出的边因此是非锚定的。`ActionAdvisor._append_search_compound()` 从已验证的 Tap 坐标合成一条 grounded Compound 提示（`Type <query>` + `Tap 坐标`），`<query>` 槽位执行时由计划填充——这让搜索步骤真正走上快速路径（详见 ARCHITECTURE.md 第 7.3 节）。
 
 与 PG-Agent 的区别：PG-Agent 的图谱对所有边提供 RAG 文本指南，VLM 始终推理。与 WebNavigator 的区别：WebNavigator 对所有边执行 Teleport，没有回退。AMSG 在**每条边**上独立决定控制强度。
 
@@ -134,11 +138,11 @@ AMSG 在每条边上标注**锚定性**：图谱能独立执行（不需要看�
 
 ## 3  赋予 Agent 空间感知能力
 
-AMSG 不是一个独立系统——它通过 `GraphRuntimeController` 嵌入到 Agent 的每步执行循环中（参见 ARCHITECTURE.md 第 3.2 节 Phase 3）。以下是图谱如何在运行时赋予 Agent "空间感知"的具体机制。
+AMSG 不是一个独立系统——它通过 `GraphRuntimeController` 嵌入到 Agent 的每步执行循环中（参见 ARCHITECTURE.md 第 3.2 节的九阶段执行流程：图谱定位是 Phase 4、三档调度是 Phase 6、状态更新是 Phase 9）。以下是图谱如何在运行时赋予 Agent "空间感知"的具体机制。
 
 ### 3.1  集成入口：locate_and_get_context()
 
-Agent 循环的 Phase 3 调用 `MemoryManager.locate_and_get_context()`，后者委托给 `GraphRuntimeController`。这个方法在一次调用中完成三件事，返回一个 `mode` 字段直接驱动 Phase 5 的调度决策：
+Agent 循环的 Phase 4 调用 `MemoryManager.locate_and_get_context()`，后者委托给 `GraphRuntimeController`。这个方法在一次调用中完成三件事，返回一个 `mode` 字段直接驱动 Phase 6 的调度决策：
 
 ```
 locate_and_get_context(ui_hash, semantic_layout, task, screen_dict)
@@ -152,12 +156,12 @@ locate_and_get_context(ui_hash, semantic_layout, task, screen_dict)
         ③ 目标推断：TaskSlots → GoalSpec（目标 page_type + 槽位）
         ④ Dijkstra 路径规划：加权最短路径到目标
         ⑤ 缓存为 RuntimeDAG
-        ⑥ 返回 mode + next_actions + semantic_context
+        ⑥ 返回 mode + next_actions + graph_hint（图谱导航文本，与个性化 semantic_context 分离）
 ```
 
 返回的 `mode` 决定 Agent 后续行为：
 
-| mode | 含义 | Agent 行为（Phase 5） |
+| mode | 含义 | Agent 行为（Phase 6） |
 |---|---|---|
 | `navigate` | 图谱有路径，下一步可执行 | 锚定边 → 快速路径；非锚定 → VLM + 提示 |
 | `explore` | 图谱无路径（冷启动或覆盖缺口） | 完整 VLM 推理，图谱记录新观测 |
@@ -176,13 +180,13 @@ Dijkstra 规划在微秒级完成，但完整管线（Neo4j 查询 + 规划 + �
 步骤 4: route[3] 是非锚定边 → mode=verify_with_vlm → VLM 接管
 ```
 
-DAG 失效条件：后条件不匹配、应用切换、连续失败超阈值、下一步高风险。失效后下次 Phase 3 自动重建。
+DAG 失效条件：后条件不匹配、应用切换、连续失败超阈值、下一步高风险。失效后下次 Phase 4 自动重建。
 
 副作用：DAG 可用时 `should_use_page_classifier()` 返回 `False`，Phase 1 跳过 PageClassifier 的 VLM 调用——又省一步。代价是弹窗出现时 Agent 带着错误 page_type 执行一步，但延迟后条件验证在下步捕获。
 
 ### 3.3  延迟后条件验证：图谱学习的数据来源
 
-Agent 循环的 Phase 6 暂存 `(当前页面, 动作, 预期目标)` 为 pending transition。下一步的 Phase 3 开头对比实际 page_type 与预期：
+Agent 循环的 Phase 9 暂存 `(当前页面, 动作, 预期目标)` 为 pending transition。下一步的 Phase 4 开头对比实际 page_type 与预期：
 
 - 匹配 → `record_observation(outcome="success")`
 - 不匹配 → `record_observation(outcome="failure")` + 修复策略
@@ -191,18 +195,18 @@ Agent 循环的 Phase 6 暂存 `(当前页面, 动作, 预期目标)` 为 pendin
 
 ### 3.4  上下文注入：图谱知识如何进入 VLM 提示
 
-Phase 4 组装 VLM 上下文时，图谱提供两种信息（参见 ARCHITECTURE.md 第 3.3 节的优先级表）：
+Phase 6 组装 VLM 上下文时，图谱提供两种信息（按 ARCHITECTURE.md 第 3.2 节 Phase 6 的消息组装顺序注入）：
 
-**导航上下文**（优先级 3）：当 `mode=navigate` 时，注入"当前位置 → 目标的路径概要 + 下一步动作描述"。这告诉 VLM "图谱建议你点击搜索按钮进入搜索页"，VLM 可以采纳也可以忽略。
+**导航上下文**（`graph_hint` 键）：图谱提示走独立的 `graph_hint` 键（由 `runtime_controller._add_graph_hint()` 累积，与个性化记忆的 `semantic_context` 分离），在消息中以【图谱导航】结构化块注入。当 `mode=navigate` 或 `verify_with_vlm` 时，注入"当前位置 → 目标的路径概要 + 下一步动作描述"。这告诉 VLM "图谱建议你点击搜索按钮进入搜索页"，VLM 可以采纳也可以忽略。
 
-**动作提示**（优先级 7）：`ActionAdvisor.query()` 返回当前页面上所有 promoted 边作为可选动作列表。非锚定边只提供"存在这个转移"的信息，不提供坐标——VLM 必须自己看截图决定点哪里。
+**动作提示**（可选动作列表）：`ActionAdvisor.query()` 返回当前页面上所有 promoted 边作为可选动作列表（hypothesis/candidate 边对 VLM 不可见）。非锚定边只提供"存在这个转移"的信息，不提供坐标——VLM 必须自己看截图决定点哪里。
 
 ### 3.5  多 App 分层检索：冷启动时借同域结构
 
 检索按三层组织，**只有第一层产生可执行动作**（`spatial/domain_priors.py`）：
 
 1. **App 专属子图**：前台 App 检测 → AppRegistry 规范化 → 所有查询按规范 id 作用域。promoted 边的快速路径只能来自这一层
-2. **同域结构先验**：当 App 子图过冷（节点覆盖低于阈值）且 `mode=explore` 时，注入"同域其他 App 在该页面类型上的常见转移"（schema 转移 + 跨 App promoted 边聚合，按支持度排序）——**仅作为文本提示进入 semantic_context，绝不携带坐标**（其他 App 的 target_locator 禁止执行）。`AMSG_DOMAIN_PRIORS=0` 可关
+2. **同域结构先验**：当 App 子图过冷（节点覆盖低于阈值）且 `mode=explore` 时，注入"同域其他 App 在该页面类型上的常见转移"（schema 转移 + 跨 App promoted 边聚合，按支持度排序）——**仅作为文本提示进入 `graph_hint`（与个性化记忆的 `semantic_context` 分离），绝不携带坐标**（其他 App 的 target_locator 禁止执行）。`AMSG_DOMAIN_PRIORS=0` 可关
 3. **common_mobile 兜底**：dialog/permission/login/captcha 等通用干扰页的处置知识
 
 这一分层使"京东冷启动借淘宝的购物结构方向感"成为可能，同时杜绝跨 App 坐标污染。
@@ -270,7 +274,9 @@ Phase 4 组装 VLM 上下文时，图谱提供两种信息（参见 ARCHITECTURE
 
 ### 5.1  在线暂存：任务执行期间
 
-每步的 Phase 6 调用 `update_state_and_transition()` 后，`record_observation()` 将转移暂存到内存中的 `_local_states` 和 `_local_edges`。同时，`EdgeLifecycleManager.record_outcome()` 更新该边的成功/失败计数和优势度。
+转移记账走**单一通道、延迟一步**（与 3.3 节一致）：执行步（Phase 9）只调用 `update_state_and_transition()` 把 `(源页面, 动作, 预期后条件)` 缓存为 pending transition，**不立即记账**；到下一步（Phase 4）开头，延迟后条件验证用实际 page_type 与预期对比，才调用 `record_observation()` 将转移暂存到内存的 `_local_states` 和 `_local_edges`，并由 `EdgeLifecycleManager.record_outcome()` 更新该边的成功/失败计数和优势度。
+
+> 早期实现曾在执行步即时记一次、t+1 再记一次，导致每条 Fast Path 成功被**双计**，分类失败时还用期望值伪造观测——已收敛为单通道（唯一例外：Fast Path 同步后条件失配时立即记一次失败，使坏边能被降级；该步回退到模型路径、pending 通道捕获不到这条证据）。
 
 这些操作都在内存中完成，不碰 Neo4j。20 步的任务产生约 20 个暂存观测。
 
