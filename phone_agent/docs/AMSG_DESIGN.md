@@ -147,7 +147,7 @@ Agent 循环的 Phase 4 调用 `MemoryManager.locate_and_get_context()`，后者
 ```
 locate_and_get_context(ui_hash, semantic_layout, task, screen_dict)
     │
-    ├─ 如果 RuntimeDAG 存在且可用
+    ├─ 如果 RuntimeDAG 存在且可用（触发条件严苛，当前实现下几乎不命中，见 §3.2 局限）
     │   → 直接取 route[current_index]，返回 mode="navigate" (~10ms)
     │
     └─ 否则完整管线：
@@ -168,9 +168,9 @@ locate_and_get_context(ui_hash, semantic_layout, task, screen_dict)
 | `verify_with_vlm` | 图谱有方向但需要 VLM 选择具体元素 | VLM 推理 + 图谱提供的语义目标提示 |
 | `goal_reached` | 当前页面已是目标 page_type | 不需要导航动作 |
 
-### 3.2  RuntimeDAG：路径缓存避免重复规划
+### 3.2  RuntimeDAG：路径缓存（设计意图与当前局限）
 
-Dijkstra 规划在微秒级完成，但完整管线（Neo4j 查询 + 规划 + 上下文组装）需要 50-200ms。RuntimeDAG 将规划结果缓存为内存中的边数组 + 游标：
+**设计意图**。Dijkstra 规划在微秒级完成，但完整管线（Neo4j 查询 + 规划 + 上下文组装）需要 50-200ms。RuntimeDAG 把规划结果缓存为内存中的边数组 + 游标，让连续导航步直接读 `route[current_index]`、跳过整条管线，并顺带让 `should_use_page_classifier()` 返回 `False`、跳过 Phase 1 的 PageClassifier 调用：
 
 ```
 步骤 1: 完整管线 → Dijkstra 找到 [edge_A, edge_B, edge_C, edge_D]
@@ -182,7 +182,21 @@ Dijkstra 规划在微秒级完成，但完整管线（Neo4j 查询 + 规划 + �
 
 DAG 失效条件：后条件不匹配、应用切换、连续失败超阈值、下一步高风险。失效后下次 Phase 4 自动重建。
 
-副作用：DAG 可用时 `should_use_page_classifier()` 返回 `False`，Phase 1 跳过 PageClassifier 的 VLM 调用——又省一步。代价是弹窗出现时 Agent 带着错误 page_type 执行一步，但延迟后条件验证在下步捕获。
+> **当前实现局限（2026-06-15 真机 + 图谱核实，诚实记录）**：上面是设计意图，但在当前代码与真实图谱状态下，这条快路径**几乎不触发**。三个叠加原因：
+>
+> 1. **冷 App 上根本不创建**。DAG 仅当 Dijkstra 用 **promoted 边**找到 navigate 路由时才建（`runtime_controller.py` 中 `route_plan.mode=="navigate"`）；hypothesis 边对路由不可见。实测 `shopping-spatial-v4`：淘宝 35 条 promoted（链路连通、纵深 8 跳，DAG 可建）；**京东 0 条 promoted、仅 12 条 hypothesis → 永远 `mode=explore`，DAG 一次都不建**。新 App 在积累出经成功验证的 promoted 子图前，运行时图谱栈对它是冷的。
+>
+> 2. **快路径与"验证优先"互斥**。跳过管线/分类器的前提是 `should_use_page_classifier()` 返回 `False`，而它要求**没有待验证的 pending 后条件**。但每个图谱驱动步骤都会缓存带预期后条件的 pending transition 供 t+1 验证（见 §3.3）——于是下一步必然有 pending → 分类器必跑 → 快路径被堵。"跳过分类器"与"后条件验证"在结构上不可兼得：跳过分类器就拿不到 ground truth，只能把该步记为 `unverified`（不投票），而绝不能用 DAG 自己的预测去验证（那会让验证沦为自我证实，摧毁生命周期统计真实性——ARCHITECTURE.md 第 8 节红线）。
+>
+> 3. **即便创建也不复用**。当前全管线每步都用新 Dijkstra **重建** DAG，且下一步动作取自新鲜的 `route_plan.next_action` 而非 DAG 游标，`_verify_pending_transition` 里推进的游标随即被覆盖。DAG 实际是"每步重建、只被那条几乎不触发的快路径读取"。
+>
+> **净效果**：导航功能正常（每步重规划本身稳健正确），但 RuntimeDAG 承诺的"~10ms 跳过管线 + 跳过分类器 + 缓存复用"优化基本不兑现。单元测试 `test_memory_manager_runtime_dag_fast_path_skips_relocalization` 能通过，仅因为它没有设置真机每步都有的 pending transition。
+
+**后续优化方向**（择一或组合，需消融与真机验证后才可作为论文 claim）：
+
+- **冷启动加速**：讨论"人工审核通过的离线边是否可直接入 `promoted`"，让新 App（如京东）首次任务即有图谱可用——代价是放松"入图边必经在线验证"的保证（§4.5）。
+- **廉价验证通道**：为跳过分类器的步骤补一个不依赖 VLM 的轻量验证（如前台包名 + 关键 landmark 结构核验），既跳过分类器又保留可验证统计——而非简单放开门控记 `unverified`（那会让被使用的边永远拿不到验证票、无法继续提升/降级）。
+- **真游标复用**：让全管线在 DAG 仍可用时复用其游标而非每步重建，真正省掉 Dijkstra 重算。注意权衡：Dijkstra 在 < 50 节点上是微秒级，这块收益有限——真正的耗时大头是分类器的 VLM 调用，而它受第 2 点约束无法安全跳过。建议先用真机 telemetry（`runtime_dag_hits` / `page_classifier_skips` / `active_runtime_dag`）量化命中率，再决定是否值得为这一层继续投入。
 
 ### 3.3  延迟后条件验证：图谱学习的数据来源
 

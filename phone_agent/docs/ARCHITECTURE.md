@@ -466,6 +466,8 @@ Step t caches `(page, action, expected_target)`; step t+1 compares the actual pa
 
 `GraphRuntimeController` caches the Dijkstra result as an in-memory edge array + cursor; consecutive steps read `route[current_index]` and skip the localize-plan pipeline. `should_use_page_classifier` returns False when the DAG is usable, has no pending postcondition, the next edge is not high-risk, and the app matches — saving a classification call. Invalidation is passive (postcondition mismatch / app switch / high-risk / route exhaustion); rebuilt automatically next time.
 
+> **Caveat (honest current state):** this fast path rarely fires in practice. The no-pending-postcondition precondition is mutually exclusive with the per-step postcondition verification (every graph-driven step leaves a pending expectation for t+1), and a DAG forms only for apps with a promoted multi-hop route — a cold app whose subgraph is hypothesis-only (e.g. JD at present) never builds one. See **AMSG_DESIGN.md §3.2** for the full limitation analysis and optimization directions.
+
 ---
 
 ## 8  Page Classifier

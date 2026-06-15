@@ -465,6 +465,8 @@ spec_selection→product_detail  弹窗关闭/取消决策
 
 `GraphRuntimeController` 把 Dijkstra 规划结果缓存为内存边数组+游标，连续步直接读 `route[current_index]` 跳过定位-规划管线。`should_use_page_classifier` 在 DAG 可用且无待验证后条件且非高风险边且 app 匹配时返回 False，省一次分类调用。失效被动（后条件失配/应用切换/高风险/路径耗尽），下次自动重建。
 
+> **诚实限定（当前实现状态）**：这条快路径实际几乎不触发。"无待验证后条件"前提与每步后条件验证互斥（每个图谱驱动步都会为 t+1 留下待验证 pending），且 DAG 只对存在 promoted 多跳路由的 App 形成——仅有 hypothesis 子图的冷 App（如目前的京东）永不创建。完整局限分析与优化方向见 **AMSG_DESIGN.md 第 3.2 节**。
+
 ---
 
 ## 8  页面分类器
