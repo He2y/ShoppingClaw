@@ -1,18 +1,18 @@
-# 面向移动端购物场景的小模型驱动 GUI 智能体系统设计与实现
+# 基于检索增强的移动端购物智能体研究
 
 ---
 
 # 摘要
 
-随着移动互联网购物成为大众日常消费的主要形态，利用视觉语言模型（Vision-Language Model, VLM）驱动图形用户界面（Graphical User Interface, GUI）智能体自动完成手机购物任务，成为人机交互与智能系统领域的研究热点。现有方案面临端云两难：云端大模型每步规划虽然准确，但系统构建期的前期实测表明其会使单步延迟增至约三倍，且成本高、隐私差、无法端侧部署；可量化端侧部署的小型 GUI 模型虽然延迟与隐私友好，但在长程购物任务上存在真机实测的系统性失败模式——长任务焦点丢失、数字判断幻觉（如连续多次将明显越界的价格判定为符合预算区间）、伪完成与空响应，导致任务可靠性远低于实用要求。针对上述问题，本文设计并实现了面向移动端购物场景的小模型驱动 GUI 智能体系统 Shopping-Agent，其核心思路是以三层确定性结构约束小模型，而非把决策权交给云端大模型。本文的主要工作包括：(1) 针对纯小模型在长程任务上的焦点丢失、幻觉与伪完成问题，提出强 VLM 里程碑监督机制与会话记忆文件设计，强 VLM 仅在任务开始与里程碑处低频介入（调用次数约为任务步数的五分之一，另加一次初始拆解，属由触发器公式推得的设计预算），通过四触发器去抖、原子计划修订与降级语义，以期在低频调用下逼近每步监督的可靠性（有效性由三档消融实验验证）；(2) 针对小模型的数字判断幻觉与伪完成，设计机械反幻觉护栏体系与确定性故障恢复机制，价格裁决、购买安全守卫（SpecGuard）、单一完成权威、异常看门狗与空输出恢复均为纯代码确定性判断，零额外云调用，每条可能循环的恢复路径均有有界终止保证；(3) 针对无状态重复探索与静态图谱失效问题，设计主动移动空间图谱 AMSG（Active Mobile Spatial Graph）与锚定性三档调度，以语义页面状态抽象、四阶段边生命周期、延迟后条件验证与快速路径（Fast Path）/图谱副驾（Graph Co-pilot）/模型路径三档调度使机械导航跳过模型推理。系统支持五个 GUI 模型家族与 Android、HarmonyOS、iOS 三类设备平台，并已在淘宝、京东两个真实电商应用上完成端到端验证；本文设计了纯小模型、里程碑监督、每步规划三档消融实验，用于给出端云协同的准确率—延迟—成本权衡分析，量化结果待实验完成后回填【实验数据待补充】。本文工作表明，端侧小模型的长程任务可靠性可以来自系统级的确定性结构设计而非模型规模扩张，为低成本、隐私友好的移动 GUI 自动化提供了可行的工程路径。
+随着移动购物成为日常消费的主要形态，用视觉语言模型（Vision-Language Model, VLM）驱动图形用户界面（GUI）智能体自动完成手机购物任务成为研究热点。现有方案面临端云两难：云端大模型每步规划准确，但延迟约增三倍、成本高、无法端侧部署；可端侧部署的小型 GUI 模型延迟与隐私友好，却在长程购物任务上暴露出焦点丢失、数字幻觉、伪完成、空响应等系统性失败。本文提出，这些失败的根源在于小模型缺乏、也难以在参数中记住完成任务所需的导航、偏好与长程事实知识；为此，本文将这些知识沉淀为可检索、自更新、有质量门的外部知识库，在每个决策点检索增强小模型，设计并实现了基于检索增强的移动端购物智能体 Shopping-Agent，包含三个创新点。其一也是核心：提出主动移动空间图谱 AMSG（Active Mobile Spatial Graph）作为导航知识的检索引擎，以语义页面状态抽象、延迟后条件验证与四阶段边生命周期使图谱自更新，并按逐边锚定性落地为快速路径、图谱副驾与模型路径三档调度，使可靠的机械导航跳过模型推理。其二：设计会话记忆文件与强 VLM 里程碑监督机制，以低频介入（约 1+步数/5 次每任务）维护"已验证事实"知识库并提供抗遗忘检索接口，保证检索到的是真事实而非模型的虚假自述。其三：设计零云调用的机械反幻觉护栏与确定性故障恢复，保障"检索—决策—执行"链路安全，并作为图谱检索库的入库质量门。系统支持五个 GUI 模型家族与三类设备平台，已在淘宝、京东完成端到端验证，并设计三档消融实验给出准确率—延迟—成本权衡分析【实验数据待补充】。本文表明，端侧小模型的长程可靠性可来自外部知识的检索增强与系统的确定性结构，而非模型规模扩张。
 
-**关键词：** GUI 智能体；端侧小模型；里程碑监督；空间知识图谱
+**关键词：** 检索增强；移动 GUI 智能体；端侧小模型；空间知识图谱；里程碑监督
 
 # Abstract
 
-As mobile shopping becomes a primary form of everyday consumption, automating smartphone shopping tasks with GUI agents driven by Vision-Language Models (VLMs) has emerged as an active research topic in human-computer interaction and intelligent systems. Existing solutions face an on-device/cloud dilemma: cloud-based large models plan accurately at every step, but preliminary measurements during system construction indicate that per-step strong-VLM planning roughly triples the step latency, and such models are costly, privacy-unfriendly, and cannot be deployed on device; quantizable on-device small GUI models, in contrast, suffer from systematic failure modes observed on real devices in long-horizon shopping tasks, including task-focus loss, numerical-judgment hallucination (e.g., repeatedly declaring clearly out-of-range prices to be within budget), false completion, and empty responses. To address these problems, this thesis designs and implements Shopping-Agent, a small-model-driven GUI agent system for mobile shopping scenarios, whose core idea is to constrain the small model with a three-layer deterministic structure rather than delegating decisions to a cloud-based large model. The main contributions of this thesis are threefold. First, to mitigate focus loss, hallucination, and false completion of pure small models in long-horizon tasks, this thesis proposes a strong-VLM milestone supervision mechanism together with a session memory file design, in which the strong VLM intervenes only at task initialization and at milestones (approximately 1 + steps/5 calls per task, a design budget derived from the trigger formula), aiming to approach the reliability of per-step supervision through four debounced triggers, atomic plan revision, and graceful degradation semantics, with its effectiveness to be validated by the three-tier ablation study. Second, to counter numerical hallucination and false completion, this thesis designs a mechanical anti-hallucination guardrail system with deterministic failure recovery: price adjudication, SpecGuard, a single completion authority, an anomaly watchdog, and empty-output recovery are all implemented as pure-code deterministic checks with zero additional cloud calls, and every potentially looping recovery path is covered by a bounded-termination guarantee. Third, to overcome stateless repeated exploration and the decay of static graphs, this thesis designs AMSG, a self-updating spatial graph with groundedness-based three-tier scheduling, which combines semantic page-state abstraction, a four-stage edge lifecycle, delayed postcondition verification, and Fast Path/Co-pilot/model-path scheduling so that mechanical navigation can bypass model inference. The system supports five GUI model families and three device platforms (Android, HarmonyOS, and iOS), and has been verified end-to-end on two real e-commerce applications, Taobao and JD; a three-tier ablation study—pure small model, milestone supervision, and per-step planning—provides an accuracy-latency-cost trade-off analysis for on-device/cloud collaboration, with quantitative results to be supplemented. This work demonstrates that the long-horizon reliability of on-device small models can be obtained from system-level deterministic structural design rather than model scaling, offering a practical engineering path toward low-cost, privacy-friendly mobile GUI automation.
+As mobile shopping becomes a primary form of everyday consumption, automating smartphone shopping tasks with VLM-driven GUI agents has become an active research topic. Existing solutions face an on-device/cloud dilemma: cloud large models plan accurately but roughly triple the per-step latency and cannot be deployed on device, whereas quantizable on-device small GUI models are latency- and privacy-friendly yet exhibit systematic failures on long-horizon shopping tasks—focus loss, numerical hallucination, false completion, and empty responses. This thesis argues that the root cause is the small model's lack of, and inability to memorize, the navigation, preference, and long-horizon factual knowledge required for long tasks; rather than scaling the model or delegating decisions to the cloud, such knowledge is externalized into a retrievable, self-updating, quality-gated knowledge base and retrieved at each decision point to augment the small model. Accordingly, this thesis designs and implements Shopping-Agent, a retrieval-augmented mobile shopping agent, with three contributions. First and at the core, the Active Mobile Spatial Graph (AMSG) serves as the retrieval engine for navigation knowledge: via semantic page-state abstraction, delayed postcondition verification, and a four-stage edge lifecycle the graph grows on success and demotes on failure, and per-edge groundedness yields a Fast Path / Co-pilot / model-path three-tier dispatch that lets reliable mechanical navigation bypass model inference. Second, a session memory file with strong-VLM milestone supervision maintains a retrievable base of verified facts and an anti-drift retrieval interface, with the strong VLM intervening only at low frequency (about 1 + steps/5 calls per task) so that the small model retrieves real facts rather than fabricated self-reports. Third, a zero-cloud-call mechanical anti-hallucination guardrail system with deterministic recovery secures the retrieval–decision–execution chain and serves as the admission quality gate of the graph retrieval base. The system supports five GUI model families and three platforms, has been verified end-to-end on Taobao and JD, and a three-tier ablation (pure small model / milestone supervision / per-step planning) provides an accuracy–latency–cost trade-off analysis [data to be supplemented]. This work shows that the long-horizon reliability of on-device small models can arise from retrieval augmentation and deterministic system structure rather than model scaling.
 
-**Key words:** GUI agent; on-device small model; milestone supervision; spatial knowledge graph
+**Key words:** retrieval-augmented generation; mobile GUI agent; on-device small model; spatial knowledge graph; milestone supervision
 
 ---
 
@@ -88,37 +88,37 @@ As mobile shopping becomes a primary form of everyday consumption, automating sm
 
 ## 1.3 本文主要工作与创新点
 
-针对上述研究缺口，本文设计并实现了面向移动端购物场景的小模型驱动 GUI 智能体系统 Shopping-Agent。系统以可量化端侧部署的小型 GUI 模型（AutoGLM-Phone-9B 等）为主执行器，整体架构由三个逻辑运行区域与一个监督层组成：决策区域回答"做什么"，以九阶段执行循环为唯一编排入口，承载机械护栏与三档调度；图谱区域回答"在哪、走哪"，以 AMSG 空间图谱完成页面定位、路径规划与快速路径供给，只做结构性导航不做语义判断；执行区域回答"怎么操作设备"，通过模型协议桥与设备抽象支持五个 GUI 模型家族与三类设备平台；监督层独立于运行时三区域，由强 VLM 在任务开始与里程碑处低频介入，通过会话记忆文件与任务计划同决策区域解耦。三层确定性结构——图谱加速机械导航、护栏接管确定性判断、强 VLM 里程碑低频监督——共同把小模型的长程可靠性从"寄望模型自我修正"转变为"系统设计的确定性兜底"。系统已在淘宝、京东两个真实电商应用上完成端到端验证。
+针对上述研究缺口，本文设计并实现了基于检索增强的移动端购物智能体 Shopping-Agent。其总体思路是：小模型在长程购物任务上的失败，根源不在推理能力本身，而在于它缺乏、也难以在参数中记住完成任务所需的导航、偏好与长程事实知识；因此本文不依赖模型规模扩张或把决策交还云端，而是把这些知识沉淀为可检索、能自更新、有质量保障的外部知识库，在每个决策点检索出来增强小模型。系统据此构建面向购物场景的多源检索增强体系，按"检索什么知识"组织为四类检索通道：图结构检索（导航知识，AMSG/Neo4j）、向量语义检索（偏好知识，FAISS）、按需上下文检索（动态事实，检索网关）与记忆事实检索（抗遗忘，会话记忆文件）。系统已在淘宝、京东两个真实电商应用上完成端到端验证。
 
-本文的主要创新点如下：
+本文的主要创新点如下，三者围绕检索增强的三个核心问题层层展开，其中创新点 (1) 为核心：
 
-**创新点 (1)**：针对纯小模型在长程任务上的焦点丢失、幻觉与伪完成问题，提出强 VLM 里程碑监督机制与会话记忆文件设计，强 VLM 仅在任务开始与里程碑处低频介入（约 1+步数/5 次调用，由触发器公式推得的设计预算），通过四触发器去抖、原子计划修订与降级语义，以低频调用预算替代每步监督；其可靠性逼近每步监督的程度由第 8 章三档消融实验检验（机制详见第 4 章）。
+**创新点 (1)（核心）——主动移动空间图谱 AMSG 与锚定性三档调度：导航知识的自进化检索引擎。** 针对无状态智能体重复探索同一导航路径，以及现有图谱方法"检索只作提示、不省模型调用"（PG-Agent）与"知识库离线构建后冻结、随应用更新失效"（KG-RAG、WebNavigator）的缺陷，本文提出主动移动空间图谱 AMSG（Active Mobile Spatial Graph）。它以语义页面状态抽象统一去重图谱节点，以延迟后条件验证与四阶段边生命周期使图谱"在成功中增长、在失效中自动降级"，并以逐边锚定性划分图谱与模型的执行边界，落地为快速路径（Fast Path）/图谱副驾（Graph Co-pilot）/模型路径三档调度，让统计可靠的机械导航直接跳过模型推理。由此，检索到的导航知识不再只是提示，而是可直接驱动执行、且能自我保鲜的活知识库（详见第 4 章）。
 
-**创新点 (2)**：针对小模型的数字判断幻觉与伪完成，设计机械反幻觉护栏体系与确定性故障恢复机制，价格裁决、SpecGuard、单一完成权威、异常看门狗与空输出恢复均为纯代码确定性判断，零额外云调用，每条可能循环的恢复路径均有有界终止保证（详见第 5 章）。
+**创新点 (2)——会话记忆文件与强 VLM 里程碑监督：已验证事实的可检索知识库与抗遗忘接口。** 针对小模型在长程任务上的焦点丢失与伪完成，本文设计会话记忆文件，以永不改写的原始任务为抗漂移锚，每步渲染注入经截图核实的事实与单一当前目标；并以强 VLM 里程碑监督机制低频维护该知识库——强 VLM 仅在任务开始（拆解）与里程碑处（修订、核实）介入，由四触发器去抖、原子计划修订与降级语义将调用预算约束在每任务约 1+步数/5 次，保证小模型每步检索到的是经核实的真事实而非自身的虚假自述（详见第 5 章）。
 
-**创新点 (3)**：针对无状态重复探索与静态图谱失效问题，设计 AMSG 自更新空间图谱与锚定性三档调度，以语义页面状态抽象、四阶段边生命周期、延迟后条件验证与快速路径（Fast Path）/图谱副驾（Graph Co-pilot）/模型路径三档调度使机械导航跳过模型推理（详见第 6 章）。
+**创新点 (3)——机械反幻觉护栏与确定性故障恢复：检索链路的安全保障与检索库质量门。** 针对小模型的数字判断幻觉与伪完成，本文设计零云调用的机械护栏体系：机械价格裁决与购买安全守卫（SpecGuard）把小模型不可靠的数值判断前移到确定性代码，单一完成权威堵死伪完成，异常看门狗与空输出恢复保障链路鲁棒，每条可能循环的恢复路径都有有界终止保证。其中完成判定同时充当 AMSG 检索库的入库质量门——只有真正成功的任务才把导航轨迹写回图谱，从源头保证被检索的导航知识可信（详见第 6 章）。
 
-创新点 (1) 对应缺口一（里程碑级监督填补 token 级验证与查询级路由之间的协同空档）；创新点 (3) 对应缺口二至缺口四的导航侧（自更新图谱以生命周期与逐边锚定性同时解决静态失效、无可靠性度量与二元控制问题）；创新点 (2) 的动机则主要来自 3.2 节真机实测揭示的小模型确定性判断不可靠问题（护栏以零云调用接管小模型不擅长的判断并保证有界终止），属于实证观察驱动而非文献缺口驱动的设计。其有效性通过纯小模型、里程碑监督、每步规划三档消融在真机环境下验证（第 8 章），量化结果【实验数据待补充】。
+三个创新点分别回答检索增强的三个核心问题：创新点 (1) 解决"导航知识怎么检索出来并安全高效地用"，是检索引擎；创新点 (2) 解决"检索的事实怎么保证为真"，是检索内容的维护与抗遗忘接口；创新点 (3) 解决"检索—决策—执行链路怎么不被幻觉带偏、检索库怎么不被污染"，是安全保障。三者的有效性由第 8 章的三组消融实验（三档调度矩阵、护栏消融、图谱消融）在淘宝、京东真机环境下验证，量化结果【实验数据待补充】。
 
 ## 1.4 论文组织结构
 
 本文共分九章，组织结构如下：
 
-第 1 章为绪论，阐述移动购物场景下 GUI 智能体的研究背景与端云两难问题，综述国内外研究现状并归纳四个研究缺口，给出本文的主要工作与创新点。
+第 1 章为绪论，阐述移动购物场景下 GUI 智能体的研究背景与端云两难问题，综述国内外研究现状并归纳研究缺口，提出以检索增强弥补小模型知识短板的总体思路与三个创新点。
 
-第 2 章介绍相关理论与技术，包括视觉语言模型与 GUI 智能体的基本范式、GUI grounding 模型、知识图谱与 Neo4j 图数据库，以及 ADB/HDC/XCTest 设备自动化技术，为后续章节提供技术基础。
+第 2 章介绍相关理论与技术，包括视觉语言模型与 GUI 智能体的基本范式、GUI grounding 模型、作为检索基础设施的知识图谱与 Neo4j 及 FAISS 向量检索，以及 ADB/HDC/XCTest 设备自动化技术。
 
-第 3 章进行需求分析与系统总体设计，刻画环境与模型两类不确定性，提出非对称权威设计原则，给出三区域加监督层的总体架构、闭环数据流与九阶段执行循环。
+第 3 章进行系统总体设计，刻画环境与模型两类不确定性，分析小模型长程失败背后的知识缺失，给出面向购物场景的多源检索增强体系（四类检索通道）、三区域加监督层的总体架构与执行循环总体流程。
 
-第 4 章详细设计强 VLM 里程碑监督机制与会话记忆文件，包括 initialize/checkpoint/final_confirm 三类介入、四触发器去抖、原子计划修订、降级语义与 provider 链鉴别，以及会话记忆文件的结构与渲染注入。
+第 4 章详细设计核心创新——主动移动空间图谱 AMSG 与锚定性三档调度，包括语义页面状态抽象、逐边锚定性与四阶段边生命周期、延迟后条件验证、三档调度与搜索 Compound 边合成、多 App 组织与离线建图管线，以及自进化闭环与分类器独立性红线。
 
-第 5 章详细设计机械反幻觉护栏体系与确定性故障恢复机制，包括机械价格裁决、SpecGuard 购买安全守卫、完成门单一权威、异常看门狗与空输出恢复，并给出故障模式到确定性响应与有界终止的完整映射。
+第 5 章详细设计会话记忆文件与强 VLM 里程碑监督机制，包括会话记忆文件的结构与渲染注入、initialize/checkpoint/final_confirm 三类介入、四触发器去抖、原子计划修订与 provider 链鉴别。
 
-第 6 章从系统集成视角阐述 AMSG 自更新空间图谱与锚定性三档调度，包括语义页面状态抽象、边的锚定性划分与四阶段生命周期、RuntimeDAG 路径缓存、搜索 Compound 边合成以及页面分类器独立性红线。
+第 6 章详细设计机械反幻觉护栏体系与确定性故障恢复机制，包括机械价格裁决、SpecGuard 购买安全守卫、完成门单一权威、异常看门狗与空输出恢复，并给出故障模式到确定性响应与有界终止的完整映射。
 
-第 7 章介绍系统实现与可视化，包括五模型家族适配与坐标桥、多平台设备抽象、WebUI 交互界面与记忆系统多数据面的实现。
+第 7 章介绍系统实现与可视化，包括多模型家族适配与坐标桥、多平台设备抽象、记忆系统多数据面与 WebUI 可视化的实现要点。
 
-第 8 章给出系统测试与实验框架，包括淘宝、京东真机实验环境、指标体系与三档消融矩阵设计，并报告实验结果【实验数据待补充】。
+第 8 章给出系统测试与实验，包括淘宝、京东真机实验环境、指标体系与三组消融实验设计，并报告实验结果【实验数据待补充】。
 
 第 9 章总结全文工作，重申创新点及其验证结论，讨论系统局限并展望后续研究方向。
 
