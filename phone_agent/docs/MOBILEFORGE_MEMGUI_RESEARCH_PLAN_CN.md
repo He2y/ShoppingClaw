@@ -138,12 +138,12 @@ AMSG 的运行时入口是 `GraphRuntimeController.locate_and_get_context()`，�
 
 现有工作已经建立了可靠的执行和图谱自进化基础，但如果面向下一阶段研究和论文贡献，仍有四个缺口：
 
-1. **经验主要进入图谱，还没有充分进入模型训练数据**。成功任务会更新 AMSG，但失败任务中的局部正确步骤、失败原因和纠错 hint 还没有系统沉淀。
-2. **反馈信号分散**。后条件验证、里程碑监督、SpecGuard、final confirm、轨迹审核都在产生反馈，但缺少统一的 step-level feedback schema。
+1. **陌生 App 探索还不够反馈驱动**。当前已有 onboarding、焦点探索、staging、人工审核和在线学习管线，但探索目标主要来自 schema 覆盖与人工设定；低置信边、高熵转移、失败簇还没有系统反向驱动下一轮探索。
+2. **经验主要进入图谱边，还没有形成统一反馈账本**。成功任务会更新 AMSG，但失败任务中的局部正确步骤、失败原因、干扰态和纠错 hint 还没有以统一 schema 沉淀。
 3. **上下文管理仍偏工程规则**。会话记忆有效，但模型还没有学习“什么时候记、什么时候更新、什么时候折叠历史”。
-4. **课程生成还不够主动**。陌生 App 探索已有管线，但日常任务中的低置信边、高熵页面、失败簇还没有反过来生成适配任务。
+4. **训练不是当前最高收益方向**。购物 App 更新频繁、页面动态大、风险动作多；对单个 App 做强化学习容易过拟合当前版本，回报率不稳定，也会引入安全成本。
 
-这四个缺口正好对应 MobileForge 与 MemGUI-Agent 两篇新工作的启发。
+这意味着 MobileForge 对本项目最有价值的不是 GRPO 训练结论，而是 MobileGym 式的目标 App 探索、可执行任务挖掘和分层反馈；MemGUI-Agent 的价值则在于把长程上下文管理变成可验证、可学习的动作。
 
 ---
 
@@ -153,7 +153,7 @@ AMSG 的运行时入口是 `GraphRuntimeController.locate_and_get_context()`，�
 
 ### 2.1  MobileForge 的核心创新
 
-MobileForge 解决的问题是：移动 App 数量多、更新快，人工写任务、专家轨迹和人工 reward 标签无法覆盖真实目标 App。它提出一个 annotation-free adaptation 系统：
+MobileForge 解决的问题是：移动 App 数量多、更新快，人工写任务、专家轨迹和人工 reward 标签无法覆盖真实目标 App。论文提出了一个 annotation-free adaptation 系统：
 
 ```text
 真实 App 探索
@@ -164,47 +164,63 @@ MobileForge 解决的问题是：移动 App 数量多、更新快，人工写任
   -> hint-contextualized GRPO 更新策略
 ```
 
-它的两个关键组件是：
+但对 Shopping-Agent 来说，必须拆开看 MobileForge 的贡献：
 
-- **MobileGym**：作为交互和评估底座，负责目标 App 探索、课程生成、rollout 评估。
-- **HiFPO**：把多次尝试的结果、step-level process feedback 和 corrective hints 转成可训练的策略优化信号。
+- **MobileGym 更值得迁移**：它把真实目标 App 中的探索、可执行任务挖掘、rollout 评估和分层反馈组织成一个闭环。
+- **HiFPO/GRPO 不是当前主线**：购物 App 更新频繁、风险动作多、回报稀疏，对 App-specific policy 做强化学习容易过拟合当前版本，维护成本高。
 
-这篇论文对本项目的核心启发不是“照搬 GRPO”，而是：
+因此，这篇论文对本项目的核心启发应改写为：
 
-> 真实 App 执行产生的经验，不应该只作为日志或图谱边保存，还应该被组织成任务课程、层级反馈和可训练样本。
+> 真实 App 执行产生的经验，不应优先压进模型权重，而应先压进可审计、可降级、可迁移的 AMSG 图谱与探索反馈系统。
 
-### 2.2  MobileForge 对 Shopping-Agent 的具体映射
+### 2.2  MobileForge 对 Shopping-Agent 的具体映射：AMSG-Gym
 
-Shopping-Agent 已经有 AMSG，因此不需要重新造一个 MobileGym。更合理的映射是把 AMSG 升级成 **AMSG-Forge**：
+Shopping-Agent 已经有 AMSG，因此不需要重新造一个 MobileGym。更合理的映射是把 MobileGym 的思想改造成 **AMSG-Gym**：
 
-| MobileForge 概念 | 本系统已有基础 | 应落到的模块 | 升级方式 |
+> AMSG-Gym 是面向陌生 App 的图谱原生探索与分层反馈系统。它的目标不是优先训练 policy，而是冷启动和修复 AMSG：发现页面、验证转移、挖掘可执行任务、生成纠错 hint，并推动 schema 与边生命周期演化。
+
+| MobileForge / MobileGym 概念 | 本系统已有基础 | 应落到的模块 | 升级方式 |
 |---|---|---|---|
-| Target-app exploration | 陌生 App 建图管线 | `phone_agent/memory/exploration/` | 从覆盖目标扩展到失败簇、低置信边、高熵页面驱动 |
-| Curriculum mining | `task_builder.py`, schema coverage | `phone_agent/memory/exploration/task_builder.py` | 生成带来源解释的课程任务 |
-| Rollout execution | `PhoneAgent.run()` | `phone_agent/agent.py` | 任务执行产出统一 feedback trace |
-| Hierarchical critic | 后条件验证、SpecGuard、final_confirm、TrajectoryReviewer | `phone_agent/feedback/`, `phone_agent/spatial/trajectory_reviewer.py` | 汇总为 outcome/process/hint 三层反馈 |
-| Corrective hints | 里程碑 checkpoint 修订 | `phone_agent/milestone_supervisor.py` | 失败任务生成可复用纠错 hint |
-| Step selection | 边生命周期与后条件验证 | `phone_agent/spatial/edge_lifecycle.py` | 从失败轨迹中回收低风险局部正确 step |
-| Training export | 当前暂无统一出口 | `phone_agent/adaptation/dataset_exporter.py` | 导出 SFT / GRPO 样本，离线训练 |
+| Target-app exploration | 陌生 App 建图管线 | `phone_agent/memory/exploration/` | 由 schema 覆盖扩展为图谱缺口、低置信边、高熵转移、失败簇共同驱动 |
+| Curriculum mining | `task_builder.py`, schema coverage | `phone_agent/memory/exploration/task_builder.py` | 生成“补图谱”的可执行任务，而不是默认生成训练任务 |
+| Rollout execution | `PhoneAgent.run()` | `phone_agent/agent.py` | 在安全策略下执行探索任务并产出 feedback trace |
+| Hierarchical rollout evaluation | 后条件验证、SpecGuard、final_confirm、TrajectoryReviewer | `phone_agent/feedback/`, `phone_agent/spatial/trajectory_reviewer.py` | 汇总为任务级、转移级、step 级反馈 |
+| Corrective hints | 里程碑 checkpoint 修订 | `phone_agent/milestone_supervisor.py`, `phone_agent/spatial/action_advisor.py` | 指导下一轮探索和图谱提示，而不是直接强化模型 |
+| Multi-attempt rollout | 边生命周期重复验证 | `phone_agent/spatial/edge_lifecycle.py` | 对低置信/高熵边做安全重复验证，提升、降级或分裂边 |
+| Training export | 当前暂无统一出口 | `phone_agent/adaptation/dataset_exporter.py` | 作为图谱验证后的副产品导出，不作为第一阶段目标 |
+
+AMSG-Gym 的主闭环应是：
+
+```text
+陌生 App 探索
+  -> 挖掘可执行任务
+  -> 安全 rollout
+  -> 分层反馈
+  -> 更新 AMSG 图谱 / schema / 边生命周期 / 探索策略
+```
+
+这与 MobileForge 的差别很关键：MobileForge 的主线是“探索真实 App -> 生成数据 -> 训练模型”；本项目更适合的主线是“探索真实 App -> 生成反馈 -> 更新 AMSG 图谱 -> 改善执行与下一轮探索”。
 
 ### 2.3  本项目不应照搬 MobileForge 的地方
 
 MobileForge 的多尝试和 GRPO 更适合 benchmark 或安全隔离环境。Shopping-Agent 面向真实购物 App，不能直接把生产环境变成在线强化学习场：
 
-- 不能为了训练反复尝试结算、登录、提交订单等高风险动作。
-- 不能把失败轨迹直接写入图谱，否则会污染后续任务。
-- 不能把自动评估器的结论无条件当 reward，否则错误反馈会被放大。
+- **App 更新导致过拟合风险高**：强化学习可能学到某个版本、某些弹窗、某些布局下的动作偏好，App 改版后收益快速衰减。
+- **回报稀疏且归因困难**：购物链路长，失败可能来自登录态、弹窗、库存、价格、SKU、网络或页面分类，单一 reward 很难稳定归因。
+- **高风险动作不适合探索式优化**：登录、地址、下单、支付、提交订单等动作必须由规则和人工边界控制。
+- **模型权重不如图谱容易降级**：AMSG 的边可以 promoted/demoted；模型一旦学到过期偏好，回滚和解释都更难。
 
 因此本项目应采用更稳的路线：
 
 ```text
-生产运行只产反馈和样本
+生产运行和安全探索产出反馈
   -> 失败经验进入 quarantine
-  -> 离线筛选和训练
-  -> 影子评估通过后再切换模型或提示协议
+  -> 低风险局部经验用于修复图谱和 schema
+  -> 训练数据作为副产品离线导出
+  -> 仅在影子评估收益明确时才更新模型或提示协议
 ```
 
-这也是本项目可以形成差异化创新的地方：**风险敏感的无标注适配**，而不是通用 GUI benchmark 上的无标注适配。
+这也是本项目可以形成差异化创新的地方：**图谱优先的无标注适配**，而不是 App-specific policy 的强化学习适配。
 
 ### 2.4  MemGUI-Agent 的核心创新
 
@@ -257,20 +273,21 @@ MobileForge 和 MemGUI-Agent 分别补齐两个维度：
 
 | 维度 | MobileForge | MemGUI-Agent | 本项目升级 |
 |---|---|---|---|
-| 经验学习 | 从 App 交互中生成课程、反馈和训练信号 | 较少涉及图谱和任务课程 | AMSG-Forge：图谱原生适配底座 |
+| 陌生 App 适配 | MobileGym 在真实 App 中探索、挖掘任务、产生反馈 | 较少涉及图谱和探索课程 | AMSG-Gym：图谱原生探索与分层反馈底座 |
 | 上下文管理 | 使用 hint 指导多次 rollout | 把上下文管理作为动作 | VCA：可验证上下文动作 |
-| 失败利用 | 从失败中筛局部合理 step | 关注长程记忆失败 | 风险敏感 local-positive recovery |
+| 失败利用 | 从失败中筛局部合理 step | 关注长程记忆失败 | 风险敏感 local-positive recovery，用于图谱修复优先 |
 | 安全边界 | benchmark 适配为主 | 长程基准为主 | 购物场景下的高风险动作隔离 |
+| 模型训练 | HiFPO/GRPO 是主线 | SFT 学习 ConAct | 本项目中训练是副产品，主线是图谱自进化 |
 
 因此，下一阶段系统可以定义为：
 
-> **Feedback-Grounded Memory-Spatial Agent**：把真实移动 GUI 交互中的空间转移、上下文事实、失败反馈和纠错经验统一沉淀为可执行图谱、可验证记忆和可训练样本。
+> **Feedback-Grounded Memory-Spatial Agent**：把真实移动 GUI 交互中的空间转移、上下文事实、失败反馈和纠错经验统一沉淀为可执行图谱、可验证记忆和可审计探索策略；训练数据是该闭环的副产品，而不是第一目标。
 
 这不是另起炉灶，而是在现有 Shopping-Agent 上增加三个可落地层：
 
 1. **Feedback Trace**：统一记录每步行为的 outcome、process feedback、guardrail verdict、context action 和 corrective hint。
 2. **Verified Context Actions**：把记忆写入、更新、删除、历史折叠变成带证据的事务。
-3. **AMSG-Forge**：从图谱覆盖缺口、失败簇和反馈账本中生成课程与离线训练样本。
+3. **AMSG-Gym**：从图谱覆盖缺口、低置信边、高熵转移、失败簇和反馈账本中生成探索任务，并更新 AMSG 图谱、schema 与边生命周期。
 
 ---
 
@@ -278,7 +295,7 @@ MobileForge 和 MemGUI-Agent 分别补齐两个维度：
 
 ### 3.1  总体路线
 
-实施顺序必须遵守一个原则：**先让经验可观测，再让经验可筛选，最后才让经验进入训练**。如果没有统一反馈账本，直接做 GRPO 或上下文动作训练只会放大日志噪声。
+实施顺序必须遵守一个原则：**先让经验可观测，再让经验修复图谱，最后才考虑训练**。如果没有统一反馈账本和图谱质量门，直接做 GRPO 或上下文动作训练只会放大日志噪声，也容易把 App 当前版本的偶然路径写进模型权重。
 
 推荐三阶段路线：
 
@@ -286,12 +303,14 @@ MobileForge 和 MemGUI-Agent 分别补齐两个维度：
 阶段一：Feedback Trace + VCA pilot
   -> 让每步反馈和记忆提交可审计
 
-阶段二：AMSG-Forge + Hierarchical Critic
-  -> 让图谱缺口、失败簇、低置信边生成课程和 step feedback
+阶段二：AMSG-Gym + Hierarchical Critic
+  -> 让图谱缺口、失败簇、低置信边、高熵转移驱动陌生 App 探索和图谱修复
 
-阶段三：Dataset Export + Shadow Training
-  -> 导出 SFT/GRPO 样本，离线训练并影子评估
+阶段三：Dataset Export + Shadow Evaluation
+  -> 仅把图谱验证后的低风险经验导出为训练候选，离线评估收益后再决定是否训练
 ```
+
+换句话说，当前版本的主目标不是“训练一个更懂某个 App 的模型”，而是“建设一个能随 App 变化自修复的图谱-反馈系统”。
 
 ### 3.2  阶段一：统一反馈账本
 
@@ -392,65 +411,87 @@ ContextActionIR = {
 
 第一版不要求小模型输出 VCA，可先由机械护栏和里程碑监督产生上下文动作。这样风险低，也能先验证数据结构是否有用。
 
-### 3.4  阶段二：AMSG-Forge 课程生成
+### 3.4  阶段二：AMSG-Gym 陌生 App 探索
 
 新增模块：
 
 ```text
 phone_agent/adaptation/
   __init__.py
+  amsg_gym.py
   curriculum.py
   critic.py
-  rollout.py
+  quarantine.py
   dataset_exporter.py
 ```
 
-课程不应只由 LLM 扩写，而应从系统证据中产生：
+AMSG-Gym 的课程不应只由 LLM 扩写，而应从图谱和执行反馈中产生：
 
-| 课程来源 | 生成任务示例 | 对应模块 |
-|---|---|---|
-| 图谱覆盖缺口 | 覆盖 `search_result -> filter_panel -> search_result` | `schema_registry.py`, `task_builder.py` |
-| 低置信边 | 反复验证某 App 的 `cart -> checkout` 前置流程 | `edge_lifecycle.py` |
-| 高熵页面 | 同一动作产生登录/弹窗/目标页多结果 | `edge_lifecycle.py`, `runtime_controller.py` |
-| 失败簇 | 多次卡在 SKU 选择或筛选面板 | `feedback/trace.py`, `adaptation/curriculum.py` |
-| 用户高频槽位 | 耳机、手机、外卖等高频意图 | `memory/task_index.py` |
-| 新词表提案 | `new:<type>` 页面 | `schema_registry.py` |
+| 探索来源 | 生成任务示例 | 对应模块 | 图谱目标 |
+|---|---|---|---|
+| 图谱覆盖缺口 | 覆盖 `search_result -> filter_panel -> search_result` | `schema_registry.py`, `task_builder.py` | 新增缺失转移 |
+| 低置信边 | 重复验证某 App 的 `cart -> checkout` 前置流程 | `edge_lifecycle.py` | 提升、降级或标记需人工 |
+| 高熵转移 | 同一动作产生登录/弹窗/目标页多结果 | `edge_lifecycle.py`, `runtime_controller.py` | 分裂条件边，补充前置条件 |
+| 失败簇 | 多次卡在 SKU 选择或筛选面板 | `feedback/trace.py`, `adaptation/curriculum.py` | 生成纠错 hint 和探索焦点 |
+| 用户高频槽位 | 耳机、手机、外卖等高频意图 | `memory/task_index.py` | 优先覆盖高价值链路 |
+| 新词表提案 | `new:<type>` 页面 | `schema_registry.py` | 推动 schema proposal |
 
-课程生成结果必须包含来源解释：
+课程生成结果必须包含来源解释，并默认带安全策略：
 
 ```json
 {
   "task": "在京东中搜索一个低价蓝牙耳机并进入筛选面板",
   "source": "low_confidence_edge",
   "evidence": ["edge:search_result->filter_panel", "confidence:0.42"],
+  "graph_goal": "verify_or_demote_edge",
   "risk_policy": "no_checkout",
   "target_modules": ["PageClassifier", "ActionAdvisor", "EdgeLifecycle"]
 }
 ```
 
+AMSG-Gym 的产物优先级如下：
+
+1. 更新页面类型、干扰态、schema proposal。
+2. 更新边的成功率、失败率、高熵分支和生命周期阶段。
+3. 生成下一轮探索 hint。
+4. 在低风险、证据完整时导出训练候选样本。
+
 ### 3.5  阶段二：层级评估器
 
-当前系统已有多个反馈源，但需要统一成 `HierarchicalCritic`：
+当前系统已有多个反馈源，但需要统一成 `HierarchicalCritic`，用于服务图谱修复和探索调度：
 
-| 层级 | 信号来源 | 输出 |
-|---|---|---|
-| Trajectory outcome | final_confirm、任务成功状态、完成门 | success/failure/partial |
-| Step process | 后条件验证、边生命周期、VLM step review | reasonable/unreasonable/risky |
-| Constraint verdict | SpecGuard、价格裁决、提交拦截 | safe/unsafe/violated |
-| Context verdict | VCA 提交/拒绝原因 | useful/noisy/wrong |
-| Corrective hint | 里程碑监督、失败聚类、VLM reviewer | 下次尝试应避免和应尝试的策略 |
+| 层级 | 信号来源 | 输出 | 默认用途 |
+|---|---|---|---|
+| Trajectory outcome | final_confirm、任务成功状态、完成门 | success/failure/partial | 判断整条探索是否可信 |
+| Transition outcome | 后条件验证、边生命周期 | passed/failed/branched/high_entropy | 更新 AMSG 边生命周期 |
+| Step process | 后条件验证、VLM step review | reasonable/unreasonable/risky | 从失败轨迹回收低风险局部步骤 |
+| Constraint verdict | SpecGuard、价格裁决、提交拦截 | safe/unsafe/violated | 拦截高风险样本 |
+| Context verdict | VCA 提交/拒绝原因 | useful/noisy/wrong | 修复会话记忆策略 |
+| Corrective hint | 里程碑监督、失败聚类、VLM reviewer | 下次探索应避免和应尝试的策略 | 注入下一轮 AMSG-Gym 任务 |
 
 实现策略：
 
 - 普通 step 优先使用机械信号，减少强 VLM 调用。
-- 只有失败关键点、高价值课程和训练候选样本调用强 VLM 生成 hint。
-- 高风险动作永远不因自动 critic 结论直接进入训练正样本。
+- 只有失败关键点、高价值探索任务和候选样本调用强 VLM 生成 hint。
+- 高风险动作永远不因自动 critic 结论直接进入训练正样本或 promoted 图谱。
+- 失败轨迹默认不入图；只有通过后条件验证的低风险局部转移可以进入 quarantine，等待复验。
 
-### 3.6  阶段三：数据导出与影子训练
+### 3.6  阶段三：数据导出与影子评估
 
-导出两类样本。
+训练数据导出应被定位为 AMSG-Gym 的副产品，而不是阶段三的唯一目标。优先导出三类数据：
 
-SFT 样本：
+**图谱修复样本**：用于复验低置信边、解释边降级、辅助人工审核。
+
+```json
+{
+  "source": "low_confidence_edge",
+  "edge": "search_result->filter_panel",
+  "evidence": ["postcondition_failed", "actual:ad_dialog"],
+  "suggested_action": "split_branch_or_demote"
+}
+```
+
+**SFT 候选样本**：只来自成功轨迹或失败轨迹中后条件通过的低风险局部 step。
 
 ```json
 {
@@ -461,12 +502,12 @@ SFT 样本：
     "action_intent": "...",
     "ui_observation": "..."
   },
-  "source": "success_trace|local_positive_from_failed_trace",
+  "source": "success_trace|verified_local_positive",
   "evidence": []
 }
 ```
 
-GRPO/RFT 样本：
+**RFT/GRPO 候选样本**：长期可选，仅在离线回放和影子评估证明有收益时启用。
 
 ```json
 {
@@ -484,10 +525,11 @@ GRPO/RFT 样本：
 
 上线前必须经过：
 
-1. 离线格式校验。
-2. 回放环境或 dry-run 验证。
-3. 真实 App 影子评估。
-4. 与当前模型做任务成功率、强 VLM 调用次数、错误事实写入率对比。
+1. 图谱修复收益验证：promoted 边误用率下降，demotion 更及时。
+2. 离线格式校验。
+3. 回放环境或 dry-run 验证。
+4. 真实 App 影子评估。
+5. 与当前模型做任务成功率、强 VLM 调用次数、错误事实写入率对比。
 
 ### 3.7  实验设计
 
@@ -495,75 +537,80 @@ GRPO/RFT 样本：
 
 | 假设 | 验证方式 |
 |---|---|
-| H1: VCA 能降低长程任务上下文漂移 | 对比当前会话记忆与 VCA，测关键事实保留率和 token 增长 |
-| H2: 失败轨迹局部回收能提升冷启动适配 | 对比 success-only 图谱学习与 local-positive step mining |
+| H1: AMSG-Gym 能提升陌生 App 冷启动覆盖 | 对比 schema-only 探索与 feedback-driven 探索的页面/转移覆盖率 |
+| H2: 高熵边重复验证能提升图谱自修复 | 统计 promoted 边误用率、demotion 延迟、条件分支识别率 |
 | H3: 图谱驱动课程优于纯 LLM 扩写课程 | 对比 coverage/failure/entropy curriculum 与 prompt-only expansion |
-| H4: 反馈账本能减少强 VLM 调用 | 对比当前里程碑监督、每步强规划、FGMS 三档 |
-| H5: 风险分层能避免图谱污染 | 统计 promoted 边误用率、demotion 次数、高风险误执行次数 |
+| H4: VCA 能降低长程任务上下文漂移 | 对比当前会话记忆与 VCA，测关键事实保留率和 token 增长 |
+| H5: 训练候选作为副产品仍可产生价值 | 只在图谱验证样本上做小规模 SFT/影子评估，比较收益是否超过维护成本 |
 
 消融矩阵：
 
-| 配置 | VCA | AMSG-Forge 课程 | 失败局部回收 | 层级 Critic | 目标 |
+| 配置 | VCA | AMSG-Gym 探索 | 高熵/低置信边复验 | 训练导出 | 目标 |
 |---|---:|---:|---:|---:|---|
-| Current | 否 | 否 | 否 | 部分 | 当前基线 |
-| +VCA | 是 | 否 | 否 | 部分 | 验证上下文动作 |
-| +Forge-Curriculum | 否 | 是 | 否 | 是 | 验证课程来源 |
-| +Local Recovery | 否 | 是 | 是 | 是 | 验证失败轨迹回收 |
-| Full FGMS | 是 | 是 | 是 | 是 | 完整系统 |
-| Strong Planner Upper | 可选 | 可选 | 可选 | 强 | 每步强 VLM 上界 |
+| Current | 否 | 否 | 否 | 否 | 当前基线 |
+| +VCA | 是 | 否 | 否 | 否 | 验证上下文动作 |
+| +AMSG-Gym | 否 | 是 | 是 | 否 | 验证陌生 App 图谱构建 |
+| +Local Recovery | 否 | 是 | 是 | 候选 | 验证失败轨迹局部回收 |
+| Full Graph-First | 是 | 是 | 是 | 候选 | 完整图谱优先系统 |
+| RL/SFT Optional | 是 | 是 | 是 | 是 | 训练收益上界，不作为默认路线 |
 
 ### 3.8  两周 pilot
 
-目标：不训练模型，只验证反馈账本和 VCA 是否改善可观测性。
+目标：不训练模型，只验证反馈账本、VCA 和 AMSG-Gym 任务来源是否能改善可观测性。
 
 任务：
 
 1. 实现 `FeedbackEvent` JSONL。
 2. 扩展 `SessionMemoryFile`，增加 `context_actions` 和 `folded_trace`。
 3. 由机械护栏和里程碑监督先产生 VCA。
-4. 在淘宝/京东各跑 10 个长程购物任务。
-5. 统计关键事实保留率、错误事实写入率、强 VLM 调用次数和任务成功率。
+4. 从低置信边、高熵转移和失败簇中生成 10-20 个 AMSG-Gym 探索任务。
+5. 在淘宝/京东各跑 10 个长程购物任务，另选一个陌生 App 做小规模冷启动探索。
+6. 统计关键事实保留率、错误事实写入率、图谱覆盖率、边降级次数和强 VLM 调用次数。
 
 成功标准：
 
 - 每步能追溯到截图、动作、后条件和记忆提交结果。
-- 不显著增加延迟。
-- 至少发现 3 类当前日志无法解释的失败原因。
+- 每个 AMSG-Gym 任务都有图谱来源解释和安全策略。
+- 至少发现 3 类当前日志无法解释的图谱或上下文失败原因。
 
 ### 3.9  一个月版本
 
-目标：让课程生成和失败局部回收跑通。
+目标：让 AMSG-Gym 的陌生 App 探索、低置信边复验和失败局部回收跑通。
 
 任务：
 
-1. 实现 `CurriculumMiner`，从图谱缺口、低置信边、失败簇生成任务。
+1. 实现 `CurriculumMiner`，从图谱缺口、低置信边、高熵转移、失败簇生成探索任务。
 2. 实现 `HierarchicalCritic` 第一版。
-3. 实现失败轨迹 local-positive step quarantine。
-4. 导出 SFT JSONL，先做格式验证，不急于训练。
+3. 实现失败轨迹 local-positive step quarantine，但默认不进入 promoted 图谱。
+4. 实现 schema proposal：把 `new:<type>` 页面和新干扰态送入人工审核。
+5. 导出图谱修复样本和 SFT 候选 JSONL，先做格式验证，不急于训练。
 
 成功标准：
 
-- 每个课程任务都有可解释来源。
-- 失败轨迹中的可回收 step 不进入 promoted 图谱，只进入训练候选池。
+- 每个探索任务都有可解释来源和风险策略。
+- 低置信边能被复验、降级、分裂或提升。
+- 失败轨迹中的可回收 step 不进入 promoted 图谱，只进入 quarantine 或训练候选池。
 - 导出样本能复现当时 prompt、截图、动作和证据。
 
 ### 3.10  三个月论文型版本
 
-目标：形成可汇报、可投稿的系统贡献。
+目标：形成可汇报、可投稿的图谱优先自适应系统贡献。
 
 任务：
 
 1. 小模型支持可选 VCA 输出块。
-2. 训练一个轻量 SFT checkpoint，学习 UI action + context action。
+2. AMSG-Gym 支持陌生 App 的自动探索、分层反馈、schema proposal 和边生命周期修复。
 3. 在淘宝、京东、至少一个陌生购物或服务 App 上做跨 App 泛化实验。
-4. 完成 Current / +VCA / +Curriculum / +Local Recovery / Full FGMS / Strong Planner Upper 消融。
-5. WebUI 增加反馈审计面板。
+4. 完成 Current / +VCA / +AMSG-Gym / +Local Recovery / Full Graph-First / RL-SFT Optional 消融。
+5. WebUI 增加反馈审计和图谱修复面板。
+6. 可选训练一个轻量 SFT checkpoint，作为训练收益上界而不是系统主贡献。
 
 成功标准：
 
-- Full FGMS 在长程成功率、强 VLM 调用次数或关键事实保留率上显著优于当前系统。
+- Full Graph-First 在陌生 App 冷启动覆盖、promoted 边可靠性、强 VLM 调用次数或关键事实保留率上显著优于当前系统。
 - VCA 错误事实写入率可控。
-- AMSG-Forge 课程相比纯 LLM 扩写在冷启动覆盖或成功率上更强。
+- AMSG-Gym 相比纯 LLM 扩写在冷启动覆盖或图谱修复效率上更强。
+- 可选训练若无明显收益，也可作为负结果支持“图谱优先比 App-specific RL 更经济”的论文论点。
 
 ---
 
@@ -572,13 +619,14 @@ GRPO/RFT 样本：
 对不熟悉项目的人，推荐用这条主线讲：
 
 1. **我们已有的基础**：Shopping-Agent 不是普通 ReAct Agent，而是小模型执行、强 VLM 低频监督、AMSG 图谱导航、机械护栏和会话记忆组成的混合系统。
-2. **我们看到的新机会**：MobileForge 说明真实 App 交互可以变成无标注适配数据；MemGUI-Agent 说明长程任务的上下文管理应该成为可学习动作。
-3. **我们的落地创新**：不是照搬两篇论文，而是把它们落到现有系统中，形成 `Feedback Trace + Verified Context Actions + AMSG-Forge`。
-4. **我们的安全边界**：失败轨迹不直接入图，高风险事实不由模型直接写入，训练在离线和影子评估后再进入生产。
+2. **我们对 MobileForge 的重新定位**：它最值得借鉴的是 MobileGym 的陌生 App 探索、任务挖掘和分层反馈，而不是把 GRPO 当成当前系统主线。
+3. **我们看到的新机会**：MemGUI-Agent 说明长程任务的上下文管理应该成为可学习动作；AMSG-Gym 则让真实 App 交互先修复图谱，再把训练数据作为副产品。
+4. **我们的落地创新**：形成 `Feedback Trace + Verified Context Actions + AMSG-Gym`，把适应性放在可审计、可降级的图谱和记忆系统中。
+5. **我们的安全边界**：失败轨迹不直接入图，高风险事实不由模型直接写入，App-specific 训练只作为离线可选项。
 
 一句话版本：
 
-> Shopping-Agent 已经解决了真实手机购物任务中的可靠执行问题；下一阶段要解决的是如何从执行中学习。我们将用反馈账本统一每步经验，用可验证上下文动作管理长程记忆，用 AMSG-Forge 把空间图谱升级为无标注适配底座，从而把真实 App 交互转化为可审计、可训练、可安全复用的经验。
+> Shopping-Agent 已经解决了真实手机购物任务中的可靠执行问题；下一阶段不是优先对频繁变化的购物 App 做强化学习，而是把 MobileGym 式探索落到 AMSG 中。我们将用反馈账本统一每步经验，用可验证上下文动作管理长程记忆，用 AMSG-Gym 让陌生 App 探索、任务挖掘、分层反馈和图谱自修复形成闭环；训练数据只是这个闭环的副产品。
 
 ---
 
