@@ -1,22 +1,24 @@
-# Shopping-Agent 的图谱-记忆协同自适应升级方案
+# 从稳定操作购物 App 到主动专业购物助手：Shopping-Agent 研究升级方案
 
-> **版本**: 2026-06-27
-> **用途**: 汇报展示文档。面向不熟悉本项目的人，先介绍现有系统设计，再说明 MobileForge 与 MemGUI-Agent 两篇最新工作的启发，最后落到本项目的实施计划。
+> **版本**: 2026-06-28
+> **用途**: 汇报展示文档。面向不熟悉本项目的人，先介绍现有系统如何稳定操作购物 App，再从第一性原则说明为什么这还不是专业购物助手，最后给出结合 MobileForge 与 MemGUI-Agent 启发后的购物垂直升级计划。
 > **依据**: `phone_agent/docs/ARCHITECTURE_CN.md`、`phone_agent/docs/AMSG_DESIGN.md`、`references/MobileForge.pdf`、`references/MemGUI-Agent.pdf`。
 
 ---
 
-## 1  现有工作：Shopping-Agent 已经解决了什么
+## 1  现有工作：我们已经做成了一个稳定的购物 App 操作智能体
 
-### 1.1  项目要解决的问题
+### 1.1  当前项目解决的问题
 
-Shopping-Agent 面向真实手机 App 自动化，当前重点场景是购物任务，例如在淘宝、京东中搜索商品、筛选规格、比较价格、加入购物车或推进到结算前检查。它面对的环境和网页自动化不同：移动端没有稳定 DOM，按钮和页面会受版本、广告、弹窗、登录态、设备分辨率、滚动位置影响，同一动作也可能产生不同后果。
+Shopping-Agent 当前解决的是真实手机购物 App 自动化中的**可执行性与可靠性**问题。它能在淘宝、京东等真实 App 中执行搜索、筛选、打开商品、选择规格、加入购物车、推进到结算前检查等长程任务。
 
-项目的核心问题可以概括为：
+这个问题本身不简单。手机购物 App 没有稳定 DOM，页面受广告、弹窗、登录态、活动页、App 更新、设备分辨率、滚动位置影响；同一个按钮也可能跳到规格页、登录页、促销弹窗、结算页或无响应。通用 GUI 模型即使能看懂截图，也经常在长程任务里焦点漂移、误判价格、误报完成。
 
-> 如何让一个可端侧部署的小型 GUI 模型，在真实移动 App 的长程任务中达到接近强 VLM 的可靠性，同时保持低延迟、低云调用和可审计安全边界？
+因此，当前系统的核心命题是：
 
-当前系统的回答不是把每一步都交给强 VLM，而是构建一个混合智能体：
+> 如何让一个可端侧部署的小型 GUI 模型，在真实购物 App 的长程操作中达到接近强 VLM 的可靠性，同时保持低延迟、低云调用和可审计安全边界？
+
+当前答案是一个混合智能体：
 
 ```text
 小模型高频执行
@@ -26,13 +28,13 @@ Shopping-Agent 面向真实手机 App 自动化，当前重点场景是购物任
   + 会话记忆文件抗遗忘
 ```
 
-这套设计的关键是让不同类型的问题交给不同权威，而不是让一个模型包办所有判断。
+这使系统从“通用 GUI 模型偶尔会点购物 App”推进到了“可以稳定完成购物 App 操作链路”。但这还不是一个真正的专业购物助手。
 
-### 1.2  非对称权威：系统的第一性原则
+### 1.2  非对称权威：现有系统的核心设计
 
-`ARCHITECTURE_CN.md` 中最重要的设计原则是**非对称权威**。它把移动 GUI 自动化中的决策拆成四类：
+`ARCHITECTURE_CN.md` 中最重要的原则是**非对称权威**：不同类型的判断交给最适合、失败代价最低的主体。
 
-| 决策类型 | 当前权威 | 代码位置 | 为什么这样分工 |
+| 决策类型 | 当前权威 | 代码位置 | 设计理由 |
 |---|---|---|---|
 | 当前屏幕 grounding | 小型 GUI 模型 | `phone_agent/model/`, `phone_agent/actions/` | 每步都要做，必须低延迟；模型擅长看当前截图找元素 |
 | 任务拆解与计划修订 | 强 VLM 里程碑监督 | `phone_agent/milestone_supervisor.py`, `phone_agent/task_plan.py` | 语义规划能力强，但只应低频调用 |
@@ -40,44 +42,13 @@ Shopping-Agent 面向真实手机 App 自动化，当前重点场景是购物任
 | 结构化导航复用 | AMSG 空间图谱 | `phone_agent/spatial/`, `phone_agent/memory/graph_store.py` | 首页到搜索、搜索到结果等机械转移可复用 |
 | 单任务抗遗忘 | 会话记忆文件 | `phone_agent/session_memory_file.py` | 长程任务需要原始目标、已验证事实和子任务进度 |
 
-这个原则解决了小模型在真机中暴露的典型问题：
+这套机制解决的是 GUI 操作可靠性，而不是购物决策智能。它让系统能稳定到达页面、点击正确区域、避免明显的价格和完成幻觉。
 
-- **焦点丢失**：长任务中反复重述计划、原地打转。
-- **数字幻觉**：把超预算商品判断为符合预算。
-- **伪完成**：没有真正加购或到达目标页就宣布完成。
-- **空响应**：关键步骤输出不可解析内容。
-- **图谱污染**：把失败轨迹或过期坐标写入可执行导航。
+### 1.3  AMSG：让购物 App 操作具备空间记忆
 
-因此，本项目的系统创新不是一个更复杂 prompt，而是一套决策权分配机制：语义问题低频交给强 VLM，确定性问题交给代码，当前屏幕 grounding 留给小模型，结构化导航交给图谱。
+`AMSG_DESIGN.md` 介绍的 AMSG 是当前系统区别于普通 ReAct Agent 的关键。它不是静态页面图，而是一个会随真实执行持续更新的动作库。
 
-### 1.3  Agent 执行闭环
-
-当前主循环入口是 `PhoneAgent.run(task)`，核心编排在 `PhoneAgent._execute_step_impl()`。每个任务大致经过以下闭环：
-
-```text
-用户任务
-  -> 初始化任务计划与会话记忆文件
-  -> 截图与页面分类
-  -> AMSG 定位当前页面并给出图谱上下文
-  -> 里程碑触发器决定是否调用强 VLM 修订计划
-  -> 三档调度选择 Fast Path / Graph Co-pilot / 小模型推理
-  -> ActionHandler 执行动作
-  -> 下一步截图验证上一步后条件
-  -> 更新图谱边生命周期、会话状态和轨迹
-  -> 完成门与 final_confirm 判定任务是否真正结束
-```
-
-这条闭环有三个特点：
-
-1. **每步都有反馈**：动作执行后不会立即假设成功，而是在下一步用实际页面状态验证后条件。
-2. **完成有单一权威**：完成声明必须通过机械证据或强 VLM 截图核实，避免小模型污染结束判定。
-3. **失败可恢复**：空响应、完成被否决、后条件不匹配时，会重置污染上下文并回退到更稳妥路径。
-
-### 1.4  AMSG：主动移动空间图谱
-
-`AMSG_DESIGN.md` 介绍的 AMSG 是当前系统区别于普通 ReAct Agent 的关键模块。它不是静态页面图，而是一个会随真实执行持续更新的动作库。
-
-AMSG 存储的是语义状态与语义动作，而不是截图哈希和绝对坐标：
+AMSG 存储语义页面和语义动作，而不是截图哈希和绝对坐标：
 
 ```text
 PageState = (app, page_type, landmarks, affordances, slots, risk_level)
@@ -90,20 +61,20 @@ Action = (type, intent, semantic_target, postcondition, lifecycle_stage)
 (UIState) -[NEXT_ACTION]-> (Action) -[PRODUCES]-> (UIState)
 ```
 
-AMSG 有四个核心机制：
+核心机制：
 
 | 机制 | 作用 | 对用户体验的影响 |
 |---|---|---|
 | 语义去重 | 把同类页面合并，例如不同关键词的搜索结果页都归为 `search_result` | 图谱可复用，不因内容变化爆炸 |
 | 边生命周期 | 跟踪每条转移的成功率、失败率、优势比和阶段 | 只有可靠边才可被自动复用 |
-| 锚定性分类 | 区分图谱可独立执行的边和必须让 VLM/模型看屏幕的边 | 减少不必要模型调用，同时避免过期坐标误点 |
-| 后条件验证 | 在 t+1 步验证 t 步动作是否达到预期页面 | 图谱学习基于真实结果，不靠假设 |
+| 锚定性分类 | 区分图谱可独立执行的边和必须看屏幕的边 | 减少模型调用，同时避免过期坐标误点 |
+| 后条件验证 | 在下一步验证上一步动作是否达到预期页面 | 图谱学习基于真实结果，不靠假设 |
 
-AMSG 的运行时入口是 `GraphRuntimeController.locate_and_get_context()`，它返回 `navigate`、`explore`、`verify_with_vlm`、`goal_reached` 等模式，直接影响后续调度。
+AMSG 的价值是让 Agent 不必每次都从零学习“购物 App 怎么走”。它解决的是**操作路径复用**问题。
 
-### 1.5  三档调度：速度和可靠性的折中
+### 1.4  三档调度：让操作更快、更稳
 
-当前系统不是“始终模型推理”，也不是“始终相信图谱”，而是按图谱边的可靠性和锚定性做三档调度：
+当前系统按图谱边的可靠性和锚定性做三档调度：
 
 | 档位 | 使用条件 | 行为 |
 |---|---|---|
@@ -111,13 +82,11 @@ AMSG 的运行时入口是 `GraphRuntimeController.locate_and_get_context()`，�
 | Graph Co-pilot | 图谱知道方向但目标需看屏幕 | 图谱提供 `graph_hint`，小模型负责 grounding |
 | Model Path | 图谱未知、非锚定、高风险或验证失败 | 完整模型推理 |
 
-这套调度让系统在稳定路径上变快，在内容敏感路径上保持谨慎。例如首页到搜索框可以复用图谱，商品选择、SKU 选择、结算前检查仍必须看当前屏幕。
+这让首页到搜索、搜索到结果等稳定步骤加速，同时在商品选择、SKU 选择、结算前检查等内容敏感步骤保持谨慎。
 
-### 1.6  会话记忆与机械护栏
+### 1.5  会话记忆与机械护栏：解决长程操作中的幻觉
 
-长程购物任务中，“记住什么”和“不让模型判断什么”同样重要。
-
-当前会话记忆文件 `SessionMemoryFile` 保存：
+当前 `SessionMemoryFile` 保存：
 
 - `original_task`：原始用户任务，永不改写，是抗漂移锚。
 - `subtasks`：任务拆解后的子任务状态。
@@ -132,485 +101,482 @@ AMSG 的运行时入口是 `GraphRuntimeController.locate_and_get_context()`，�
 - 完成证据判断。
 - 空响应和不可解析输出恢复。
 
-这部分设计的用户价值很直接：不让模型用自然语言“猜”价格、猜完成、猜安全状态，而是把高风险判断变成可审计规则。
+这些机制让系统更可靠，但它们主要是在保护“操作任务”不出错，而不是在优化“购物决策”。
 
-### 1.7  当前系统的不足
+### 1.6  从第一性原则看：当前真正缺的不是更会点 App，而是更会购物
 
-现有工作已经建立了可靠的执行和图谱自进化基础，但如果面向下一阶段研究和论文贡献，仍有四个缺口：
+如果题目是“手机 GUI 自动化”，当前工作已经很接近核心问题。但本项目题目和应用场景是**手机购物场景的主动购物助手**，那么研究目标必须往前走一步。
 
-1. **陌生 App 探索还不够反馈驱动**。当前已有 onboarding、焦点探索、staging、人工审核和在线学习管线，但探索目标主要来自 schema 覆盖与人工设定；低置信边、高熵转移、失败簇还没有系统反向驱动下一轮探索。
-2. **经验主要进入图谱边，还没有形成统一反馈账本**。成功任务会更新 AMSG，但失败任务中的局部正确步骤、失败原因、干扰态和纠错 hint 还没有以统一 schema 沉淀。
-3. **上下文管理仍偏工程规则**。会话记忆有效，但模型还没有学习“什么时候记、什么时候更新、什么时候折叠历史”。
-4. **训练不是当前最高收益方向**。购物 App 更新频繁、页面动态大、风险动作多；对单个 App 做强化学习容易过拟合当前版本，回报率不稳定，也会引入安全成本。
+购物不是简单的页面导航。用户真正想要的不是“帮我打开某个页面并点击加购”，而是：
 
-这意味着 MobileForge 对本项目最有价值的不是 GRPO 训练结论，而是 MobileGym 式的目标 App 探索、可执行任务挖掘和分层反馈；MemGUI-Agent 的价值则在于把长程上下文管理变成可验证、可学习的动作。
+```text
+理解我的购买意图
+  -> 明确硬约束和软偏好
+  -> 主动收集候选商品证据
+  -> 比较价格、规格、评价、服务和风险
+  -> 给出可解释推荐
+  -> 在我确认后安全执行购买相关操作
+```
+
+因此，当前系统的真实不足不是“没有吸收 MobileForge/MemGUI”，而是：
+
+1. **缺少购物意图建模**。用户说“买一个蓝牙耳机”时，系统现在主要把它拆成 App 操作步骤；但专业购物助手应追问或推断使用场景、预算、品牌偏好、降噪/续航/佩戴方式/发货时效等决策变量。
+2. **缺少商品候选集管理**。当前系统能打开商品页、读取价格、加购，但还没有稳定维护一个候选商品池，记录每个商品的证据、优缺点、约束匹配和淘汰原因。
+3. **缺少多目标购物决策**。购物不是只看价格，还涉及规格、质量、评价、店铺可靠性、优惠券、售后、配送、风险。当前机械护栏能判断预算越界，但没有形成 utility scoring 或 Pareto 比较。
+4. **缺少主动策略**。当前系统更像执行器：按用户目标完成链路。专业购物助手应主动提出“是否放宽品牌”“这个低价商品评价风险高”“要不要等优惠/换平台比价”等策略建议。
+5. **缺少购物风险与信任模型**。促销文案、券后价、预售价、店铺信誉、评价异常、规格不一致、默认勾选服务等都影响购买安全。当前护栏偏价格和完成判定，购物风险维度还不够。
+6. **缺少跨会话偏好学习**。用户对品牌、价位、颜色、物流、售后、平台、是否接受二手/预售等偏好应逐步沉淀；当前记忆更多服务单任务执行，还不是购物画像。
+7. **缺少“建议权”和“执行权”的边界**。专业购物助手可以推荐和解释，但购买、提交订单、支付必须由用户确认。当前系统有提交点护栏，但还没有完整的购物决策授权模型。
+
+这才是下一阶段的核心研究问题：
+
+> 如何从“会稳定操作购物 App 的 GUI Agent”，升级为“能主动理解需求、收集证据、比较商品、解释推荐并安全执行的专业购物助手”？
 
 ---
 
-## 2  最新研究启发：把论文创新落到本系统模块中
+## 2  最新研究启发：两篇论文是支撑机制，不是研究目标
 
-> 注：截至 2026-06-27 核对，MobileForge 与 MemGUI-Agent 在 arXiv 上均为 2026-06-18 提交的 v1 版本。MobileForge 聚焦无标注目标 App 适配，MemGUI-Agent 聚焦长程任务上下文管理。
+### 2.1  MobileForge 的启发：陌生 App 探索可以服务购物能力建设
 
-### 2.1  MobileForge 的核心创新
+MobileForge 的核心贡献是 annotation-free adaptation：在真实目标 App 中探索、挖掘可执行任务、执行 rollout、产生分层反馈，再把经验转成策略改进信号。
 
-MobileForge 解决的问题是：移动 App 数量多、更新快，人工写任务、专家轨迹和人工 reward 标签无法覆盖真实目标 App。论文提出了一个 annotation-free adaptation 系统：
+但对本项目来说，不能把它简单理解成“用强化学习训练购物 App policy”。购物 App 更新频繁、页面动态强、风险动作多，对单个 App 做 RL 容易过拟合当前版本，回报稀疏且安全成本高。
 
-```text
-真实 App 探索
-  -> 任务课程生成
-  -> 多次 rollout
-  -> 层级评估
-  -> 从反馈中筛选 step
-  -> hint-contextualized GRPO 更新策略
-```
-
-但对 Shopping-Agent 来说，必须拆开看 MobileForge 的贡献：
-
-- **MobileGym 更值得迁移**：它把真实目标 App 中的探索、可执行任务挖掘、rollout 评估和分层反馈组织成一个闭环。
-- **HiFPO/GRPO 不是当前主线**：购物 App 更新频繁、风险动作多、回报稀疏，对 App-specific policy 做强化学习容易过拟合当前版本，维护成本高。
-
-因此，这篇论文对本项目的核心启发应改写为：
-
-> 真实 App 执行产生的经验，不应优先压进模型权重，而应先压进可审计、可降级、可迁移的 AMSG 图谱与探索反馈系统。
-
-### 2.2  MobileForge 对 Shopping-Agent 的具体映射：AMSG-Gym
-
-Shopping-Agent 已经有 AMSG，因此不需要重新造一个 MobileGym。更合理的映射是把 MobileGym 的思想改造成 **AMSG-Gym**：
-
-> AMSG-Gym 是面向陌生 App 的图谱原生探索与分层反馈系统。它的目标不是优先训练 policy，而是冷启动和修复 AMSG：发现页面、验证转移、挖掘可执行任务、生成纠错 hint，并推动 schema 与边生命周期演化。
-
-| MobileForge / MobileGym 概念 | 本系统已有基础 | 应落到的模块 | 升级方式 |
-|---|---|---|---|
-| Target-app exploration | 陌生 App 建图管线 | `phone_agent/memory/exploration/` | 由 schema 覆盖扩展为图谱缺口、低置信边、高熵转移、失败簇共同驱动 |
-| Curriculum mining | `task_builder.py`, schema coverage | `phone_agent/memory/exploration/task_builder.py` | 生成“补图谱”的可执行任务，而不是默认生成训练任务 |
-| Rollout execution | `PhoneAgent.run()` | `phone_agent/agent.py` | 在安全策略下执行探索任务并产出 feedback trace |
-| Hierarchical rollout evaluation | 后条件验证、SpecGuard、final_confirm、TrajectoryReviewer | `phone_agent/feedback/`, `phone_agent/spatial/trajectory_reviewer.py` | 汇总为任务级、转移级、step 级反馈 |
-| Corrective hints | 里程碑 checkpoint 修订 | `phone_agent/milestone_supervisor.py`, `phone_agent/spatial/action_advisor.py` | 指导下一轮探索和图谱提示，而不是直接强化模型 |
-| Multi-attempt rollout | 边生命周期重复验证 | `phone_agent/spatial/edge_lifecycle.py` | 对低置信/高熵边做安全重复验证，提升、降级或分裂边 |
-| Training export | 当前暂无统一出口 | `phone_agent/adaptation/dataset_exporter.py` | 作为图谱验证后的副产品导出，不作为第一阶段目标 |
-
-AMSG-Gym 的主闭环应是：
+更合理的迁移是把 MobileGym 思想落到 AMSG，形成 **AMSG-Gym**：
 
 ```text
-陌生 App 探索
-  -> 挖掘可执行任务
+陌生购物 App 探索
+  -> 挖掘可执行购物任务
   -> 安全 rollout
   -> 分层反馈
   -> 更新 AMSG 图谱 / schema / 边生命周期 / 探索策略
 ```
 
-这与 MobileForge 的差别很关键：MobileForge 的主线是“探索真实 App -> 生成数据 -> 训练模型”；本项目更适合的主线是“探索真实 App -> 生成反馈 -> 更新 AMSG 图谱 -> 改善执行与下一轮探索”。
+AMSG-Gym 的目标不是训练模型，而是让系统更快适应新购物 App、新页面、新活动入口、新干扰态。它服务的是“专业购物助手”的基础设施：如果助手要跨平台比较和购买，必须先稳定理解不同 App 的购物流程。
 
-### 2.3  本项目不应照搬 MobileForge 的地方
+| MobileForge / MobileGym 概念 | 本系统落点 | 面向购物助手的意义 |
+|---|---|---|
+| Target-app exploration | `phone_agent/memory/exploration/` | 冷启动陌生购物 App 的首页、搜索、结果、商品详情、SKU、购物车等链路 |
+| Curriculum mining | `task_builder.py` | 生成补齐购物流程覆盖的探索任务，不是默认生成训练任务 |
+| Rollout evaluation | `trajectory_reviewer.py`, 后条件验证 | 判断某条购物流程转移是否真实有效 |
+| Corrective hints | `milestone_supervisor.py`, `ActionAdvisor` | 指导下一轮探索和图谱修复 |
+| Training export | `dataset_exporter.py` | 作为副产品，不作为主目标 |
 
-MobileForge 的多尝试和 GRPO 更适合 benchmark 或安全隔离环境。Shopping-Agent 面向真实购物 App，不能直接把生产环境变成在线强化学习场：
+### 2.2  MemGUI-Agent 的启发：长程购物需要可验证上下文动作
 
-- **App 更新导致过拟合风险高**：强化学习可能学到某个版本、某些弹窗、某些布局下的动作偏好，App 改版后收益快速衰减。
-- **回报稀疏且归因困难**：购物链路长，失败可能来自登录态、弹窗、库存、价格、SKU、网络或页面分类，单一 reward 很难稳定归因。
-- **高风险动作不适合探索式优化**：登录、地址、下单、支付、提交订单等动作必须由规则和人工边界控制。
-- **模型权重不如图谱容易降级**：AMSG 的边可以 promoted/demoted；模型一旦学到过期偏好，回滚和解释都更难。
+MemGUI-Agent 的核心贡献是 Context-as-Action：把上下文管理作为模型动作的一部分，让模型学会何时记忆、何时折叠历史、何时保留 UI 事实。
 
-因此本项目应采用更稳的路线：
+购物任务天然长程，且事实密集：价格、券后价、规格、库存、店铺、评价、物流、售后、用户偏好都会在不同页面出现。如果这些事实只靠历史文本堆叠，很容易丢失或混淆。
 
-```text
-生产运行和安全探索产出反馈
-  -> 失败经验进入 quarantine
-  -> 低风险局部经验用于修复图谱和 schema
-  -> 训练数据作为副产品离线导出
-  -> 仅在影子评估收益明确时才更新模型或提示协议
-```
-
-这也是本项目可以形成差异化创新的地方：**图谱优先的无标注适配**，而不是 App-specific policy 的强化学习适配。
-
-### 2.4  MemGUI-Agent 的核心创新
-
-MemGUI-Agent 解决的问题是：长程 GUI 任务中，ReAct 式逐步追加历史会让 prompt 越来越长，同时关键事实被稀释、截断或遗忘。它提出 Context-as-Action，即把上下文管理作为模型动作的一部分。
-
-它维护三类结构化上下文：
-
-- Folded Action History：压缩后的历史行动。
-- Folded UI State：持久 UI 事实。
-- Recent Step Record：最近一步的观察、意图、动作、结果。
-
-每步模型不仅输出 UI 动作，还输出 history folding、memory update、UI observation、action intent。它的关键启发是：
-
-> 长程 GUI Agent 的记忆管理不应只是外部日志压缩，而应成为可学习、可评估、可消融的策略行为。
-
-### 2.5  MemGUI-Agent 对 Shopping-Agent 的具体映射
-
-本项目已经有 `SessionMemoryFile`，所以不需要照搬完整五段式 ConAct。更适合的升级是 **Verified Context Actions (VCA)**：让模型、监督者或机械护栏都可以提出上下文动作，但提交权仍由系统校验。
-
-| MemGUI-Agent 概念 | 本系统已有基础 | 应落到的模块 | 升级方式 |
-|---|---|---|---|
-| Folded Action History | 历史压缩 currently no-op、StepRecord | `phone_agent/session_memory_file.py`, `phone_agent/memory/core/step_record.py` | 增加 `folded_trace`，按图谱 span 折叠 |
-| Folded UI State | `verified_facts` | `phone_agent/session_memory_file.py` | 增加带证据来源的事实提交机制 |
-| Recent Step Record | `StepRecord` | `phone_agent/memory/core/step_record.py` | 增加 `ui_observation`, `action_intent`, `postcondition_result` |
-| Memory actions | 当前由规则/监督者写入 | `phone_agent/context/actions.py`, `phone_agent/context/committer.py` | 引入 `remember/update/delete/fold/set_focus` |
-| Learnable context management | 当前暂无训练出口 | `phone_agent/adaptation/dataset_exporter.py` | 导出上下文动作 SFT 样本 |
-
-### 2.6  本项目不应照搬 MemGUI-Agent 的地方
-
-MemGUI-Agent 让模型直接输出上下文管理字段，但本项目的小模型主执行器已经暴露过空响应、伪完成、数字幻觉等问题。直接让小模型写记忆会带来新风险：
-
-- 错误价格、错误商品、错误规格进入长期上下文。
-- 临时弹窗文本被当成任务事实。
-- 模型为了输出复杂格式牺牲当前屏幕 grounding。
-
-因此，本项目的设计应是：
+但本项目不能直接让小模型自由写记忆，因为价格、商品、规格、完成状态都是高风险事实。更合适的是 **Verified Context Actions (VCA)**：
 
 ```text
-模型可以提出 ContextActionIR
+模型/监督者/机械护栏提出上下文动作
   -> ContextCommitter 校验证据
-  -> 高风险事实必须由机械护栏或强 VLM 确认
-  -> 通过后才写入 SessionMemoryFile
+  -> 低风险事实自动提交
+  -> 高风险事实需机械或强 VLM 证据
+  -> 写入购物记忆和商品证据账本
 ```
 
-这保持了当前系统的非对称权威：模型可以建议记忆，但不能独占事实写入权。
+VCA 对购物助手的意义是：上下文管理不只是压缩历史，而是构建可审计的购物证据。
 
-### 2.7  两篇论文合起来给本项目的研究方向
+### 2.3  本项目自己的垂直创新：Shopping Intelligence Layer
 
-MobileForge 和 MemGUI-Agent 分别补齐两个维度：
+MobileForge 和 MemGUI-Agent 给的是基础能力启发，但专业购物助手需要自己的垂直智能层。建议把下一阶段核心命名为 **Shopping Intelligence Layer (SIL)**，它运行在现有 GUI 操作底座之上。
 
-| 维度 | MobileForge | MemGUI-Agent | 本项目升级 |
+SIL 由五个模块组成。
+
+#### 2.3.1  Shopping Intent Graph：购物意图图谱
+
+把用户任务从一句自然语言改写为结构化购物意图：
+
+```text
+ShoppingIntent = {
+  product_category,
+  hard_constraints,
+  soft_preferences,
+  decision_criteria,
+  budget_policy,
+  risk_tolerance,
+  clarification_needed,
+  approval_boundary
+}
+```
+
+例子：
+
+```text
+“买一个 500-1000 元蓝牙耳机”
+  -> hard: price <= 1000, category=bluetooth_headphone
+  -> soft: noise_cancellation?, battery?, brand?, in-ear/headphone?
+  -> decision: price/value, rating, shipping, after-sales
+  -> clarification: 是否必须降噪？是否接受非官方旗舰店？
+  -> approval: 只允许加购，不允许提交订单
+```
+
+这解决的是“用户到底想买什么”的问题，而不是“下一步点哪里”。
+
+#### 2.3.2  Product Evidence Ledger：商品证据账本
+
+建立候选商品池，每个候选商品不是一段文本摘要，而是一组带来源的证据：
+
+```text
+ProductCandidate = {
+  title,
+  price_raw,
+  price_final,
+  coupon_info,
+  specs,
+  seller,
+  rating,
+  review_signals,
+  shipping,
+  after_sales,
+  risk_flags,
+  evidence_refs,
+  match_status,
+  reject_reason
+}
+```
+
+证据来自截图、OCR/VLM 抽取、机械价格解析、页面状态和用户偏好。高风险字段必须可追溯到截图或机械解析，不能只来自模型自由生成。
+
+这解决的是“系统看过哪些商品、为什么保留/淘汰”的问题。
+
+#### 2.3.3  Shopping Decision Engine：多目标购物决策引擎
+
+购物决策应分两层：
+
+1. **硬约束过滤**：预算、品类、规格、是否官方店、是否现货、是否满足用户明确要求。
+2. **软偏好排序**：性价比、评价质量、店铺可靠性、物流时效、售后、优惠确定性、风险分。
+
+输出不是“买这个”，而是可解释推荐：
+
+```text
+推荐 A：最符合预算且评价稳定，但降噪一般。
+备选 B：价格略高但续航更好。
+淘汰 C：价格符合，但店铺和评价风险较高。
+```
+
+这解决的是“为什么这个商品更值得买”的问题。
+
+#### 2.3.4  Proactive Shopping Strategy：主动购物策略
+
+专业购物助手不应只被动执行。它需要在以下节点主动介入：
+
+- 需求不清时主动澄清：预算、使用场景、品牌、规格、配送时效。
+- 搜索结果质量差时主动换关键词或平台。
+- 候选商品都不满足时主动建议放宽约束。
+- 发现优惠券、满减、预售、默认服务勾选时主动提醒。
+- 发现低价但高风险商品时主动拒绝推荐。
+- 购买前生成简短决策摘要并请求确认。
+
+这解决的是“助手是否真的在帮用户购物，而不只是执行点击”的问题。
+
+#### 2.3.5  Trust and Approval Boundary：信任与授权边界
+
+购物助手必须明确区分建议权和执行权：
+
+| 动作 | 系统权限 |
+|---|---|
+| 搜索、筛选、打开商品 | 可自动执行 |
+| 收集商品证据、比较候选 | 可自动执行 |
+| 加入购物车 | 需按用户设置，可默认确认 |
+| 提交订单、支付、修改地址 | 必须用户显式确认 |
+| 记忆用户偏好 | 低风险偏好可记录，高风险隐私需提示 |
+
+这解决的是“主动性不能越权”的问题。
+
+### 2.4  两篇论文在新主线中的位置
+
+| 能力层 | 本项目主线 | MobileForge 的作用 | MemGUI-Agent 的作用 |
 |---|---|---|---|
-| 陌生 App 适配 | MobileGym 在真实 App 中探索、挖掘任务、产生反馈 | 较少涉及图谱和探索课程 | AMSG-Gym：图谱原生探索与分层反馈底座 |
-| 上下文管理 | 使用 hint 指导多次 rollout | 把上下文管理作为动作 | VCA：可验证上下文动作 |
-| 失败利用 | 从失败中筛局部合理 step | 关注长程记忆失败 | 风险敏感 local-positive recovery，用于图谱修复优先 |
-| 安全边界 | benchmark 适配为主 | 长程基准为主 | 购物场景下的高风险动作隔离 |
-| 模型训练 | HiFPO/GRPO 是主线 | SFT 学习 ConAct | 本项目中训练是副产品，主线是图谱自进化 |
+| GUI 操作底座 | 稳定使用购物 App | 通过 AMSG-Gym 提升陌生 App 适配 | 通过 VCA 降低长程上下文漂移 |
+| 购物证据层 | 商品候选与证据账本 | 探索不同 App 的商品信息页面 | 记住价格、规格、评价等关键事实 |
+| 决策层 | 多目标商品比较与推荐 | 不直接解决 | 不直接解决 |
+| 主动策略层 | 澄清、换策略、风险提醒 | 可提供探索反馈 | 可保持长期任务上下文 |
+| 安全授权层 | 建议权/执行权边界 | 不直接解决 | 不直接解决 |
 
-因此，下一阶段系统可以定义为：
+因此，下一阶段的研究问题应是：
 
-> **Feedback-Grounded Memory-Spatial Agent**：把真实移动 GUI 交互中的空间转移、上下文事实、失败反馈和纠错经验统一沉淀为可执行图谱、可验证记忆和可审计探索策略；训练数据是该闭环的副产品，而不是第一目标。
+> 如何在稳定 GUI 操作底座上，构建一个证据驱动、偏好感知、风险可控、能主动提出购物策略的专业购物助手？
 
-这不是另起炉灶，而是在现有 Shopping-Agent 上增加三个可落地层：
-
-1. **Feedback Trace**：统一记录每步行为的 outcome、process feedback、guardrail verdict、context action 和 corrective hint。
-2. **Verified Context Actions**：把记忆写入、更新、删除、历史折叠变成带证据的事务。
-3. **AMSG-Gym**：从图谱覆盖缺口、低置信边、高熵转移、失败簇和反馈账本中生成探索任务，并更新 AMSG 图谱、schema 与边生命周期。
+而 MobileForge 和 MemGUI-Agent 是支撑这个目标的底层机制，不是目标本身。
 
 ---
 
-## 3  实施计划：从可观测反馈到账本化自适应
+## 3  实施计划：以购物智能层为主线，图谱和记忆作为底座
 
 ### 3.1  总体路线
 
-实施顺序必须遵守一个原则：**先让经验可观测，再让经验修复图谱，最后才考虑训练**。如果没有统一反馈账本和图谱质量门，直接做 GRPO 或上下文动作训练只会放大日志噪声，也容易把 App 当前版本的偶然路径写进模型权重。
-
-推荐三阶段路线：
+实施顺序应从购物任务本质出发：
 
 ```text
-阶段一：Feedback Trace + VCA pilot
-  -> 让每步反馈和记忆提交可审计
+阶段一：购物意图与商品证据账本
+  -> 让系统知道用户想买什么、看过哪些商品、证据是什么
 
-阶段二：AMSG-Gym + Hierarchical Critic
-  -> 让图谱缺口、失败簇、低置信边、高熵转移驱动陌生 App 探索和图谱修复
+阶段二：购物决策与主动策略
+  -> 让系统能比较商品、解释推荐、主动澄清和提醒风险
 
-阶段三：Dataset Export + Shadow Evaluation
-  -> 仅把图谱验证后的低风险经验导出为训练候选，离线评估收益后再决定是否训练
+阶段三：AMSG-Gym 与 VCA 强化底座
+  -> 让系统能适应陌生购物 App，并稳定保持长程购物上下文
+
+阶段四：训练数据导出与影子评估
+  -> 仅把图谱和证据验证后的低风险经验作为候选数据
 ```
 
-换句话说，当前版本的主目标不是“训练一个更懂某个 App 的模型”，而是“建设一个能随 App 变化自修复的图谱-反馈系统”。
+核心原则：**先做购物专业性，再做模型训练**。如果系统没有商品证据账本和购物决策引擎，训练只会让模型更会点 App，不会让它更会购物。
 
-### 3.2  阶段一：统一反馈账本
+### 3.2  阶段一：Shopping Intent Graph 与 Product Evidence Ledger
 
-新增模块：
+新增模块建议：
 
 ```text
-phone_agent/feedback/
+phone_agent/shopping/
   __init__.py
-  schema.py
-  trace.py
-  exporters.py
+  intent.py
+  evidence.py
+  candidate.py
+  criteria.py
+  risk.py
 ```
 
-每步写入 `FeedbackEvent`：
+核心数据结构：
 
 ```python
-FeedbackEvent = {
-    "session_id": str,
-    "step": int,
-    "app": str,
-    "page_type": str,
-    "task": str,
-    "ui_action": dict,
-    "graph_mode": "navigate|explore|verify_with_vlm|goal_reached",
-    "postcondition": {"expected": str, "actual": str, "passed": bool},
-    "guardrail_verdicts": list[dict],
-    "milestone_feedback": dict,
-    "context_actions": list[dict],
-    "outcome_label": "unknown|success|failure|partial",
-    "process_label": "reasonable|unreasonable|risky|unknown",
-    "corrective_hint": str,
-    "risk_level": "low|normal|high",
+ShoppingIntent = {
+    "category": str,
+    "hard_constraints": dict,
+    "soft_preferences": dict,
+    "decision_criteria": list[str],
+    "budget_policy": dict,
+    "risk_tolerance": str,
+    "clarification_questions": list[str],
+    "approval_boundary": dict,
+}
+
+ProductCandidate = {
+    "id": str,
+    "title": str,
+    "price_raw": str,
+    "price_final": float | None,
+    "specs": dict,
+    "seller": dict,
+    "rating": dict,
+    "review_signals": dict,
+    "shipping": dict,
+    "after_sales": dict,
+    "risk_flags": list[str],
     "evidence_refs": list[str],
+    "match_status": "candidate|rejected|recommended",
+    "reject_reason": str,
 }
 ```
 
-模块改动：
+模块映射：
 
-| 文件 | 改动 |
+| 当前模块 | 升级方式 |
 |---|---|
-| `phone_agent/agent.py` | 在 `_execute_step_impl()` 每步结束时写入 `FeedbackEvent` |
-| `phone_agent/tracer.py` | 关联截图、模型输出、动作 IR、后条件结果 |
-| `phone_agent/spatial/runtime_controller.py` | 输出图谱 mode、pending transition 验证结果 |
-| `phone_agent/core/spec_guard.py` | 输出结构化 guardrail verdict |
-| `phone_agent/milestone_supervisor.py` | checkpoint/final_confirm 进入同一反馈账本 |
+| `phone_agent/core/task_spec.py` | 扩展为购物意图 schema，不只保存预算和规格 |
+| `phone_agent/session_memory_file.py` | 增加 `shopping_intent`、`product_candidates`、`decision_notes` |
+| `phone_agent/memory/core/product.py` | 从单商品状态升级为候选商品池 |
+| `phone_agent/core/spec_guard.py` | 从硬拦截升级为硬约束过滤器 |
+| `phone_agent/tracer.py` | 保存商品证据截图引用 |
 
 验收标准：
 
-- 每个任务结束后生成 `feedback_trace.jsonl`。
-- 成功和失败任务都保留 trace。
-- 默认只有成功任务进入图谱持久化；失败任务只进入 quarantine 候选池。
+- 系统能在一个任务中维护至少 3 个候选商品。
+- 每个候选商品都有价格、规格、店铺、证据来源和淘汰/保留理由。
+- 预算和规格等硬约束由机械逻辑判断，不由模型自由判断。
 
-### 3.3  阶段一并行：Verified Context Actions
+### 3.3  阶段二：Shopping Decision Engine 与主动策略
 
-新增模块：
+新增模块建议：
 
 ```text
-phone_agent/context/
-  __init__.py
-  actions.py
-  committer.py
-  renderer.py
+phone_agent/shopping/
+  decision_engine.py
+  strategy.py
+  recommendation.py
+  approval.py
 ```
 
-上下文动作 IR：
+决策流程：
 
-```python
-ContextActionIR = {
-    "type": "remember|update_fact|delete_fact|fold_history|set_focus",
-    "target": str,
-    "content": str,
-    "evidence": list[str],
-    "risk": "low|normal|high",
-    "proposed_by": "model|milestone|mechanical|graph",
-}
+```text
+候选商品池
+  -> 硬约束过滤
+  -> 软偏好评分
+  -> 风险扣分
+  -> 生成推荐/备选/淘汰列表
+  -> 生成用户可读的决策摘要
+  -> 请求确认后才执行加购或后续高风险动作
+```
+
+评分不需要第一版就复杂。可以先做透明的规则加权：
+
+| 维度 | 示例 |
+|---|---|
+| 价格 | 是否低于预算，是否有券后价不确定 |
+| 规格匹配 | 是否满足降噪、续航、颜色、尺码等要求 |
+| 店铺可信 | 官方店、旗舰店、自营、评分异常 |
+| 评价质量 | 好评率、差评关键词、销量异常 |
+| 物流售后 | 发货时间、退换政策、运费 |
+| 风险 | 预售、默认服务、低价异常、规格不一致 |
+
+主动策略触发器：
+
+| 触发条件 | 系统行为 |
+|---|---|
+| 需求缺关键变量 | 主动澄清 1-2 个最高价值问题 |
+| 搜索结果普遍不符合预算 | 建议放宽预算、换关键词或换平台 |
+| 候选商品风险高 | 标记风险并拒绝直接推荐 |
+| 两个候选各有优劣 | 给出 trade-off，而不是强行选一个 |
+| 进入高风险动作前 | 输出决策摘要并请求确认 |
+
+验收标准：
+
+- 系统不是只返回“已加入购物车”，而能解释为什么选择这个商品。
+- 至少能输出推荐、备选、淘汰三类结论。
+- 高风险动作前必须有用户确认边界。
+
+### 3.4  阶段三：AMSG-Gym 服务购物 App 泛化
+
+AMSG-Gym 仍然重要，但它现在服务的是购物智能层，而不是替代购物智能层。
+
+新增/升级模块：
+
+```text
+phone_agent/adaptation/
+  amsg_gym.py
+  curriculum.py
+  critic.py
+  quarantine.py
+```
+
+AMSG-Gym 的探索任务应围绕购物能力生成：
+
+| 探索来源 | 任务示例 | 目标 |
+|---|---|---|
+| 商品信息缺口 | 找到商品详情页中的评价、店铺、售后入口 | 支持商品证据账本 |
+| 价格结构不清 | 探索券后价、满减、预售价页面 | 支持价格证据校验 |
+| SKU 流程不稳定 | 重复验证规格选择路径 | 支持规格约束判断 |
+| 购物车/结算风险 | 探索但不提交订单 | 支持 approval boundary |
+| 陌生 App 页面类型 | `new:<type>` 页面提案 | 支持 schema 演化 |
+
+这时 MobileForge 的启发落在这里：真实 App 探索、任务挖掘、分层反馈都为购物证据和图谱修复服务。
+
+### 3.5  阶段四：VCA 支撑长程购物上下文
+
+Verified Context Actions 应和购物证据账本结合：
+
+```text
+remember_candidate
+update_price
+update_spec
+reject_candidate
+fold_search_phase
+set_decision_focus
+record_user_preference
 ```
 
 提交规则：
 
 | 动作 | 提交条件 |
 |---|---|
-| `remember(product)` | 当前截图或商品抽取器能定位同一商品 |
-| `remember(price)` | 机械价格解析成功，禁止只凭模型文本写入 |
-| `update_fact(cart_added)` | 后条件或 final_confirm 证据通过 |
-| `fold_history` | span 内没有 risky step，且子任务已完成或页面转移已验证 |
-| `delete_fact` | 只允许删除低风险临时事实，高风险事实需监督者确认 |
-| `set_focus` | 与 `TaskPlan` 当前子任务或图谱目标一致 |
+| `update_price` | 必须来自机械价格解析或截图证据 |
+| `update_spec` | 必须来自当前商品页或规格页证据 |
+| `reject_candidate` | 必须给出违反的硬约束或风险证据 |
+| `record_user_preference` | 低风险偏好可自动记，高风险隐私需确认 |
+| `fold_search_phase` | 候选商品已写入账本后才能折叠搜索历史 |
 
-模块改动：
+MemGUI-Agent 的启发在这里：不是为了压缩历史而压缩，而是为了让购物证据持续可用。
 
-| 文件 | 改动 |
-|---|---|
-| `phone_agent/session_memory_file.py` | 增加 `context_actions`、`folded_trace`、`recent_evidence` |
-| `phone_agent/memory/core/step_record.py` | 增加 `ui_observation`、`action_intent`、`postcondition_result` |
-| `phone_agent/model/protocol_bridge.py` | 兼容解析模型可选上下文动作块 |
-| `phone_agent/config/prompts*.py` | 增加轻量上下文动作提示，不强制所有模型输出 |
-| `phone_agent/memory/retrieval_gateway.py` | 从 VCA 状态渲染上下文，减少长历史拼接 |
-
-第一版不要求小模型输出 VCA，可先由机械护栏和里程碑监督产生上下文动作。这样风险低，也能先验证数据结构是否有用。
-
-### 3.4  阶段二：AMSG-Gym 陌生 App 探索
-
-新增模块：
-
-```text
-phone_agent/adaptation/
-  __init__.py
-  amsg_gym.py
-  curriculum.py
-  critic.py
-  quarantine.py
-  dataset_exporter.py
-```
-
-AMSG-Gym 的课程不应只由 LLM 扩写，而应从图谱和执行反馈中产生：
-
-| 探索来源 | 生成任务示例 | 对应模块 | 图谱目标 |
-|---|---|---|---|
-| 图谱覆盖缺口 | 覆盖 `search_result -> filter_panel -> search_result` | `schema_registry.py`, `task_builder.py` | 新增缺失转移 |
-| 低置信边 | 重复验证某 App 的 `cart -> checkout` 前置流程 | `edge_lifecycle.py` | 提升、降级或标记需人工 |
-| 高熵转移 | 同一动作产生登录/弹窗/目标页多结果 | `edge_lifecycle.py`, `runtime_controller.py` | 分裂条件边，补充前置条件 |
-| 失败簇 | 多次卡在 SKU 选择或筛选面板 | `feedback/trace.py`, `adaptation/curriculum.py` | 生成纠错 hint 和探索焦点 |
-| 用户高频槽位 | 耳机、手机、外卖等高频意图 | `memory/task_index.py` | 优先覆盖高价值链路 |
-| 新词表提案 | `new:<type>` 页面 | `schema_registry.py` | 推动 schema proposal |
-
-课程生成结果必须包含来源解释，并默认带安全策略：
-
-```json
-{
-  "task": "在京东中搜索一个低价蓝牙耳机并进入筛选面板",
-  "source": "low_confidence_edge",
-  "evidence": ["edge:search_result->filter_panel", "confidence:0.42"],
-  "graph_goal": "verify_or_demote_edge",
-  "risk_policy": "no_checkout",
-  "target_modules": ["PageClassifier", "ActionAdvisor", "EdgeLifecycle"]
-}
-```
-
-AMSG-Gym 的产物优先级如下：
-
-1. 更新页面类型、干扰态、schema proposal。
-2. 更新边的成功率、失败率、高熵分支和生命周期阶段。
-3. 生成下一轮探索 hint。
-4. 在低风险、证据完整时导出训练候选样本。
-
-### 3.5  阶段二：层级评估器
-
-当前系统已有多个反馈源，但需要统一成 `HierarchicalCritic`，用于服务图谱修复和探索调度：
-
-| 层级 | 信号来源 | 输出 | 默认用途 |
-|---|---|---|---|
-| Trajectory outcome | final_confirm、任务成功状态、完成门 | success/failure/partial | 判断整条探索是否可信 |
-| Transition outcome | 后条件验证、边生命周期 | passed/failed/branched/high_entropy | 更新 AMSG 边生命周期 |
-| Step process | 后条件验证、VLM step review | reasonable/unreasonable/risky | 从失败轨迹回收低风险局部步骤 |
-| Constraint verdict | SpecGuard、价格裁决、提交拦截 | safe/unsafe/violated | 拦截高风险样本 |
-| Context verdict | VCA 提交/拒绝原因 | useful/noisy/wrong | 修复会话记忆策略 |
-| Corrective hint | 里程碑监督、失败聚类、VLM reviewer | 下次探索应避免和应尝试的策略 | 注入下一轮 AMSG-Gym 任务 |
-
-实现策略：
-
-- 普通 step 优先使用机械信号，减少强 VLM 调用。
-- 只有失败关键点、高价值探索任务和候选样本调用强 VLM 生成 hint。
-- 高风险动作永远不因自动 critic 结论直接进入训练正样本或 promoted 图谱。
-- 失败轨迹默认不入图；只有通过后条件验证的低风险局部转移可以进入 quarantine，等待复验。
-
-### 3.6  阶段三：数据导出与影子评估
-
-训练数据导出应被定位为 AMSG-Gym 的副产品，而不是阶段三的唯一目标。优先导出三类数据：
-
-**图谱修复样本**：用于复验低置信边、解释边降级、辅助人工审核。
-
-```json
-{
-  "source": "low_confidence_edge",
-  "edge": "search_result->filter_panel",
-  "evidence": ["postcondition_failed", "actual:ad_dialog"],
-  "suggested_action": "split_branch_or_demote"
-}
-```
-
-**SFT 候选样本**：只来自成功轨迹或失败轨迹中后条件通过的低风险局部 step。
-
-```json
-{
-  "prompt": "task + screenshot + VCA context + graph_hint",
-  "response": {
-    "ui_action": "...",
-    "context_actions": [],
-    "action_intent": "...",
-    "ui_observation": "..."
-  },
-  "source": "success_trace|verified_local_positive",
-  "evidence": []
-}
-```
-
-**RFT/GRPO 候选样本**：长期可选，仅在离线回放和影子评估证明有收益时启用。
-
-```json
-{
-  "state": "hint-contextualized step prompt",
-  "target_action": "...",
-  "reward_components": {
-    "action_type": 0.0,
-    "arguments": 0.0,
-    "postcondition": 0.0,
-    "context_action": 0.0,
-    "safety": 0.0
-  }
-}
-```
-
-上线前必须经过：
-
-1. 图谱修复收益验证：promoted 边误用率下降，demotion 更及时。
-2. 离线格式校验。
-3. 回放环境或 dry-run 验证。
-4. 真实 App 影子评估。
-5. 与当前模型做任务成功率、强 VLM 调用次数、错误事实写入率对比。
-
-### 3.7  实验设计
+### 3.6  实验设计
 
 主要假设：
 
 | 假设 | 验证方式 |
 |---|---|
-| H1: AMSG-Gym 能提升陌生 App 冷启动覆盖 | 对比 schema-only 探索与 feedback-driven 探索的页面/转移覆盖率 |
-| H2: 高熵边重复验证能提升图谱自修复 | 统计 promoted 边误用率、demotion 延迟、条件分支识别率 |
-| H3: 图谱驱动课程优于纯 LLM 扩写课程 | 对比 coverage/failure/entropy curriculum 与 prompt-only expansion |
-| H4: VCA 能降低长程任务上下文漂移 | 对比当前会话记忆与 VCA，测关键事实保留率和 token 增长 |
-| H5: 训练候选作为副产品仍可产生价值 | 只在图谱验证样本上做小规模 SFT/影子评估，比较收益是否超过维护成本 |
+| H1: 商品证据账本能提升购物决策质量 | 对比无候选池 vs 有候选池的约束命中率、推荐解释完整性 |
+| H2: 多目标决策引擎能降低错误推荐 | 统计预算越界、规格不符、风险商品推荐率 |
+| H3: 主动澄清能提升任务成功与满意度 | 对比直接执行 vs 澄清关键变量后的任务完成率 |
+| H4: AMSG-Gym 能提升陌生购物 App 冷启动覆盖 | 对比 schema-only 探索与 feedback-driven 探索 |
+| H5: VCA 能降低长程购物事实丢失 | 测价格、规格、候选商品事实保留率 |
 
 消融矩阵：
 
-| 配置 | VCA | AMSG-Gym 探索 | 高熵/低置信边复验 | 训练导出 | 目标 |
-|---|---:|---:|---:|---:|---|
-| Current | 否 | 否 | 否 | 否 | 当前基线 |
-| +VCA | 是 | 否 | 否 | 否 | 验证上下文动作 |
-| +AMSG-Gym | 否 | 是 | 是 | 否 | 验证陌生 App 图谱构建 |
-| +Local Recovery | 否 | 是 | 是 | 候选 | 验证失败轨迹局部回收 |
-| Full Graph-First | 是 | 是 | 是 | 候选 | 完整图谱优先系统 |
-| RL/SFT Optional | 是 | 是 | 是 | 是 | 训练收益上界，不作为默认路线 |
+| 配置 | 商品证据账本 | 决策引擎 | 主动策略 | AMSG-Gym | VCA | 目标 |
+|---|---:|---:|---:|---:|---:|---|
+| Current | 否 | 否 | 否 | 部分 | 部分 | 当前操作型基线 |
+| +Evidence | 是 | 否 | 否 | 部分 | 部分 | 验证候选商品池 |
+| +Decision | 是 | 是 | 否 | 部分 | 部分 | 验证购物推荐质量 |
+| +Proactive | 是 | 是 | 是 | 部分 | 部分 | 验证主动助手能力 |
+| +AMSG-Gym | 是 | 是 | 是 | 是 | 部分 | 验证陌生 App 泛化 |
+| Full Assistant | 是 | 是 | 是 | 是 | 是 | 完整专业购物助手 |
 
-### 3.8  两周 pilot
+关键指标：
 
-目标：不训练模型，只验证反馈账本、VCA 和 AMSG-Gym 任务来源是否能改善可观测性。
+- 任务完成率仍然保留，但不再是唯一指标。
+- 约束满足率：预算、品类、规格、店铺等硬约束是否满足。
+- 推荐解释完整性：推荐是否有证据、备选、淘汰理由。
+- 错误推荐率：是否推荐了越界、风险高或规格不符商品。
+- 主动澄清收益：澄清后任务成功率和推荐质量是否提升。
+- 用户确认前高风险动作次数：必须为 0。
 
-任务：
+### 3.7  两周 pilot
 
-1. 实现 `FeedbackEvent` JSONL。
-2. 扩展 `SessionMemoryFile`，增加 `context_actions` 和 `folded_trace`。
-3. 由机械护栏和里程碑监督先产生 VCA。
-4. 从低置信边、高熵转移和失败簇中生成 10-20 个 AMSG-Gym 探索任务。
-5. 在淘宝/京东各跑 10 个长程购物任务，另选一个陌生 App 做小规模冷启动探索。
-6. 统计关键事实保留率、错误事实写入率、图谱覆盖率、边降级次数和强 VLM 调用次数。
-
-成功标准：
-
-- 每步能追溯到截图、动作、后条件和记忆提交结果。
-- 每个 AMSG-Gym 任务都有图谱来源解释和安全策略。
-- 至少发现 3 类当前日志无法解释的图谱或上下文失败原因。
-
-### 3.9  一个月版本
-
-目标：让 AMSG-Gym 的陌生 App 探索、低置信边复验和失败局部回收跑通。
+目标：不训练模型，先验证购物专业状态层是否能跑通。
 
 任务：
 
-1. 实现 `CurriculumMiner`，从图谱缺口、低置信边、高熵转移、失败簇生成探索任务。
-2. 实现 `HierarchicalCritic` 第一版。
-3. 实现失败轨迹 local-positive step quarantine，但默认不进入 promoted 图谱。
-4. 实现 schema proposal：把 `new:<type>` 页面和新干扰态送入人工审核。
-5. 导出图谱修复样本和 SFT 候选 JSONL，先做格式验证，不急于训练。
+1. 实现 `ShoppingIntent` schema。
+2. 实现 `ProductCandidate` 与商品证据账本。
+3. 扩展 `SessionMemoryFile`，保存购物意图、候选商品和决策摘要。
+4. 在淘宝/京东各跑 5-10 个“比较后推荐”的购物任务。
+5. 记录推荐、备选、淘汰理由。
 
 成功标准：
 
-- 每个探索任务都有可解释来源和风险策略。
-- 低置信边能被复验、降级、分裂或提升。
-- 失败轨迹中的可回收 step 不进入 promoted 图谱，只进入 quarantine 或训练候选池。
-- 导出样本能复现当时 prompt、截图、动作和证据。
+- 每个任务至少能维护 2-3 个候选商品。
+- 每个推荐都有价格、规格、店铺或风险证据。
+- 系统能明确说出为什么淘汰某个商品。
 
-### 3.10  三个月论文型版本
+### 3.8  一个月版本
 
-目标：形成可汇报、可投稿的图谱优先自适应系统贡献。
+目标：形成第一版主动购物助手。
 
 任务：
 
-1. 小模型支持可选 VCA 输出块。
-2. AMSG-Gym 支持陌生 App 的自动探索、分层反馈、schema proposal 和边生命周期修复。
-3. 在淘宝、京东、至少一个陌生购物或服务 App 上做跨 App 泛化实验。
-4. 完成 Current / +VCA / +AMSG-Gym / +Local Recovery / Full Graph-First / RL-SFT Optional 消融。
-5. WebUI 增加反馈审计和图谱修复面板。
-6. 可选训练一个轻量 SFT checkpoint，作为训练收益上界而不是系统主贡献。
+1. 实现硬约束过滤和软偏好评分。
+2. 实现主动澄清策略。
+3. 实现购买前推荐摘要和确认边界。
+4. 将 AMSG-Gym 的探索任务改为服务商品证据采集，例如评价页、优惠券页、店铺页、售后页。
+5. 将 VCA 动作扩展为购物证据动作。
 
 成功标准：
 
-- Full Graph-First 在陌生 App 冷启动覆盖、promoted 边可靠性、强 VLM 调用次数或关键事实保留率上显著优于当前系统。
-- VCA 错误事实写入率可控。
-- AMSG-Gym 相比纯 LLM 扩写在冷启动覆盖或图谱修复效率上更强。
-- 可选训练若无明显收益，也可作为负结果支持“图谱优先比 App-specific RL 更经济”的论文论点。
+- 系统能在购物任务中主动提出澄清问题或风险提醒。
+- 系统能输出推荐/备选/淘汰列表。
+- 高风险动作前必须有明确用户确认。
+
+### 3.9  三个月论文型版本
+
+目标：形成可汇报、可投稿的垂直购物助手系统贡献。
+
+任务：
+
+1. 完成 Shopping Intelligence Layer：意图图谱、证据账本、决策引擎、主动策略、授权边界。
+2. AMSG-Gym 支持陌生购物 App 的商品证据路径探索。
+3. VCA 支持长程购物证据维护。
+4. 在淘宝、京东、至少一个陌生购物或服务 App 上做跨 App 泛化实验。
+5. 完成 Current / +Evidence / +Decision / +Proactive / +AMSG-Gym / Full Assistant 消融。
+
+成功标准：
+
+- Full Assistant 不仅任务完成率更高，还在约束满足率、推荐解释完整性、错误推荐率上优于当前系统。
+- 陌生 App 中能更快找到商品信息、评价、优惠和售后入口。
+- 用户确认前不触发提交订单、支付、地址修改等高风险动作。
 
 ---
 
@@ -618,15 +584,15 @@ AMSG-Gym 的产物优先级如下：
 
 对不熟悉项目的人，推荐用这条主线讲：
 
-1. **我们已有的基础**：Shopping-Agent 不是普通 ReAct Agent，而是小模型执行、强 VLM 低频监督、AMSG 图谱导航、机械护栏和会话记忆组成的混合系统。
-2. **我们对 MobileForge 的重新定位**：它最值得借鉴的是 MobileGym 的陌生 App 探索、任务挖掘和分层反馈，而不是把 GRPO 当成当前系统主线。
-3. **我们看到的新机会**：MemGUI-Agent 说明长程任务的上下文管理应该成为可学习动作；AMSG-Gym 则让真实 App 交互先修复图谱，再把训练数据作为副产品。
-4. **我们的落地创新**：形成 `Feedback Trace + Verified Context Actions + AMSG-Gym`，把适应性放在可审计、可降级的图谱和记忆系统中。
-5. **我们的安全边界**：失败轨迹不直接入图，高风险事实不由模型直接写入，App-specific 训练只作为离线可选项。
+1. **我们已有的基础**：Shopping-Agent 已经不是普通 GUI Agent，而是能稳定操作真实购物 App 的混合智能体。
+2. **真实问题**：稳定操作 App 只是底座；购物助手的核心是理解需求、收集证据、比较商品、解释推荐和安全执行。
+3. **两篇论文的位置**：MobileForge 启发 AMSG-Gym 做陌生 App 探索和分层反馈；MemGUI-Agent 启发 VCA 做长程购物证据管理。它们是支撑机制，不是研究目标。
+4. **我们的垂直创新**：Shopping Intelligence Layer，包括购物意图图谱、商品证据账本、多目标决策引擎、主动购物策略和信任授权边界。
+5. **最终目标**：从“会用购物 App 的 GUI 模型”升级为“主动、专业、可信的购物助手”。
 
 一句话版本：
 
-> Shopping-Agent 已经解决了真实手机购物任务中的可靠执行问题；下一阶段不是优先对频繁变化的购物 App 做强化学习，而是把 MobileGym 式探索落到 AMSG 中。我们将用反馈账本统一每步经验，用可验证上下文动作管理长程记忆，用 AMSG-Gym 让陌生 App 探索、任务挖掘、分层反馈和图谱自修复形成闭环；训练数据只是这个闭环的副产品。
+> 当前系统已经解决了如何稳定操作购物 App；下一阶段要解决的是如何专业地购物。我们将构建 Shopping Intelligence Layer，让 Agent 能理解购买意图、维护商品证据、做多目标比较、主动澄清和解释推荐；MobileForge/MemGUI 的思想分别作为陌生 App 探索和长程证据管理的底层支撑。
 
 ---
 
