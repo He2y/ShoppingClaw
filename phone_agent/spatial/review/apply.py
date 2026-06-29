@@ -1,7 +1,16 @@
 """Apply reviewed staging batch to the canonical graph.
 
 Only approved transitions are written.  Provides double-apply prevention via
-applied.json.  Lifecycle stage = "hypothesis", provenance via action_params.
+applied.json.  Lifecycle stage = "hypothesis" by default, provenance via
+action_params.
+
+Cold-start bootstrap (``bootstrap=True``): admit human-reviewed edges directly
+as ``promoted`` for an app whose subgraph has no promoted edges yet — otherwise
+its reviewed structure stays invisible to the agent and can never accrue the
+online verifications needed for promotion (the cold-start chicken-and-egg).
+This is an opt-in accelerator that deliberately relaxes the "human approval does
+not exempt online verification" invariant; every bootstrapped edge is marked
+``bootstrap=True`` in provenance for auditability.
 """
 
 from __future__ import annotations
@@ -21,6 +30,8 @@ def apply_review(
     *,
     reviewer: str = "human",
     dry_run: bool = False,
+    bootstrap: bool = False,
+    force: bool = False,
 ) -> dict[str, Any]:
     """Apply approved transitions from a reviewed staging batch to the canonical graph.
 
@@ -30,22 +41,31 @@ def apply_review(
                      default GraphStore() is created internally.
         reviewer: Name/identifier of the reviewer (for provenance).
         dry_run: If True, no Neo4j writes occur and applied.json is NOT written.
+        bootstrap: Cold-start accelerator.  When True, approved edges are
+                   admitted directly as ``promoted`` (verification_count seeded
+                   to the active promotion threshold, dominance 1.0) instead of
+                   the default ``hypothesis``.  Use only for cold apps with no
+                   promoted subgraph; every edge is marked ``bootstrap=True``.
+        force: When True, re-apply even if applied.json already exists (the
+               re-apply is an idempotent MERGE-based lifecycle update — needed
+               to bootstrap-promote an app whose batch was already applied as
+               hypothesis).
 
     Returns:
-        Result dict: {approved, rejected, persisted, dry_run, error?}.
+        Result dict: {approved, rejected, persisted, dry_run, bootstrap, error?}.
 
     Raises:
-        RuntimeError: if applied.json already exists (double-apply prevention).
+        RuntimeError: if applied.json already exists and force is False.
     """
     batch_dir = Path(batch_dir)
     batch_id = batch_dir.name
 
-    # Double-apply prevention
+    # Double-apply prevention (overridable with force for bootstrap re-apply)
     applied_path = batch_dir / "applied.json"
-    if applied_path.exists():
+    if applied_path.exists() and not force:
         raise RuntimeError(
             f"Batch {batch_id} was already applied. "
-            f"See {applied_path} for details."
+            f"See {applied_path} for details. Pass force=True to re-apply."
         )
 
     # Load staging graph
@@ -97,7 +117,7 @@ def apply_review(
     for item in manifest_items:
         if item.item_id not in approved_ids:
             continue
-        edge = _find_edge_for_item(item, staging_graph, batch_id)
+        edge = _find_edge_for_item(item, staging_graph, batch_id, bootstrap=bootstrap)
         if edge is not None:
             approved_edges.append(edge)
 
@@ -114,20 +134,34 @@ def apply_review(
 
     try:
         from phone_agent.spatial.amsg_config import AMSGOptimConfig
-        # Approved edges enter as hypothesis; the verified lifecycle policy
-        # must not re-filter what the human just approved.
+        if bootstrap:
+            # Cold-start: admit reviewed edges directly as promoted so the app's
+            # already-reviewed structure becomes navigable. verification_count is
+            # seeded to the *active* runtime threshold (sava=3) so the edge is
+            # consistent under the live policy; dominance=1.0 keeps it above the
+            # demotion floor. High-risk edges (checkout/payment) are still
+            # filtered upstream by _is_promotable_edge and never bootstrapped.
+            lifecycle_overrides = {
+                "lifecycle_stage": "promoted",
+                "verification_count": AMSGOptimConfig.from_env().min_verification_count,
+                "dominance_ratio": 1.0,
+            }
+        else:
+            # Default invariant: approved edges enter as hypothesis only — online
+            # postcondition verification still has to earn the promotion.
+            lifecycle_overrides = {
+                "lifecycle_stage": "hypothesis",
+                "verification_count": 0,
+                "dominance_ratio": 0.0,
+            }
+        # legacy config so the verified policy does not re-filter what the
+        # human just approved.
         memory = SpatialGraphMemory(graph_store, config=AMSGOptimConfig.legacy())
         promote_report = memory.promote_staging_to_canonical(
             states_by_id,
             approved_edges,
             persist=(graph_store is not None),
-            # Review approval admits the edge as a hypothesis only - online
-            # postcondition verification still has to earn the promotion.
-            lifecycle_overrides={
-                "lifecycle_stage": "hypothesis",
-                "verification_count": 0,
-                "dominance_ratio": 0.0,
-            },
+            lifecycle_overrides=lifecycle_overrides,
         )
     finally:
         if owns_store and graph_store is not None:
@@ -145,6 +179,7 @@ def apply_review(
         "approved": approved_count,
         "rejected": rejected_count,
         "persisted": persisted,
+        "bootstrap": bootstrap,
         "promote_report": promote_report.to_dict(),
     }
     applied_path.write_text(
@@ -157,6 +192,7 @@ def apply_review(
         "rejected": rejected_count,
         "persisted": persisted,
         "dry_run": False,
+        "bootstrap": bootstrap,
         "promote_report": promote_report.to_dict(),
     }
 
@@ -184,7 +220,13 @@ def _dict_to_page_state(data: dict[str, Any]) -> "PageState":
     )
 
 
-def _find_edge_for_item(item: Any, staging_graph: dict[str, Any], batch_id: str) -> Any:
+def _find_edge_for_item(
+    item: Any,
+    staging_graph: dict[str, Any],
+    batch_id: str,
+    *,
+    bootstrap: bool = False,
+) -> Any:
     """Find the TransitionEdge matching a ReviewItem and attach provenance."""
     from phone_agent.memory.spatial_graph_memory import TransitionEdge
 
@@ -207,6 +249,8 @@ def _find_edge_for_item(item: Any, staging_graph: dict[str, Any], batch_id: str)
             action_params = dict(edge_dict.get("action_params") or {})
             action_params["source_type"] = "exploration_reviewed"
             action_params["review_batch_id"] = batch_id
+            if bootstrap:
+                action_params["bootstrap"] = True
 
             return TransitionEdge(
                 source_id=source_id,

@@ -333,6 +333,78 @@ class TestApplyReview:
         except RuntimeError as exc:
             assert "already applied" in str(exc).lower()
 
+    # ── P0-A: cold-start bootstrap promotion ──────────────────────────────
+
+    def _approve_all(self, batch_dir: Path) -> int:
+        from phone_agent.spatial.review.decisions import load_decisions, save_decisions
+        from phone_agent.spatial.review.batch import load_manifest
+        manifest = load_manifest(batch_dir)
+        decisions = load_decisions(batch_dir)
+        for item in manifest:
+            decisions[item.item_id] = {"decision": "approve", "note": ""}
+        save_decisions(batch_dir, decisions)
+        return len(manifest)
+
+    def test_default_apply_writes_hypothesis(self, tmp_path):
+        """Regression guard: without bootstrap the invariant holds — reviewed
+        edges enter as hypothesis and must still earn online promotion."""
+        from phone_agent.spatial.review.apply import apply_review
+
+        batch_dir = self._make_batch(tmp_path)
+        self._approve_all(batch_dir)
+        fake_store = FakeMergeGraphStore()
+        apply_review(batch_dir, graph_store=fake_store, dry_run=False)
+
+        assert fake_store.transitions, "expected at least one approved edge persisted"
+        for t in fake_store.transitions:
+            lc = t["lifecycle"] or {}
+            assert lc.get("lifecycle_stage") == "hypothesis"
+            assert lc.get("verification_count") == 0
+
+    def test_bootstrap_writes_promoted_with_provenance(self, tmp_path):
+        """bootstrap=True admits reviewed edges directly as promoted (cold-start
+        accelerator) with verification_count at the active promotion threshold
+        and an auditable bootstrap provenance marker."""
+        from phone_agent.spatial.review.apply import apply_review
+        from phone_agent.spatial.amsg_config import AMSGOptimConfig
+
+        batch_dir = self._make_batch(tmp_path)
+        self._approve_all(batch_dir)
+        fake_store = FakeMergeGraphStore()
+        apply_review(batch_dir, graph_store=fake_store, dry_run=False, bootstrap=True)
+
+        active_min_vc = AMSGOptimConfig.from_env().min_verification_count
+        assert fake_store.transitions, "expected at least one promoted edge"
+        for t in fake_store.transitions:
+            lc = t["lifecycle"] or {}
+            assert lc.get("lifecycle_stage") == "promoted"
+            assert lc.get("verification_count") >= active_min_vc
+            assert lc.get("dominance_ratio") == 1.0
+            # provenance: review origin preserved + bootstrap marker added
+            assert t["action"].get("source_type") == "exploration_reviewed"
+            assert t["action"].get("bootstrap") is True
+
+    def test_force_allows_reapply(self, tmp_path):
+        """force=True re-applies despite an existing applied.json — needed to
+        bootstrap-promote an app whose batch was already applied as hypothesis.
+        MERGE makes the re-apply an idempotent lifecycle update."""
+        from phone_agent.spatial.review.apply import apply_review
+
+        batch_dir = self._make_batch(tmp_path)
+        self._approve_all(batch_dir)
+        fake_store = FakeMergeGraphStore()
+
+        apply_review(batch_dir, graph_store=fake_store, dry_run=False)
+        with pytest.raises(RuntimeError, match="already applied"):
+            apply_review(batch_dir, graph_store=fake_store, dry_run=False)
+
+        result = apply_review(
+            batch_dir, graph_store=fake_store, dry_run=False,
+            bootstrap=True, force=True,
+        )
+        assert result["persisted"] is True
+        assert result.get("bootstrap") is True
+
 
 # ── C. VlmTransitionJudge — parse failure ─────────────────────────────────────
 
