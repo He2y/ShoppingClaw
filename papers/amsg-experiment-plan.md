@@ -36,6 +36,7 @@
 2. **不得用预期偏置验证**：分类器独立性是后条件验证 ground truth 的前提（ARCHITECTURE §8 红线），消融时也不破坏。
 3. **基线为同框架协议复刻**（§4.3），差异须完全归因于控制协议，复用同一感知/执行/存储基建。
 4. **失败任务照常记录**（写 trajectories）但不入图，便于故障模式分析。
+5. **机制消融的统计功效透明**（核验后新增）：实测语料仅 ≈4 条可用轨迹、全成功零失败、`_expected_postcondition` 全库仅 1 个数据点、OutcomeDistribution 全单峰。故 RQ2 在 §4 P2.5 补采含失败/干扰的真机轨迹**之前**，只报 `sava>legacy` 的**定性方向**并标注样本量，**不得出定量 N∈{3,5} 敏感性**；"图谱即概率模拟器"在转移核出现真实多峰前**不得写入 abstract**（详见 `amsg-sim-env-analysis.md`）。
 
 ---
 
@@ -204,3 +205,47 @@ S1/S2/S3 见 1.2。复刻原则：复用同一感知/动作执行/Neo4j 存储�
 | 设计文档数字失实（记忆"6 处论文级失实"） | 论文可信度 | P0 核对真实 Neo4j；所有数字重测；不沿用估算 |
 | RuntimeDAG 作为卖点崩塌 | RQ3 | 已澄清：Fast Path 档才是卖点，RuntimeDAG 降为 limitation |
 | 单人时间线 | 整体 | 严格 thesis-scale；P1 先跑通最小闭环再扩规模 |
+| **RQ2 语料零失败样本**（核验新增） | 致命，RQ2 核心命题"生命周期能挡错"无证据 | P2.5 补采失败/干扰轨迹；补采前只报定性方向 + 标样本量 |
+| **"图谱即模拟器"novelty 实证空心**（核验新增） | 转移核单峰，abstract overclaim | 补采让多峰建模有实证后再写 abstract；留出校准报 bootstrap CI 并承认 CI 宽 |
+
+---
+
+## 8  模拟环境策略（sim-env，2026-06-29 三篇论文精读 + 对抗核验后新增）
+
+> 完整分析见 `amsg-sim-env-analysis.md`。核心判断：**真瓶颈不是环境成本，是数据贫瘠 + 幸存者偏差——模拟器造不出从没记录过的失败。先补数据再造 sim。**
+
+### 8.1  三篇论文可借鉴点
+
+| 论文 | 直接可移植 | 警示 |
+|---|---|---|
+| Beyond the GUI | 二值规则验证器（State-check/Cache-match，绝不 LLM-judge）；5 阶段 human-LLM oracle 协议；Oracle 天花板法 | 电商购物车/总额是 GUI-only 无 API → 必须保留小 GUI 模型主执行器 |
+| PhoneBuddy/PhoneWorld | 轨迹→可运行 mock（关键页/转移/动作/可写状态 + rule verifier）；real 锚定 + mock 扩规模三段式 | mock 可迁移当且仅当 grounded in realistic GUI structure；Cross-App 18-22% 无提升 |
+| MobileForge | MobileGym-Critic 分层裁决；corrective-hint 跨尝试累积（52→77%）；从失败轨迹回收局部步 | 回避电商活体干扰，可复现性来自确定性环境，不可照搬假设 |
+
+### 8.2  五个存活方案（核验后排序）
+
+| 方案 | 判定 | 解锁 | 关键边界 |
+|---|---|---|---|
+| **A. TrajReplay** 轨迹观测流回放 | ✅ 首选 | RQ2 机制方向 + RQ1a | 真值=真机实测 page_type（外生，**唯一洗脱"用图测图"**）；只报定性方向 N≈4 |
+| **B. Sim2Real Gap 审计** | ✅ 必做元方案 | 让所有 sim 结论可信 | "可 claim 矩阵"前置方法节；CI 宽诚实报 |
+| **C. OracleGoldenPath** | ⚠️ M | RQ4 京东（补 3 条购买边）| oracle 必过真机 verifier + 人审防 integrity 泄漏 |
+| **D. AMSG-Gym** 图谱固化沙盒 | ⚠️ M | RQ3 分档计数 + RQ1a | 转移核**用真机频次校准、禁用图谱 promoted**；只评调度层；延迟仍真机 |
+| **E. 合成漂移注入** | ⚠️ | RQ1b 自修复 | 标"理想化下界" |
+| ❌ GraphTwinSim | 判死 | — | 数据隔离留出在现有体量不可行 |
+| ❌ "干扰即变量" | 判死 | — | 干扰转移样本=0，频率无锚定 |
+
+### 8.3  对前述章节的增量修改（已部分并入）
+
+- **§0.3** 已加红线 5（机制消融统计功效透明）。
+- **§1.1 RQ2 行**：评测方式细化为"sava vs legacy（定性方向，N≈4）→ 补采后做 N∈{1,3,5} 定量"；真值来源="held-out 真机实测 page_type（独立于图谱预测）"。
+- **§1.9** 新增约束：`GraphEnv 转移核来源` 必须从真机轨迹原始频次估计，禁用图谱 promoted 结论（防自证，对接 `runtime_controller.py:277`）。
+- **§2** 新增 **F6**：sim 模式旁路 page_classifier（注入式 page_type），改 `agent.py:579 _execute_fast_path` 加 `sim_mode` 开关（中等工作量，非最小契约）。
+- **§3** **H3** 明确为"外生真值回放（方案 A）"；新增 **H5** Sim2Real Gap 审计器（方案 B）。
+- **§4** 在 P3 前插入 **P2.5 补采失败/干扰真机轨迹**（≥10 条，含弹窗/登录墙/captcha/选错商品，让 OutcomeDistribution 出现真实多峰）；P4 京东建图新增依赖"先做方案 C 补 missing_edges 三条购买边"；P5 ExperimentRunner 标注"从零建（缺口④本身）"。
+
+### 8.4  四阶段落地路径
+
+1. **立即（纯软件）**：方案 A + 方案 B 报表 + 建 ExperimentRunner
+2. **补数据（人机 + 少量真机）**：方案 C 补 JD 购买边 + **⭐补采 ≥10 条失败/干扰真机轨迹**
+3. **造 sim（补采后）**：方案 D（真机频次校准转移核）+ 方案 E
+4. **真机锚定收口**：头条表 + RQ3 延迟 + 京东建图 + 方案 B 配对 gap 度量
