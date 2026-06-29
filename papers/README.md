@@ -11,6 +11,7 @@
 | `amsg-experiment-plan.md` | AMSG 实验执行计划（**非稿件**，过程文档） | 驱动第 4 章实验落地：harness/修复/任务集/执行阶段 |
 | `amsg-sim-env-analysis.md` | 模拟环境方案分析（**非稿件**，过程文档） | 三篇论文精读 + 对抗核验：5 个 sim 方案排序 + 补数据优先 |
 | `amsg-pipeline-scalability.md` | 采集/构图管线规模化就绪度评估（**非稿件**，过程文档） | 记分卡 + 缺口清单 + 落地路线；vc=1 真相 + 冷启动死锁 |
+| `amsg-progress-and-next-steps.md` | 进度与下一步执行计划（**handoff**，过程文档） | 冷启动接续先读这份：已完成总结 + Option A 离线 runner 计划 + 待办 |
 
 ## 写作约定
 
