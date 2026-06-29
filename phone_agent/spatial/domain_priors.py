@@ -238,6 +238,7 @@ class DomainPriorProvider:
                       AND NOT s.app IN $own_aliases
                       AND s.page_type = $page_type
                       AND coalesce(a.lifecycle_stage,'') = 'promoted'
+                      AND coalesce(a.dirty_legacy, false) <> true
                     RETURN s.page_type AS src, a.intent AS intent, t.page_type AS tgt,
                            count(*) AS support,
                            collect(DISTINCT s.app)[..5] AS apps

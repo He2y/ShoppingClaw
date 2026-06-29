@@ -8,7 +8,12 @@ studies (e.g. belief-only, planner-only, edge-only).
 
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass
+
+_logger = logging.getLogger(__name__)
+_config_logged = False
 
 
 @dataclass(frozen=True)
@@ -134,9 +139,16 @@ class AMSGOptimConfig:
 
     @classmethod
     def from_env(cls) -> AMSGOptimConfig:
-        """Resolve config preset from AMSG_CONFIG env var (default: legacy)."""
-        import os
-        preset = os.getenv("AMSG_CONFIG", "legacy").lower()
+        """Resolve config preset from AMSG_CONFIG env var (default: legacy).
+
+        Logs the resolved preset once per process and warns loudly when
+        AMSG_CONFIG is unset or unrecognized. Silently falling back to 'legacy'
+        makes edges promote on first write (vc=1) and pollutes the graph — a
+        failure mode otherwise invisible in batch/subprocess runs that drop the
+        env var.
+        """
+        raw = os.getenv("AMSG_CONFIG")
+        preset = (raw or "legacy").lower()
         presets = {
             "legacy": cls.legacy,
             "full": cls.full,
@@ -146,4 +158,22 @@ class AMSGOptimConfig:
             "sava": cls.sava,
         }
         factory = presets.get(preset)
-        return factory() if factory else cls.legacy()
+        config = factory() if factory else cls.legacy()
+        global _config_logged
+        if not _config_logged:
+            _config_logged = True
+            if raw is None:
+                _logger.warning(
+                    "AMSG_CONFIG not set -> falling back to 'legacy' (edges promote "
+                    "on first write, vc=1). Set AMSG_CONFIG=sava for the verified N=3 "
+                    "policy. In batch/subprocess runs ensure the env var propagates."
+                )
+            elif factory is None:
+                _logger.warning("AMSG_CONFIG=%r unrecognized -> falling back to 'legacy'.", raw)
+            else:
+                _logger.info(
+                    "AMSG_CONFIG=%s active (policy=%s, min_verification_count=%d, dominance>=%.2f).",
+                    preset, config.edge_promotion_policy,
+                    config.min_verification_count, config.outcome_dominance_threshold,
+                )
+        return config
