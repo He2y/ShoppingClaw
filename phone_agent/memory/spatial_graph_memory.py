@@ -1729,6 +1729,13 @@ class SpatialGraphMemory:
             if not records:
                 return
             import json as _json
+            # Derive app per source page_type so the lifecycle write can be
+            # app-scoped — without it, coordinate edges share an app-agnostic
+            # semantic target ("<region> <page> affordance") and a multi-app
+            # shared DB would cross-update other apps' lifecycle stats.
+            app_by_page: dict[str, str] = {}
+            for st in self._local_states.values():
+                app_by_page.setdefault(getattr(st, "page_type", ""), getattr(st, "app", "") or "")
             batch = []
             for rec in records:
                 action_key = f"{rec['intent']}:{rec['action_target']}"
@@ -1742,6 +1749,7 @@ class SpatialGraphMemory:
                 # nodes, silently dropping all cumulative lifecycle statistics).
                 batch.append({
                     "source_page_type": rec["source_page_type"],
+                    "app": app_by_page.get(rec["source_page_type"], ""),
                     "intent": rec["intent"],
                     "action_target": rec.get("action_target", ""),
                     "target_page_type": rec.get("target_page_type", ""),
@@ -1757,8 +1765,9 @@ class SpatialGraphMemory:
             if batch:
                 store.persist_lifecycle_batch(batch)
                 store.demote_stale_edges()
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("lifecycle flush failed: %s", exc)
 
     def _lifecycle_record_to_action_id(self, rec: dict) -> str:
         """Best-effort mapping from lifecycle record to Neo4j action_id.
@@ -2033,8 +2042,9 @@ class SpatialGraphMemory:
             records, outcomes = store.load_lifecycle_records()
             if records or outcomes:
                 self._edge_lifecycle.bulk_load(records, outcomes)
-        except Exception:
-            pass
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("lifecycle reload failed: %s", exc)
 
     def _build_lifecycle_dict(
         self,
@@ -2055,8 +2065,27 @@ class SpatialGraphMemory:
         action_type = edge.action_type if hasattr(edge, "action_type") else ""
         action_target = edge.action_target if hasattr(edge, "action_target") else ""
 
-        key = _edge_key(src_pt, action_type, action_target, tgt_pt)
-        record = self._edge_lifecycle.get_record(key)
+        # record_observation keys the in-memory lifecycle record by the RAW
+        # action target (element coords / raw text), but promote_staging enriches
+        # action_target into a synthesized semantic target ("<region> <page>
+        # affordance") before this lookup. For coordinate-tap edges the two keys
+        # differ, the enriched lookup misses, and the edge silently falls through
+        # to defaults — discarding the real accumulated verification stats so the
+        # N=3 sava gate never applies (root cause of JD's hypothesis@1 pollution).
+        # Fall back to the raw evidence still preserved in action_params.
+        matched_target = action_target
+        record = self._edge_lifecycle.get_record(
+            _edge_key(src_pt, action_type, action_target, tgt_pt)
+        )
+        if record is None:
+            params = getattr(edge, "action_params", None) or {}
+            raw_target = str(params.get("target") or params.get("element") or "").strip()
+            if raw_target and raw_target != action_target:
+                alt = self._edge_lifecycle.get_record(
+                    _edge_key(src_pt, action_type, raw_target, tgt_pt)
+                )
+                if alt is not None:
+                    record, matched_target = alt, raw_target
         if record is None:
             default_stage = "promoted" if self._amsg_config.edge_promotion_policy == "legacy" else "hypothesis"
             return {
@@ -2068,7 +2097,7 @@ class SpatialGraphMemory:
             }
 
         dist = self._edge_lifecycle.get_outcome_distribution(
-            src_pt, f"{action_type}:{action_target}",
+            src_pt, f"{action_type}:{matched_target}",
         )
         return {
             "lifecycle_stage": record.stage,

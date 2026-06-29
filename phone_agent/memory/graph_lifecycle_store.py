@@ -33,6 +33,13 @@ class GraphLifecycleStore:
         instances of the same semantic transition share one lifecycle stage,
         so updating every match is correct. Non-existent transitions are
         silently skipped (MATCH, not MERGE).
+
+        App scoping: when ``row.app`` is non-empty the match is constrained to
+        that app. Coordinate-tap edges carry an app-agnostic semantic target
+        ("<region> <page> affordance"), so without this constraint a multi-app
+        shared DB would cross-update another app's lifecycle stats for the same
+        page-type transition. Rows without an app fall back to the legacy
+        unscoped match (backward compatible).
         """
         if not self.driver or not batch:
             return 0
@@ -41,6 +48,7 @@ class GraphLifecycleStore:
         UNWIND $batch AS row
         MATCH (s:UIState)-[:NEXT_ACTION]->(a:Action)-[:PRODUCES]->(t:UIState)
         WHERE s.page_type = row.source_page_type
+          AND (coalesce(row.app, '') = '' OR s.app = row.app)
           AND coalesce(a.type, '') = row.intent
           AND coalesce(a.semantic_target, '') = row.action_target
           AND t.page_type = row.target_page_type
