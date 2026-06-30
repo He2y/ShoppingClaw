@@ -314,6 +314,7 @@ class PhoneAgent:
         self._visited_pages: set[str] = set()
         self._unparseable_count = 0
         self._finish_rejected_count = 0
+        self._finish_gate_blocked_count = 0
         if self.step_planner is not None:
             from phone_agent.step_planner import TaskPlanContext
             self._planner_context = TaskPlanContext()
@@ -963,6 +964,10 @@ class PhoneAgent:
         if self.memory_manager:
             if hasattr(self.memory_manager, "mark_planned_action_executed"):
                 self.memory_manager.mark_planned_action_executed(action, success=result.success)
+            # Record into the agent-local history too — otherwise graph
+            # shortcut steps are invisible to the VLM's 【执行历史】 and the
+            # milestone supervisor's recent_steps, causing repeated navigation.
+            self._step_summaries.append(self._last_thinking)
             self.memory_manager.add_step(
                 thinking=self._last_thinking,
                 action=action,
@@ -1180,6 +1185,38 @@ class PhoneAgent:
         if self.agent_config.verbose and result.current_situation:
             print(f"🏁 [Milestone] {result.current_situation} | {changes}")
         return result
+
+    @staticmethod
+    def _supervisor_finish_verdict(ckpt: Any) -> "StepResult | None":
+        """Turn a milestone checkpoint's completion/blocked verdict into a finish.
+
+        The supervisor is the single completion authority — it verifies the goal
+        directly from the screenshot. When it confirms completion (or that the
+        task is irrecoverably blocked) at a REGULAR checkpoint, the agent must
+        finish immediately. Previously this verdict was discarded, so the
+        executor kept re-issuing the same commit: a successful add-to-cart was
+        re-tapped repeatedly (over-adding to the cart) while completion went
+        unrecognized until the executor independently emitted finish.
+
+        Keys on the structured ``task_complete`` / ``task_blocked`` fields, not
+        the prose ``current_situation`` — an optimistic situation string with
+        ``task_complete=false`` must NOT finish.
+        """
+        if ckpt is None or not (getattr(ckpt, "task_complete", False) or getattr(ckpt, "task_blocked", False)):
+            return None
+        done = bool(getattr(ckpt, "task_complete", False))
+        msg = (
+            getattr(ckpt, "message", "")
+            or getattr(ckpt, "current_situation", "")
+            or ("监督者判定任务完成" if done else "监督者判定任务无法继续推进")
+        )
+        return StepResult(
+            success=bool(getattr(ckpt, "task_success", False)) if done else False,
+            finished=True,
+            action={"_metadata": "finish", "action": "finish", "message": msg},
+            thinking=getattr(ckpt, "thought", "") or getattr(ckpt, "current_situation", "") or "",
+            message=msg,
+        )
 
     def _completion_evidence(self) -> bool:
         """Mechanical evidence that the task goal is plausibly reached.
@@ -1705,11 +1742,26 @@ class PhoneAgent:
                     stagnating=stagnating,
                 )
                 if _ms_trigger:
+                    _ckpt = None
                     try:
-                        self._run_milestone_checkpoint(_ms_trigger, screenshot, page_type)
+                        _ckpt = self._run_milestone_checkpoint(_ms_trigger, screenshot, page_type)
                     except Exception:
                         if self.agent_config.verbose:
                             traceback.print_exc()
+                    # Act on the supervisor's verdict instead of discarding it:
+                    # a screenshot-confirmed completion finishes the task now,
+                    # stopping the executor from re-tapping a commit it already
+                    # achieved (over-adding to cart) and recognizing completion
+                    # without waiting for the executor to emit finish.
+                    _verdict = self._supervisor_finish_verdict(_ckpt)
+                    if _verdict is not None:
+                        if self.agent_config.verbose:
+                            done = _ckpt.task_complete
+                            print(
+                                f"🏁 [Milestone] 监督者判定任务{'完成' if done else '受阻'}，"
+                                f"结束任务：{_verdict.message}"
+                            )
+                        return _verdict
 
             # ── Action Library advisory ──
             _available_actions: list | None = None
@@ -2307,14 +2359,25 @@ class PhoneAgent:
             and not supervisor_can_confirm
             and not self._completion_evidence()
         ):
+            self._finish_gate_blocked_count = getattr(self, "_finish_gate_blocked_count", 0) + 1
             target = str((getattr(self, "_vlm_plan", {}) or {}).get("target_page") or "")
-            note = f"[FinishGate] 完成证据不足（目标页 {target} 未到达过），已拦截 finish，请继续执行任务"
-            if self.agent_config.verbose:
-                print(f"⛔ {note}")
-            self._step_summaries.append(note)
-            if self._milestone_trigger is not None:
-                self._milestone_trigger.pending_finish_gate = True
-            finished = False
+            if self._finish_gate_blocked_count >= 3:
+                # Escape hatch: the target_page may be perpetually unreachable
+                # (classifier noise) — terminate as failure rather than loop
+                # finish→block→finish until max_steps.
+                from phone_agent.actions.handler import ActionResult
+                result = ActionResult(
+                    success=False, should_finish=True,
+                    message=f"任务未能完成（连续 3 次完成证据不足，目标页 {target} 始终未到达）",
+                )
+            else:
+                note = f"[FinishGate] 完成证据不足（目标页 {target} 未到达过），已拦截 finish，请继续执行任务"
+                if self.agent_config.verbose:
+                    print(f"⛔ {note}")
+                self._step_summaries.append(note)
+                # pending_finish_gate only matters to a live supervisor; this
+                # branch runs when none is available, so do not set it.
+                finished = False
 
         # Final confirmation: the supervisor verifies success claims against
         # the screenshot (the executor's self-report is untrusted).
