@@ -67,6 +67,33 @@ class StepResult:
     message: str | None = None
 
 
+# Placing an order / paying is an absolutely-forbidden auto operation. The page
+# classifier frequently misreads the order-confirmation / 结算 page as
+# product_detail, so the hard safety stop keys on MULTIPLE signals — page type,
+# the FLAG_SECURE sensitive flag, and (the most reliable in practice) the model's
+# own reading of the screen / its action text.
+_CHECKOUT_PAGE_TYPES: frozenset[str] = frozenset({
+    "checkout", "payment", "order_confirm", "order_confirmation", "cashier",
+})
+
+# Terms that appear essentially only when committing an order / paying — not in
+# task planning. Bare "结算"/"购买"/"加购" are deliberately excluded (they show up
+# in plans like "...然后结算").
+_PAYMENT_COMMIT_MARKERS: tuple[str, ...] = (
+    "立即支付", "去支付", "确认支付", "马上支付", "去付款", "确认付款",
+    "提交订单", "确认下单", "立即下单", "确认订单并支付",
+    "打白条", "白条支付", "微信支付", "支付宝支付",
+    "submit order", "place order", "pay now", "confirm payment",
+)
+
+# Strong present-state markers that the CURRENT page is an order-confirmation /
+# checkout page (你只会在结算页看到收货地址 + 支付按钮).
+_CHECKOUT_PAGE_MARKERS: tuple[str, ...] = (
+    "订单确认页", "确认订单页", "收货地址", "结算页面", "订单结算页",
+    "提交订单页", "order confirmation", "checkout page", "payment page",
+)
+
+
 class PhoneAgent:
     """
     AI-powered agent for automating Android phone interactions.
@@ -1218,6 +1245,68 @@ class PhoneAgent:
             message=msg,
         )
 
+    @staticmethod
+    def _is_payment_or_checkout_context(
+        action: dict | None, thinking: str, page_type: str | None, is_sensitive: bool,
+    ) -> bool:
+        """Detect that we are on / committing at a checkout or payment page.
+
+        Multi-signal so a single missed page classification cannot let an order
+        slip through: page type, the FLAG_SECURE sensitive flag, and the model's
+        own screen reading / action text (the signal that actually fired when the
+        classifier mislabeled JD's 结算 page as product_detail).
+        """
+        if (page_type or "").strip().lower() in _CHECKOUT_PAGE_TYPES:
+            return True
+        if is_sensitive:
+            return True
+        action = action or {}
+        blob = " ".join(str(x) for x in (
+            thinking or "",
+            action.get("semantic_target", ""),
+            action.get("target", ""),
+            action.get("message", ""),
+            action.get("action", ""),
+        ))
+        return any(m in blob for m in _PAYMENT_COMMIT_MARKERS) or any(
+            m in blob for m in _CHECKOUT_PAGE_MARKERS
+        )
+
+    def _payment_safety_stop(
+        self, action: dict | None, thinking: str, page_type: str | None, current_app: str,
+        is_sensitive: bool = False,
+    ) -> "StepResult | None":
+        """HARD safety stop: never submit an order or pay.
+
+        Returns a terminal StepResult (a SAFE STOP that bypasses the completion
+        authority — final_confirm once rejected a correct finish here and pushed
+        the agent into tapping 打白条) when a checkout/payment context is detected
+        in a shopping app. The selecting/adding part is treated as done; the
+        order/payment step is the user's to perform manually.
+        """
+        try:
+            if not self._spec_guard._is_shopping_app(current_app):
+                return None
+        except Exception:
+            pass
+        if not PhoneAgent._is_payment_or_checkout_context(action, thinking, page_type, is_sensitive):
+            return None
+        msg = (
+            "已到达结算/支付环节。下单与支付是禁止的自动操作，已按安全规则停止——"
+            "请您在手机上手动核对订单并自行完成支付（如确需购买）。商品已为您选好。"
+        )
+        if self.agent_config.verbose:
+            print(f"\n{'=' * 50}")
+            print("🛑 [SafetyStop] 检测到结算/支付页面或下单/支付动作 — 绝不自动下单/支付，安全终止任务")
+            print(f"{'=' * 50}")
+        return StepResult(
+            success=True,
+            finished=True,
+            action={"_metadata": "finish", "action": "finish", "message": msg},
+            thinking=thinking or "",
+            message=msg,
+        )
+
     def _completion_evidence(self) -> bool:
         """Mechanical evidence that the task goal is plausibly reached.
 
@@ -2092,6 +2181,14 @@ class PhoneAgent:
                         screen_width=screenshot.width,
                         screen_height=screenshot.height,
                     )
+                    # HARD safety stop FIRST: never submit an order / pay, even
+                    # if the page was misclassified (JD 结算 read as product_detail).
+                    _safety = self._payment_safety_stop(
+                        action, thinking, page_type, current_app,
+                        is_sensitive=screenshot.is_sensitive,
+                    )
+                    if _safety is not None:
+                        return _safety
                     # SpecGuard on the canonical action BEFORE execution —
                     # previously only the AutoGLM branch was guarded, so the
                     # other model families could commit purchases unchecked.
@@ -2176,6 +2273,14 @@ class PhoneAgent:
             if self.action_advisor and _available_actions:
                 action = self.action_advisor.try_ground(action, _available_actions)
 
+            # HARD safety stop FIRST: never submit an order / pay, even if the
+            # page was misclassified (JD 结算 read as product_detail).
+            _safety = self._payment_safety_stop(
+                action, thinking, page_type, current_app,
+                is_sensitive=screenshot.is_sensitive,
+            )
+            if _safety is not None:
+                return _safety
             # SpecGuard: prevent model from skipping Interact on spec pages.
             # FLAG_SECURE (sensitive) screenshots skip classification — treat
             # them as payment pages so the guard stays armed where it matters.
