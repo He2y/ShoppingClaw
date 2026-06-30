@@ -36,6 +36,19 @@ _COMMIT_KEYWORDS: tuple[str, ...] = (
     "buy now", "checkout", "submit order", "pay",
 )
 
+# Spec keys that are SEARCH FILTERS, not page-selectable SKU variants. A price
+# range constrains which products appear; it is NOT a color/version/size the
+# user picks on the spec page. Treating it as a "specified SKU" wrongly silences
+# the variant clarification (the agent stopped asking which color/version once a
+# price was given). Price bounds are still enforced separately via
+# ``_extract_price_bounds`` — this set only governs the variant-clarification
+# decision.
+_FILTER_SPEC_KEYS: frozenset[str] = frozenset({
+    "price_range", "price", "价格", "预算", "价位", "budget",
+    "query", "product", "keyword", "搜索词", "关键词", "brand", "品牌",
+    "feature", "features", "功能", "特性",
+})
+
 
 class SpecGuard:
     """Purchase safety guard — stateless except for config reference.
@@ -201,15 +214,23 @@ class SpecGuard:
         slots = self._extractor.extract(task)
         specs: dict[str, str] = dict(slots.spec_dict)  # Chinese-keyed
 
-        # Enrich with VLM plan specs
+        # Enrich with VLM plan specs — but skip search FILTERS (price/brand/
+        # query). Those are not SKU variants the user selects on the spec page,
+        # so they must not count as "user specified the SKU" (which would
+        # suppress variant clarification).
         if isinstance(vlm_plan, dict):
             plan_specs = vlm_plan.get("specs", {})
             if isinstance(plan_specs, dict):
                 for key, value in plan_specs.items():
-                    if value:
-                        cn_key = TaskSpecExtractor.normalize_spec_key(key)
-                        if cn_key not in specs:
-                            specs[cn_key] = str(value)
+                    if not value:
+                        continue
+                    if str(key).lower() in _FILTER_SPEC_KEYS:
+                        continue
+                    cn_key = TaskSpecExtractor.normalize_spec_key(key)
+                    if cn_key.lower() in _FILTER_SPEC_KEYS:
+                        continue
+                    if cn_key not in specs:
+                        specs[cn_key] = str(value)
         return specs
 
     _PRICE_RANGE_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[-~～到至]\s*(\d+(?:\.\d+)?)\s*元?")

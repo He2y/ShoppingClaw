@@ -70,3 +70,67 @@ def test_price_guard_passes_in_budget_commit():
     # In-budget price must not trigger the price interception (any further
     # interception, if present, comes from spec logic — never mentions 超出)
     assert guarded is None or "超出" not in guarded.get("message", "")
+
+
+# --- Fix: price/feature are search FILTERS, not SKU variants ---------------
+
+def test_requested_specs_excludes_price_filter():
+    config = ShoppingConfig.load()
+    guard = SpecGuard(config)
+    specs = guard._requested_spec_slots(
+        "去淘宝买个蓝牙鼠标，价格100-200元，加入购物车",
+        {"specs": {"price_range": "100-200元"}},
+    )
+    # A price range constrains the search, not the SKU variant -> excluded.
+    assert "price_range" not in specs
+    assert specs == {}
+
+
+def test_requested_specs_keeps_genuine_variants_drops_filters():
+    config = ShoppingConfig.load()
+    guard = SpecGuard(config)
+    specs = guard._requested_spec_slots(
+        "买iPhone 17 银色 512G",
+        {"specs": {"color": "银色", "price_range": "5000-8000元", "brand": "Apple", "feature": "降噪"}},
+    )
+    assert specs.get("颜色") == "银色"
+    assert specs.get("容量") == "512G"
+    for filtered in ("price_range", "brand", "feature", "Apple"):
+        assert filtered not in specs
+
+
+def test_check_asks_variant_when_only_price_given():
+    """Regression: a price-only task must NOT suppress variant clarification.
+    Before the fix, price_range counted as 'SKU specified' -> 不追问用户."""
+    config = ShoppingConfig.load()
+    guard = SpecGuard(config)
+    app = next(iter(config.apps))
+    guarded = guard.check(
+        action={"_metadata": "do", "action": "Tap", "semantic_target": "add_to_cart"},
+        thinking="点击加入购物车按钮，有多种颜色可选。",
+        current_app=app,
+        page_type="product_detail",
+        task="去淘宝买个蓝牙鼠标，价格100-200元，加入购物车",
+        vlm_plan={"specs": {"price_range": "100-200元"}},
+        current_price=114.0,  # in budget -> no price red-line
+    )
+    assert guarded is not None, "should clarify the unspecified color/variant"
+    assert guarded["action"] == "Interact"
+    assert "超出" not in guarded.get("message", "")  # not a price interception
+
+
+def test_check_passes_when_variant_specified_and_selected():
+    config = ShoppingConfig.load()
+    guard = SpecGuard(config)
+    app = next(iter(config.apps))
+    guarded = guard.check(
+        action={"_metadata": "do", "action": "Tap", "semantic_target": "add_to_cart"},
+        thinking="已选中银色，点击加入购物车。",
+        current_app=app,
+        page_type="spec_selection",
+        task="买iPhone 银色 加入购物车",
+        vlm_plan={"specs": {"color": "银色"}},
+        current_price=None,
+    )
+    # Variant specified AND thinking shows it's selected -> let it proceed.
+    assert guarded is None
