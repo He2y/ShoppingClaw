@@ -34,6 +34,7 @@ class TransitionCandidate:
     action_params: dict[str, Any]
     thinking_context: str
     step_index: int
+    app: str = ""  # the app the SOURCE step occurred in (per-transition scope)
 
     @property
     def edge_key(self) -> str:
@@ -114,10 +115,17 @@ class TrajectoryReviewer:
         if not candidates:
             return result
 
-        # 2. Check which are new (not in graph)
+        # 1b. Collapse within-trajectory duplicates so a single run cannot
+        #     import the same edge twice.
+        candidates = self._dedup_candidates(candidates, app)
+
+        # 2. Check which are new (not in graph). Scope each query by the
+        #    transition's OWN app (falling back to the session app) so an
+        #    edge that happened in taobao is checked against the taobao
+        #    subgraph — not whatever app happened to sort first in the set.
         new_candidates = []
         for c in candidates:
-            if self._transition_exists(c, app):
+            if self._transition_exists(c, c.app or app):
                 result.already_in_graph += 1
             else:
                 new_candidates.append(c)
@@ -142,9 +150,9 @@ class TrajectoryReviewer:
                 print(f"[trajectory] VLM 审核: {len(new_candidates)} 候选, 0 通过")
             return result
 
-        # 4. Import to Neo4j
+        # 4. Import to Neo4j (per-transition app scope, see step 2)
         for c in approved:
-            success = self._import_transition(c, app)
+            success = self._import_transition(c, c.app or app)
             if success:
                 result.imported += 1
                 result.details.append({
@@ -191,8 +199,34 @@ class TrajectoryReviewer:
                 action_params=steps[i].get("action_params", {}),
                 thinking_context=steps[i].get("thinking", "")[:100],
                 step_index=i,
+                # The transition belongs to the app the SOURCE step ran in.
+                # Using this per-transition (instead of one session-level app)
+                # is what keeps a multi-app trajectory from mis-scoping edges
+                # (e.g. tagging taobao pages under the launcher 'system_home').
+                app=str(steps[i].get("app", "") or ""),
             ))
         return candidates
+
+    @staticmethod
+    def _dedup_candidates(
+        candidates: list[TransitionCandidate], default_app: str
+    ) -> list[TransitionCandidate]:
+        """Collapse within-trajectory duplicate transitions.
+
+        A task that bounces back and forth (e.g. product_detail→back→search_result
+        →re-open) yields the same (app, source, action, target) several times.
+        Without this, each duplicate is imported again, inflating counts and
+        churning verification_count on a single run.
+        """
+        seen: set[tuple[str, str, str, str]] = set()
+        out: list[TransitionCandidate] = []
+        for c in candidates:
+            key = (c.app or default_app, c.source_page, c.action_type, c.target_page)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(c)
+        return out
 
     # ── Step 2: Check existence ─────────────────────────────────────
 
