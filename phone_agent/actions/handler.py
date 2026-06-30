@@ -603,11 +603,31 @@ def parse_action(response: str) -> dict[str, Any]:
                 if m:
                     return {"_metadata": "do", "action": "Tap",
                             "element": [int(m.group(1)), int(m.group(2))]}
+                # Degraded small-model format: Tap(x, y) without [ ] around the
+                # coords, e.g. "Tap(429, 126)".
+                m = re.match(r'Tap\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)', call_str)
+                if m:
+                    return {"_metadata": "do", "action": "Tap",
+                            "element": [int(m.group(1)), int(m.group(2))]}
                 m = re.match(r'(Back|Home|Wait|Interact)\s*\(', call_str)
                 if m:
                     return {"_metadata": "do", "action": m.group(1)}
                 if call_str.startswith("finish"):
                     return parse_action(call_str)
+
+            # Last resort: a confused small model sometimes recites a whole plan
+            # and emits the tap with the verb in brackets / coords without
+            # brackets, buried mid-text — e.g. "[Tap] (272, 84)" or a stray
+            # "Tap(429, 126)". Take the LAST such tap (its final decision) so the
+            # agent advances instead of looping on parse failures; the supervisor
+            # and payment safety stop steer from there.
+            taps = re.findall(
+                r'\[?\s*Tap\s*\]?\s*[\(（]\s*\[?\s*(\d+)\s*[,，]\s*(\d+)\s*\]?\s*[\)）]',
+                response,
+            )
+            if taps:
+                x, y = taps[-1]
+                return {"_metadata": "do", "action": "Tap", "element": [int(x), int(y)]}
 
             raise ValueError(f"Failed to parse action: {response[:200]}")
         return action
