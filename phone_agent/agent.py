@@ -576,6 +576,15 @@ class PhoneAgent:
         step = self._task_plan.current_step()
         if step is None:
             return None
+        # On the search box the next move is ALWAYS to execute the search
+        # (-> search_result). Standing on search_input does NOT mean the query
+        # was searched, so never advance the effective target to a learned
+        # shortcut that skips it (real device: the plan's next step was
+        # filter_panel, so search_input -> filter_panel fast-fired before "显示器"
+        # was ever searched). This keeps the compound type+search action eligible
+        # while blocking skip-the-search edges.
+        if page_type == "search_input":
+            return "search_result"
         if page_type and step.target_page == page_type:
             steps = self._task_plan.steps
             try:
