@@ -69,6 +69,8 @@ Shopping-Agent 是一个**以小型 GUI 模型为主执行器、强 VLM 低频�
 
 系统由三个逻辑区域与一个监督层组成，通过一条闭环数据流连接。理解架构的关键不是"有哪些层"，而是**数据怎么流动、谁决定什么**。
 
+![系统架构图](E:\ClawGUI\clawgui-agent\phone_agent\docs\系统架构图.png)
+
 ### 2.1  三区域与监督层
 
 ```
@@ -169,6 +171,8 @@ flowchart TD
 ## 3  Agent 执行模型
 
 本节按时间顺序描述一个任务从接收到完成的完整过程。入口是 `PhoneAgent.run(task)`，主循环是 `_execute_step_impl()`，出口是 `MemoryManager.end_task()` 与 `SessionMemoryFile.finalize()`。
+
+![Agent执行闭环](E:\ClawGUI\clawgui-agent\phone_agent\docs\Agent执行闭环.png)
 
 ### 3.1  任务接收：从自然语言到可执行状态
 
@@ -489,6 +493,7 @@ spec_selection→product_detail  弹窗关闭/取消决策
 ## 9  记忆系统
 
 记忆系统为 Agent 循环的不同需求提供多个数据面，时间尺度与粒度各异。
+![记忆系统](E:\ClawGUI\clawgui-agent\phone_agent\docs\记忆系统.png)
 
 | 记忆面 | 存储 | 服务对象 | 解决的问题 |
 |---|---|---|---|
