@@ -1,0 +1,78 @@
+{
+  "app": "淘宝",
+  "task": "采集淘宝购物路径：搜索蓝牙耳机，打开筛选，设置价格500到1000并应用；回到结果后点一个普通商品，进入详情后点立即购买，到规格选择页停止。不要下单、不要支付、不要确认地址。遇到登录、支付、地址、订单确认页就返回并结束。",
+  "explored_at": "2026-05-23T23:10:47.930345",
+  "total_pages": 4,
+  "coverage": {
+    "covered_page_types": [
+      "cart",
+      "filter_panel",
+      "product_detail",
+      "search_input"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_result",
+      "spec_selection",
+      "checkout"
+    ],
+    "covered_transitions": [],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "search_input",
+      "summary": "搜索输入页",
+      "elements": {},
+      "screenshot_hash": "f1b843d19b0d856bf30579a30f14cef3",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "filter_panel",
+      "summary": "商品筛选面板",
+      "elements": {},
+      "screenshot_hash": "f66f6847f499ada55916e3ee7c435a6b",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "商品详情页",
+      "elements": {},
+      "screenshot_hash": "d6b3f579bac1d50a9e29d5612a84ed49",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "cart",
+      "summary": "购物车列表",
+      "elements": {},
+      "screenshot_hash": "f4b5e3c180dfd66f85811d4b8f65d4a3",
+      "app": "淘宝"
+    }
+  ]
+}

@@ -1,0 +1,68 @@
+{
+  "app": "淘宝",
+  "task": "只完成一个安全采集任务：如果当前是淘宝搜索输入页，并且搜索框已有关键词，就点击右侧『搜索』按钮；如果搜索框为空，就输入『手机壳』再点击搜索；如果当前已经是商品搜索结果页，就立即 finish。看到商品搜索结果列表后立即 finish 停止。不要点击商品卡片，不要进入详情页，不要购买，不要登录。",
+  "explored_at": "2026-05-27T11:44:02.078135",
+  "total_pages": 2,
+  "coverage": {
+    "covered_page_types": [
+      "search_input",
+      "search_result"
+    ],
+    "missing_page_types": [
+      "home",
+      "product_detail",
+      "spec_selection",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "search_input",
+        "search_result"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "search_input",
+      "summary": "搜索输入页",
+      "elements": {},
+      "screenshot_hash": "b76a209aa191dbc4e6ddb6b8a8bc7522",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_result",
+      "summary": "商品搜索结果",
+      "elements": {},
+      "screenshot_hash": "b80a8629a50a5667a27522e354df3dc7",
+      "app": "淘宝"
+    }
+  ]
+}

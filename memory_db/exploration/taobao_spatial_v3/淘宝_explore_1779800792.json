@@ -1,0 +1,71 @@
+{
+  "app": "淘宝",
+  "task": "覆盖淘宝购物核心空间骨架：home -> search_input -> search_result -> product_detail -> spec_selection -> cart。只执行安全探索动作，不提交订单、不支付、不确认地址。如果进入登录、支付、地址或订单确认页，立刻返回。",
+  "explored_at": "2026-05-26T21:06:32.116118",
+  "total_pages": 3,
+  "coverage": {
+    "covered_page_types": [
+      "cart",
+      "filter_panel",
+      "search_input"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_result",
+      "product_detail",
+      "spec_selection",
+      "checkout"
+    ],
+    "covered_transitions": [],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "search_input",
+      "summary": "搜索输入页",
+      "elements": {},
+      "screenshot_hash": "3c6137c9dba0f08ec66046526169ec3d",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "cart",
+      "summary": "购物车列表",
+      "elements": {},
+      "screenshot_hash": "81c587305179818703818bfd933f8437",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "filter_panel",
+      "summary": "商品筛选面板",
+      "elements": {},
+      "screenshot_hash": "e4659816741dc1c9d755a71a9ee3455d",
+      "app": "淘宝"
+    }
+  ]
+}

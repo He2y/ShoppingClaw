@@ -1,0 +1,278 @@
+{
+  "app": "淘宝",
+  "task": "采集淘宝购物路径：搜索蓝牙耳机，打开筛选，设置价格500到1000并应用；回到结果后点一个普通商品，进入详情后点立即购买，到规格选择页停止。不要下单、不要支付、不要确认地址。遇到登录、支付、地址、订单确认页就返回并结束。",
+  "total_transitions": 0,
+  "coverage": {
+    "covered_page_types": [
+      "cart",
+      "filter_panel",
+      "product_detail",
+      "search_input"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_result",
+      "spec_selection",
+      "checkout"
+    ],
+    "covered_transitions": [],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [],
+  "rejected_transitions": [
+    {
+      "from": "search_input:搜索输入页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          429,
+          114
+        ]
+      },
+      "to": "search_input:搜索输入页",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "search_input:搜索输入页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          130,
+          221
+        ]
+      },
+      "to": "filter_panel:商品筛选面板",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          936,
+          326
+        ]
+      },
+      "to": "filter_panel:商品筛选面板",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          98,
+          479
+        ]
+      },
+      "to": "filter_panel:商品筛选面板",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          408,
+          491
+        ]
+      },
+      "to": "filter_panel:商品筛选面板",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Type",
+        "text": "500"
+      },
+      "to": "filter_panel:商品筛选面板",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          793,
+          491
+        ]
+      },
+      "to": "filter_panel:商品筛选面板",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Type",
+        "text": "1000"
+      },
+      "to": "filter_panel:商品筛选面板",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          739,
+          922
+        ]
+      },
+      "to": "filter_panel:商品筛选面板",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          793,
+          491
+        ]
+      },
+      "to": "product_detail:商品详情页",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          408,
+          491
+        ]
+      },
+      "to": "cart:购物车列表",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "cart:购物车列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          793,
+          491
+        ]
+      },
+      "to": "product_detail:商品详情页",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          408,
+          491
+        ]
+      },
+      "to": "cart:购物车列表",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "cart:购物车列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          793,
+          491
+        ]
+      },
+      "to": "product_detail:商品详情页",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          408,
+          491
+        ]
+      },
+      "to": "product_detail:商品详情页",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          934,
+          212
+        ]
+      },
+      "to": "product_detail:商品详情页",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          408,
+          491
+        ]
+      },
+      "to": "product_detail:商品详情页",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          934,
+          212
+        ]
+      },
+      "to": "product_detail:商品详情页",
+      "reason": "self-loop or unchanged screen"
+    }
+  ]
+}

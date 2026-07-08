@@ -1,0 +1,1001 @@
+{
+  "app": "淘宝",
+  "explored_at": "2026-06-03T18:06:08.515617",
+  "policy": {
+    "max_total_steps": 40,
+    "max_job_steps": 5,
+    "max_dry_rounds": 5,
+    "job_queue_limit": 20,
+    "settle_delay": 2.0,
+    "use_strong_vlm_extractor": false,
+    "convergence_window": 3,
+    "active_exploration": true,
+    "auto_import_graph": false
+  },
+  "convergence": {
+    "total_rounds": 28,
+    "consecutive_dry_rounds": 0,
+    "dry_round_limit": 5,
+    "converged": false,
+    "history": [
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      }
+    ]
+  },
+  "coverage_metrics": {
+    "discovered_functionalities": 59,
+    "discovered_functionality_clusters": 24,
+    "verified_functionality_clusters": 13,
+    "stable_functionality_clusters": 1,
+    "verified_functionality_ratio": 0.5417,
+    "novelty_discovery_rate": 0.5217,
+    "saturation_per_50_screens": [
+      17,
+      7
+    ],
+    "recovery_functionality_coverage": 0.75,
+    "risk_boundary_coverage": 1.0,
+    "duplicate_screen_compression_ratio": 0.0435,
+    "functionality_semantics_quality": "limited",
+    "quality_gate": {
+      "passed": true,
+      "reasons": [],
+      "metrics": {
+        "discovered_functionalities": 59,
+        "discovered_functionality_clusters": 24,
+        "verified_functionality_clusters": 13,
+        "stable_functionality_clusters": 1,
+        "verified_functionality_ratio": 0.5417,
+        "novelty_discovery_rate": 0.5217,
+        "saturation_per_50_screens": [
+          17,
+          7
+        ],
+        "recovery_functionality_coverage": 0.75,
+        "risk_boundary_coverage": 1.0,
+        "duplicate_screen_compression_ratio": 0.0435,
+        "functionality_semantics_quality": "limited"
+      }
+    }
+  },
+  "graph_summary": "[cart] 购物车页面，显示53件商品、消费券信息及底部导航栏\n  元素: ★搜索框, ★商品卡片（小米空调、巨省电等）, ★筛选按钮, ★购物车图标, ★结算按钮, ★底部导航：首页/视频/消息/购物车/我的淘宝\n  已知跳转: → ✓my_account\n[dialog] 直播优惠券领取弹窗，显示100元8.5折主播折扣券及‘领取并使用’按钮\n  元素: ★领取并使用按钮, ★关闭按钮（隐式）\n[home] ← 当前页 淘宝首页推荐页，含搜索栏、618活动入口、商品推荐和底部导航栏\n  元素: ✓搜索框, ✓618淘宝直播卡片, ✓618百亿补贴商品, ✓618开门红消费券, ✓小米空调Pro商品卡片, ★底部导航：视频/消息/购物车/我的淘宝\n  已知跳转: → ✓cart, ✓dialog, ✓my_account, ✓unknown\n[my_account] 用户个人中心页面，展示会员信息、资产概览、订单入口及常用功能模块\n  元素: ★搜索框, ★88VIP标识, ★关注店铺, ★地址, ★专属客服, ✓设置, ★快递, ★收藏, ✓我的订单, ✓芭芭农场\n  已知跳转: → ✓home\n[product_detail] 商品详情页，展示‘周十五’蜂蜜露产品信息、促销标签、收藏成功弹窗及底部功能入口\n  元素: ✓直播讲解按钮, ✓加入购物车按钮, ★领券购买按钮, ★底部导航：店铺/客服/10万+, ★618开门红活动横幅, ★收藏成功弹窗（含我的心愿单、新建心愿单）\n  已知跳转: → ✓home, ✓store\n[store] 周十五旗舰店首页，展示618开门红促销活动、多款蜂蜜商品卡片及品牌信息\n  元素: ★搜索框, ★商品卡片（周十五益生菌外、外用蜂蜜等）, ★618年中钜惠横幅, ★底部导航栏（首页/宝贝/导购/新品/会员）\n  已知跳转: → ✓product_detail\n[unknown] 视频播放页，展示扫地机器人产品演示，含互动按钮与商品跳转入口\n  元素: ★购物车图标, ★去查看按钮, ★点赞按钮, ★评论按钮, ★关注按钮, ★底部导航栏（视频/直播/短剧/关注/推荐）\n  已知跳转: → ✓home, ✓product_detail\n\n统计: 7种页面, 14条跳转, ★未探索元素约1个",
+  "job_results": [
+    {
+      "job_description": "首次探索，图谱为空，需优先触达核心页面。底部导航栏的'购物车'和'我的淘宝'是关键未探索Tab；顶部搜索框可进入搜索流程；'618淘宝直播'为活动页，按规则停留不超过1步。优先选择底部导航中未探索的'",
+      "steps_taken": 1,
+      "new_page_types_discovered": [
+        "cart"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前在购物车页，图谱中home页有6个★未探索元素（搜索框、618直播卡片、百亿补贴商品、消费券、小米空调Pro卡片、底部导航中的‘我的淘宝’等）。根据规则3，应优先探索底部导航栏Tab；‘我的淘宝’",
+      "steps_taken": 1,
+      "new_page_types_discovered": [
+        "my_account"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为my_account，图谱中标记其元素为'无元素'，说明尚未探索该页内部可跳转的子页面；需优先点击底部导航栏外的高价值未探索入口，如'设置'（可能通向隐私/账号管理等新页面）、'地址'（可能",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记为★未探索的元素包括：搜索框、88VIP标识、关注店铺、地址、专属客服、快递、收藏、我的订单、芭芭农场。其中‘芭芭农场’是独立功能入口且未被探索过（非跳转路径中的已知节点），优先点击以发现新",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为home，图谱中标记★未探索的元素包括：618淘宝直播卡片、618百亿补贴商品、618开门红消费券、小米空调Pro商品卡片。其中‘618淘宝直播卡片’是典型非核心页面（直播类），按规则4应仅",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：618淘宝直播卡片、618百亿补贴商品、618开门红消费券、小米空调Pro商品卡片；其中‘618淘宝直播卡片’是高优先级新页面类型（直播页），且属于非核心页面，按规则4应",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：搜索框、88VIP标识、关注店铺、地址、专属客服、快递、收藏、我的订单。其中‘我的订单’是核心路径节点，可通往order_list页面，且尚未探索；底部导航栏中‘首页’‘",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：618百亿补贴商品、618开门红消费券、小米空调Pro商品卡片。其中‘618百亿补贴商品’是典型活动页入口，属于高价值未探索路径；优先点击该商品卡片可进入活动商品列表页，",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：618开门红消费券、小米空调Pro商品卡片、底部导航中的‘视频’Tab。其中‘视频’是底部导航栏新入口（此前仅探索了首页/购物车/我的淘宝），优先级最高；消费券和商品卡片",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：618开门红消费券、小米空调Pro商品卡片、底部导航中的‘视频’和‘消息’Tab。其中‘618开门红消费券’是独立营销模块，尚未点击；‘小米空调Pro商品卡片’为高曝光主",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素有：'618开门红消费券'和底部导航中的'视频'Tab。根据规则3，优先探索底部导航栏Tab；'视频'Tab尚未访问过（当前仅访问过首页/购物车/我的淘宝），且属于核心导航入口",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：'618开门红消费券'（当前页可见但未点击过）和底部导航中的'视频'Tab（尚未进入）。根据规则3，优先探索底部导航栏Tab；同时'618开门红消费券'是独立活动入口，属",
+      "steps_taken": 1,
+      "new_page_types_discovered": [
+        "unknown"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：cart页面的搜索框、商品卡片、筛选按钮、底部导航中的视频/消息/购物车/我的淘宝（但购物车已探索）；home页面的618开门红消费券；my_account页面的搜索框、",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括'购物车图标'和'去查看按钮'；根据规则4，非核心页面（如视频页）停留不超过1步，应优先点击可跳转的核心路径元素。'去查看'按钮极可能导向商品详情页（新页面类型），且尚未探",
+      "steps_taken": 1,
+      "new_page_types_discovered": [
+        "product_detail"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为product_detail页，图谱中该页面标记为'元素: 无元素'，说明尚未记录其可交互元素；且从unknown页跳转而来（→ ✓product_detail），但未探索其内部跳转路径。根据规",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为product_detail，图谱中标记★未探索的元素包括：直播讲解按钮、底部导航中的‘店铺’和‘客服’（虽在列表中但尚未跳转验证）、以及618开门红活动横幅。其中‘店铺’是核心Tab入口，",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "store"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前store页面在图谱中标记为'元素: 无元素'，说明尚未提取其可交互元素；底部导航栏的'宝贝'、'新品'、'会员'等Tab均为★未探索路径（对比home页底部导航已部分标记✓，但store页独立需",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为product_detail，图谱中标记★未探索的元素包括：'加入购物车按钮'（尚未点击触发跳转）、'底部导航：店铺/客服/10万+'中的'客服'和'10万+'标签（可能导向新页面类型）。根",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为store页, 图谱中标记★未探索的元素包括：搜索框、商品卡片、618年中钜惠横幅、底部导航栏各Tab。其中底部导航栏的'导购'和'新品'尚未探索过（仅知首页/宝贝已连通product_de",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为store页，图谱中标记★未探索的元素包括：搜索框、商品卡片、618年中钜惠横幅、底部导航栏各Tab。其中底部导航栏的'宝贝'、'导购'、'新品'、'会员'均为未探索路径（仅'首页'已知跳转",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为product_detail，图谱中标记★未探索的元素包括'加入购物车按钮'和'领券购买按钮'；但根据核心规则第6条，禁止执行购买/结算类操作（领券购买属于下单前步骤，需规避）；而'加入购物",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为product_detail，图谱中标记★未探索的元素有：'领券购买按钮'和'底部导航：店铺/客服/10万+'中的'10万+'（代表收藏/关注数入口）。根据规则3，优先探索底部导航栏Tab；",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为product_detail，图谱中标记★未探索的元素有：'领券购买按钮'和'底部导航：10万+'。根据规则优先探索底部导航Tab，且'10万+'是当前截屏中明确可见的底部图标（带橙色星标）",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为product_detail，图谱中标记★未探索的元素包括'领券购买按钮'和底部导航中的'10万+'（可能为收藏/关注入口）。但根据核心规则第6条，禁止点击'领券购买'（涉及结算路径），因此",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为product_detail，图谱中标记★未探索的元素包括：'领券购买按钮'（尚未点击跳转）、底部导航中的'10万+'（可能通向达人/榜单页）、以及弹窗中的'我的心愿单'（可能导向心愿单列表",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：'去查看'按钮（可跳转至product_detail，但当前product_detail已探索过，需确认是否为新商品）、底部导航栏中的'直播'和'短剧'Tab（尚未探索）",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为home，弹窗属于临时干扰层（非独立页面类型），根据规则4应尽快跳过；图谱中标记★未探索的‘618开门红消费券’是核心可点击入口，且尚未被访问过；底部导航中‘视频’Tab虽已知存在，但其子路",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "dialog"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为弹窗页面（dialog），图谱中标记为★未探索的跳转尚未记录从该弹窗出发的路径；但根据规则4，非核心页面停留不超过1步，应立即关闭弹窗返回上一页（home），避免陷入重复弹窗流程。关闭操作对应隐",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": "fn_cluster_open_search__home_86c517c2c63a",
+      "canonical_name": "open_search",
+      "canonical_description": "搜索框",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品推荐和底部导航栏_1a74e5f50ff9",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页__含搜索栏_618活动入口_商品推荐和底部导航栏_031b0636fb89",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页__含618活动入口_商品推荐及底部导航栏_19b_f74ac73b4e5c",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品推荐和底部导航栏_f95247deb5e9",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品推荐和底部导航栏_a7b28aacee15",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含618活动专区_商品卡片及底部导航栏_aaa8_626d58c733fb",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含618活动专区_百亿补贴商品及底部导航栏_94_b2773a06683b",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含618活动专区_商品卡片及底部导航栏_163d_07701c810fa7"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.125,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail__home_4a43c22e4181",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "小米空调Pro商品卡片",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品推荐和底部导航栏_f0397dafcc3d",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页__含搜索栏_618活动入口_商品推荐和底部导航栏_cd34fc250cd2",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页__含618活动入口_商品推荐及底部导航栏_19b_5f99ba0c8806",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品推荐和底部导航栏_53736eaa26d0",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品推荐和底部导航栏_48d739eddedb",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含618活动专区_商品卡片及底部导航栏_aaa8_2121581e7274",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含618活动专区_百亿补贴商品及底部导航栏_94_5c133fb9cb30",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含618活动专区_商品卡片及底部导航栏_163d_a8219ae8da55"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.125,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_cart_cart__home___bottom_right_558d77749164",
+      "canonical_name": "tap_cart",
+      "canonical_description": "tap_cart by tap action from home to observed postcondition cart. Source summary: 淘宝首页推荐页，含搜索栏、618活动入口、商品推荐和底部导航栏; target summary: 购物车含53件商品及优惠券信息.",
+      "member_functionality_ids": [
+        "fn_淘宝_home_tap_tap_cart_bottom_right_cart___metadat_37805eab723c"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [
+        "bottom_right"
+      ],
+      "verified_edges": [
+        "page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品推荐和底部导航栏_f10c7cedf36d->cart:bottom_right"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_submit_search__cart_526a4d97cb9b",
+      "canonical_name": "submit_search",
+      "canonical_description": "搜索框",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_cart_购物车页面_显示53件商品_消费券信息及底部导航栏_fd9ddf_bd17ecbcb3c1"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "cart"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail__cart_9122056230db",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "商品卡片（小米空调、巨省电等）",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_cart_购物车页面_显示53件商品_消费券信息及底部导航栏_fd9ddf_8658ce610468"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "cart"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_apply_or_close_filter__cart_5fb565b91a03",
+      "canonical_name": "apply_or_close_filter",
+      "canonical_description": "筛选按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_cart_购物车页面_显示53件商品_消费券信息及底部导航栏_fd9ddf_20931d47814e"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "cart"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_from_cart_to_my_account_my_account__car_00a5ac073607",
+      "canonical_name": "rollback_from_cart_to_my_account",
+      "canonical_description": "rollback_from_cart_to_my_account by tap action from cart to observed postcondition my_account. Source summary: 购物车页面，显示53件商品、消费券信息及底部导航栏; target summary: 用户个人中心与订单管理页.",
+      "member_functionality_ids": [
+        "fn_淘宝_cart_tap_rollback_from_cart_to_my_account_bot_44025375da07"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "cart"
+      ],
+      "regions": [
+        "bottom_right"
+      ],
+      "verified_edges": [
+        "page_淘宝_cart_购物车页面_显示53件商品_消费券信息及底部导航栏_37da6c19abbd->my_account:bottom_right"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_submit_search__my_account_0eedee16e464",
+      "canonical_name": "submit_search",
+      "canonical_description": "搜索框",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_my_account_用户个人中心页面_展示会员信息_资产概览_订单入口及_26060a454a0e",
+        "fn_淘宝_page_淘宝_my_account_用户个人中心页面_展示会员权益_资产信息_订单入口及_74bff7946f2d",
+        "fn_淘宝_page_淘宝_my_account_用户个人中心页面_展示会员权益_资产信息_订单入口及_2785b641fe32"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "my_account"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.3333,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_home_home__my_account___middle_left___top_le_230fe30f7825",
+      "canonical_name": "tap_home",
+      "canonical_description": "tap_home by tap action from my_account to observed postcondition home. Source summary: 用户个人中心页面，展示会员权益、资产信息、订单入口及常用功能模块; target summary: 芭芭农场互动种果树游戏主页.",
+      "member_functionality_ids": [
+        "fn_淘宝_my_account_tap_tap_home_middle_left_home___me_3830764d9040",
+        "fn_淘宝_my_account_tap_tap_home_top_left_home___metad_8fa1523da7a2"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "my_account"
+      ],
+      "regions": [
+        "middle_left",
+        "top_left"
+      ],
+      "verified_edges": [
+        "page_淘宝_my_account_用户个人中心页面_展示会员权益_资产信息_订单入口及常用功能模块_c5a8bc3fc0ed->home:middle_left",
+        "page_淘宝_my_account_用户个人中心页面_展示会员权益_资产信息_订单入口及常用功能模块_c5a8bc3fc0ed->home:top_left"
+      ],
+      "success_count": 2,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_to_my_account_my_account__home_fa39bedb817a",
+      "canonical_name": "rollback_to_my_account",
+      "canonical_description": "rollback_to_my_account by back action from home to observed postcondition my_account. Source summary: 淘宝首页推荐页, 含618活动入口、商品推荐及底部导航栏; target summary: 用户个人中心与订单管理页.",
+      "member_functionality_ids": [
+        "fn_淘宝_home_back_rollback_to_my_account_unknown_my_a_88f090877486"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [],
+      "verified_edges": [
+        "page_淘宝_home_淘宝首页推荐页__含618活动入口_商品推荐及底部导航栏_06f4325c3303->my_account:unknown"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_unknown_unknown__home___bottom_left_4c6eea49d28d",
+      "canonical_name": "tap_unknown",
+      "canonical_description": "tap_unknown by tap action from home to observed postcondition unknown. Source summary: 淘宝首页推荐页，含618活动专区、商品卡片及底部导航栏; target summary: 视频播放页，展示产品使用方法.",
+      "member_functionality_ids": [
+        "fn_淘宝_home_tap_tap_unknown_bottom_left_unknown___me_8c2ba8a9b164"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [
+        "bottom_left"
+      ],
+      "verified_edges": [
+        "page_淘宝_home_淘宝首页推荐页_含618活动专区_商品卡片及底部导航栏_630e77a77f02->unknown:bottom_left"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_product_detail_product_detail__unknown___bot_f530089d416e",
+      "canonical_name": "tap_product_detail",
+      "canonical_description": "tap_product_detail by tap action from unknown to observed postcondition product_detail. Source summary: 当前为视频播放页，展示产品使用方法，含购物车图标和'去查看'按钮等互动元素; target summary: 商品详情页含直播讲解与促销信息.",
+      "member_functionality_ids": [
+        "fn_淘宝_unknown_tap_tap_product_detail_bottom_right_p_058138191c94"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [
+        "bottom_right"
+      ],
+      "verified_edges": [
+        "page_淘宝_unknown_当前为视频播放页_展示产品使用方法_含购物车图标和_去查看_按钮等互动元素_7f9927e1c07d->product_detail:bottom_right"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_open_cart_from_header__product_detail_c113c5f9888e",
+      "canonical_name": "open_cart_from_header",
+      "canonical_description": "加入购物车按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_含直播讲解视频_促销信息_价格与_60712bdb9367",
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示_周十五益生菌蜂蜜露_的直播_11246e8a4d20",
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示周十五益生菌外用蜂蜜产品信息_a89c310de718",
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示周十五益生菌外用蜂蜜产品信息_e72ecc313440",
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示_周十五_益生菌外用蜂蜜露产_66490c18793a",
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示_周十五_蜂蜜露产品信息_促_0f117942e05d",
+        "fn_淘宝_page_淘宝_product_detail_周十五蜂蜜露商品详情页_含促销信息_价格_购_0fff9e1ec7ca",
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示_周十五_蜂蜜露产品信息_促_460d0f08162f"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.125,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_open_spec_selector__product_detail_230d21a95d68",
+      "canonical_name": "open_spec_selector",
+      "canonical_description": "领券购买按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_含直播讲解视频_促销信息_价格与_6d46ff27cc29",
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示_周十五益生菌蜂蜜露_的直播_4de5be329bb2",
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示周十五益生菌外用蜂蜜产品信息_75293eefcc84",
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示周十五益生菌外用蜂蜜产品信息_d57be75c9bcb",
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示_周十五_益生菌外用蜂蜜露产_404451488e35",
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示_周十五_蜂蜜露产品信息_促_fa58998d90f6",
+        "fn_淘宝_page_淘宝_product_detail_周十五蜂蜜露商品详情页_含促销信息_价格_购_0a27239d41d6",
+        "fn_淘宝_page_淘宝_product_detail_商品详情页_展示_周十五_蜂蜜露产品信息_促_f1b677446476"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.125,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_to_store_store__product_detail_a8d1da911802",
+      "canonical_name": "rollback_to_store",
+      "canonical_description": "rollback_to_store by back action from product_detail to observed postcondition store. Source summary: 商品详情页，展示‘周十五益生菌蜂蜜露’的直播讲解、促销信息、价格及购买入口; target summary: 品牌旗舰店首页，含促销活动与商品推荐.",
+      "member_functionality_ids": [
+        "fn_淘宝_product_detail_back_rollback_to_store_unknown_521067c3d02e"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [
+        "page_淘宝_product_detail_商品详情页_展示_周十五益生菌蜂蜜露_的直播讲解_促销信息_1f67c5563f72->store:unknown"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_submit_search__store_c9dfea91e1d1",
+      "canonical_name": "submit_search",
+      "canonical_description": "搜索框",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_store_周十五旗舰店首页_展示618开门红促销活动_多款蜂蜜商品卡片及_c10d25d587e0",
+        "fn_淘宝_page_淘宝_store_周十五旗舰店首页_含618促销横幅_多款蜂蜜商品卡片及底部导航_91349ebf6887",
+        "fn_淘宝_page_淘宝_store_周十五旗舰店首页_展示618促销活动与多款蜂蜜商品卡片_688_600527dd4206"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "store"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.3333,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail__store_93e010262baa",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "商品卡片（周十五益生菌外、外用蜂蜜等）",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_store_周十五旗舰店首页_展示618开门红促销活动_多款蜂蜜商品卡片及_6b5651e814a7",
+        "fn_淘宝_page_淘宝_store_周十五旗舰店首页_含618促销横幅_多款蜂蜜商品卡片及底部导航_48e72cfd4a08",
+        "fn_淘宝_page_淘宝_store_周十五旗舰店首页_展示618促销活动与多款蜂蜜商品卡片_688_40d4fc3d276d"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "store"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.3333,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_to_product_detail_product_detail__store_24676957af2c",
+      "canonical_name": "rollback_to_product_detail",
+      "canonical_description": "rollback_to_product_detail by back action from store to observed postcondition product_detail. Source summary: 周十五旗舰店首页，展示618开门红促销活动、多款蜂蜜商品卡片及品牌信息; target summary: 商品详情页含视频、价格与促销信息.",
+      "member_functionality_ids": [
+        "fn_淘宝_store_back_rollback_to_product_detail_unknown_e9b4b8f9e91f"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "store"
+      ],
+      "regions": [],
+      "verified_edges": [
+        "page_淘宝_store_周十五旗舰店首页_展示618开门红促销活动_多款蜂蜜商品卡片及品牌信息_20107643ed9c->product_detail:unknown"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_store_store__product_detail___middle_left_7a46b975e9c4",
+      "canonical_name": "tap_store",
+      "canonical_description": "tap_store by tap action from product_detail to observed postcondition store. Source summary: 商品详情页，展示周十五益生菌外用蜂蜜产品信息、618促销价、直播讲解视频及购买操作按钮; target summary: 店铺客服欢迎页及常见问题入口.",
+      "member_functionality_ids": [
+        "fn_淘宝_product_detail_tap_tap_store_middle_left_stor_d40f0e883cec"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [
+        "middle_left"
+      ],
+      "verified_edges": [
+        "page_淘宝_product_detail_商品详情页_展示周十五益生菌外用蜂蜜产品信息_618促销价_bf722825c580->store:middle_left"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_product_detail_product_detail__store___middl_8e9f5cd0e90a",
+      "canonical_name": "tap_product_detail",
+      "canonical_description": "tap_product_detail by tap action from store to observed postcondition product_detail. Source summary: 周十五旗舰店首页，展示618促销活动与多款蜂蜜商品卡片; target summary: 商品详情页含视频、促销与规格信息.",
+      "member_functionality_ids": [
+        "fn_淘宝_store_tap_tap_product_detail_middle_left_prod_bf767266fffd"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "store"
+      ],
+      "regions": [
+        "middle_left"
+      ],
+      "verified_edges": [
+        "page_淘宝_store_周十五旗舰店首页_展示618促销活动与多款蜂蜜商品卡片_780ba4ed51bb->product_detail:middle_left"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_to_home_home__product_detail_8bfdb8164bca",
+      "canonical_name": "rollback_to_home",
+      "canonical_description": "rollback_to_home by back action from product_detail to observed postcondition home. Source summary: 商品详情页，展示‘周十五’蜂蜜露产品信息、促销标签、收藏成功弹窗及底部功能入口; target summary: 首页视频流展示新品扫地机器人.",
+      "member_functionality_ids": [
+        "fn_淘宝_product_detail_back_rollback_to_home_unknown_591fb14fcbfe"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [
+        "page_淘宝_product_detail_商品详情页_展示_周十五_蜂蜜露产品信息_促销标签_收藏成功_14b5e71e63f8->home:unknown"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_home_home__unknown___top_center_f9777f29769f",
+      "canonical_name": "tap_home",
+      "canonical_description": "tap_home by tap action from unknown to observed postcondition home. Source summary: 视频播放页，展示扫地机器人产品演示，含互动按钮与商品跳转入口; target summary: 直播首页，含主播推荐与家电专场活动.",
+      "member_functionality_ids": [
+        "fn_淘宝_unknown_tap_tap_home_top_center_home___metada_11ed1caa47fd"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [
+        "top_center"
+      ],
+      "verified_edges": [
+        "page_淘宝_unknown_视频播放页_展示扫地机器人产品演示_含互动按钮与商品跳转入口_5a7c761ef2e9->home:top_center"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_dialog_dialog__home___center_07eba969b327",
+      "canonical_name": "tap_dialog",
+      "canonical_description": "tap_dialog by tap action from home to observed postcondition dialog. Source summary: 淘宝首页推荐页，含618活动弹窗、直播入口及底部导航栏，当前被100元主播折扣券弹窗遮挡; target summary: 直播优惠券领取弹窗.",
+      "member_functionality_ids": [
+        "fn_淘宝_home_tap_tap_dialog_center_dialog___metadata_2071b3a5e4bc"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [
+        "center"
+      ],
+      "verified_edges": [
+        "page_淘宝_home_淘宝首页推荐页_含618活动弹窗_直播入口及底部导航栏_当前被100元主播折扣券_75d08648f141->dialog:center"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_from_dialog__dialog_857e2b90b14d",
+      "canonical_name": "rollback_from_dialog",
+      "canonical_description": "关闭按钮（隐式）",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_dialog_直播优惠券领取弹窗_显示100元8.5折主播折扣券及_领取并_c56e861cb850"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "dialog"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    }
+  ]
+}

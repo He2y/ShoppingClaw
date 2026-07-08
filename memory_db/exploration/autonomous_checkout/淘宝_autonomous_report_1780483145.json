@@ -1,0 +1,809 @@
+{
+  "app": "淘宝",
+  "explored_at": "2026-06-03T18:39:05.778400",
+  "policy": {
+    "max_total_steps": 40,
+    "max_job_steps": 6,
+    "max_dry_rounds": 5,
+    "job_queue_limit": 20,
+    "settle_delay": 2.0,
+    "use_strong_vlm_extractor": false,
+    "convergence_window": 3,
+    "active_exploration": true,
+    "auto_import_graph": false
+  },
+  "convergence": {
+    "total_rounds": 23,
+    "consecutive_dry_rounds": 1,
+    "dry_round_limit": 5,
+    "converged": false,
+    "history": [
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      }
+    ]
+  },
+  "coverage_metrics": {
+    "discovered_functionalities": 41,
+    "discovered_functionality_clusters": 19,
+    "verified_functionality_clusters": 9,
+    "stable_functionality_clusters": 1,
+    "verified_functionality_ratio": 0.4737,
+    "novelty_discovery_rate": 0.5429,
+    "saturation_per_50_screens": [
+      20
+    ],
+    "recovery_functionality_coverage": 0.5,
+    "risk_boundary_coverage": 1.0,
+    "duplicate_screen_compression_ratio": 0.0,
+    "functionality_semantics_quality": "limited",
+    "quality_gate": {
+      "passed": false,
+      "reasons": [
+        "high-risk functionality clusters should not be directly promoted: 2"
+      ],
+      "metrics": {
+        "discovered_functionalities": 41,
+        "discovered_functionality_clusters": 19,
+        "verified_functionality_clusters": 9,
+        "stable_functionality_clusters": 1,
+        "verified_functionality_ratio": 0.4737,
+        "novelty_discovery_rate": 0.5429,
+        "saturation_per_50_screens": [
+          20
+        ],
+        "recovery_functionality_coverage": 0.5,
+        "risk_boundary_coverage": 1.0,
+        "duplicate_screen_compression_ratio": 0.0,
+        "functionality_semantics_quality": "limited"
+      }
+    }
+  },
+  "graph_summary": "[cart] ← 当前页 购物车页面，展示52件商品，含小米空调、西裤、衬衫等，底部有结算按钮\n  元素: ★购物车商品列表, ★结算按钮, ★底部导航栏（首页/消息/购物车/我的淘宝）\n  已知跳转: → ✓my_account\n[dialog] 服务保障选项弹窗，提供多种延保/维修服务套餐及‘确定’按钮\n  元素: ★服务说明链接, ★推荐购买标签, ★确定按钮, ✓关闭按钮\n  已知跳转: → ✓product_detail\n[home] 618活动首页，含商品推荐、直播入口、促销模块及底部导航栏\n  元素: ✓搜索框, ✓商品卡片, ★筛选按钮, ★购物车图标, ★底部导航栏（首页/视频/消息/购物车/我的淘宝）, ★分类标签（618、足迹、珀莱雅超抵日）\n  已知跳转: → ✓store, ✓unknown\n[my_account] 用户个人中心页面，展示会员信息、资产概览、订单状态及活动入口\n  元素: ✓会员中心, ✓红包, ✓优惠券, ✓淘金币抵, ★天猫积分, ★充值金, ✓我的订单, ✓待付款, ✓待发货, ✓待收货\n  已知跳转: → ✓home\n[product_detail] 小米净饮机商品详情页，含价格¥2174.13、促销信息、店铺保障及功能参数模块\n  元素: ✓商品标题, ✓价格, ✓店铺信息, ✓去查看按钮, ✓评论区, ✓输入框, ✓加入购物车, ✓领券购买, ★底部导航栏（店铺/客服/收藏）\n  已知跳转: → ✓dialog, ✓store\n[store] 小米官方旗舰店直播页面，含新品发布会直播流、商品推荐模块及店铺认证信息\n  元素: ★直播画面, ★立即预约按钮, ★商品卡片（小米17T系列）, ★底部导航栏（首页/宝贝/导购/直播/会员）\n  已知跳转: → ✓home\n[unknown] 订单列表页（购物标签下），当前无订单，展示推荐商品卡片\n  元素: ★搜索框, ★全部订单, ★购物, ✓闪购, ✓外卖, ★飞猪, ★旅行, ★全部, ★待付款, ★待发货\n  已知跳转: → ✓my_account, ✓product_detail\n\n统计: 7种页面, 11条跳转, ★未探索元素约14个",
+  "job_results": [
+    {
+      "job_description": "当前为购物车页，属于核心购物流程节点；图谱为空，需开始探索。根据规则3，优先探索底部导航栏Tab；‘我的淘宝’是未探索的高价值入口，可通向订单、优惠券、账户等新页面类型，应优先点击。",
+      "steps_taken": 1,
+      "new_page_types_discovered": [
+        "my_account"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为my_account，图谱中标记★未探索的元素包括：底部导航栏中的'首页'、'消息'、'购物车'（虽已知cart页，但需验证从my_account→cart跳转是否已记录），以及'我的订单'",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：会员中心、红包、优惠券、淘金币抵、天猫积分、充值金、待付款、待发货、待收货。其中‘待付款’是订单流程关键节点，且当前有1笔待付款订单（剩余23:53:08），点击可进入订",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：会员中心、红包、优惠券、淘金币抵、天猫积分、充值金、待发货、待收货。当前页面为my_account，底部导航栏中‘首页’和‘消息’尚未探索（购物车已走，我的淘宝即当前页）",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "home"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为订单列表页但无订单，图谱中标记★未探索的元素包括：底部导航栏中的'我的淘宝'（虽已知跳转到my_account，但尚未从本页触发）、顶部分类入口如'闪购'和'外卖'（属于新页面类型未覆盖），且推",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：会员中心、红包、优惠券、淘金币抵、天猫积分、充值金、待收货、芭芭农场、领淘金币、红包签到、试用领取、菜鸟、618领券中心等。其中‘优惠券’是高频跳转入口，且可能通向cou",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：会员中心、红包、淘金币抵、天猫积分、充值金。其中‘会员中心’是高频核心入口，且当前有‘专享礼待领取’提示，点击后可能进入新页面（如会员专属页或权益详情页），属于高价值未探",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：淘金币抵、天猫积分、充值金。其中‘淘金币抵’是独立可点击的资产项，可能跳转至淘金币中心页面（新页面类型），优先探索以扩展图谱；避免重复已走路径（如my_account→h",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为home页，图谱中标记为[home]但描述为‘订单页无订单’存在矛盾，结合截图确认是活动首页；底部导航栏中‘购物车’和‘我的淘宝’已探索过，但‘消息’Tab尚未探索（图谱未提及），且顶部搜索框为",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为home，图谱中标记★未探索的元素包括：商品卡片（beU面膜、眼镜、小米空调）、底部导航栏中的‘视频’和‘我的淘宝’Tab、分类标签（618、足迹、珀莱雅超抵日）、跳一跳拿钱按钮。其中‘视频",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：商品卡片、筛选按钮、购物车图标、底部导航栏中的‘视频’和‘消息’Tab、分类标签中的‘足迹’和‘珀莱雅超抵日’。当前页面为home，优先探索底部导航栏中尚未访问的Tab（",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中标记★未探索的元素包括：筛选按钮、购物车图标、底部导航栏中的‘视频’和‘我的淘宝’Tab、分类标签中的‘618’‘足迹’‘珀莱雅超抵日’。当前页面为home，优先探索底部导航栏中尚未访问的Tab",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为订单列表页的‘购物’标签，图谱中标记★未探索的元素包括：搜索框、全部订单、外卖、飞猪、旅行、全部、待付款、待发货。其中‘外卖’‘飞猪’‘旅行’属于跨业务模块入口，尚未探索；而‘待付款’虽在m",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "product_detail"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为product_detail页，图谱中标记该页‘元素: 无元素’，说明尚未记录任何可交互元素；需探索其核心跳转路径。根据导航图谱，product_detail应可跳转至spec_selectio",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为product_detail，图谱中标记★未探索元素包括：商品标题、价格、店铺信息、去查看按钮、评论区、输入框。其中‘去查看按钮’指向规格选择页（spec_selection），是购物流程关",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面中★未探索元素包括：'领券购买'（可触发优惠券路径）、'底部导航栏-客服'（可能进入对话或售后流程）、'评论区'（图谱未标记但常见为独立子页）。其中'领券购买'是核心购物流程关键节点，且尚未探",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "dialog"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为弹窗（dialog），根据规则4，非核心页面停留不超过1步；图谱中该dialog仅标记了←来源（product_detail→dialog），未探索其关闭或确认后的跳转路径。需优先关闭弹窗以返回",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为product_detail，图谱中标记★未探索的元素包括：价格、店铺信息、去查看按钮、评论区、输入框、底部导航栏（店铺/客服/收藏）。其中‘底部导航栏（店铺/客服/收藏）’是高频探索入口，",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面中★未探索元素包括：评论区、输入框、底部导航栏中的‘店铺’‘客服’‘收藏’。其中‘评论区’是高频探索路径，可跳转至评价列表页（新页面类型），且图谱中尚未记录该跳转；‘输入框’可能为问大家入口，",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面中★未探索元素为‘去查看按钮’和底部导航栏中的‘店铺’‘客服’‘收藏’。其中‘去查看按钮’在图谱中未被跳转过（已知跳转仅→dialog），且位于功能参数模块下方，极可能导向规格选择或服务说明页",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面底部导航栏中‘店铺’‘客服’‘收藏’均为★未探索元素；图谱中product_detail→店铺/客服/收藏尚未记录跳转；优先探索底部导航栏Tab以覆盖新页面类型；避免重复已走路径（如dialo",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "store"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为store类型，图谱中标记'元素: 无元素'说明尚未提取任何可交互元素；需优先探索底部导航栏中★未探索的Tab（如'宝贝'、'导购'、'会员'），其中'宝贝'是店铺核心商品列表入口，属于高价",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为home，图谱中标记★未探索的元素包括：筛选按钮、购物车图标、底部导航栏中的‘视频’和‘消息’Tab、分类标签中的‘足迹’和‘珀莱雅超抵日’。其中底部导航栏Tab是高优先级探索目标（规则3）",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": "fn_cluster_rollback_from_cart_to_my_account_my_account__car_00a5ac073607",
+      "canonical_name": "rollback_from_cart_to_my_account",
+      "canonical_description": "rollback_from_cart_to_my_account by tap action from cart to observed postcondition my_account. Source summary: 购物车页面，展示52件商品，含小米空调、西裤、衬衫等，底部有结算按钮; target summary: 用户个人中心与订单管理页.",
+      "member_functionality_ids": [
+        "fn_淘宝_cart_tap_rollback_from_cart_to_my_account_bot_cbcb22c9521f"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "cart"
+      ],
+      "regions": [
+        "bottom_right"
+      ],
+      "verified_edges": [
+        "page_淘宝_cart_购物车页面_展示52件商品_含小米空调_西裤_衬衫等_底部有结算按钮_9eecc72690dd->my_account:bottom_right"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "high"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_home_home__my_account___top_center_487af270ab67",
+      "canonical_name": "tap_home",
+      "canonical_description": "tap_home by tap action from my_account to observed postcondition home. Source summary: 用户个人中心页面，展示会员权益、资产余额（红包/优惠券/淘金币/天猫积分/充值金）及订单状态入口; target summary: 618活动首页，含金币任务与商品推荐.",
+      "member_functionality_ids": [
+        "fn_淘宝_my_account_tap_tap_home_top_center_home___met_3f15845b3d40",
+        "fn_淘宝_my_account_tap_tap_home_top_center_home___met_87438cccfd55"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "my_account"
+      ],
+      "regions": [
+        "top_center"
+      ],
+      "verified_edges": [
+        "page_淘宝_my_account_用户个人中心页面_含会员信息_资产模块及订单状态入口_03180e409afc->home:top_center",
+        "page_淘宝_my_account_用户个人中心页面_展示会员权益_资产余额_红包_优惠券_淘金币_天猫_e1b7b45eb159->home:top_center"
+      ],
+      "success_count": 2,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_submit_search__unknown_58f8a523306e",
+      "canonical_name": "submit_search",
+      "canonical_description": "搜索框",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_unknown_订单列表页_购物标签下_当前无订单_展示推荐商品卡片_79_49ab1bf4cfbb",
+        "fn_淘宝_page_淘宝_unknown_订单列表页_购物标签下_当前无订单_展示推荐商品卡片及多类_9b83337597a3"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_to_my_account_my_account__unknown_44864a4e73da",
+      "canonical_name": "rollback_to_my_account",
+      "canonical_description": "rollback_to_my_account by back action from unknown to observed postcondition my_account. Source summary: 订单列表页（购物标签下），当前无订单，展示推荐商品卡片; target summary: 用户个人中心与订单管理页.",
+      "member_functionality_ids": [
+        "fn_淘宝_unknown_back_rollback_to_my_account_unknown_m_a88a2b81448f"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [],
+      "verified_edges": [
+        "page_淘宝_unknown_订单列表页_购物标签下_当前无订单_展示推荐商品卡片_353c4df9f837->my_account:unknown"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_search__home_86c517c2c63a",
+      "canonical_name": "open_search",
+      "canonical_description": "搜索框",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_home_618活动首页_含金币任务_促销模块_商品推荐及搜索入口_e28_4148c262760b",
+        "fn_淘宝_page_淘宝_home_618活动首页_含商品推荐_直播入口_促销模块及底部导航栏_09_8d26037a1cac",
+        "fn_淘宝_page_淘宝_home_618活动首页_含商品推荐_直播入口_促销模块及底部导航栏_bb_9e064de94769",
+        "fn_淘宝_page_淘宝_home_618活动首页_含tcl空调推荐_直播入口_商品卡片及底部导航栏_a2533f42b613",
+        "fn_淘宝_page_淘宝_home_618活动首页_含直播主画面_商品推荐模块及底部导航栏_1129_f4544cf50948"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.2,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail__home_4a43c22e4181",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "商品卡片（beU面膜、眼镜、小米空调）",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_home_618活动首页_含金币任务_促销模块_商品推荐及搜索入口_e28_3d95a5db0de6",
+        "fn_淘宝_page_淘宝_home_618活动首页_含商品推荐_直播入口_促销模块及底部导航栏_09_37c43584b0c2",
+        "fn_淘宝_page_淘宝_home_618活动首页_含商品推荐_直播入口_促销模块及底部导航栏_bb_aa5ca0914120",
+        "fn_淘宝_page_淘宝_home_618活动首页_含tcl空调推荐_直播入口_商品卡片及底部导航栏_6ef01ea9bff9",
+        "fn_淘宝_page_淘宝_home_618活动首页_含直播主画面_商品推荐模块及底部导航栏_1129_71e78514e6f0"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.2,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_apply_or_close_filter__home_263b2d2cc25a",
+      "canonical_name": "apply_or_close_filter",
+      "canonical_description": "筛选按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_home_618活动首页_含商品推荐_直播入口_促销模块及底部导航栏_09_429bbee4e7fc",
+        "fn_淘宝_page_淘宝_home_618活动首页_含商品推荐_直播入口_促销模块及底部导航栏_bb_ae28466d2dbc",
+        "fn_淘宝_page_淘宝_home_618活动首页_含tcl空调推荐_直播入口_商品卡片及底部导航栏_7f8d1c3c0890",
+        "fn_淘宝_page_淘宝_home_618活动首页_含直播主画面_商品推荐模块及底部导航栏_1129_a6c7f56b162c"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.25,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_unknown_unknown__home___bottom_left_4c6eea49d28d",
+      "canonical_name": "tap_unknown",
+      "canonical_description": "tap_unknown by tap action from home to observed postcondition unknown. Source summary: 618活动首页，含TCL空调推荐、直播入口、商品卡片及底部导航栏; target summary: 短视频内容页面，非购物流程页.",
+      "member_functionality_ids": [
+        "fn_淘宝_home_tap_tap_unknown_bottom_left_unknown___me_8c2ba8a9b164"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [
+        "bottom_left"
+      ],
+      "verified_edges": [
+        "page_淘宝_home_618活动首页_含tcl空调推荐_直播入口_商品卡片及底部导航栏_0d20a52660c1->unknown:bottom_left"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_product_detail_product_detail__unknown___bot_f530089d416e",
+      "canonical_name": "tap_product_detail",
+      "canonical_description": "tap_product_detail by tap action from unknown to observed postcondition product_detail. Source summary: 订单列表页（购物标签下），当前无订单，展示推荐商品卡片及多类服务入口; target summary: 商品详情页含评论与价格信息.",
+      "member_functionality_ids": [
+        "fn_淘宝_unknown_tap_tap_product_detail_bottom_right_p_af1a84ace0f3"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [
+        "bottom_right"
+      ],
+      "verified_edges": [
+        "page_淘宝_unknown_订单列表页_购物标签下_当前无订单_展示推荐商品卡片及多类服务入口_f6f41d923802->product_detail:bottom_right"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_cart_from_header__product_detail_c113c5f9888e",
+      "canonical_name": "open_cart_from_header",
+      "canonical_description": "加入购物车",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_小米净饮机商品详情页_含价格_2174.13_0b22595ed7a1",
+        "fn_淘宝_page_淘宝_product_detail_小米净饮机商品详情页_展示补贴后价格_217_707d8ce3660f",
+        "fn_淘宝_page_淘宝_product_detail_小米净饮机商品详情页_展示补贴后价格_217_b560effd1e4f",
+        "fn_淘宝_page_淘宝_product_detail_小米净饮机商品详情页_展示补贴后价格_217_c7a10b7e0dde",
+        "fn_淘宝_page_淘宝_product_detail_小米净饮机商品详情页_含价格_促销信息_参数_31e0cccb464e",
+        "fn_淘宝_page_淘宝_product_detail_小米净饮机商品详情页_含价格_促销信息_参数_8fa2a0a4261f"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.1667,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_open_spec_selector__product_detail_230d21a95d68",
+      "canonical_name": "open_spec_selector",
+      "canonical_description": "领券购买",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_小米净饮机商品详情页_含价格_2174.13_265b109c2e4c",
+        "fn_淘宝_page_淘宝_product_detail_小米净饮机商品详情页_展示补贴后价格_217_cd1312a956b3",
+        "fn_淘宝_page_淘宝_product_detail_小米净饮机商品详情页_含价格_促销信息_参数_e2f26a87bd0c",
+        "fn_淘宝_page_淘宝_product_detail_小米净饮机商品详情页_含价格_促销信息_参数_35a5c32601c5"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.25,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_dialog_dialog__product_detail___middle_right_bf23f8b5b17f",
+      "canonical_name": "tap_dialog",
+      "canonical_description": "tap_dialog by tap action from product_detail to observed postcondition dialog. Source summary: 小米净饮机商品详情页，展示补贴后价格¥2174.13、颜色分类、优选服务、分期付款及加入购物车按钮; target summary: 服务保障选项弹窗.",
+      "member_functionality_ids": [
+        "fn_淘宝_product_detail_tap_tap_dialog_middle_right_di_656997ea132d"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [
+        "middle_right"
+      ],
+      "verified_edges": [
+        "page_淘宝_product_detail_小米净饮机商品详情页_展示补贴后价格_2174.13_颜色分_0ff829faa0de->dialog:middle_right"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "high"
+    },
+    {
+      "cluster_id": "fn_cluster_confirm_spec_add_to_cart__dialog_5747b32bc621",
+      "canonical_name": "confirm_spec_add_to_cart",
+      "canonical_description": "推荐购买标签",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_dialog_服务保障选项弹窗_提供多种延保_维修服务套餐及_确定_按钮_dda23fb8b07e"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "dialog"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_apply_or_close_filter__dialog_36863c12d572",
+      "canonical_name": "apply_or_close_filter",
+      "canonical_description": "确定按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_dialog_服务保障选项弹窗_提供多种延保_维修服务套餐及_确定_按钮_2845d7471aec"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "dialog"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_from_dialog__dialog_857e2b90b14d",
+      "canonical_name": "rollback_from_dialog",
+      "canonical_description": "关闭按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_dialog_服务保障选项弹窗_提供多种延保_维修服务套餐及_确定_按钮_289c9d1e26d0"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "dialog"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_product_detail_product_detail__dialog___top_704ea7d10894",
+      "canonical_name": "tap_product_detail",
+      "canonical_description": "tap_product_detail by tap action from dialog to observed postcondition product_detail. Source summary: 服务保障选项弹窗，提供多种延保/维修服务套餐及‘确定’按钮; target summary: 商品详情页，含价格、规格、服务与分期.",
+      "member_functionality_ids": [
+        "fn_淘宝_dialog_tap_tap_product_detail_top_right_produ_66d4a884c7ff"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "dialog"
+      ],
+      "regions": [
+        "top_right"
+      ],
+      "verified_edges": [
+        "page_淘宝_dialog_服务保障选项弹窗_提供多种延保_维修服务套餐及_确定_按钮_42dd39656c9b->product_detail:top_right"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_store_store__product_detail___center_582331af24fd",
+      "canonical_name": "tap_store",
+      "canonical_description": "tap_store by tap action from product_detail to observed postcondition store. Source summary: 小米净饮机商品详情页，含价格、促销信息、参数、评论及底部导航栏; target summary: 小米官方旗舰店直播页.",
+      "member_functionality_ids": [
+        "fn_淘宝_product_detail_tap_tap_store_center_store___m_dbc22322280c"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [
+        "center"
+      ],
+      "verified_edges": [
+        "page_淘宝_product_detail_小米净饮机商品详情页_含价格_促销信息_参数_评论及底部导航_2a4934018e4a->store:center"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail__store_93e010262baa",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "商品卡片（小米17T系列）",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_store_小米官方旗舰店直播页面_含新品发布会直播流_商品推荐模块及店铺_3e5d7cc5611b"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "store"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_home_home__store___bottom_right_0baaba376736",
+      "canonical_name": "tap_home",
+      "canonical_description": "tap_home by tap action from store to observed postcondition home. Source summary: 小米官方旗舰店直播页面，含新品发布会直播流、商品推荐模块及店铺认证信息; target summary: 小米618直播活动首页.",
+      "member_functionality_ids": [
+        "fn_淘宝_store_tap_tap_home_bottom_right_home___metada_05d085d166bd"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "store"
+      ],
+      "regions": [
+        "bottom_right"
+      ],
+      "verified_edges": [
+        "page_淘宝_store_小米官方旗舰店直播页面_含新品发布会直播流_商品推荐模块及店铺认证信息_975808e4b557->home:bottom_right"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    }
+  ]
+}

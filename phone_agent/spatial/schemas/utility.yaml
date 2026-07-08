@@ -1,0 +1,25 @@
+{
+  "name": "utility",
+  "extends": "common_mobile",
+  "page_types": {
+    "tool_home": {
+      "risk": "normal",
+      "aliases": ["home"],
+      "landmarks": ["tool_entries"],
+      "affordances": ["open_search", "open_detail"]
+    },
+    "tool_result": {
+      "risk": "normal",
+      "aliases": ["list"],
+      "landmarks": ["result_list"],
+      "affordances": ["open_detail", "go_back"]
+    }
+  },
+  "transitions": [
+    {"source": "tool_home", "target": "search", "intent": "open_search", "affordance": "open_search"},
+    {"source": "search", "target": "tool_result", "intent": "submit_query", "affordance": "submit_query"},
+    {"source": "tool_result", "target": "detail", "intent": "open_detail", "affordance": "open_detail"}
+  ],
+  "app_aliases": {},
+  "intents": {}
+}

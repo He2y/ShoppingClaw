@@ -1,0 +1,115 @@
+{
+  "app": "淘宝",
+  "task": "按正常商品链路验证空间图谱：从淘宝首页点击搜索框，输入 手机壳，点击搜索，选择一个普通商品卡片进入商品详情页。到商品详情页后，只点击页面顶部右侧的购物车入口图标进入购物车页面；不要点击底部的加入购物车、立即购买、去购买、领券购买等 CTA，因为这些会打开规格选择弹窗。进入购物车后停止，不要点击结算、提交订单、支付或确认地址。",
+  "total_transitions": 2,
+  "coverage": {
+    "covered_page_types": [
+      "cart",
+      "home",
+      "product_detail",
+      "search_input"
+    ],
+    "missing_page_types": [
+      "search_result",
+      "spec_selection",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "product_detail",
+        "cart"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "product_detail"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [
+    {
+      "from": "home:首页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          429,
+          114
+        ]
+      },
+      "to": "search_input:搜索输入页"
+    },
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          848,
+          71
+        ]
+      },
+      "to": "cart:购物车列表"
+    }
+  ],
+  "rejected_transitions": [
+    {
+      "from": "search_input:搜索输入页",
+      "action": {
+        "_metadata": "do",
+        "action": "Type",
+        "text": "手机壳"
+      },
+      "to": "search_input:搜索输入页",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "search_input:搜索输入页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          893,
+          71
+        ]
+      },
+      "to": "product_detail:商品详情页",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          253,
+          474
+        ]
+      },
+      "to": "product_detail:商品详情页",
+      "reason": "self-loop or unchanged screen"
+    }
+  ]
+}

@@ -18,11 +18,18 @@ from phone_agent.actions import ActionHandler
 from phone_agent.actions.handler import do, finish, parse_action
 from phone_agent.config import get_messages, get_system_prompt
 from phone_agent.clarify import ClarificationAgent
+from phone_agent.core.spec_guard import SpecGuard
 from phone_agent.device_factory import get_device_factory
 from phone_agent.model import ModelClient, ModelConfig
 from phone_agent.model.adapters import ModelType, detect_model_type, get_adapter
 from phone_agent.model.client import MessageBuilder
 from phone_agent.memory.core import ProductStatus
+from phone_agent.memory.offline_explorer import PageClassifier, ShoppingPageType
+from phone_agent.task_plan import TaskPlan
+from phone_agent.verification_detector import (
+    detect_verification,
+    detect_verification_from_vlm,
+)
 
 
 @dataclass
@@ -60,6 +67,33 @@ class StepResult:
     message: str | None = None
 
 
+# Placing an order / paying is an absolutely-forbidden auto operation. The page
+# classifier frequently misreads the order-confirmation / 结算 page as
+# product_detail, so the hard safety stop keys on MULTIPLE signals — page type,
+# the FLAG_SECURE sensitive flag, and (the most reliable in practice) the model's
+# own reading of the screen / its action text.
+_CHECKOUT_PAGE_TYPES: frozenset[str] = frozenset({
+    "checkout", "payment", "order_confirm", "order_confirmation", "cashier",
+})
+
+# Terms that appear essentially only when committing an order / paying — not in
+# task planning. Bare "结算"/"购买"/"加购" are deliberately excluded (they show up
+# in plans like "...然后结算").
+_PAYMENT_COMMIT_MARKERS: tuple[str, ...] = (
+    "立即支付", "去支付", "确认支付", "马上支付", "去付款", "确认付款",
+    "提交订单", "确认下单", "立即下单", "确认订单并支付",
+    "打白条", "白条支付", "微信支付", "支付宝支付",
+    "submit order", "place order", "pay now", "confirm payment",
+)
+
+# Strong present-state markers that the CURRENT page is an order-confirmation /
+# checkout page (你只会在结算页看到收货地址 + 支付按钮).
+_CHECKOUT_PAGE_MARKERS: tuple[str, ...] = (
+    "订单确认页", "确认订单页", "收货地址", "结算页面", "订单结算页",
+    "提交订单页", "order confirmation", "checkout page", "payment page",
+)
+
+
 class PhoneAgent:
     """
     AI-powered agent for automating Android phone interactions.
@@ -92,8 +126,10 @@ class PhoneAgent:
         confirmation_callback: Callable[[str], bool] | None = None,
         takeover_callback: Callable[[str], None] | None = None,
         clarification_callback: Callable[[str], str] | None = None,
+        status_callback: Callable | None = None,
     ):
         self.clarification_callback = clarification_callback
+        self.status_callback = status_callback
         self.model_config = model_config or ModelConfig()
         self.agent_config = agent_config or AgentConfig()
 
@@ -145,10 +181,52 @@ class PhoneAgent:
         self._context: list[dict[str, Any]] = []
         self._step_count = 0
         self._current_task = ""
+        # Strong-VLM step planner: plan-then-ground (mirrors the offline
+        # explorer split — the small GUI model only grounds instructions).
+        self.step_planner = None
+        self._planner_context = None
+        self._last_planner_instruction = ""
+        try:
+            from phone_agent.step_planner import TaskStepPlanner, main_planner_enabled
+            if main_planner_enabled():
+                planner = TaskStepPlanner()
+                if planner.available():
+                    self.step_planner = planner
+                    if self.agent_config.verbose:
+                        print("🧭 强VLM任务规划器已启用 (PHONE_AGENT_STRONG_PLANNER=0 可关闭)")
+        except Exception:
+            self.step_planner = None
+
+        # Milestone supervisor: low-frequency strong-VLM oversight (mutually
+        # exclusive with the per-step planner — planner wins when enabled).
+        self.milestone_supervisor = None
+        self._memory_file = None
+        self._milestone_trigger = None
+        try:
+            from phone_agent.milestone_supervisor import MilestoneSupervisor, milestone_enabled
+            if milestone_enabled() and self.step_planner is None:
+                supervisor = MilestoneSupervisor()
+                if supervisor.available():
+                    self.milestone_supervisor = supervisor
+                    if self.agent_config.verbose:
+                        print("🏁 里程碑监督者已启用 (PHONE_AGENT_MILESTONE=0 可关闭)")
+            elif self.step_planner is not None and self.agent_config.verbose:
+                print("ℹ️ STRONG_PLANNER 已启用，里程碑监督自动停用")
+        except Exception:
+            self.milestone_supervisor = None
+
+        self._anomaly_consecutive = 0
+        # Cooperative cancellation + per-step telemetry surface for frontends
+        # (WebUI streams these; CLI ignores them).
+        self.abort_requested = False
+        self.step_observer: Callable[[dict[str, Any]], None] | None = None
+        self.last_step_info: dict[str, Any] = {}
+        self._step_telemetry: dict[str, Any] = {}
 
         # Load externalized shopping config (JSON with code defaults)
         from phone_agent.config.shopping_config import ShoppingConfig
         self._shopping_config = ShoppingConfig.load()
+        self._spec_guard = SpecGuard(self._shopping_config)
 
         # Initialize tracer if enabled
         self.tracer = None
@@ -186,6 +264,21 @@ class PhoneAgent:
                 if self.agent_config.verbose:
                     print(f"⚠️ 记忆系统初始化失败: {e}")
 
+        # Initialize PageClassifier for semantic extraction
+        self.page_classifier: PageClassifier | None = None
+        if self.agent_config.enable_memory:
+            try:
+                self.page_classifier = PageClassifier()
+                if self.agent_config.verbose:
+                    print(
+                        "PageClassifier initialized for semantic extraction "
+                        f"| source={self.page_classifier.source} "
+                        f"| model={self.page_classifier.model}"
+                    )
+            except Exception as e:
+                if self.agent_config.verbose:
+                    print(f"PageClassifier initialization failed: {e}")
+
         # Initialize clarification sub-agent for shopping task ambiguity detection
         self.clarification_agent: ClarificationAgent | None = None
         try:
@@ -193,6 +286,17 @@ class PhoneAgent:
         except Exception as e:
             if self.agent_config.verbose:
                 print(f"⚠️ 澄清子代理初始化失败: {e}")
+
+        # Initialize Action Advisor (graph as navigation advisor)
+        self.action_advisor: ActionAdvisor | None = None
+        if self.memory_manager:
+            try:
+                from phone_agent.spatial.action_advisor import ActionAdvisor
+                sgm = self.memory_manager.spatial_graph_memory
+                lifecycle = getattr(sgm, "_edge_lifecycle", None)
+                self.action_advisor = ActionAdvisor(sgm, lifecycle)
+            except Exception:
+                pass
 
     def _resolve_model_type(self) -> ModelType:
         """Resolve model type from config or auto-detect from model name."""
@@ -225,8 +329,24 @@ class PhoneAgent:
         self._context = []
         self._step_count = 0
         self._current_task = task
+        self.abort_requested = False
+        self._last_thinking = ""
         self._last_state_hash: str | None = None
         self._last_user_reply: str | None = None
+        self._graph_fail_count: int = 0
+        self._graph_fail_page: str = ""
+        self._verification_consecutive: int = 0
+        self._anomaly_consecutive: int = 0
+        self._last_planner_instruction = ""
+        self._visited_pages: set[str] = set()
+        self._unparseable_count = 0
+        self._finish_rejected_count = 0
+        self._finish_gate_blocked_count = 0
+        if self.step_planner is not None:
+            from phone_agent.step_planner import TaskPlanContext
+            self._planner_context = TaskPlanContext()
+        self._task_plan: TaskPlan | None = None
+        self._step_summaries: list[str] = []
 
         # Clear action history for QwenVL handler/adapter
         if self._specialized_handler is not None and hasattr(self._specialized_handler, 'clear_history'):
@@ -238,9 +358,55 @@ class PhoneAgent:
         if self.tracer:
             self.tracer.start_task(task, model=self.model_config.model_name)
 
-        # Start memory tracking
+        # Start memory tracking + task planning
+        self._vlm_plan: dict[str, Any] = {}
+        self._memory_file = None
+        self._milestone_trigger = None
         if self.memory_manager:
             self.memory_manager.start_task(task)
+            if self.milestone_supervisor is not None:
+                self._vlm_plan = self.milestone_supervisor.initialize(task)
+                if isinstance(self._vlm_plan.get("search_query"), str):
+                    self._vlm_plan["search_query"] = self._sanitize_search_query(
+                        self._vlm_plan["search_query"], self._vlm_plan.get("specs"),
+                    )
+                if not self._vlm_plan:
+                    self._vlm_plan = self._vlm_pre_plan(task)
+            else:
+                self._vlm_plan = self._vlm_pre_plan(task)
+            if self._vlm_plan:
+                self.memory_manager.set_vlm_plan(self._vlm_plan)
+                self._task_plan = TaskPlan.from_vlm_output(task, self._vlm_plan)
+            else:
+                self._task_plan = TaskPlan(original_task=task)
+        else:
+            self._task_plan = TaskPlan(original_task=task)
+
+        # Session memory file + milestone trigger (anti-forgetting anchor)
+        if self.milestone_supervisor is not None:
+            try:
+                from pathlib import Path
+                from phone_agent.milestone_supervisor import (
+                    MilestoneTrigger, milestone_interval,
+                    milestone_max_calls, milestone_min_gap,
+                )
+                from phone_agent.session_memory_file import SessionMemoryFile
+                sessions_dir = (
+                    Path(self.agent_config.memory_dir)
+                    / self.agent_config.user_id / "sessions"
+                )
+                self._memory_file = SessionMemoryFile.create(
+                    task, self._vlm_plan, sessions_dir=sessions_dir,
+                )
+                self._memory_file.save()
+                self._milestone_trigger = MilestoneTrigger(
+                    interval=milestone_interval(),
+                    min_gap=milestone_min_gap(),
+                    max_calls=milestone_max_calls(self.agent_config.max_steps),
+                )
+            except Exception:
+                self._memory_file = None
+                self._milestone_trigger = None
 
         # First step with user prompt
         result = self._execute_step(task, is_first=True)
@@ -252,6 +418,7 @@ class PhoneAgent:
                     result=result.message or "Task completed",
                     end_state_id=self._last_state_hash,
                 )
+            self._finalize_session_memory(result.success)
             if self.tracer:
                 self.tracer.end_task(
                     result=result.message or "Task completed",
@@ -259,8 +426,10 @@ class PhoneAgent:
                 )
             return result.message or "Task completed"
 
-        # Continue until finished or max steps reached
+        # Continue until finished, aborted, or max steps reached
         while self._step_count < self.agent_config.max_steps:
+            if self.abort_requested:
+                break
             result = self._execute_step(is_first=False)
 
             if result.finished:
@@ -277,11 +446,23 @@ class PhoneAgent:
                     )
                 return result.message or "Task completed"
 
+        # Aborted by user (frontend stop button)
+        if self.abort_requested:
+            if self.memory_manager:
+                self.memory_manager.end_task(
+                    success=False, result="Aborted by user", end_state_id=self._last_state_hash
+                )
+            if self.tracer:
+                self.tracer.end_task(result="Aborted by user", total_steps=self._step_count)
+            self._finalize_session_memory(False)
+            return "任务已终止"
+
         # Task timeout
         if self.memory_manager:
             self.memory_manager.end_task(success=False, result="Max steps reached", end_state_id=self._last_state_hash)
         if self.tracer:
             self.tracer.end_task(result="Max steps reached", total_steps=self._step_count)
+        self._finalize_session_memory(False)
 
         return "Max steps reached"
 
@@ -310,196 +491,1118 @@ class PhoneAgent:
         self._step_count = 0
 
 
-    # ------------------------------------------------------------------
-    # Spec-page action guard: apps where skipping Interact is critical
-    # (loaded from config/shopping.json with code defaults as fallback)
-    # ------------------------------------------------------------------
+    # SpecGuard is now in phone_agent.core.spec_guard — initialized in __init__
 
-    def _detect_critical_scenario(
-        self, current_app: str, screenshot_base64: str
-    ) -> list[str]:
-        """Return hints injected into VLM context when on a shopping spec page."""
-        if not any(app in (current_app or "") for app in self._shopping_config.apps):
-            return []
+    def _compress_history(self) -> None:
+        """Replace old assistant messages with their summaries.
 
-        return [
-            "🚨 你正在商品详情/规格选择页面。用户未指定完整规格参数。\n"
-            "唯一正确操作：do(action=\"Interact\", message=\"请问您需要哪个规格？\")\n"
-            "如果你在想「我帮他选个默认的」——这是错误的，会导致用户收到不想要的商品。\n"
-            "立即执行 Interact，不要点任何购买/加入购物车按钮！"
+        Keeps the last ``_KEEP_FULL`` assistant messages in full detail;
+        older ones are collapsed to ``[执行摘要] ...`` one-liners.
+        This mirrors UI-Copilot's memory decoupling: detailed traces are
+        stored in the tracer, only summaries remain in the dialogue.
+        """
+        _KEEP_FULL = 2
+        assistant_indices = [
+            i for i, m in enumerate(self._context) if m.get("role") == "assistant"
         ]
+        if len(assistant_indices) <= _KEEP_FULL:
+            return
+        for idx in assistant_indices[:-_KEEP_FULL]:
+            msg = self._context[idx]
+            content = msg.get("content", "")
+            if isinstance(content, str) and not content.startswith("[执行摘要]"):
+                summary = self._extract_summary_from_content(content)
+                msg["content"] = f"[执行摘要] {summary}" if summary else "[执行摘要] (步骤已压缩)"
 
-    # ── SKU extraction patterns ──
-    _COLOR_VALUES = {
-        "银色", "蓝色", "黑色", "白色", "红色", "金色", "绿色", "紫色", "灰色",
-        "粉色", "橙色", "黄色", "棕色", "深空黑色", "星光色", "午夜色", "远峰蓝",
-        "苍岭绿", "暗紫色", "石墨色", "亮黑色", "土豪金", "玫瑰金", "深空灰",
-    }
-    _STORAGE_PATTERNS = [
-        r"(\d+\s*(?:TB?|GB?))",  # 512G, 512GB, 1TB, 256G
-    ]
-    _SIZE_VALUES = {"S", "M", "L", "XL", "XXL", "XXXL", "均码", "大码", "小码"}
+    @staticmethod
+    def _extract_summary_from_content(content: str) -> str:
+        """Extract summary from an assistant message's content string."""
+        if "<summary>" in content:
+            try:
+                start = content.index("<summary>") + len("<summary>")
+                end = content.index("</summary>", start)
+                return content[start:end].strip()
+            except ValueError:
+                pass
+        # Fallback: use last line of thinking
+        if "<think>" in content:
+            try:
+                start = content.index("<think>") + len("<think>")
+                end = content.index("</think>", start)
+                thinking = content[start:end].strip()
+                lines = [l.strip() for l in thinking.split("\n") if l.strip()]
+                return lines[-1] if lines else ""
+            except ValueError:
+                pass
+        return content[:80] if content else ""
 
-    def _extract_specs_from_task(self, task: str) -> dict[str, str]:
-        """
-        Parse the user's original task for explicit SKU specifications.
-        Returns a mapping from spec category to value, e.g.:
-        {'颜色': '银色', '容量': '512G'}
-        """
-        specs: dict[str, str] = {}
-
-        # Extract color
-        for color in sorted(self._COLOR_VALUES, key=len, reverse=True):
-            if color in task:
-                specs["颜色"] = color
-                break
-
-        # Extract storage
-        for pattern in self._STORAGE_PATTERNS:
-            m = re.search(pattern, task, re.IGNORECASE)
-            if m:
-                specs["容量"] = m.group(1).upper().replace(" ", "").replace("B", "B")
-                break
-
-        # Extract size
-        for size in sorted(self._SIZE_VALUES, key=len, reverse=True):
-            rsize = rf"\b{re.escape(size)}\b"
-            if re.search(rsize, task):
-                specs["尺码"] = size
-                break
-
-        return specs
-
-    def _is_spec_selected(
-        self, thinking: str, spec_key: str, spec_value: str
-    ) -> bool:
-        """
-        Check whether the thinking reflects that a specific SKU value
-        is already selected on the current page.
-        """
-        # Normalize spec_value for fuzzy matching
-        val = spec_value.upper().replace(" ", "")
-        # e.g. "512GB" -> also try "512G"
-        val_short = val.replace("GB", "G").replace("TB", "T")
-
-        # The thinking must mention the value
-        if spec_value not in thinking and val not in thinking and val_short not in thinking:
-            return False
-
-        # And it must appear near a "selected" marker
-        for sv in (spec_value, val, val_short):
-            # Pattern: value appears within 20 chars of a selection marker
-            if re.search(
-                rf"{re.escape(sv)}.{{0,20}}(?:已选中|已选[^项]|已选择|已勾选|✔|✓|\bselected\b|当前)",
-                thinking,
-            ):
-                return True
-            # Pattern: spec_key then value then selection marker
-            if re.search(
-                rf"{re.escape(spec_key)}.*?{re.escape(sv)}",
-                thinking,
-            ) and any(m in thinking for m in ("已选中", "已选", "已选择", "已勾选")):
-                return True
-
-        return False
-
-    def _build_spec_question(self, thinking: str) -> str:
-        """Build a contextual question when the user hasn't specified exact SKU."""
-        if "颜色" in thinking and "容量" in thinking:
-            return "这里有多种颜色和容量可选，请问您需要哪个配置？"
-        elif "颜色" in thinking:
-            return "有多种颜色可选，请问您喜欢哪个颜色？"
-        elif "容量" in thinking:
-            return "有多种容量可选，请问您需要多大容量？"
-        elif "温度" in thinking:
-            return "请问您需要什么温度？"
-        elif "糖度" in thinking:
-            return "请问您需要什么糖度？"
-        return "请问您需要什么规格和配置？"
-
-    def _spec_guard_check(
+    def _needs_vlm(
         self,
-        action: dict,
-        thinking: str,
-        current_app: str,
-    ) -> dict | None:
+        available_actions: list | None,
+        page_type: str = "",
+    ) -> bool:
+        """Decide whether this step requires VLM (Full Path) or can use Fast Path.
+
+        Fast Path is allowed only when a Grounded Action with high confidence
+        matches the current plan step's target page AND no pending semantic
+        input is required.
         """
-        Code-level safety net: before purchase/confirm on a spec page,
-        cross-reference the user's original task requirements against
-        what's currently selected. Intercepts only when:
-        - The user didn't specify exact SKU → must ask
-        - The user's specified SKU doesn't match what's selected → must correct
+        if not self._task_plan or not available_actions:
+            return True
+        plan_step = self._task_plan.current_step()
+        if plan_step is None:
+            return True
+
+        effective_target = self._effective_plan_target(page_type)
+        for hint in available_actions:
+            if (
+                hint.target_page == effective_target
+                and hint.is_fast_executable()
+            ):
+                return False
+        return True
+
+    def _effective_plan_target(self, page_type: str) -> str | None:
+        """Plan target for fast dispatch; advances past already-reached steps.
+
+        The plan only marks a step done on explicit progress, so while we
+        stand ON the current step's target page (e.g. search_input), the raw
+        target would match arrival edges instead of the next move — the
+        compound search edge (→ search_result) was never selected because of
+        this.
         """
-        if not any(app in (current_app or "") for app in self._shopping_config.apps):
+        if not self._task_plan:
             return None
+        step = self._task_plan.current_step()
+        if step is None:
+            return None
+        # On the search box the next move is ALWAYS to execute the search
+        # (-> search_result). Standing on search_input does NOT mean the query
+        # was searched, so never advance the effective target to a learned
+        # shortcut that skips it (real device: the plan's next step was
+        # filter_panel, so search_input -> filter_panel fast-fired before "显示器"
+        # was ever searched). This keeps the compound type+search action eligible
+        # while blocking skip-the-search edges.
+        if page_type == "search_input":
+            return "search_result"
+        if page_type and step.target_page == page_type:
+            steps = self._task_plan.steps
+            try:
+                idx = steps.index(step)
+            except ValueError:
+                return step.target_page
+            if idx + 1 < len(steps):
+                return steps[idx + 1].target_page
+        return step.target_page
 
-        if action.get("action") == "Interact" or action.get("action_type") == "Interact":
+    def _select_fast_action(self, available_actions: list, page_type: str = "") -> Any | None:
+        """Pick the best Grounded Action matching the effective plan target."""
+        effective_target = self._effective_plan_target(page_type)
+        if effective_target is None:
             return None
+        best = None
+        for hint in available_actions:
+            if (
+                hint.target_page == effective_target
+                and hint.is_fast_executable()
+                and (best is None or hint.confidence > best.confidence)
+            ):
+                best = hint
+        return best
 
-        # Terminal actions (finish/terminate/answer) mean the model has decided
-        # the task is complete — don't second-guess that decision here
-        _metadata = (action.get("_metadata") or "").lower()
-        if _metadata == "finish":
-            return None
-        _action_name = (action.get("action") or "").lower()
-        if _action_name in ("terminate", "answer"):
-            return None
+    _NON_COORDINATE_ACTIONS = frozenset({"Compound", "Type", "Launch", "Back", "Wait", "Home"})
 
-        thinking_mentions_specs = any(
-            kw in thinking for kw in self._shopping_config.spec_keywords
+    def _execute_fast_path(
+        self,
+        hint: Any,
+        screenshot: Any,
+        current_app: str | None,
+        ui_hash: str,
+        semantic_layout: str,
+        source_page_type: str = "",
+    ) -> StepResult | None:
+        """Execute a Grounded Action without VLM call (~0.5s).
+
+        Returns StepResult on success, or None if postcondition
+        verification fails (caller falls through to Full Path).
+        """
+        action = self.action_advisor.get_fast_action(hint)
+        self._tele(
+            dispatch="fast_path",
+            fast_action=str(hint.description),
+            expected_postcondition=str(hint.target_page),
         )
-        if not thinking_mentions_specs:
+
+        # Fill slots for Compound actions (e.g. <query> → "无线耳机")
+        if self._task_plan and self._task_plan.goal_slots:
+            action = self._fill_action_slots(action, self._task_plan.goal_slots)
+
+        if self.agent_config.verbose:
+            print(f"🚀 Fast Path: {hint.action_type} → {hint.target_page} (conf={hint.confidence:.2f})")
+
+        result = self.action_handler.execute(action, screenshot.width, screenshot.height)
+        if not result.success:
+            # Device-level execution failure is not transition evidence —
+            # fall back to the VLM without polluting lifecycle statistics.
+            if self.agent_config.verbose:
+                print(f"⚠️ Fast Path execution failed: {result.message}")
+            self._tele(dispatch="fast_path_fallback", actual_postcondition="(执行失败)")
             return None
 
-        thinking_has_purchase_intent = any(
-            kw in thinking for kw in self._shopping_config.purchase_keywords
-        )
-        if not thinking_has_purchase_intent:
-            return None
+        # Postcondition verification
+        device_factory = get_device_factory()
+        new_screenshot = device_factory.get_screenshot(self.agent_config.device_id)
 
-        # ── Self-reflection: cross-reference user's original task ──
-        original_task = self._current_task
-        user_requested_specs = self._extract_specs_from_task(original_task)
-
-        if user_requested_specs:
-            # User explicitly specified SKU — verify they're selected
-            missing = []
-            for spec_key, spec_value in user_requested_specs.items():
-                if not self._is_spec_selected(thinking, spec_key, spec_value):
-                    missing.append(f"{spec_key}={spec_value}")
-
-            if not missing:
-                print(
-                    f"✅ [SpecGuard] 用户指定SKU已全部选中 "
-                    f"({user_requested_specs})，放行"
+        new_page_type = None
+        if self.page_classifier and new_screenshot and not new_screenshot.is_sensitive:
+            try:
+                pt, _, _ = self.page_classifier.classify(
+                    new_screenshot.base64_data, new_screenshot.width, new_screenshot.height,
                 )
-                return None
+                new_page_type = pt.value
+            except Exception:
+                pass
 
-            question = (
-                f"您要求的是{'，'.join(missing)}，"
-                f"但当前页面尚未选择。请确认规格后继续。"
+        if new_page_type and new_page_type != hint.target_page:
+            if self.agent_config.verbose:
+                print(f"⚠️ Fast Path postcondition mismatch: expected={hint.target_page}, actual={new_page_type}")
+            # Clear stale RuntimeDAG to force PageClassifier on next step
+            if self.memory_manager and hasattr(self.memory_manager, "_runtime_dag"):
+                self.memory_manager._runtime_dag = None
+            # Record the observed (wrong) target so the lifecycle can demote
+            # the edge — previously failures were never recorded and bad
+            # edges stayed promoted forever.
+            self._record_and_evolve(source_page_type, action, new_page_type)
+            self._tele(dispatch="fast_path_fallback", actual_postcondition=new_page_type or "")
+            return None  # Fall through to Full Path
+
+        # Success — record summary (plan advancement handled at next step start)
+        desc = f"[Fast] {hint.description}"
+        self._step_summaries.append(desc)
+        self._tele(actual_postcondition=new_page_type or "")
+
+        if self.memory_manager:
+            self.memory_manager.add_step(
+                thinking=desc, action=action, screenshot_app=current_app,
+            )
+            if hasattr(self.memory_manager, "update_state_and_transition"):
+                self.memory_manager.update_state_and_transition(
+                    screenshot_hash=ui_hash,
+                    semantic_layout=semantic_layout,
+                    action=action,
+                    task=self._current_task,
+                    expected_postcondition=hint.target_page,
+                )
+
+        # Lifecycle bookkeeping is handled exclusively by the pending
+        # transition set above and verified at t+1 (single channel) —
+        # recording here as well double-counted every Fast Path success,
+        # and `new_page_type or hint.target_page` fabricated observations
+        # when classification failed.
+
+        if self.tracer:
+            self.tracer.record_step(
+                step=self._step_count,
+                screenshot_base64=screenshot.base64_data,
+                model_raw_output=f"[Fast Path: {hint.action_type} → {hint.target_page}]",
+                action=action,
+                finished=False,
+            )
+
+        return StepResult(
+            success=True,
+            finished=False,
+            action=action,
+            thinking=desc,
+            message=desc,
+        )
+
+    def _record_and_evolve(
+        self,
+        source_page_type: str,
+        action: dict[str, Any],
+        observed_page_type: str | None = None,
+    ) -> None:
+        """Feed an in-step observation to EdgeLifecycleManager.
+
+        Only used when a step has direct evidence the pending-transition
+        channel cannot capture — currently the Fast Path postcondition
+        mismatch (the wrong observed page must reach the lifecycle so the
+        edge can be demoted). Successful transitions are recorded solely
+        via the pending transition verified at t+1.
+        """
+        if not observed_page_type:
+            return
+        if not self.memory_manager:
+            return
+        lifecycle = getattr(
+            getattr(self.memory_manager, "spatial_graph_memory", None),
+            "_edge_lifecycle", None,
+        )
+        if not lifecycle:
+            return
+
+        action_type = str(action.get("action", ""))
+        action_target = str(action.get("element", action.get("text", "")))
+
+        try:
+            lifecycle.record_outcome(
+                source_page_type=source_page_type or "",
+                intent=action_type,
+                action_target=action_target,
+                observed_target=observed_page_type,
+            )
+        except Exception:
+            pass
+
+    def _advance_lifecycle_step(self) -> None:
+        """Advance the lifecycle's global step counter (once per agent step)."""
+        memory_manager = getattr(self, "memory_manager", None)
+        lifecycle = getattr(
+            getattr(memory_manager, "spatial_graph_memory", None),
+            "_edge_lifecycle", None,
+        )
+        if lifecycle is None:
+            return
+        try:
+            lifecycle.advance_step()
+        except Exception:
+            pass
+
+    @staticmethod
+    def _fill_action_slots(action: dict, slots: dict[str, str]) -> dict:
+        """Fill <placeholder> slots inside Compound action steps.
+
+        Substring-safe: "搜索<query>" is filled too, matching the RuntimeDAG
+        path's _fill_runtime_slots semantics (the old whole-string check left
+        partial templates unfilled and the handler then rejected them).
+        """
+        if action.get("action") != "Compound" or not slots:
+            return action
+
+        def _sub(text: str) -> str:
+            return re.sub(
+                r"<([a-zA-Z0-9_]+)>",
+                lambda m: str(slots.get(m.group(1)) or m.group(0)),
+                text,
+            )
+
+        filled_steps = []
+        for step in action.get("actions", []):
+            step = dict(step)
+            if isinstance(step.get("text"), str):
+                step["text"] = _sub(step["text"])
+            filled_steps.append(step)
+        return {**action, "actions": filled_steps}
+
+    def _handle_verification_takeover(
+        self,
+        screenshot: Any,
+        current_app: str | None,
+        message: str,
+        verification_type: str,
+    ) -> StepResult:
+        """Auto-trigger Take_over when a verification page is detected.
+
+        Constructs a Take_over action and routes it through the existing
+        action handler, which blocks until the user completes the manual
+        operation (``input()`` in CLI, ``Event.wait()`` in WebUI).
+        """
+        if self.agent_config.verbose:
+            print(f"\n{'=' * 50}")
+            print(f"🔒 人机验证检测 (类型: {verification_type})")
+            print(f"   {message}")
+            print(f"   连续检测次数: {self._verification_consecutive}")
+            print(f"{'=' * 50}")
+
+        action = do(action="Take_over", message=message)
+
+        # Execute through the default handler (has the takeover_callback)
+        self.action_handler.execute(action, screenshot.width, screenshot.height)
+
+        # Brief pause for the post-verification page transition
+        time.sleep(2)
+
+        thinking = (
+            f"[自动检测] 页面类型: {verification_type}，"
+            f"检测到需要人工操作，已暂停等待用户完成"
+        )
+
+        # Record in memory
+        if self.memory_manager:
+            self.memory_manager.add_step(
+                thinking=thinking, action=action, screenshot_app=current_app,
+            )
+
+        # Record in tracer
+        if self.tracer:
+            self.tracer.record_step(
+                step=self._step_count,
+                screenshot_base64=screenshot.base64_data,
+                model_raw_output=f"[Auto-detected: {verification_type}]",
+                action=action,
+                finished=False,
+            )
+
+        return StepResult(
+            success=True,
+            finished=False,
+            action=action,
+            thinking=thinking,
+            message=message,
+        )
+
+    def _try_graph_shortcut(
+        self,
+        context_data: dict[str, Any],
+        mode: str,
+        screenshot: Any,
+        current_app: str | None,
+        ui_hash: str,
+        semantic_layout: str,
+    ) -> StepResult | None:
+        """Try to execute a graph-planned action directly, skipping VLM.
+
+        Returns StepResult if the graph shortcut was executed, or None to
+        fall through to VLM inference.
+
+        Three outcomes:
+        1. Direct execution — high-confidence structural action (navigate,
+           compound search, back). Returns StepResult.
+        2. VLM co-pilot — graph provides direction but the VLM must verify
+           the screenshot (product/spec selection). Returns None, but graph
+           hint is already in context_data["graph_hint"] and will be
+           injected into the per-step VLM message.
+        3. Explore mode — no graph route found. Returns None.
+        """
+        next_action = (
+            context_data.get("next_actions", [None])[0]
+            if context_data.get("next_actions") else None
+        )
+        if not next_action or mode not in {"navigate", "verify_with_vlm"}:
+            if self.agent_config.verbose:
+                print("🧭 图谱: 无路由，VLM 探索模式")
+            return None
+
+        # Check if the same graph action failed too many times on this page.
+        # After 2 consecutive failures, clear the RuntimeDAG and let the VLM
+        # handle this page — the graph coordinates may not match the device.
+        current_page = context_data.get("belief", {})
+        current_page_type = ""
+        if current_page and current_page.get("candidates"):
+            current_page_type = current_page["candidates"][0].get("page_type", "")
+        repair_hint = context_data.get("repair_hint")
+        if repair_hint and repair_hint.get("action") in ("rollback", "replan"):
+            if current_page_type == self._graph_fail_page:
+                self._graph_fail_count += 1
+            else:
+                self._graph_fail_count = 1
+                self._graph_fail_page = current_page_type
+            if self._graph_fail_count >= 2:
+                if self.agent_config.verbose:
+                    print(
+                        f"⚠️ 图谱动作在 {current_page_type} 连续失败 {self._graph_fail_count} 次，"
+                        f"切换到 VLM 探索模式"
+                    )
+                if self.memory_manager and self.memory_manager._runtime_dag:
+                    self.memory_manager._runtime_dag = None
+                self._graph_fail_count = 0
+                return None
+        else:
+            self._graph_fail_count = 0
+            self._graph_fail_page = ""
+
+        if next_action.get("_requires_vlm_verification"):
+            if self.agent_config.verbose:
+                print(
+                    f"🤝 [VLM-Graph Co-pilot] 图谱建议 {next_action.get('type')}"
+                    f"→{next_action.get('postcondition', '')}，转交 VLM 验证"
+                )
+            return None
+
+        confidence = next_action.get("confidence", 1.0)
+        action_type = next_action.get("type", "")
+        if confidence < 0.7:
+            if self.agent_config.verbose:
+                print(f"🧭 图谱: 置信度 {confidence:.2f} < 0.7，VLM 探索")
+            return None
+
+        can_compile = (
+            action_type in self._NON_COORDINATE_ACTIONS
+            or self._compile_spatial_shortcut_action(
+                next_action,
+                screen_width=screenshot.width,
+                screen_height=screenshot.height,
+            )[0] is not None
+        )
+        if not can_compile:
+            if self.agent_config.verbose:
+                print(f"🧭 图谱: 动作 {action_type} 无法编译，VLM 探索")
+            return None
+
+        # Fill runtime slots (e.g. <query> → actual search term)
+        goal_slots = context_data.get("goal_spec", {}).get("slots", {})
+        if goal_slots and self.memory_manager:
+            next_action = self.memory_manager.spatial_graph_memory._fill_runtime_slots(
+                next_action, goal_slots
+            )
+        if next_action.get("confidence", 1.0) < 0.7:
+            if self.agent_config.verbose:
+                print(f"🧭 图谱: 槽位填充后置信度不足，VLM 探索")
+            return None
+
+        # Build executable action dict
+        action = self._build_executable_action(next_action, screenshot)
+        postcondition = next_action.get("postcondition", "")
+
+        # Validate: Compound actions must have sub-actions with filled slots
+        if action.get("action") == "Compound":
+            sub_actions = action.get("actions", [])
+            if not sub_actions:
+                if self.agent_config.verbose:
+                    print("⚠️ 图谱: Compound 动作缺少子动作列表，VLM 探索")
+                return None
+            for sub in sub_actions:
+                text = sub.get("text", "")
+                if isinstance(text, str) and text.startswith("<") and text.endswith(">"):
+                    if self.agent_config.verbose:
+                        print(f"⚠️ 图谱: Compound 子动作槽位未填充 ({text})，VLM 探索")
+                    return None
+
+        if self.agent_config.verbose:
+            print(
+                f"🚀 图谱导航: {action_type} → {postcondition} "
+                f"(conf={next_action.get('confidence', 0):.2f})"
+            )
+
+        # Execute
+        try:
+            result = self.action_handler.execute(
+                action, screenshot.width, screenshot.height
+            )
+        except Exception as e:
+            # Never route exceptions through finish(): the handler reports
+            # finish as success=True, which would mark the task successful
+            # and flush the failed trajectory into Neo4j (quality gate 1).
+            if self.agent_config.verbose:
+                traceback.print_exc()
+            return StepResult(
+                success=False,
+                finished=True,
+                action=action,
+                thinking=f"[Graph: {action_type}→{postcondition}]",
+                message=f"图谱捷径执行异常: {e}",
+            )
+
+        # Record
+        finished = action.get("_metadata") == "finish" or result.should_finish
+        self._last_thinking = f"[Graph: {action_type}→{postcondition}]"
+        if self.memory_manager:
+            if hasattr(self.memory_manager, "mark_planned_action_executed"):
+                self.memory_manager.mark_planned_action_executed(action, success=result.success)
+            # Record into the agent-local history too — otherwise graph
+            # shortcut steps are invisible to the VLM's 【执行历史】 and the
+            # milestone supervisor's recent_steps, causing repeated navigation.
+            self._step_summaries.append(self._last_thinking)
+            self.memory_manager.add_step(
+                thinking=self._last_thinking,
+                action=action,
+                screenshot_app=current_app,
+            )
+            self.memory_manager.update_state_and_transition(
+                screenshot_hash=ui_hash,
+                semantic_layout=semantic_layout,
+                action=action,
+                task=self._current_task,
+                expected_postcondition=postcondition,
+            )
+        return StepResult(
+            success=result.success,
+            finished=finished,
+            action=action,
+            thinking=self._last_thinking,
+            message=result.message or action.get("message"),
+        )
+
+    def _build_executable_action(
+        self,
+        graph_action: dict[str, Any],
+        screenshot: Any,
+    ) -> dict[str, Any]:
+        """Convert a graph next_action into an executable action dict.
+
+        For Compound actions: parses target_desc to extract the sub-actions
+        list. For coordinate-based actions: compiles through SpatialModelBridge.
+        """
+        import ast as _ast
+
+        action = {
+            "_metadata": "do",
+            "action": graph_action["type"],
+        }
+        sanitized = self.memory_manager.spatial_graph_memory.sanitize_action_for_context(
+            graph_action
+        ) if self.memory_manager else graph_action
+        if sanitized.get("target"):
+            action["semantic_target"] = sanitized["target"]
+        if graph_action.get("postcondition"):
+            action["_expected_postcondition"] = graph_action["postcondition"]
+
+        # Merge params from target_desc (contains sub-actions for Compound)
+        try:
+            params = _ast.literal_eval(graph_action.get("target_desc", "{}"))
+            if isinstance(params, dict):
+                action.update(params)
+        except (SyntaxError, ValueError):
+            pass
+
+        compiled, _ = self._compile_spatial_shortcut_action(
+            graph_action,
+            screen_width=screenshot.width,
+            screen_height=screenshot.height,
+        )
+        if compiled is not None:
+            compiled["_expected_postcondition"] = graph_action.get("postcondition", "")
+            return compiled
+
+        return action
+
+    def _compile_spatial_shortcut_action(
+        self,
+        best_action: dict,
+        *,
+        screen_width: int,
+        screen_height: int,
+    ):
+        """Compile a graph shortcut through the AMSG model-agnostic bridge."""
+        from phone_agent.spatial.model_bridge import SpatialModelBridge
+
+        semantic_action = SpatialModelBridge.semantic_action_from_next_action(best_action)
+        action = SpatialModelBridge.compile_to_autoglm_action(
+            semantic_action,
+            screen_width=screen_width,
+            screen_height=screen_height,
+            source_model=self._model_type,
+        )
+        if action is None:
+            return None, SpatialModelBridge.grounding_instruction(semantic_action)
+        return action, ""
+
+    _PRICE_TOKEN_RE = re.compile(
+        r"\d+\s*[-~～到至]\s*\d+\s*元?"
+        r"|\d+\s*元\s*(?:以内|以下|以上|之内|左右)?"
+        r"|(?:低于|高于|不超过|不低于)\s*\d+\s*元?"
+    )
+
+    @classmethod
+    def _sanitize_search_query(cls, query: str, specs: dict | None = None) -> str:
+        """Strip price ranges and spec/feature tokens from the search query.
+
+        Typing "蓝牙耳机 降噪 500-1000元" into the search box artificially
+        narrows results; only the product noun belongs in the query — price
+        and features are applied afterwards via filter actions.
+        """
+        cleaned = cls._PRICE_TOKEN_RE.sub(" ", query or "")
+        for value in (specs or {}).values():
+            token = str(value).strip()
+            if token and token in cleaned:
+                cleaned = cleaned.replace(token, " ")
+        cleaned = re.sub(r"\s+", " ", cleaned).strip(" ,，、")
+        return cleaned or (query or "").strip()
+
+    def _reset_dialogue_context(self, reason: str) -> None:
+        """Drop the (possibly poisoned) dialogue and re-analyze from memory.
+
+        The milestone architecture makes this safe: everything durable lives
+        in the session memory file / session state — the dialogue context is
+        disposable. The next step rebuilds: system prompt + memory digest +
+        current objective + fresh screenshot.
+        """
+        system_prompt = self.agent_config.system_prompt
+        try:
+            self._context = [MessageBuilder.create_system_message(system_prompt)]
+        except Exception:
+            self._context = []
+        if self._specialized_handler is not None and hasattr(self._specialized_handler, "clear_history"):
+            self._specialized_handler.clear_history()
+        if hasattr(self._adapter, "clear_history"):
+            self._adapter.clear_history()
+        note = f"[上下文重置] {reason}"
+        self._step_summaries.append(note)
+        if self.agent_config.verbose:
+            print(f"🔄 {note}")
+
+    def _finalize_session_memory(self, success: bool) -> None:
+        """Persist the session memory file's terminal state (best-effort)."""
+        memory_file = getattr(self, "_memory_file", None)
+        if memory_file is not None:
+            try:
+                memory_file.finalize(success)
+            except Exception:
+                pass
+
+    def _run_milestone_checkpoint(self, trigger: str, screenshot: Any, page_type: str):
+        """Run one supervisor checkpoint and apply its revision (best-effort).
+
+        Failure semantics: keep the old plan, log a revision entry, advance
+        the trigger baseline (no retry storm); two consecutive failures
+        disable supervision for the rest of the task.
+        """
+        memory_file = self._memory_file
+        trigger_state = self._milestone_trigger
+        if memory_file is None or trigger_state is None:
+            return None
+
+        mech_facts = ""
+        try:
+            price = self._current_product_price()
+            products = self.memory_manager.state.products
+            mech_facts = (
+                f"会话追踪商品数={len(products)}，"
+                f"最近商品价格={'¥%g' % price if price else '未知'}"
+            )
+        except Exception:
+            pass
+
+        if self.agent_config.verbose:
+            print(f"🏁 [Milestone] checkpoint trigger={trigger} step={self._step_count}")
+        result = self.milestone_supervisor.checkpoint(
+            screenshot.base64_data, screenshot.width, screenshot.height,
+            memory_render=memory_file.render_injection(),
+            recent_steps=self._step_summaries,
+            page_type=page_type or "",
+            trigger=trigger,
+            mechanical_facts=mech_facts,
+        )
+        trigger_state.record_fired(self._step_count, trigger)
+
+        if result is None:
+            trigger_state.record_failure()
+            from phone_agent.session_memory_file import RevisionEntry
+            memory_file.revisions.append(RevisionEntry(
+                step=self._step_count, trigger=trigger, summary="checkpoint_failed",
+            ))
+            memory_file.save()
+            if trigger_state.disabled and self.agent_config.verbose:
+                print("⚠️ [Milestone] 连续失败，本任务内停用监督者")
+            return None
+
+        trigger_state.record_success()
+        changes = ""
+        if self._task_plan:
+            changes = self._task_plan.apply_revision(
+                result.completed_step_ids, result.revised_subtasks,
+            )
+        from dataclasses import replace as dc_replace
+        result = dc_replace(result, changes=changes)
+        memory_file.apply_checkpoint(result, self._step_count)
+        if self._task_plan:
+            memory_file.sync_subtasks_from_plan(self._task_plan)
+        memory_file.save()
+
+        # Mirror into the session state (progress line replaces the old
+        # leak-prone compression text)
+        try:
+            state = self.memory_manager.state
+            state.subtasks_completed = [
+                s.description for s in memory_file.subtasks if s.status == "done"
+            ]
+            state.subtasks_remaining = [
+                s.description for s in memory_file.subtasks
+                if s.status in ("pending", "current")
+            ]
+            state.current_subtask = next(
+                (s.description for s in memory_file.subtasks if s.status == "current"), "",
+            )
+            state.overall_progress = memory_file.brief_line()
+        except Exception:
+            pass
+
+        if self.agent_config.verbose and result.current_situation:
+            print(f"🏁 [Milestone] {result.current_situation} | {changes}")
+        return result
+
+    @staticmethod
+    def _supervisor_finish_verdict(ckpt: Any) -> "StepResult | None":
+        """Turn a milestone checkpoint's completion/blocked verdict into a finish.
+
+        The supervisor is the single completion authority — it verifies the goal
+        directly from the screenshot. When it confirms completion (or that the
+        task is irrecoverably blocked) at a REGULAR checkpoint, the agent must
+        finish immediately. Previously this verdict was discarded, so the
+        executor kept re-issuing the same commit: a successful add-to-cart was
+        re-tapped repeatedly (over-adding to the cart) while completion went
+        unrecognized until the executor independently emitted finish.
+
+        Keys on the structured ``task_complete`` / ``task_blocked`` fields, not
+        the prose ``current_situation`` — an optimistic situation string with
+        ``task_complete=false`` must NOT finish.
+        """
+        if ckpt is None or not (getattr(ckpt, "task_complete", False) or getattr(ckpt, "task_blocked", False)):
+            return None
+        done = bool(getattr(ckpt, "task_complete", False))
+        msg = (
+            getattr(ckpt, "message", "")
+            or getattr(ckpt, "current_situation", "")
+            or ("监督者判定任务完成" if done else "监督者判定任务无法继续推进")
+        )
+        return StepResult(
+            success=bool(getattr(ckpt, "task_success", False)) if done else False,
+            finished=True,
+            action={"_metadata": "finish", "action": "finish", "message": msg},
+            thinking=getattr(ckpt, "thought", "") or getattr(ckpt, "current_situation", "") or "",
+            message=msg,
+        )
+
+    @staticmethod
+    def _is_payment_or_checkout_context(
+        action: dict | None, thinking: str, page_type: str | None, is_sensitive: bool,
+    ) -> bool:
+        """Detect that we are on / committing at a checkout or payment page.
+
+        Multi-signal so a single missed page classification cannot let an order
+        slip through: page type, the FLAG_SECURE sensitive flag, and the model's
+        own screen reading / action text (the signal that actually fired when the
+        classifier mislabeled JD's 结算 page as product_detail).
+        """
+        if (page_type or "").strip().lower() in _CHECKOUT_PAGE_TYPES:
+            return True
+        if is_sensitive:
+            return True
+        action = action or {}
+        blob = " ".join(str(x) for x in (
+            thinking or "",
+            action.get("semantic_target", ""),
+            action.get("target", ""),
+            action.get("message", ""),
+            action.get("action", ""),
+        ))
+        return any(m in blob for m in _PAYMENT_COMMIT_MARKERS) or any(
+            m in blob for m in _CHECKOUT_PAGE_MARKERS
+        )
+
+    def _payment_safety_stop(
+        self, action: dict | None, thinking: str, page_type: str | None, current_app: str,
+        is_sensitive: bool = False,
+    ) -> "StepResult | None":
+        """HARD safety stop: never submit an order or pay.
+
+        Returns a terminal StepResult (a SAFE STOP that bypasses the completion
+        authority — final_confirm once rejected a correct finish here and pushed
+        the agent into tapping 打白条) when a checkout/payment context is detected
+        in a shopping app. The selecting/adding part is treated as done; the
+        order/payment step is the user's to perform manually.
+        """
+        try:
+            if not self._spec_guard._is_shopping_app(current_app):
+                return None
+        except Exception:
+            pass
+        if not PhoneAgent._is_payment_or_checkout_context(action, thinking, page_type, is_sensitive):
+            return None
+        msg = (
+            "已到达结算/支付环节。下单与支付是禁止的自动操作，已按安全规则停止——"
+            "请您在手机上手动核对订单并自行完成支付（如确需购买）。商品已为您选好。"
+        )
+        if self.agent_config.verbose:
+            print(f"\n{'=' * 50}")
+            print("🛑 [SafetyStop] 检测到结算/支付页面或下单/支付动作 — 绝不自动下单/支付，安全终止任务")
+            print(f"{'=' * 50}")
+        return StepResult(
+            success=True,
+            finished=True,
+            action={"_metadata": "finish", "action": "finish", "message": msg},
+            thinking=thinking or "",
+            message=msg,
+        )
+
+    def _completion_evidence(self) -> bool:
+        """Mechanical evidence that the task goal is plausibly reached.
+
+        Conservative: only blocks success-finishes when the pre-plan declared
+        a target page and it was never visited during this task.
+        """
+        target = str((getattr(self, "_vlm_plan", {}) or {}).get("target_page") or "")
+        if not target:
+            return True
+        return target in getattr(self, "_visited_pages", set())
+
+    def _current_product_price(self) -> float | None:
+        """Price of the most recently tracked product (for the price guard)."""
+        try:
+            products = self.memory_manager.state.products
+            for product in reversed(products):
+                price = getattr(product, "price", None)
+                if price:
+                    return float(price)
+        except (AttributeError, TypeError, ValueError):
+            pass
+        return None
+
+    def _canonical_action_from_model_output(
+        self,
+        parsed_action,
+        *,
+        screen_width: int,
+        screen_height: int,
+    ) -> dict:
+        """Normalize model-native actions for graph/memory recording."""
+        from phone_agent.model.protocol_bridge import ModelProtocolBridge
+
+        device_action = ModelProtocolBridge.normalize_action(
+            parsed_action,
+            model_type=self._model_type,
+            screen_size=(screen_width, screen_height),
+        )
+        action = ModelProtocolBridge.to_autoglm_action(device_action)
+        action["_device_action_ir"] = device_action.to_dict()
+        action["_source_model_protocol"] = getattr(self._model_type, "value", str(self._model_type))
+        return action
+
+    def _vlm_pre_plan(self, task: str) -> dict[str, Any]:
+        """Use VLM to decompose the shopping task into a structured plan.
+
+        Called before the first execute_step so the graph router can use
+        VLM-enriched goal information instead of only regex-based extraction.
+        Returns empty dict on failure (caller falls back to rule-based path).
+        """
+        from phone_agent.milestone_supervisor import build_preplan_prompt
+        prompt = build_preplan_prompt(task)
+        try:
+            import os
+            from dotenv import load_dotenv
+            load_dotenv()
+            plan_key = os.getenv("AMSG_STRONG_VLM_API_KEY", "")
+            plan_url = os.getenv("AMSG_STRONG_VLM_BASE_URL", "")
+            plan_model = os.getenv("AMSG_STRONG_VLM_MODEL", "")
+            if plan_key and plan_url and plan_model:
+                from openai import OpenAI
+                plan_client = OpenAI(api_key=plan_key, base_url=plan_url)
+            else:
+                plan_client = self.model_client.client
+                plan_model = self.model_config.model_name
+            response = plan_client.chat.completions.create(
+                model=plan_model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=512,
+                temperature=0.0,
+                stream=False,
+            )
+            content = response.choices[0].message.content or ""
+            json_match = re.search(r"\{[\s\S]*\}", content)
+            if json_match:
+                plan = json.loads(json_match.group())
+                if isinstance(plan.get("search_query"), str):
+                    plan["search_query"] = self._sanitize_search_query(
+                        plan["search_query"], plan.get("specs"),
+                    )
+                if self.agent_config.verbose:
+                    steps = plan.get("steps", [])
+                    step_count = len(steps)
+                    print(f"[VLM Pre-Plan] {step_count} steps, "
+                          f"query={plan.get('search_query', '')[:30]}, "
+                          f"target={plan.get('target_page')}, "
+                          f"specs={plan.get('specs', {})}")
+                return plan
+        except Exception:
+            if self.agent_config.verbose:
+                print("[VLM Pre-Plan] failed, falling back to rule-based extraction")
+        return {}
+
+    def _build_step_user_parts(
+        self,
+        current_app: str,
+        page_type: str | None,
+        available_actions: list | None,
+        graph_hint: str,
+        include_screen_info: bool = True,
+        planner_instruction: str = "",
+    ) -> list[str]:
+        """Build the structured per-step context parts (all model families).
+
+        AutoGLM embeds them in its per-step user message (with screen info);
+        the other adapters receive them via supplementary-context prepend
+        (without screen info — their adapters render it themselves).
+
+        Note: consumes self._last_user_reply (cleared after inclusion).
+        """
+        parts: list[str] = []
+
+        # Strong-planner instruction dominates: the GUI model only grounds it
+        if planner_instruction:
+            parts.append(
+                "【当前指令】（来自任务规划器——只执行这一条指令，"
+                f"不要自行规划下一步）\n{planner_instruction}"
             )
         else:
-            # User didn't specify exact SKU — must ask
-            question = self._build_spec_question(thinking)
+            # Single-focus objective from the static pre-plan: small models
+            # lose track across long contexts — give one explicit current
+            # goal instead of relying on free-form reasoning.
+            current_step_fn = getattr(self._task_plan, "current_step", None) if self._task_plan else None
+            step = current_step_fn() if current_step_fn else None
+            if step is not None and getattr(step, "description", ""):
+                parts.append(
+                    f"【当前目标】{step.description}"
+                    + (f"（预期到达: {step.target_page}）" if getattr(step, "target_page", "") else "")
+                )
 
-        print(f"\n{'─' * 50}")
-        print(f"🛑 [SpecGuard] 规格确认拦截")
-        print(f"   用户任务: {original_task[:100]}")
-        if user_requested_specs:
-            print(f"   用户指定SKU: {user_requested_specs}")
-        print(f"   模型试图: {thinking[:100]}...")
-        print(f"   强制为: Interact → {question}")
-        print(f"{'─' * 50}")
+        # Session memory digest (original task / verified facts / subtask
+        # progress) — superset of the plan; plain plan without supervisor
+        memory_file = getattr(self, "_memory_file", None)
+        if memory_file is not None:
+            parts.append(memory_file.render_injection())
+        elif self._task_plan and self._task_plan.steps:
+            parts.append(f"【任务计划】\n{self._task_plan.status_text()}")
 
-        return {
-            "_metadata": "do",
-            "action": "Interact",
-            "action_type": "Interact",
-            "message": question,
-        }
+        # Key constraints (price, specs) — prominent reminder
+        if self._task_plan and self._task_plan.goal_slots:
+            constraints = []
+            slots = self._task_plan.goal_slots
+            for pk in ("price", "price_range", "price_min", "price_max"):
+                if slots.get(pk):
+                    constraints.append(f"价格要求: {slots[pk]}")
+                    break
+            for k in ("color", "storage", "size", "brand"):
+                if slots.get(k):
+                    constraints.append(f"{k}: {slots[k]}")
+            if constraints:
+                parts.append("【关键约束】⚠️ " + "，".join(constraints)
+                             + "\n请严格按照约束选择商品，不符合价格要求的商品不要加入购物车")
+
+        # Execution history (compressed summaries)
+        if self._step_summaries:
+            history_lines = []
+            for i, s in enumerate(self._step_summaries[-8:], 1):
+                history_lines.append(f"Step {i}: {s}")
+            parts.append("【执行历史】\n" + "\n".join(history_lines))
+
+        # Graph co-pilot hint (route direction, VLM-verification warning,
+        # domain priors) — direction only, never historical product data
+        if graph_hint:
+            parts.append(f"【图谱导航】\n{graph_hint}")
+
+        # Action Library hints (navigation advisory)
+        if available_actions and self.action_advisor:
+            hints_text = self.action_advisor.format_for_vlm(available_actions)
+            if hints_text:
+                page_label = page_type or "unknown"
+                parts.append(f"【可用操作】(当前: {page_label})\n{hints_text}")
+
+        # SpecGuard safety hints (critical for spec/payment pages)
+        if self.memory_manager:
+            critical_hints = self._spec_guard.get_context_hints(
+                current_app=current_app,
+                page_type=page_type,
+                task=self._current_task,
+                vlm_plan=getattr(self, "_vlm_plan", None),
+            )
+            if critical_hints:
+                parts.append("\n".join(critical_hints))
+
+        # Mechanical constraint verdict — never ask a small model to compare
+        # numbers; compute in code and state the conclusion (the model
+        # declared ¥1424 / ¥172 "within 500-1000元" three runs in a row).
+        spec_guard = getattr(self, "_spec_guard", None)
+        if spec_guard and page_type in ("search_result", "product_detail", "spec_selection"):
+            bounds = spec_guard._extract_price_bounds(
+                self._current_task, getattr(self, "_vlm_plan", None),
+            )
+            price = self._current_product_price()
+            if bounds and price is not None:
+                low, high = bounds
+                out_of_budget = (low is not None and price < low) or (
+                    high is not None and price > high
+                )
+                if out_of_budget:
+                    parts.append(
+                        f"⛔ 系统判定: 当前商品价格 ¥{price:g} 不符合预算"
+                        f"（{spec_guard._format_bounds(bounds)}）。"
+                        f"禁止选择或加购该商品，应 Back 返回更换商品或重新筛选。"
+                    )
+                else:
+                    parts.append(f"✅ 系统判定: 当前商品价格 ¥{price:g} 在预算范围内")
+
+        # Price red-line on decision pages — last text before screenshot
+        if page_type in ("search_result", "product_detail", "spec_selection"):
+            price_slot = ""
+            if self._task_plan:
+                for pk in ("price", "price_range", "price_min", "price_max"):
+                    price_slot = self._task_plan.goal_slots.get(pk, "")
+                    if price_slot:
+                        break
+            if price_slot:
+                parts.append(
+                    f"⛔ 价格红线: {price_slot}。"
+                    f"超出此范围的商品不要选择、不要加入购物车。"
+                    f"如果当前商品超出预算，立即 Back 返回。"
+                    f"注意：筛选器可能未生效——如果结果中出现超出区间的价格，"
+                    f"说明价格筛选失败，必须重新打开筛选面板、"
+                    f"依次填写最低价和最高价两个输入框并确认后再继续。"
+                )
+
+        if include_screen_info:
+            screen_info = MessageBuilder.build_screen_info(current_app)
+            parts.append(f"** Screen Info **\n\n{screen_info}")
+
+        if getattr(self, "_last_user_reply", None):
+            parts.append(f"[用户补充约束]: {self._last_user_reply}")
+            self._last_user_reply = None
+
+        return parts
+
+    def _inject_supplementary_context(self, extra_context_parts: list[str]) -> None:
+        """Prepend supplementary context to the latest user message text."""
+        if not (extra_context_parts and self._context):
+            return
+        extra_context = "\n\n".join(extra_context_parts)
+        last_msg = self._context[-1]
+        if isinstance(last_msg.get("content"), list):
+            for item in last_msg["content"]:
+                if item.get("type") == "text":
+                    item["text"] = f"{extra_context}\n\n{item['text']}"
+                    break
+        elif isinstance(last_msg.get("content"), str):
+            last_msg["content"] = f"{extra_context}\n\n{last_msg['content']}"
 
     def _execute_step(
+        self, user_prompt: str | None = None, is_first: bool = False
+    ) -> StepResult:
+        """Execute a single step and publish per-step telemetry.
+
+        Wraps _execute_step_impl so every return path (Fast Path, graph
+        shortcut, VLM path, takeover, errors) emits exactly one telemetry
+        event for frontends (mode / dispatch / graph_hint / postcondition).
+        """
+        self._step_telemetry = {
+            "step": self._step_count + 1,
+            "dispatch": "vlm",
+            "mode": "explore",
+            "page_type": "",
+            "graph_hint": "",
+        }
+        result = self._execute_step_impl(user_prompt, is_first)
+        self._advance_lifecycle_step()
+        info = dict(self._step_telemetry)
+        info.update(
+            success=result.success,
+            finished=result.finished,
+            thinking=result.thinking or "",
+            action=result.action,
+            message=result.message or "",
+        )
+        self.last_step_info = info
+        if self.step_observer:
+            try:
+                self.step_observer(info)
+            except Exception:
+                pass
+        return result
+
+    def _tele(self, **kwargs: Any) -> None:
+        """Record per-step telemetry fields (merged into last_step_info)."""
+        self._step_telemetry.update(kwargs)
+
+    def _execute_step_impl(
         self, user_prompt: str | None = None, is_first: bool = False
     ) -> StepResult:
         """Execute a single step of the agent loop."""
@@ -509,11 +1612,17 @@ class PhoneAgent:
         device_factory = get_device_factory()
         screenshot = device_factory.get_screenshot(self.agent_config.device_id)
         current_app = device_factory.get_current_app(self.agent_config.device_id)
-        
+        self._tele(app=current_app or "", screenshot_b64=screenshot.base64_data)
+
         # Phase 3: Locate context and switch modes
         mode = "explore"
         current_state_id = None
-        context_data = {"mode": "explore", "semantic_context": "", "next_actions": [], "current_state_id": None}
+        context_data = {"mode": "explore", "semantic_context": "", "graph_hint": "", "next_actions": [], "current_state_id": None}
+        _available_actions: list | None = None
+
+        # Initialize page_type for SpecGuard
+        page_type = None
+
         if self.memory_manager:
             import hashlib
             hasher = hashlib.md5()
@@ -521,25 +1630,167 @@ class PhoneAgent:
             ui_hash = hasher.hexdigest()
             self._last_state_hash = f"state_{ui_hash}"
 
-            # 轻量级启发式特征：使用当前 APP 名称作为语义标签
-            semantic_layout = current_app if current_app else "home_screen"
+            # Extract page semantics using PageClassifier
+            page_type = None
+            summary = ""
+            elements = None
+            use_page_classifier = True
+            runtime_hint_used = False
+            if self.memory_manager and hasattr(self.memory_manager, "should_use_page_classifier"):
+                use_page_classifier = self.memory_manager.should_use_page_classifier(
+                    step=self._step_count,
+                    current_app=current_app or "",
+                )
+                if not use_page_classifier:
+                    hint = self.memory_manager.runtime_screen_hint(current_app or "")
+                    hint_page_type = hint.get("page_type")
+                    if hint_page_type:
+                        runtime_hint_used = True
+                        page_type = hint_page_type
+                        summary = hint.get("summary", "")
+                        elements = hint.get("elements")
+                        if self.agent_config.verbose:
+                            print(f"⚡ RuntimeDAG hint: type={page_type}, skipping PageClassifier")
+                    else:
+                        # Hint returned None — DAG is stale, force PageClassifier
+                        use_page_classifier = True
+                        if self.agent_config.verbose:
+                            print("⚠️ RuntimeDAG hint is None, falling back to PageClassifier")
 
-            # 基于 GraphRAG 进行匹配 (MD5 逻辑已移除)
-            context_data = self.memory_manager.locate_and_get_context(ui_hash, semantic_layout, user_prompt or self._current_task)
+            used_page_classifier = bool(use_page_classifier and self.page_classifier and not screenshot.is_sensitive)
+            if self.memory_manager and hasattr(self.memory_manager, "record_page_classifier_decision"):
+                self.memory_manager.record_page_classifier_decision(used_page_classifier)
+
+            if used_page_classifier:
+                try:
+                    pt, sm, el = self.page_classifier.classify(
+                        screenshot.base64_data,
+                        screenshot.width,
+                        screenshot.height
+                    )
+                    page_type = pt.value  # ShoppingPageType enum → str
+                    summary = sm
+                    elements = el
+                    if self.agent_config.verbose:
+                        diagnostics = getattr(self.page_classifier, "last_diagnostics", {}) or {}
+                        print(
+                            f"Page semantics: type={page_type}, summary={summary[:50]}... "
+                            f"| source={diagnostics.get('classifier_source', '')} "
+                            f"| model={diagnostics.get('classifier_model', '')} "
+                            f"| fallback={diagnostics.get('fallback_used', False)} "
+                            f"| max_tokens={diagnostics.get('max_tokens', '')}"
+                        )
+
+                    # Check if classification failed (returned UNKNOWN)
+                    if pt == ShoppingPageType.UNKNOWN:
+                        if self.agent_config.verbose:
+                            print(f"⚠️ Page classification returned UNKNOWN, using heuristic fallback")
+                        raise ValueError("Classification returned UNKNOWN")
+                except Exception as e:
+                    if self.agent_config.verbose:
+                        diagnostics = getattr(self.page_classifier, "last_diagnostics", {}) or {}
+                        print(
+                            f"Page classification failed, using heuristic: {e} "
+                            f"| raw_error={diagnostics.get('raw_error', '')}"
+                        )
+                    # Fallback to keyword-based inference using only app name
+                    # Don't use task description as it may contain misleading keywords
+                    if self.memory_manager:
+                        page_type = self.memory_manager.spatial_graph_memory._infer_page_type(
+                            current_app or "unknown"
+                        )
+                        summary = f"{current_app}:{page_type}"
+
+            # Build complete screen dict with semantics
+            screen_dict = {
+                "ui_hash": ui_hash,
+                "semantic_layout": f"{current_app} {page_type}" if page_type else current_app,
+                "app": current_app,
+                "page_type": page_type,
+                "summary": summary,
+                "elements": elements,
+                "_runtime_hint": runtime_hint_used,
+            }
+
+            # Keep semantic_layout variable for backward compatibility
+            semantic_layout = screen_dict["semantic_layout"]
+
+            # --- Anomaly watchdog: consecutive broken screens → human ---
+            # Real-device failure mode: SMS-verification popup → screenshot
+            # capture fails (black fallback, is_sensitive=True) → page stays
+            # unknown → the VLM keeps acting blind and reports success.
+            if screenshot.is_sensitive or (used_page_classifier and page_type in (None, "unknown")):
+                self._anomaly_consecutive += 1
+            else:
+                self._anomaly_consecutive = 0
+            if self._anomaly_consecutive >= 2:
+                self._anomaly_consecutive = 0
+                return self._handle_verification_takeover(
+                    screenshot, current_app,
+                    "连续多步无法获取有效屏幕（黑屏或无法识别页面），"
+                    "可能出现了验证码、短信验证或安全弹窗。"
+                    "请在手机上人工处理后继续。",
+                    "anomaly",
+                )
+
+            # --- Verification detection (Layer 1): before VLM ---
+            if used_page_classifier:
+                _verification = detect_verification(page_type, summary, elements)
+                if _verification is not None:
+                    self._verification_consecutive += 1
+                    if self._verification_consecutive <= 3:
+                        return self._handle_verification_takeover(
+                            screenshot, current_app,
+                            _verification.message,
+                            _verification.verification_type,
+                        )
+                    # After 3 consecutive detections, let VLM try once
+                    # in case the classifier is giving false positives.
+                    if self._verification_consecutive > 5:
+                        return StepResult(
+                            success=False, finished=True,
+                            action=None, thinking="",
+                            message="验证页面持续出现，任务无法继续。请手动完成验证后重新运行。",
+                        )
+                else:
+                    self._verification_consecutive = 0
+
+            # Pass to memory manager with complete semantics
+            context_data = self.memory_manager.locate_and_get_context(
+                ui_hash,
+                screen_dict["semantic_layout"],
+                user_prompt or self._current_task,
+                screen_dict=screen_dict,  # NEW: pass complete semantics
+            )
             mode = context_data.get("mode", "explore")
             current_state_id = context_data.get("current_state_id")
 
-            # Phase 2.5: SessionMemory compression (every 5 steps)
-            if current_app:
-                self.memory_manager.compress_session_history()
+            # (SessionMemory compression removed — it leaked its own prompt
+            # into the dialogue; the milestone supervisor owns progress now.)
 
             # [HITL Active Clarification] - Use ClarificationAgent on first step
             if is_first and self.clarification_agent:
+                # Pass user preferences so ClarificationAgent can fill gaps
+                user_prefs = None
+                if self.memory_manager:
+                    try:
+                        summary = self.memory_manager.get_user_summary()
+                        user_prefs = summary.get("preferences", [])
+                    except Exception:
+                        pass
                 result = self.clarification_agent.check_and_clarify(
                     task=user_prompt or self._current_task,
                     image_base64=screenshot.base64_data,
                     current_app=current_app,
-                    memory_context=context_data.get("semantic_context", ""),
+                    memory_context="\n".join(
+                        part
+                        for part in (
+                            str(context_data.get("graph_hint", "") or ""),
+                            str(context_data.get("semantic_context", "") or ""),
+                        )
+                        if part
+                    ),
+                    user_preferences=user_prefs,
                     clarification_callback=self.clarification_callback,
                     verbose=self.agent_config.verbose,
                 )
@@ -547,65 +1798,174 @@ class PhoneAgent:
                     user_prompt = result.clarified_task
                     self._current_task = result.clarified_task  # lower threshold for better HITL trigger rate  # 提高阈��，更���易触发主��提问
                     # Re-evaluate memory with clarified task
-                    context_data = self.memory_manager.locate_and_get_context(ui_hash, semantic_layout, user_prompt)
+                    context_data = self.memory_manager.locate_and_get_context(
+                        ui_hash,
+                        screen_dict["semantic_layout"],
+                        user_prompt,
+                        screen_dict=screen_dict,
+                    )
                     mode = context_data.get("mode", "explore")
                     current_state_id = context_data.get("current_state_id")
 
-            if mode == "navigate" and context_data.get("next_actions"):
-                # Fast track: return the highest confidence action directly without VLM inference
-                best_action = context_data["next_actions"][0]
+            # ── Sync plan with current page state ──
+            # If current page matches a FUTURE step (Fast Path jumped ahead),
+            # advance past completed intermediate steps.
+            milestone_subtask_done = False
+            if self._task_plan and page_type:
+                for i, step in enumerate(self._task_plan.steps):
+                    if step.status == "pending" and step.target_page == page_type:
+                        # Mark all steps before this one as done
+                        for j in range(self._task_plan.current_index, i):
+                            self._task_plan.steps[j].status = "done"
+                        if i > self._task_plan.current_index:
+                            milestone_subtask_done = True
+                        self._task_plan.current_index = i
+                        self._task_plan.steps[i].status = "current"
+                        break
 
-                # Check confidence threshold before executing
-                action_confidence = best_action.get("confidence", 1.0)
-                if action_confidence < 0.8:
-                    # Confidence too low, fall back to explore mode
-                    mode = "explore"
-                    print(f"[Navigate] Confidence {action_confidence:.2f} < 0.8, falling back to explore mode")
-                else:
-                    action = {
-                        "_metadata": "do",
-                        "action_type": best_action["type"],
-                    }
-                    if best_action.get("target"):
-                        action["element"] = best_action["target"]
-
-                    # Quick parse params
-                    try:
-                        import ast
-                        params = ast.literal_eval(best_action.get("target_desc", "{}"))
-                        action.update(params)
-                    except:
-                        pass
-
-                print(f"🚀 Navigation Mode Triggered: Found Graph Shortcut: {best_action['type']}")
-
-                # Execute it directly
+            # ── Milestone supervision (strong VLM, low frequency) ──
+            if (
+                self.milestone_supervisor is not None
+                and self._milestone_trigger is not None
+                and page_type
+            ):
+                stagnating = False
                 try:
-                    if self._specialized_handler:
-                        # Convert back to parsed action format if needed, simplistic execution here
-                        pass
-                    result = self.action_handler.execute(
-                        action, screenshot.width, screenshot.height
-                    )
-                except Exception as e:
-                    result = self.action_handler.execute(
-                        finish(message=str(e)), screenshot.width, screenshot.height
-                    )
-
-                finished = action.get("_metadata") == "finish" or result.should_finish
-                self._last_thinking = "[Graph Shortcut Navigated]"
-                return StepResult(
-                    success=result.success,
-                    finished=finished,
-                    action=action,
-                    thinking="[Graph Shortcut Navigated]",
-                    message=result.message or action.get("message"),
+                    stagnating = bool(self.memory_manager.state.is_stagnating())
+                except Exception:
+                    pass
+                _ms_trigger = self._milestone_trigger.evaluate(
+                    self._step_count,
+                    subtask_done=milestone_subtask_done,
+                    stagnating=stagnating,
                 )
-            else:
-                if self.agent_config.verbose:
-                    print(f"🧭 知识图谱查询: 未匹配到可信历史动作，使用视觉大模型进行推理 (Explore Mode)")
+                if _ms_trigger:
+                    _ckpt = None
+                    try:
+                        _ckpt = self._run_milestone_checkpoint(_ms_trigger, screenshot, page_type)
+                    except Exception:
+                        if self.agent_config.verbose:
+                            traceback.print_exc()
+                    # Act on the supervisor's verdict instead of discarding it:
+                    # a screenshot-confirmed completion finishes the task now,
+                    # stopping the executor from re-tapping a commit it already
+                    # achieved (over-adding to cart) and recognizing completion
+                    # without waiting for the executor to emit finish.
+                    _verdict = self._supervisor_finish_verdict(_ckpt)
+                    if _verdict is not None:
+                        if self.agent_config.verbose:
+                            done = _ckpt.task_complete
+                            print(
+                                f"🏁 [Milestone] 监督者判定任务{'完成' if done else '受阻'}，"
+                                f"结束任务：{_verdict.message}"
+                            )
+                        return _verdict
 
-        # Get model response
+            # ── Action Library advisory ──
+            _available_actions: list | None = None
+            if self.action_advisor:
+                try:
+                    _available_actions = self.action_advisor.query(
+                        page_type or "", current_app or "",
+                    )
+                except Exception:
+                    _available_actions = None
+
+            if page_type:
+                self._visited_pages.add(page_type)
+            self._tele(
+                mode=mode,
+                page_type=page_type or "",
+                graph_hint=str(context_data.get("graph_hint", "") or ""),
+                runtime_metrics=dict(context_data.get("runtime_metrics") or {}),
+                available_actions=len(_available_actions or []),
+            )
+
+            # ── Dual-speed dispatch: Fast Path for Grounded Actions ──
+            if _available_actions and self.agent_config.verbose:
+                plan_step = self._task_plan.current_step() if self._task_plan else None
+                print(
+                    f"[FastPath] page={page_type} hints={len(_available_actions)} "
+                    f"plan_target={getattr(plan_step, 'target_page', None)} "
+                    f"executable={[h.target_page for h in _available_actions if h.is_fast_executable()]}"
+                )
+            if _available_actions and not self._needs_vlm(_available_actions, page_type or ""):
+                fast_hint = self._select_fast_action(_available_actions, page_type or "")
+                if fast_hint is not None:
+                    fast_result = self._execute_fast_path(
+                        fast_hint, screenshot, current_app, ui_hash, semantic_layout,
+                        source_page_type=page_type or "",
+                    )
+                    if fast_result is not None:
+                        return fast_result
+                    # Fast Path failed postcondition → fall through to Full Path
+
+            # ── Legacy graph shortcut (kept as fallback, will be removed in Phase 3) ──
+            if not _available_actions:
+                graph_result = self._try_graph_shortcut(
+                    context_data, mode, screenshot, current_app, ui_hash, semantic_layout,
+                )
+                if graph_result is not None:
+                    self._tele(dispatch="graph_shortcut")
+                    return graph_result
+
+        # ── Strong-VLM step planning: plan, then let the GUI model ground ──
+        planner_instruction = ""
+        if self.step_planner is not None:
+            if self._planner_context is not None and self._last_planner_instruction:
+                self._planner_context.push_result(
+                    f"指令『{self._last_planner_instruction}』→ 当前页面: {page_type or 'unknown'}"
+                )
+            constraints = ""
+            if self._task_plan and self._task_plan.goal_slots:
+                constraints = "，".join(
+                    f"{k}={v}" for k, v in self._task_plan.goal_slots.items() if v
+                )
+            progress = (
+                self._task_plan.status_text()
+                if self._task_plan and self._task_plan.steps else ""
+            )
+            plan = self.step_planner.plan_step(
+                screenshot.base64_data, screenshot.width, screenshot.height,
+                task=self._current_task,
+                current_page_type=page_type or "",
+                constraints=constraints,
+                progress=progress,
+                context=self._planner_context,
+            )
+            if plan is not None:
+                self._tele(planner_instruction=plan.instruction, planner_finish=plan.finish)
+                if plan.need_human:
+                    return self._handle_verification_takeover(
+                        screenshot, current_app,
+                        plan.message or "规划器检测到验证码/安全弹窗，请人工处理后继续。",
+                        "planner",
+                    )
+                if plan.finish:
+                    self._last_planner_instruction = ""
+                    return StepResult(
+                        success=plan.success,
+                        finished=True,
+                        action={"_metadata": "finish", "message": plan.message},
+                        thinking=plan.thought,
+                        message=plan.message or ("任务完成" if plan.success else "任务无法继续"),
+                    )
+                if plan.instruction:
+                    planner_instruction = plan.instruction
+                    if plan.expected_page:
+                        planner_instruction += f"（预期到达页面: {plan.expected_page}）"
+                    self._last_planner_instruction = plan.instruction
+                    if self.agent_config.verbose:
+                        print(f"🧭 [Planner] {plan.instruction}")
+
+        # Get model response (Full Path)
+        # Graph co-pilot hint (route direction / VLM-verification warning /
+        # domain priors), produced by GraphRuntimeController under the
+        # "graph_hint" key.  Must reach the VLM regardless of model family.
+        graph_hint = str(context_data.get("graph_hint", "") or "")
+        graph_hint_in_message = False
+        planner_in_message = False
+
         is_non_autoglm = self._model_type in (
             ModelType.UITARS, ModelType.QWENVL,
             ModelType.MAIUI, ModelType.GUIOWL,
@@ -639,6 +1999,23 @@ class PhoneAgent:
                 # UI-TARS: 保留最近 5 张图片
                 if hasattr(self._adapter, 'limit_context'):
                     self._context = self._adapter.limit_context(self._context, max_images=5)
+
+            # Model-agnostic structured context (task plan / constraints /
+            # history / action hints / SpecGuard / price red-line / user
+            # reply). Previously AutoGLM-only — other model families ran
+            # without plan progress or safety reminders.
+            step_parts = self._build_step_user_parts(
+                current_app=current_app,
+                page_type=page_type,
+                available_actions=_available_actions,
+                graph_hint=graph_hint,
+                include_screen_info=False,
+                planner_instruction=planner_instruction,
+            )
+            if step_parts:
+                self._inject_supplementary_context(["\n\n".join(step_parts)])
+                graph_hint_in_message = bool(graph_hint)
+                planner_in_message = bool(planner_instruction)
         else:
             # AutoGLM: original message building logic
             if is_first:
@@ -666,27 +2043,43 @@ class PhoneAgent:
                     )
                 )
             else:
-                screen_info = MessageBuilder.build_screen_info(current_app)
-                text_content = f"** Screen Info **\n\n{screen_info}"
-                if getattr(self, "_last_user_reply", None):
-                    text_content += f"\n\n[用户补充约束]: {self._last_user_reply}"
-                    self._last_user_reply = None
+                # Build structured per-step context
+                parts = self._build_step_user_parts(
+                    current_app=current_app,
+                    page_type=page_type,
+                    available_actions=_available_actions,
+                    graph_hint=graph_hint,
+                    planner_instruction=planner_instruction,
+                )
+                graph_hint_in_message = bool(graph_hint)
+                planner_in_message = bool(planner_instruction)
 
                 self._context.append(
                     MessageBuilder.create_user_message(
-                        text=text_content, image_base64=screenshot.base64_data
+                        text="\n\n".join(parts), image_base64=screenshot.base64_data
                     )
                 )
 
         # =============================================
-        # Phase ⑥: Memory Decoupling Context (UI-Copilot paradigm)
-        # MINIMAL by default — only progress + on-demand retrieval.
-        # Detailed observations live in KnowledgeBase, not in VLM context.
+        # Phase ⑥: Supplementary context injection (lightweight)
+        # Task plan, action hints, and spec guard are already in the per-step
+        # user message (built above).  Two supplements are prepended here:
+        # the graph co-pilot hint — when the structured builder did not
+        # already carry it (first step, non-AutoGLM models) — and on-demand
+        # memory retrieval.
         # =============================================
         extra_context_parts: list[str] = []
 
+        if planner_instruction and not planner_in_message:
+            extra_context_parts.append(
+                "【当前指令】（来自任务规划器——只执行这一条指令，"
+                f"不要自行规划下一步）\n{planner_instruction}"
+            )
+
+        if graph_hint and not graph_hint_in_message:
+            extra_context_parts.append(graph_hint)
+
         if self.memory_manager and current_app:
-            # Core: lightweight progress + on-demand retrieval
             last_thinking = getattr(self, "_last_thinking", "")
             injection_ctx = self.memory_manager.get_injection_context(
                 thinking=last_thinking,
@@ -696,27 +2089,7 @@ class PhoneAgent:
             if injection_ctx:
                 extra_context_parts.append(injection_ctx)
 
-        # Critical scenario detection (spec-guard — keep, it prevents bad purchases)
-        if self.memory_manager:
-            critical_hints = self._detect_critical_scenario(current_app, screenshot.base64_data)
-            if critical_hints:
-                extra_context_parts.append("\n\n".join(critical_hints))
-                if self.agent_config.verbose:
-                    print("🎯 检测到关键场景，注入强提示")
-
-        extra_context = "\n\n".join(extra_context_parts) if extra_context_parts else ""
-
-        if extra_context and self._context:
-            last_msg = self._context[-1]
-            if isinstance(last_msg.get("content"), list):
-                for item in last_msg["content"]:
-                    if item.get("type") == "text":
-                        # Inject at text beginning, not end
-                        item["text"] = f"{extra_context}\n\n{item['text']}"
-                        break
-            elif isinstance(last_msg.get("content"), str):
-                # Inject at text beginning, not end
-                last_msg["content"] = f"{extra_context}\n\n{last_msg['content']}"
+        self._inject_supplementary_context(extra_context_parts)
 
         # Get model response (with smart retry)
         msgs = get_messages(self.agent_config.lang)
@@ -773,6 +2146,21 @@ class PhoneAgent:
                     message=f"模型错误: {e}",
                 )
 
+        # --- Verification detection (Layer 2): VLM-output fallback ---
+        # Triggers when PageClassifier was skipped (RuntimeDAG hint) but VLM
+        # recognized a login/verification page in its thinking.
+        _vlm_verification = detect_verification_from_vlm(
+            response.thinking or "", response.raw_content or "",
+        )
+        if _vlm_verification is not None:
+            self._verification_consecutive += 1
+            if self._verification_consecutive <= 3:
+                return self._handle_verification_takeover(
+                    screenshot, current_app,
+                    _vlm_verification.message,
+                    _vlm_verification.verification_type,
+                )
+
         # Parse action and execute based on model type
         thinking = response.thinking  # Default thinking
         action_str = response.action  # Store the original action string for context
@@ -797,27 +2185,44 @@ class PhoneAgent:
             # Execute action with specialized handler
             try:
                 if parsed_action and parsed_action.action_type and parsed_action.action_type != "unknown":
-                    result = self._specialized_handler.execute(
-                        parsed_action, screenshot.width, screenshot.height
+                    action = self._canonical_action_from_model_output(
+                        parsed_action,
+                        screen_width=screenshot.width,
+                        screen_height=screenshot.height,
                     )
-                    # Sync action history to adapter (for QwenVL message building)
-                    if result.success and hasattr(self._specialized_handler, 'action_history'):
-                        if hasattr(self._adapter, '_action_history'):
-                            self._adapter._action_history = list(self._specialized_handler.action_history)
-                    
-                    # Convert MAI-UI action to AutoGLM format for memory tracking
-                    if self._model_type == ModelType.MAIUI:
-                        from phone_agent.actions.handler_maiui import convert_maiui_to_autoglm
-                        action = convert_maiui_to_autoglm(parsed_action, screenshot.width, screenshot.height)
+                    # HARD safety stop FIRST: never submit an order / pay, even
+                    # if the page was misclassified (JD 结算 read as product_detail).
+                    _safety = self._payment_safety_stop(
+                        action, thinking, page_type, current_app,
+                        is_sensitive=screenshot.is_sensitive,
+                    )
+                    if _safety is not None:
+                        return _safety
+                    # SpecGuard on the canonical action BEFORE execution —
+                    # previously only the AutoGLM branch was guarded, so the
+                    # other model families could commit purchases unchecked.
+                    guarded = self._spec_guard.check(
+                        action=action,
+                        thinking=thinking,
+                        current_app=current_app,
+                        page_type=page_type or ("payment" if screenshot.is_sensitive else None),
+                        task=self._current_task,
+                        vlm_plan=getattr(self, "_vlm_plan", None),
+                        current_price=self._current_product_price(),
+                    )
+                    if guarded is not None:
+                        action = guarded
+                        result = self.action_handler.execute(
+                            guarded, screenshot.width, screenshot.height
+                        )
                     else:
-                        # Build action dict for other specialized handlers (QwenVL, UI-TARS, etc.)
-                        action = {
-                            "_metadata": "finish" if parsed_action.action_type in ("terminate", "finished", "finish", "answer") else "do",
-                            "action_type": parsed_action.action_type,
-                            **parsed_action.params,
-                        }
-                        if parsed_action.action_type in ("terminate", "finished", "finish", "answer"):
-                            action["message"] = parsed_action.params.get("content") or parsed_action.params.get("message", "Task completed")
+                        result = self._specialized_handler.execute(
+                            parsed_action, screenshot.width, screenshot.height
+                        )
+                        # Sync action history to adapter (for QwenVL message building)
+                        if result.success and hasattr(self._specialized_handler, 'action_history'):
+                            if hasattr(self._adapter, '_action_history'):
+                                self._adapter._action_history = list(self._specialized_handler.action_history)
                 else:
                     # Fallback to AutoGLM handler
                     action_str = response.action if hasattr(response, 'action') else ""
@@ -838,10 +2243,31 @@ class PhoneAgent:
 
             try:
                 action = parse_action(action_str)
+                self._unparseable_count = 0
             except ValueError:
                 if self.agent_config.verbose:
                     traceback.print_exc()
-                action = finish(message=action_str)
+                # Empty/garbage output must NOT become finish() — that was
+                # another success-laundering path (the model emitted empty
+                # responses in a loop and each one "finished" the task).
+                # Recover instead: reset the poisoned dialogue context (the
+                # session memory file is the durable state) and retry.
+                self._unparseable_count = getattr(self, "_unparseable_count", 0) + 1
+                if self._unparseable_count >= 4:
+                    return StepResult(
+                        success=False, finished=True, action=None,
+                        thinking=thinking or "",
+                        message="执行模型连续无有效输出，任务失败",
+                    )
+                if self._unparseable_count >= 2:
+                    self._reset_dialogue_context(
+                        "执行模型输出为空/不可解析，重置上下文后基于会话记忆重新分析"
+                    )
+                return StepResult(
+                    success=False, finished=False, action=None,
+                    thinking=thinking or "",
+                    message="模型输出不可解析，已跳过本步并准备重试",
+                )
 
             if self.agent_config.verbose:
                 print("-" * 50)
@@ -852,8 +2278,30 @@ class PhoneAgent:
             # Remove image from context to save space
             self._context[-1] = MessageBuilder.remove_images_from_message(self._context[-1])
 
-            # SpecGuard: prevent model from skipping Interact on spec pages
-            guarded = self._spec_guard_check(action, thinking, current_app)
+            # Action Library grounding: enhance VLM coords with graph coords
+            if self.action_advisor and _available_actions:
+                action = self.action_advisor.try_ground(action, _available_actions)
+
+            # HARD safety stop FIRST: never submit an order / pay, even if the
+            # page was misclassified (JD 结算 read as product_detail).
+            _safety = self._payment_safety_stop(
+                action, thinking, page_type, current_app,
+                is_sensitive=screenshot.is_sensitive,
+            )
+            if _safety is not None:
+                return _safety
+            # SpecGuard: prevent model from skipping Interact on spec pages.
+            # FLAG_SECURE (sensitive) screenshots skip classification — treat
+            # them as payment pages so the guard stays armed where it matters.
+            guarded = self._spec_guard.check(
+                action=action,
+                thinking=thinking,
+                current_app=current_app,
+                page_type=page_type or ("payment" if screenshot.is_sensitive else None),
+                task=self._current_task,
+                vlm_plan=getattr(self, "_vlm_plan", None),
+                current_price=self._current_product_price(),
+            )
             if guarded is not None:
                 action = guarded
 
@@ -865,9 +2313,11 @@ class PhoneAgent:
             except Exception as e:
                 if self.agent_config.verbose:
                     traceback.print_exc()
-                result = self.action_handler.execute(
-                    finish(message=str(e)), screenshot.width, screenshot.height
-                )
+                # Terminate as a failure — routing through finish() would
+                # report success=True and flush the failed trajectory into
+                # Neo4j (quality gate 1).
+                from phone_agent.actions.handler import ActionResult
+                result = ActionResult(success=False, should_finish=True, message=str(e))
 
         # Add assistant response to context based on model type
         if self._model_type in (ModelType.QWENVL, ModelType.GUIOWL):
@@ -924,17 +2374,21 @@ class PhoneAgent:
                     params_str = ", ".join(f"{k}={repr(v)}" for k, v in action.items() if k not in ("_metadata", "action"))
                     action_str_to_save = f'do(action={repr(action.get("action", ""))}' + (f', {params_str}' if params_str else "") + ')'
 
-            assistant_content = f"<think>{thinking}</think><answer>{action_str_to_save}</answer>"
+            summary_tag = ""
+            if response.summary:
+                summary_tag = f"<summary>{response.summary}</summary>"
+            assistant_content = f"<think>{thinking}</think><answer>{action_str_to_save}</answer>{summary_tag}"
             self._context.append(
                 MessageBuilder.create_assistant_message(assistant_content)
             )
         
-        # Track step in memory
+        # Track step in memory + feed self-evolution
         if self.memory_manager:
             self.memory_manager.add_step(
                 thinking=thinking,
                 action=action,
                 screenshot_app=current_app,
+                page_type=page_type or "",
             )
 
             # Unified state verbose logging
@@ -953,23 +2407,136 @@ class PhoneAgent:
                         parts.append(f"已看{product_count}件")
                     print(f"📦 [UnifiedState] {' | '.join(parts)}")
 
-            # Phase 4: Online Dynamic Graph construction - 使用统��接口
-            if current_state_id:
+            # Phase 4: Online Dynamic Graph construction
+            # When graph can't locate current state, build a synthetic state_id
+            # from page_type so the transition still gets recorded.
+            effective_state_id = current_state_id
+            if not effective_state_id and page_type and current_app:
+                effective_state_id = f"state_{current_app}_{page_type}_runtime_{ui_hash[:8]}"
+            if effective_state_id:
                 self.memory_manager.update_state_and_transition(
                     screenshot_hash=ui_hash,
                     semantic_layout=semantic_layout,
                     action=action,
-                    task=self._current_task
+                    task=self._current_task,
+                    expected_postcondition=action.get("_expected_postcondition"),
                 )
+
+        # Self-evolution for Full Path: postcondition observation happens in the
+        # NEXT step's PageClassifier → record_observation → EdgeLifecycle chain.
+        # No extra screenshot needed here (Fast Path handles its own evolve above).
 
 
         # Capture interact reply
         if action.get("action_type") == "Interact" or action.get("action") == "Interact" or (action.get("_metadata") == "do" and action.get("action") == "Interact"):
             if hasattr(result, "message") and result.message:
                 self._last_user_reply = result.message
+                # Fold the answer into the task text so SpecGuard and
+                # TaskSpecExtractor see the new constraint — otherwise the
+                # guard re-asks the same question until max_steps.
+                reply = result.message.strip()
+                if reply and reply not in self._current_task:
+                    self._current_task = f"{self._current_task}（用户补充：{reply}）"
 
         # Check if finished
         finished = action.get("_metadata") == "finish" or result.should_finish
+        if (
+            finished
+            and planner_instruction
+            and action.get("_metadata") == "finish"
+            and result.success
+        ):
+            # The GUI model may not end the task while the planner still has
+            # instructions — fabricated completions slipped through here
+            # (real-device run: "任务完成" while nothing was verified).
+            if self.agent_config.verbose:
+                print("⛔ [Planner] 执行模型试图提前 finish，已拦截（任务结束由规划器判定）")
+            finished = False
+
+        # Single completion authority: when the supervisor can still confirm,
+        # final_confirm (screenshot verdict) decides; the mechanical
+        # page-visitation gate is the fallback when it cannot (no supervisor,
+        # disabled after failures, or call budget exhausted). Page-visitation
+        # evidence is noisy — spec popups frequently classify as
+        # product_detail, so a genuinely successful add-to-cart was once
+        # blocked for "never visiting spec_selection".
+        supervisor_can_confirm = (
+            self.milestone_supervisor is not None
+            and self._milestone_trigger is not None
+            and not self._milestone_trigger.disabled
+            and self._milestone_trigger.call_count < self._milestone_trigger.max_calls
+        )
+        if (
+            finished
+            and action.get("_metadata") == "finish"
+            and result.success
+            and not supervisor_can_confirm
+            and not self._completion_evidence()
+        ):
+            self._finish_gate_blocked_count = getattr(self, "_finish_gate_blocked_count", 0) + 1
+            target = str((getattr(self, "_vlm_plan", {}) or {}).get("target_page") or "")
+            if self._finish_gate_blocked_count >= 3:
+                # Escape hatch: the target_page may be perpetually unreachable
+                # (classifier noise) — terminate as failure rather than loop
+                # finish→block→finish until max_steps.
+                from phone_agent.actions.handler import ActionResult
+                result = ActionResult(
+                    success=False, should_finish=True,
+                    message=f"任务未能完成（连续 3 次完成证据不足，目标页 {target} 始终未到达）",
+                )
+            else:
+                note = f"[FinishGate] 完成证据不足（目标页 {target} 未到达过），已拦截 finish，请继续执行任务"
+                if self.agent_config.verbose:
+                    print(f"⛔ {note}")
+                self._step_summaries.append(note)
+                # pending_finish_gate only matters to a live supervisor; this
+                # branch runs when none is available, so do not set it.
+                finished = False
+
+        # Final confirmation: the supervisor verifies success claims against
+        # the screenshot (the executor's self-report is untrusted).
+        if (
+            finished
+            and action.get("_metadata") == "finish"
+            and result.success
+            and supervisor_can_confirm
+        ):
+            try:
+                ckpt = self._run_milestone_checkpoint("final_confirm", screenshot, page_type or "")
+            except Exception:
+                if self.agent_config.verbose:
+                    traceback.print_exc()
+                ckpt = None  # supervisor crash must not block a finish
+            if ckpt is not None and ckpt.task_blocked:
+                from phone_agent.actions.handler import ActionResult
+                result = ActionResult(
+                    success=False, should_finish=True,
+                    message=ckpt.message or "监督者判定任务无法继续推进",
+                )
+            elif ckpt is not None and not ckpt.task_complete:
+                self._finish_rejected_count = getattr(self, "_finish_rejected_count", 0) + 1
+                situation = ckpt.current_situation or ckpt.message or "请继续执行"
+                if self._finish_rejected_count >= 3:
+                    # Three rejected completion claims — the executor cannot
+                    # close the gap; terminate deterministically as a failure
+                    # instead of stalling until max_steps.
+                    from phone_agent.actions.handler import ActionResult
+                    result = ActionResult(
+                        success=False, should_finish=True,
+                        message=f"任务未能完成（监督者三次否决完成声明）：{situation}",
+                    )
+                else:
+                    note = f"[里程碑] 监督者判定任务未完成：{situation}"
+                    if self.agent_config.verbose:
+                        print(f"⛔ {note}")
+                    self._step_summaries.append(note)
+                    # Recovery: the dialogue that produced the false finish is
+                    # poisoned — drop it and re-analyze from the revised
+                    # session memory (回退重新分析).
+                    self._reset_dialogue_context(
+                        f"完成声明被否决，按修订后的子任务继续：{situation}"
+                    )
+                    finished = False
 
         # Record step trace
         if self.tracer:
@@ -992,6 +2559,22 @@ class PhoneAgent:
                 f"✅ {msgs['task_completed']}: {result.message or action.get('message', msgs['done'])}"
             )
             print("=" * 50 + "\n")
+
+        # Update task plan + step summaries + compress history
+        step_summary = response.summary or ""
+        if not step_summary and thinking:
+            # Fallback: model didn't output <summary>, extract from thinking
+            lines = [l.strip() for l in thinking.replace("\n", ". ").split(". ") if l.strip()]
+            step_summary = lines[-1][:100] if lines else ""
+        if step_summary:
+            self._step_summaries.append(step_summary)
+        # Plan advancement for Full Path: only when the VLM action clearly
+        # completed a plan step (e.g. finish a search, select a product).
+        # We do NOT auto-advance based on page_type match because the VLM
+        # might still need to perform actions on the current page (like
+        # typing a query on search_input before the step is truly done).
+        # Fast Path handles its own advancement in _execute_fast_path.
+        self._compress_history()
 
         # Save last thinking for retrieval trigger detection
         self._last_thinking = thinking

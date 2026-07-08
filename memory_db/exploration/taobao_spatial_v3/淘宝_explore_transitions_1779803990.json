@@ -1,0 +1,101 @@
+{
+  "app": "淘宝",
+  "task": "当前如果在规格选择弹窗中，请选择一个尚未选择的必填规格，例如颜色分类中的第一个可选项；然后点击底部二次确认的加入购物车/加购按钮，目标是进入购物车或出现加入成功状态。不要点击提交订单、支付或确认地址；如果进入确认订单页，立刻返回并停止。",
+  "total_transitions": 0,
+  "coverage": {
+    "covered_page_types": [
+      "spec_selection"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "search_result",
+      "product_detail",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [],
+  "rejected_transitions": [
+    {
+      "from": "spec_selection:商品规格选择",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          181,
+          789
+        ]
+      },
+      "to": "spec_selection:商品规格选择",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "spec_selection:商品规格选择",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          208,
+          416
+        ]
+      },
+      "to": "spec_selection:商品规格选择",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "spec_selection:商品规格选择",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          188,
+          801
+        ]
+      },
+      "to": "spec_selection:商品规格选择",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "spec_selection:商品规格选择",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          176,
+          785
+        ]
+      },
+      "to": "spec_selection:商品规格选择",
+      "reason": "self-loop or unchanged screen"
+    }
+  ]
+}

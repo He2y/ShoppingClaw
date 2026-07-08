@@ -1,0 +1,275 @@
+{
+  "app": "淘宝",
+  "lifecycle_summary": {
+    "hypothesis": 0,
+    "candidate": 0,
+    "promoted": 9,
+    "demoted": 0,
+    "total_outcomes": 9
+  },
+  "records": [
+    {
+      "edge_key": "unknown|tap_dialog|[814, 810]|dialog",
+      "stage": "promoted",
+      "source_page_type": "unknown",
+      "target_page_type": "dialog",
+      "intent": "tap_dialog",
+      "action_target": "[814, 810]",
+      "outcome_counts": {
+        "dialog": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "dialog",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 3,
+      "created_step": 3
+    },
+    {
+      "edge_key": "dialog|tap_home|[288, 608]|home",
+      "stage": "promoted",
+      "source_page_type": "dialog",
+      "target_page_type": "home",
+      "intent": "tap_home",
+      "action_target": "[288, 608]",
+      "outcome_counts": {
+        "home": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "home",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 4,
+      "created_step": 4
+    },
+    {
+      "edge_key": "unknown|tap_dialog|[887, 191]|dialog",
+      "stage": "promoted",
+      "source_page_type": "unknown",
+      "target_page_type": "dialog",
+      "intent": "tap_dialog",
+      "action_target": "[887, 191]",
+      "outcome_counts": {
+        "dialog": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "dialog",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 5,
+      "created_step": 5
+    },
+    {
+      "edge_key": "dialog|swipe_home|[]|home",
+      "stage": "promoted",
+      "source_page_type": "dialog",
+      "target_page_type": "home",
+      "intent": "swipe_home",
+      "action_target": "[]",
+      "outcome_counts": {
+        "home": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "home",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 7,
+      "created_step": 7
+    },
+    {
+      "edge_key": "home|tap_product_detail|[383, 241]|product_detail",
+      "stage": "promoted",
+      "source_page_type": "home",
+      "target_page_type": "product_detail",
+      "intent": "tap_product_detail",
+      "action_target": "[383, 241]",
+      "outcome_counts": {
+        "product_detail": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "product_detail",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 8,
+      "created_step": 8
+    },
+    {
+      "edge_key": "product_detail|tap_home|[936, 54]|home",
+      "stage": "promoted",
+      "source_page_type": "product_detail",
+      "target_page_type": "home",
+      "intent": "tap_home",
+      "action_target": "[936, 54]",
+      "outcome_counts": {
+        "home": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "home",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 9,
+      "created_step": 9
+    },
+    {
+      "edge_key": "home|tap_search_result|[120, 516]|search_result",
+      "stage": "promoted",
+      "source_page_type": "home",
+      "target_page_type": "search_result",
+      "intent": "tap_search_result",
+      "action_target": "[120, 516]",
+      "outcome_counts": {
+        "search_result": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "search_result",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 10,
+      "created_step": 10
+    },
+    {
+      "edge_key": "search_result|open_filter_panel|[81, 129]|filter_panel",
+      "stage": "promoted",
+      "source_page_type": "search_result",
+      "target_page_type": "filter_panel",
+      "intent": "open_filter_panel",
+      "action_target": "[81, 129]",
+      "outcome_counts": {
+        "filter_panel": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "filter_panel",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 12,
+      "created_step": 12
+    },
+    {
+      "edge_key": "filter_panel|apply_or_close_filter|[135, 285]|search_result",
+      "stage": "promoted",
+      "source_page_type": "filter_panel",
+      "target_page_type": "search_result",
+      "intent": "apply_or_close_filter",
+      "action_target": "[135, 285]",
+      "outcome_counts": {
+        "search_result": 1
+      },
+      "total_attempts": 1,
+      "verification_count": 1,
+      "dominant_outcome": "search_result",
+      "dominance_ratio": 1.0,
+      "risk_level": "normal",
+      "last_verified_step": 13,
+      "created_step": 13
+    }
+  ],
+  "outcomes": [
+    {
+      "source_page_type": "unknown",
+      "action_key": "tap_dialog:[814, 810]",
+      "outcomes": {
+        "dialog": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "dialog",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "dialog",
+      "action_key": "tap_home:[288, 608]",
+      "outcomes": {
+        "home": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "home",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "unknown",
+      "action_key": "tap_dialog:[887, 191]",
+      "outcomes": {
+        "dialog": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "dialog",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "dialog",
+      "action_key": "swipe_home:[]",
+      "outcomes": {
+        "home": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "home",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "home",
+      "action_key": "tap_product_detail:[383, 241]",
+      "outcomes": {
+        "product_detail": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "product_detail",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "product_detail",
+      "action_key": "tap_home:[936, 54]",
+      "outcomes": {
+        "home": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "home",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "home",
+      "action_key": "tap_search_result:[120, 516]",
+      "outcomes": {
+        "search_result": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "search_result",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "search_result",
+      "action_key": "open_filter_panel:[81, 129]",
+      "outcomes": {
+        "filter_panel": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "filter_panel",
+      "dominant_ratio": 1.0
+    },
+    {
+      "source_page_type": "filter_panel",
+      "action_key": "apply_or_close_filter:[135, 285]",
+      "outcomes": {
+        "search_result": 1
+      },
+      "total": 1,
+      "entropy": -0.0,
+      "dominant_outcome": "search_result",
+      "dominant_ratio": 1.0
+    }
+  ]
+}

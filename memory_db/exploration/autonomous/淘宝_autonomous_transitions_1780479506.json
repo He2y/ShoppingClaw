@@ -1,0 +1,181 @@
+{
+  "app": "淘宝",
+  "total_transitions": 9,
+  "transitions": [
+    {
+      "from": "unknown:淘宝直播首页，顶部有搜索框（已输入'耳机'），展示多个618主题直播间的卡片式入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          814,
+          810
+        ]
+      },
+      "to": "dialog:主播新人红包领取弹窗"
+    },
+    {
+      "from": "dialog:主播新人红包领取弹窗，显示3.00元无门槛红包，限本直播间使用",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          288,
+          608
+        ]
+      },
+      "to": "home:淘宝直播首页，含618活动与主播推荐"
+    },
+    {
+      "from": "unknown:淘宝直播首页，展示多个618主题直播间卡片、活动入口及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          887,
+          191
+        ]
+      },
+      "to": "dialog:直播带货页面含商品促销弹窗"
+    },
+    {
+      "from": "dialog:直播间的100元主播折扣券领取弹窗，覆盖在烈儿宝贝直播间之上",
+      "action": {
+        "_metadata": "do",
+        "action": "Swipe",
+        "start": [
+          877,
+          540
+        ],
+        "end": [
+          877,
+          269
+        ]
+      },
+      "to": "home:首页推荐与618活动入口"
+    },
+    {
+      "from": "home:淘宝首页推荐页，含搜索栏、618活动入口、商品卡片及底部导航",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          383,
+          241
+        ]
+      },
+      "to": "product_detail:薇姿绿标去屑洗发水商品详情页"
+    },
+    {
+      "from": "product_detail:薇姿绿标去屑洗发水商品详情页，展示产品图、价格信息、补贴优惠、销量及服务保障",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          936,
+          54
+        ]
+      },
+      "to": "home:首页展示百亿补贴活动与商品推荐"
+    },
+    {
+      "from": "home:淘宝首页，展示‘百亿补贴’活动专区，含搜索框、商品卡片、分类标签及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          120,
+          516
+        ]
+      },
+      "to": "search_result:小米柔风空调搜索结果列表"
+    },
+    {
+      "from": "search_result:搜索关键词'小米柔风空调'后的商品列表页，含筛选排序选项与多个空调商品卡片",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          81,
+          129
+        ]
+      },
+      "to": "filter_panel:排序与筛选条件展开面板"
+    },
+    {
+      "from": "filter_panel:搜索结果页的排序与筛选条件展开面板，包含综合/销量/全部标签及价格排序选项",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          135,
+          285
+        ]
+      },
+      "to": "search_result:搜索“小米柔风空调”结果页"
+    }
+  ],
+  "rejected_transitions": [
+    {
+      "from": "home:淘宝首页推荐页，含搜索栏、618活动入口、商品卡片及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "home:首页推荐页，含搜索框与618活动入口",
+      "reason": "self-loop"
+    },
+    {
+      "from": "home:淘宝首页推荐页，含搜索栏、618活动入口、商品卡片及底部导航",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "home:首页推荐与618活动入口",
+      "reason": "self-loop"
+    },
+    {
+      "from": "home:淘宝首页推荐页, 展示618活动、直播、补贴商品及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Swipe",
+        "start": [
+          499,
+          698
+        ],
+        "end": [
+          499,
+          349
+        ]
+      },
+      "to": "home:淘宝直播首页，含618活动与主播推荐",
+      "reason": "self-loop"
+    },
+    {
+      "from": "dialog:会员挑战计划弹窗，展示200元礼包活动及立即报名按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          744,
+          180
+        ]
+      },
+      "to": "dialog:直播优惠券领取弹窗",
+      "reason": "self-loop"
+    },
+    {
+      "from": "search_result:搜索关键词'小米柔风空调'后的商品列表页，展示多款小米空调商品卡片及价格促销信息",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          81,
+          129
+        ]
+      },
+      "to": "search_result:搜索“小米柔风空调”商品列表页",
+      "reason": "self-loop"
+    }
+  ]
+}

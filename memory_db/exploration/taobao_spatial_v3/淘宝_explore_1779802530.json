@@ -1,0 +1,78 @@
+{
+  "app": "淘宝",
+  "task": "优先补齐淘宝空间图谱中 product_detail -> spec_selection -> cart 两条安全边。若当前是商品详情页，只点击加入购物车、选择规格、颜色或版本入口，不要点击立即购买、领券购买、结算、支付；若进入规格弹窗，请选择必填规格后点击加入购物车；进入购物车后停止。",
+  "explored_at": "2026-05-26T21:35:30.514058",
+  "total_pages": 4,
+  "coverage": {
+    "covered_page_types": [
+      "cart",
+      "product_detail",
+      "search_result",
+      "spec_selection"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "search_result",
+        "product_detail"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "search_result",
+      "summary": "商品搜索结果",
+      "elements": {},
+      "screenshot_hash": "28a06bb6fe02aeb2e674df70878ea2a3",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "商品详情页",
+      "elements": {},
+      "screenshot_hash": "bb5e78d68ea246630d3901a51886fa8a",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "cart",
+      "summary": "购物车列表",
+      "elements": {},
+      "screenshot_hash": "826f101bab5a2ee685b00a77ce8dec11",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "spec_selection",
+      "summary": "商品规格选择",
+      "elements": {},
+      "screenshot_hash": "8d09cfd43118336c3c70560f8db470d4",
+      "app": "淘宝"
+    }
+  ]
+}

@@ -1,0 +1,183 @@
+{
+  "app": "淘宝",
+  "task": "任务3-价格筛选：在淘宝搜索运动鞋，进入搜索结果页，打开筛选面板，设置价格区间100到300并应用筛选。只采集搜索结果、筛选面板、应用筛选后的结果页；不要登录、不要下单、不要支付、不要确认地址。完成筛选后结束。",
+  "total_transitions": 10,
+  "coverage": {
+    "covered_page_types": [
+      "filter_panel",
+      "search_result",
+      "spec_selection"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "product_detail",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "filter_panel",
+        "filter_panel"
+      ],
+      [
+        "filter_panel",
+        "search_result"
+      ],
+      [
+        "spec_selection",
+        "filter_panel"
+      ],
+      [
+        "spec_selection",
+        "spec_selection"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          208,
+          72
+        ]
+      },
+      "to": "search_result:商品搜索结果"
+    },
+    {
+      "from": "spec_selection:商品规格选择",
+      "action": {
+        "_metadata": "do",
+        "action": "Type",
+        "text": "运动鞋"
+      },
+      "to": "spec_selection:商品规格选择"
+    },
+    {
+      "from": "spec_selection:商品规格选择",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          893,
+          71
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          936,
+          223
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          936,
+          208
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          936,
+          208
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          98,
+          479
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          936,
+          208
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          936,
+          208
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          936,
+          208
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    }
+  ]
+}

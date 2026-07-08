@@ -1,0 +1,139 @@
+{
+  "app": "淘宝",
+  "total_transitions": 12,
+  "transitions": [
+    {
+      "from": "my_account:个人中心/我的淘宝页面，展示用户会员状态、资产信息（红包/优惠券/积分）、订单管理入口及常用功能快捷方式",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          98,
+          966
+        ]
+      },
+      "to": "product_detail:商品详情页"
+    },
+    {
+      "from": "unknown:百亿补贴活动主页面，展示限时补贴商品列表、热门推荐和分类标签",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          259,
+          180
+        ]
+      },
+      "to": "cart:购物车列表"
+    },
+    {
+      "from": "search_input:搜索输入页面，展示猜你想搜标签、热榜商品推荐和键盘输入界面",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          887,
+          69
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "search_result:搜索结果列表页，展示'耳机蓝牙耳夹式'相关商品，含排序和筛选功能",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "search_result:搜索结果列表页，展示'耳机蓝牙耳夹式'相关商品列表，含排序筛选和多个商品卡片",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          345
+        ]
+      },
+      "to": "product_detail:商品详情页"
+    },
+    {
+      "from": "product_detail:商品详情页，展示1MORE万魔S20PRO蓝牙耳机的详细信息、价格、优惠活动和购买选项",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "spec_selection:商品规格选择"
+    },
+    {
+      "from": "unknown:",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          30,
+          82
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "unknown:",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          98,
+          967
+        ]
+      },
+      "to": "search_input:搜索输入页"
+    },
+    {
+      "from": "home:App首页/主页面，展示搜索栏、活动入口、功能快捷方式和商品推荐流",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          897,
+          968
+        ]
+      },
+      "to": "product_detail:商品详情页"
+    },
+    {
+      "from": "my_account:个人中心/我的淘宝页面，展示用户会员状态、资产信息（红包/优惠券/淘金币）、订单管理入口和常用功能快捷方式",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "cart:购物车列表"
+    },
+    {
+      "from": "home:App首页/主页面，展示搜索栏、活动入口、功能快捷方式和商品推荐列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          967
+        ]
+      },
+      "to": "cart:购物车列表"
+    },
+    {
+      "from": "unknown:天猫超市直播闪降页面，展示实时直播画面、悬浮商品推荐卡片、直播日历预告和下方商品列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          17,
+          83
+        ]
+      },
+      "to": "cart:购物车列表"
+    }
+  ],
+  "rejected_transitions": []
+}

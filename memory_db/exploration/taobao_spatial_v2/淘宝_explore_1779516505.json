@@ -1,0 +1,168 @@
+{
+  "app": "淘宝",
+  "task": "覆盖淘宝购物核心空间骨架：home -> search_input -> search_result -> product_detail -> spec_selection -> cart。只执行安全探索动作，不提交订单、不支付、不确认地址。如果进入登录、支付、地址或订单确认页，立刻返回。",
+  "explored_at": "2026-05-23T14:08:25.922957",
+  "total_pages": 8,
+  "coverage": {
+    "covered_page_types": [
+      "cart",
+      "checkout",
+      "home",
+      "product_detail",
+      "search_input",
+      "search_result",
+      "spec_selection"
+    ],
+    "missing_page_types": [],
+    "covered_transitions": [
+      [
+        "cart",
+        "checkout"
+      ],
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "product_detail",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ]
+    ],
+    "missing_transitions": [],
+    "complete": true
+  },
+  "pages": [
+    {
+      "page_type": "home",
+      "summary": "电商首页推荐流",
+      "elements": {
+        "top_tabs": "顶部频道导航（关注/推荐/闪购等）",
+        "search_bar": "顶部搜索框",
+        "quick_entries": "功能入口图标（88VIP/天猫超市等）",
+        "activity_banners": "活动Banner（直播/百亿补贴/秒杀）",
+        "promo_section": "促销活动区（618抢先购/消费券）",
+        "product_grid": "推荐商品卡片列表"
+      },
+      "screenshot_hash": "657d7ad1513a103cf27d09cbd882e97a",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_input",
+      "summary": "搜索输入及推荐页",
+      "elements": {
+        "search_bar": "顶部搜索框及搜索按钮",
+        "history_tags": "历史搜索关键词标签",
+        "recommend_list": "猜你想搜关键词列表",
+        "hot_rank_tabs": "淘宝热榜分类Tab",
+        "rank_cards": "热榜商品卡片"
+      },
+      "screenshot_hash": "4a6829f4e5f9e05db01bcd346ccdd52f",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_result",
+      "summary": "肠炎宁片搜索结果列表",
+      "elements": {
+        "search_bar": "顶部搜索框",
+        "sort_filter_bar": "综合/销量/筛选栏",
+        "promo_tags": "618抢先购/官方立减标签",
+        "product_cards": "商品列表卡片",
+        "live_entry": "直播中入口",
+        "store_link": "店铺链接入口"
+      },
+      "screenshot_hash": "e12e982d9ff779594d15a5f611203d84",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "药品商品详情页",
+      "elements": {
+        "top_nav_icons": "顶部导航图标(分享/购物车/更多)",
+        "product_carousel": "商品轮播图/视频展示区",
+        "spec_selector": "规格选择入口(不同包装规格)",
+        "price_promo_banner": "价格与促销活动横幅",
+        "coupon_tags": "优惠券与服务标签(价保/满减)",
+        "product_title": "商品名称标题",
+        "store_entry": "店铺入口(阿里健康大药房)"
+      },
+      "screenshot_hash": "00b24a90940d3704d6944065f5caa451",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "药品商品详情展示页",
+      "elements": {
+        "top_nav_buttons": "顶部返回、分享、购物车按钮",
+        "product_media": "商品主图/视频展示区",
+        "spec_selector": "规格选项列表（不同包装/数量）",
+        "price_section": "价格与促销信息区",
+        "coupon_tags": "优惠券/满减活动标签",
+        "product_title": "商品名称标题",
+        "service_tags": "服务保障标签（价保、退差）",
+        "store_entry": "店铺入口（阿里健康大药房）"
+      },
+      "screenshot_hash": "ff9b6cb6718cc5c4ae0126cc991aee18",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "spec_selection",
+      "summary": "商品规格与数量选择",
+      "elements": {
+        "close_button": "右上角关闭按钮",
+        "address_bar": "收货地址显示栏",
+        "quantity_selector": "数量加减控制器",
+        "spec_options": "规格选项列表",
+        "payment_options": "分期付款方式选择"
+      },
+      "screenshot_hash": "c36000636256c7dc5350ed95c11e5ddf",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "cart",
+      "summary": "购物车商品列表及优惠",
+      "elements": {
+        "coupon_list": "顶部优惠券列表及去使用按钮",
+        "shop_selector": "店铺名称及全选复选框",
+        "exchange_items": "超值换购商品列表",
+        "add_on_prompt": "凑单包邮提示及去凑单入口",
+        "item_checkbox": "商品左侧复选框",
+        "product_card": "商品卡片（含规格、价格、数量选择）",
+        "manage_button": "右上角管理按钮"
+      },
+      "screenshot_hash": "728882eeaf8eaedfe5ada5bf587467c3",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "checkout",
+      "summary": "订单确认与结算页面",
+      "elements": {
+        "recipient_toggle": "买给自己/送给朋友切换",
+        "address_bar": "收货地址及联系人信息",
+        "product_item": "商品详情卡片（含价格/规格/数量）",
+        "promo_button": "闪购下单返红包按钮",
+        "delivery_option": "配送时间及方式选择",
+        "invoice_option": "发票开具选项",
+        "remark_option": "订单备注入口",
+        "cross_sell": "顺手买推荐商品"
+      },
+      "screenshot_hash": "a3d15fc9fe12ca1ac82c4576d94856b7",
+      "app": "淘宝"
+    }
+  ]
+}

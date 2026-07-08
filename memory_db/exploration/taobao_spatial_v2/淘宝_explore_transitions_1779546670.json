@@ -1,0 +1,199 @@
+{
+  "app": "淘宝",
+  "task": "任务2-进入详情：打开淘宝，搜索充电宝，进入搜索结果后点击一个普通商品卡片进入商品详情页。不要登录、不要下单、不要支付、不要确认地址；到达商品详情页后结束。",
+  "total_transitions": 10,
+  "coverage": {
+    "covered_page_types": [
+      "cart",
+      "filter_panel",
+      "home",
+      "product_detail",
+      "search_input",
+      "search_result",
+      "spec_selection"
+    ],
+    "missing_page_types": [
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "cart",
+        "cart"
+      ],
+      [
+        "cart",
+        "filter_panel"
+      ],
+      [
+        "filter_panel",
+        "home"
+      ],
+      [
+        "filter_panel",
+        "product_detail"
+      ],
+      [
+        "filter_panel",
+        "search_input"
+      ],
+      [
+        "filter_panel",
+        "spec_selection"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "filter_panel"
+      ],
+      [
+        "spec_selection",
+        "filter_panel"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          229,
+          72
+        ]
+      },
+      "to": "search_input:搜索输入页"
+    },
+    {
+      "from": "search_input:搜索输入页",
+      "action": {
+        "_metadata": "do",
+        "action": "Type",
+        "text": "充电宝"
+      },
+      "to": "search_result:商品搜索结果"
+    },
+    {
+      "from": "search_result:商品搜索结果",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          893,
+          71
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          253,
+          467
+        ]
+      },
+      "to": "home:电商首页"
+    },
+    {
+      "from": "spec_selection:商品规格选择",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          893,
+          71
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "cart:购物车列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          253,
+          467
+        ]
+      },
+      "to": "cart:购物车列表"
+    },
+    {
+      "from": "cart:购物车列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          253,
+          467
+        ]
+      },
+      "to": "filter_panel:商品筛选面板"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          253,
+          467
+        ]
+      },
+      "to": "spec_selection:商品规格选择"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          916,
+          81
+        ]
+      },
+      "to": "spec_selection:商品规格选择"
+    },
+    {
+      "from": "filter_panel:商品筛选面板",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          253,
+          467
+        ]
+      },
+      "to": "product_detail:商品详情页"
+    }
+  ]
+}

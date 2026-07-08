@@ -1,0 +1,72 @@
+{
+  "app": "淘宝",
+  "task": "当前如果在手机壳搜索结果页，直接点击一个普通商品卡片进入商品详情页。进入商品页后，点击底部加购/购买类 CTA 以触发规格选择弹窗；按钮文案可能不同，不要按文案硬判断风险，只验证落点是否为规格选择。进入规格弹窗后，选择必填规格，然后优先点击二次确认的加入购物车/加购类按钮以进入购物车；如果只能进入确认订单页，进入后立刻返回并停止。不要提交订单，不要支付，不要确认地址。",
+  "explored_at": "2026-05-26T21:53:46.507156",
+  "total_pages": 3,
+  "coverage": {
+    "covered_page_types": [
+      "payment",
+      "product_detail",
+      "search_result"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "spec_selection",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "search_result",
+        "product_detail"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "search_result",
+      "summary": "商品搜索结果",
+      "elements": {},
+      "screenshot_hash": "701e55d987cdc3ef84228235037ed74f",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "商品详情页",
+      "elements": {},
+      "screenshot_hash": "e76572611db98ffab60b4a5b3d07fdde",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "payment",
+      "summary": "支付页",
+      "elements": {},
+      "screenshot_hash": "e81807c9321cfe2163fbe295fc56267c",
+      "app": "淘宝"
+    }
+  ]
+}

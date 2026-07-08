@@ -1,0 +1,75 @@
+{
+  "app": "淘宝",
+  "task": "当前如果在商品详情页，请点击顶部或底部的购物车入口进入购物车页面，用于验证 product_detail -> cart。不要点击结算、提交订单、支付或确认地址。进入购物车后停止。",
+  "total_transitions": 0,
+  "coverage": {
+    "covered_page_types": [
+      "cart",
+      "product_detail"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "search_result",
+      "spec_selection",
+      "checkout"
+    ],
+    "covered_transitions": [],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [],
+  "rejected_transitions": [
+    {
+      "from": "cart:购物车列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          844,
+          71
+        ]
+      },
+      "to": "cart:购物车列表",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "cart:购物车列表",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "product_detail:商品详情页",
+      "reason": "unexpected shopping flow transition"
+    }
+  ]
+}

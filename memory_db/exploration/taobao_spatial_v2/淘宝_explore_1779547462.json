@@ -1,0 +1,86 @@
+{
+  "app": "淘宝",
+  "task": "任务4-规格选择：在淘宝搜索保温杯，进入一个商品详情页，点击加入购物车或选择规格按钮，打开规格选择面板即可结束。遇到广告、直播、红包、登录、支付、地址、下单页面立即返回并结束；不要重复点击同一商品卡。",
+  "explored_at": "2026-05-23T22:44:22.812565",
+  "total_pages": 5,
+  "coverage": {
+    "covered_page_types": [
+      "filter_panel",
+      "product_detail",
+      "search_input",
+      "search_result",
+      "unknown"
+    ],
+    "missing_page_types": [
+      "home",
+      "spec_selection",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "search_input",
+      "summary": "搜索输入页",
+      "elements": {},
+      "screenshot_hash": "bd79fb6b87a9ed055df232b04a8a74b4",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "search_result",
+      "summary": "商品搜索结果",
+      "elements": {},
+      "screenshot_hash": "2cc0ea9e9483ddadfecc23e8ded008fb",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "filter_panel",
+      "summary": "商品筛选面板",
+      "elements": {},
+      "screenshot_hash": "c40d31ac43e744d39ba8c44f1b3c81c7",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "unknown",
+      "summary": "无法解析页面",
+      "elements": {},
+      "screenshot_hash": "863b211cc838b22cee5fa6e30a74b7af",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "商品详情页",
+      "elements": {},
+      "screenshot_hash": "d45e81ed71f0f6b71efdb27f6554d920",
+      "app": "淘宝"
+    }
+  ]
+}

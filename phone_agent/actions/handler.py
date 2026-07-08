@@ -100,6 +100,7 @@ class ActionHandler:
             "Double Tap": self._handle_double_tap,
             "Long Press": self._handle_long_press,
             "Wait": self._handle_wait,
+            "Compound": self._handle_compound,
             "Take_over": self._handle_takeover,
             "Note": self._handle_note,
             "Call_API": self._handle_call_api,
@@ -264,6 +265,31 @@ class ActionHandler:
             duration = 1.0
 
         time.sleep(duration)
+        return ActionResult(True, False)
+
+    def _handle_compound(self, action: dict, width: int, height: int) -> ActionResult:
+        """Execute a prevalidated same-page action macro."""
+        actions = action.get("actions")
+        if not isinstance(actions, list) or not actions:
+            return ActionResult(False, False, "Compound action has no steps")
+
+        for index, sub_action in enumerate(actions, start=1):
+            if not isinstance(sub_action, dict):
+                return ActionResult(False, False, f"Invalid compound step {index}")
+            step = dict(sub_action)
+            step.setdefault("_metadata", "do")
+            step_name = step.get("action")
+            if step_name == "Compound":
+                return ActionResult(False, False, "Nested compound actions are not supported")
+            if isinstance(step.get("text"), str) and step["text"].startswith("<") and step["text"].endswith(">"):
+                return ActionResult(False, False, f"Compound step {index} requires runtime input: {step['text']}")
+            handler_method = self._get_handler(step_name)
+            if handler_method is None:
+                return ActionResult(False, False, f"Unknown compound step action: {step_name}")
+            result = handler_method(step, width, height)
+            if not result.success or result.should_finish:
+                return result
+            time.sleep(0.2)
         return ActionResult(True, False)
 
     def _handle_takeover(self, action: dict, width: int, height: int) -> ActionResult:
@@ -555,7 +581,55 @@ def parse_action(response: str) -> dict[str, Any]:
                 "message": response.replace("finish(message=", "").strip('")\''),
             }
         else:
-            raise ValueError(f"Failed to parse action: {response}")
+            # Fallback: extract bare action calls from unformatted VLM output.
+            # Catches cases like "... reasoning text ... Type("4K显示器")"
+            # or "... do(action="Tap", element=[500,300])" buried in prose.
+            bare_do = re.search(r'do\(action=["\'].+?(?:\))\s*$', response, re.DOTALL)
+            if bare_do:
+                return parse_action(bare_do.group(0))
+
+            bare_action = re.search(
+                r'(?:^|\n)\s*((?:Type|Tap|Swipe|Back|Home|Launch|Wait|Interact|'
+                r'Long Press|Double Tap|Take_over|finish)\s*\(.*?\))\s*$',
+                response, re.DOTALL,
+            )
+            if bare_action:
+                call_str = bare_action.group(1).strip()
+                # Convert bare Type("text") → do(action="Type", text="text")
+                m = re.match(r'(Type|Type_Name)\s*\(\s*["\'](.+?)["\']\s*\)', call_str)
+                if m:
+                    return {"_metadata": "do", "action": m.group(1), "text": m.group(2)}
+                m = re.match(r'Tap\s*\(\s*\[(\d+)\s*,\s*(\d+)\]\s*\)', call_str)
+                if m:
+                    return {"_metadata": "do", "action": "Tap",
+                            "element": [int(m.group(1)), int(m.group(2))]}
+                # Degraded small-model format: Tap(x, y) without [ ] around the
+                # coords, e.g. "Tap(429, 126)".
+                m = re.match(r'Tap\s*\(\s*(\d+)\s*,\s*(\d+)\s*\)', call_str)
+                if m:
+                    return {"_metadata": "do", "action": "Tap",
+                            "element": [int(m.group(1)), int(m.group(2))]}
+                m = re.match(r'(Back|Home|Wait|Interact)\s*\(', call_str)
+                if m:
+                    return {"_metadata": "do", "action": m.group(1)}
+                if call_str.startswith("finish"):
+                    return parse_action(call_str)
+
+            # Last resort: a confused small model sometimes recites a whole plan
+            # and emits the tap with the verb in brackets / coords without
+            # brackets, buried mid-text — e.g. "[Tap] (272, 84)" or a stray
+            # "Tap(429, 126)". Take the LAST such tap (its final decision) so the
+            # agent advances instead of looping on parse failures; the supervisor
+            # and payment safety stop steer from there.
+            taps = re.findall(
+                r'\[?\s*Tap\s*\]?\s*[\(（]\s*\[?\s*(\d+)\s*[,，]\s*(\d+)\s*\]?\s*[\)）]',
+                response,
+            )
+            if taps:
+                x, y = taps[-1]
+                return {"_metadata": "do", "action": "Tap", "element": [int(x), int(y)]}
+
+            raise ValueError(f"Failed to parse action: {response[:200]}")
         return action
     except Exception as e:
         raise ValueError(f"Failed to parse action: {e}")

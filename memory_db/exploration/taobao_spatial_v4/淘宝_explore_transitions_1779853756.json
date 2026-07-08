@@ -1,0 +1,71 @@
+{
+  "app": "淘宝",
+  "task": "只完成一个安全采集任务：当前应在淘宝商品搜索结果页。点击页面右侧或顶部筛选栏中的『筛选』入口，打开筛选条件面板；看到筛选条件、价格区间、品牌/属性选项或确认筛选按钮后立即 finish 停止。不要选择条件，不要点击商品卡片，不要购买，不要登录。",
+  "total_transitions": 1,
+  "coverage": {
+    "covered_page_types": [
+      "filter_panel",
+      "search_result"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "product_detail",
+      "spec_selection",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "search_result",
+        "filter_panel"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [
+    {
+      "from": "search_result:商品搜索结果",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          934,
+          326
+        ]
+      },
+      "to": "filter_panel:筛选面板"
+    }
+  ],
+  "rejected_transitions": []
+}

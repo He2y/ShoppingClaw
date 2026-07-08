@@ -1,0 +1,23 @@
+{
+  "app": "淘宝",
+  "total_transitions": 2,
+  "transitions": [
+    {
+      "from": "cart:购物车含52件商品，含优惠券和结算按钮",
+      "action": {
+        "action": "Tap",
+        "semantic_target": "结算按钮",
+        "region": "bottom_right"
+      },
+      "to": "checkout:订单确认页，含收货地址、商品信息、配送方式和立即支付按钮"
+    },
+    {
+      "from": "checkout:订单确认页，含收货地址、商品信息、配送方式和立即支付按钮",
+      "action": {
+        "action": "Back"
+      },
+      "to": "cart:购物车含52件商品，含优惠券和结算按钮"
+    }
+  ],
+  "rejected_transitions": []
+}

@@ -1,0 +1,602 @@
+{
+  "app": "淘宝",
+  "explored_at": "2026-06-03T17:38:26.713546",
+  "policy": {
+    "max_total_steps": 30,
+    "max_job_steps": 5,
+    "max_dry_rounds": 4,
+    "job_queue_limit": 20,
+    "settle_delay": 2.0,
+    "use_strong_vlm_extractor": false,
+    "convergence_window": 3,
+    "active_exploration": true,
+    "auto_import_graph": false
+  },
+  "convergence": {
+    "total_rounds": 14,
+    "consecutive_dry_rounds": 0,
+    "dry_round_limit": 4,
+    "converged": false,
+    "history": [
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 0
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      }
+    ]
+  },
+  "coverage_metrics": {
+    "discovered_functionalities": 38,
+    "discovered_functionality_clusters": 15,
+    "verified_functionality_clusters": 7,
+    "stable_functionality_clusters": 1,
+    "verified_functionality_ratio": 0.4667,
+    "novelty_discovery_rate": 0.6,
+    "saturation_per_50_screens": [
+      16
+    ],
+    "recovery_functionality_coverage": 0.3333,
+    "risk_boundary_coverage": 1.0,
+    "duplicate_screen_compression_ratio": 0.0,
+    "functionality_semantics_quality": "limited",
+    "quality_gate": {
+      "passed": true,
+      "reasons": [],
+      "metrics": {
+        "discovered_functionalities": 38,
+        "discovered_functionality_clusters": 15,
+        "verified_functionality_clusters": 7,
+        "stable_functionality_clusters": 1,
+        "verified_functionality_ratio": 0.4667,
+        "novelty_discovery_rate": 0.6,
+        "saturation_per_50_screens": [
+          16
+        ],
+        "recovery_functionality_coverage": 0.3333,
+        "risk_boundary_coverage": 1.0,
+        "duplicate_screen_compression_ratio": 0.0,
+        "functionality_semantics_quality": "limited"
+      }
+    }
+  },
+  "graph_summary": "[dialog] 主播新人红包领取弹窗\n  元素: 未检测到元素\n  跳转:  → home\n[filter_panel] 排序与筛选条件展开面板\n  元素: 未检测到元素\n  跳转:  → search_result\n[home] 淘宝首页推荐页，含搜索栏、618活动入口、商品卡片及底部导航 ← 当前\n  元素: 搜索框, 88VIP图标, 天猫超市图标, 领淘金币图标, 红包签到图标, 淘宝直播卡片, 618百亿补贴商品卡片, 购物车图标\n  跳转:  → product_detail, search_result\n   (已执行3个动作)\n[product_detail] 薇姿绿标去屑洗发水商品详情页\n  元素: 未检测到元素\n  跳转:  → home\n[search_result] 小米柔风空调搜索结果列表\n  元素: 未检测到元素\n  跳转:  → filter_panel\n[unknown] 淘宝直播首页，顶部有搜索框（已输入'耳机'），展示多个618\n  元素: 搜索框, 搜索按钮, 618超级尾款日直播卡片, 烈儿宝贝直播间卡片, 交个朋友直播间卡片, CeraVe神酰乐直播间卡片, 红包花花乐活动入口, 底部导航栏：首页/床盖榜/活动日历/我的\n  跳转:  → dialog\n   (已执行2个动作)\n\n统计: 6种页面, 9条跳转, 元素覆盖30/92",
+  "job_results": [
+    {
+      "job_description": "作为起始页，需优先探索核心功能入口。搜索框是通向search_input的关键路径；88VIP、天猫超市、领淘金币、红包签到等图标可能导向独立页面类型；商品卡片可进入product_detail；购物",
+      "steps_taken": 3,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为首页，已覆盖3/8关键元素。剩余未探索元素包括：天猫超市（可能通向独立频道页）、领淘金币（可能跳转任务中心）、红包签到（弹窗或活动页）、淘宝直播卡片（直播详情页）、618百亿补贴商品卡片（商品详",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为首页，已覆盖部分入口；但‘淘宝直播卡片’‘618百亿补贴商品卡片’尚未点击探索，可能通向新页面类型（如直播页、活动商品页）；优先点击高曝光且未探索的卡片以扩展图谱",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为直播频道首页，虽有搜索框但未触发搜索结果页；多个直播间卡片是通往新页面（直播详情页）的关键路径，尚未探索任何直播间详情页。优先点击一个高热度直播间（如‘烈儿宝贝’354.4万观众）进入其直播详情",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "dialog"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为弹窗页面，属于临时交互层，非独立功能页。图谱中已存在该dialog类型，且其来源为CeraVe直播间（unknown页面），需关闭弹窗以继续探索直播间内其他未点击元素（如商品卡片、活动入口等）。",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为直播首页，已探索部分直播间卡片（如烈儿宝贝、交个朋友），但CeraVe神酰乐直播间卡片尚未点击；红包花花乐活动入口是新类型页面（活动页），可能通向独立活动流程；底部‘我的’未探索，但按原则优先探",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为弹窗页面，非主流程核心页面；该弹窗属于活动推广类，探索价值有限。根据原则5，应记录后返回主流程。上一轮已从直播页进入此弹窗，需返回至直播页继续探索未点击的直播间卡片（如烈儿宝贝、交个朋友等），以",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为弹窗页面，属于临时浮层，非独立页面类型；图谱中已记录该dialog→home跳转，但尚未验证关闭弹窗后的主直播间状态是否变化。需优先关闭弹窗以继续探索直播间内未点击的元素（如商品卡片、活动入口等",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为首页，已探索部分入口（如淘宝直播），但仍有多个未深入的高价值入口：① '618百亿补贴'商品卡片可能通向search_result或product_detail；② '天猫超市'是独立频道，可能",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "product_detail"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为product_detail页，已知可跳转至cart（通过购物车图标），但尚未探索spec_selection（规格选择）、review（评价）、seller（店铺）、related_produ",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为home页，已探索过product_detail和unknown（直播页），但尚未进入搜索结果页、分类页、筛选页等关键路径。搜索框已预填‘蓝牙耳机’，可直接触发搜索跳转至search_resul",
+      "steps_taken": 3,
+      "new_page_types_discovered": [
+        "search_result"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为搜索结果页，已识别4个商品卡片，每个卡片可跳转至product_detail；但图谱中仅记录过1个product_detail（薇姿洗发水），说明该类页面尚未系统探索。应优先点击不同商品卡片以发",
+      "steps_taken": 3,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 0,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为搜索结果页，已识别出3类不同形态的空调商品（挂机、立式、冷风扇），但尚未点击任一商品进入详情页；排序选项（价格高低）属于未探索的交互路径，可能影响后续页面呈现；需优先点击一个典型商品卡片进入pr",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "filter_panel"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为筛选面板，属于search_result的子面板。已知search_result可跳转至filter_panel，但尚未验证从该面板返回或选择排序后是否生成新结果页（即新页面类型）。需优先测试‘",
+      "steps_taken": 1,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": "fn_cluster_open_search__home_86c517c2c63a",
+      "canonical_name": "open_search",
+      "canonical_description": "搜索框",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品卡片及底部导航栏_3136a95e0681",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品卡片及底部导航_d_0cb042e87956",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页__展示618活动_直播_补贴商品及底部导航栏_e_2070f458fa66",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品卡片及底部导航_4_b55e342fae72",
+        "fn_淘宝_page_淘宝_home_淘宝首页_展示_百亿补贴_活动专区_含搜索框_商品卡片_分类标签_6090d8432e97"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.2,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail__home_4a43c22e4181",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "AirPods 4商品卡片",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品卡片及底部导航栏_9667f87eba14",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品卡片及底部导航_d_de79130e6fa5",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页__展示618活动_直播_补贴商品及底部导航栏_e_7bcc9eb084cf",
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品卡片及底部导航_4_4d24832f0b5e",
+        "fn_淘宝_page_淘宝_home_淘宝首页_展示_百亿补贴_活动专区_含搜索框_商品卡片_分类标签_860bd5fa3f8f",
+        "fn_淘宝_page_淘宝_home_淘宝首页_展示_百亿补贴_活动专区_含搜索框_商品卡片_分类标签_cf8ff58f0e52",
+        "fn_淘宝_page_淘宝_home_淘宝首页_展示_百亿补贴_活动专区_含搜索框_商品卡片_分类标签_973e4ac2834d"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.1429,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_submit_search__unknown_58f8a523306e",
+      "canonical_name": "submit_search",
+      "canonical_description": "搜索按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_unknown_淘宝直播首页_顶部有搜索框_已输入_耳机_展示多个618主_72b51492a43d",
+        "fn_淘宝_page_淘宝_unknown_淘宝直播首页_顶部有搜索框_已输入_耳机_展示多个618主_9622f2be0753",
+        "fn_淘宝_page_淘宝_unknown_淘宝直播首页_展示多个618主题直播间卡片_活动入口及底部_114b4fbd4f66"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.3333,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_dialog_dialog__unknown___bottom_right___top_5925c7bdf309",
+      "canonical_name": "tap_dialog",
+      "canonical_description": "tap_dialog by tap action from unknown to observed postcondition dialog. Source summary: 淘宝直播首页，顶部有搜索框（已输入'耳机'），展示多个618主题直播间的卡片式入口; target summary: 主播新人红包领取弹窗.",
+      "member_functionality_ids": [
+        "fn_淘宝_unknown_tap_tap_dialog_bottom_right_dialog_2f75311ca93e",
+        "fn_淘宝_unknown_tap_tap_dialog_top_right_dialog___met_ae30aee88473"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [
+        "bottom_right",
+        "top_right"
+      ],
+      "verified_edges": [
+        "page_淘宝_unknown_淘宝直播首页_展示多个618主题直播间卡片_活动入口及底部导航栏_8c7d6b671fbf->dialog:top_right",
+        "page_淘宝_unknown_淘宝直播首页_顶部有搜索框_已输入_耳机_展示多个618主题直播间的卡片式_495db04ddee0->dialog:bottom_right"
+      ],
+      "success_count": 2,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_from_dialog__dialog_857e2b90b14d",
+      "canonical_name": "rollback_from_dialog",
+      "canonical_description": "7秒后自动关闭提示",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_dialog_主播新人红包领取弹窗_显示3.00元无门槛红包_限本直播间使_36aab62e0958",
+        "fn_淘宝_page_淘宝_dialog_会员挑战计划弹窗_展示200元礼包活动及立即报名按钮_193_8acc4f27f405",
+        "fn_淘宝_page_淘宝_dialog_直播间的100元主播折扣券领取弹窗_覆盖在烈儿宝贝直播间之上_e1eb9f29bc3c"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "dialog"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.3333,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_home_home__dialog___middle_left_fc52e225e662",
+      "canonical_name": "tap_home",
+      "canonical_description": "tap_home by tap action from dialog to observed postcondition home. Source summary: 主播新人红包领取弹窗，显示3.00元无门槛红包，限本直播间使用; target summary: 淘宝直播首页，含618活动与主播推荐.",
+      "member_functionality_ids": [
+        "fn_淘宝_dialog_tap_tap_home_middle_left_home___metada_dae798061fcf"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "dialog"
+      ],
+      "regions": [
+        "middle_left"
+      ],
+      "verified_edges": [
+        "page_淘宝_dialog_主播新人红包领取弹窗_显示3.00元无门槛红包_限本直播间使用_d9aa499e9111->home:middle_left"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_swipe_home_home__dialog_58695767da4e",
+      "canonical_name": "swipe_home",
+      "canonical_description": "swipe_home by swipe action from dialog to observed postcondition home. Source summary: 直播间的100元主播折扣券领取弹窗，覆盖在烈儿宝贝直播间之上; target summary: 首页推荐与618活动入口.",
+      "member_functionality_ids": [
+        "fn_淘宝_dialog_swipe_swipe_home_unknown_home___metada_81bb22e62915"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "dialog"
+      ],
+      "regions": [],
+      "verified_edges": [
+        "page_淘宝_dialog_直播间的100元主播折扣券领取弹窗_覆盖在烈儿宝贝直播间之上_f6b460b97e66->home:unknown"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_product_detail_product_detail__home___top_ce_42512e69b9e9",
+      "canonical_name": "tap_product_detail",
+      "canonical_description": "tap_product_detail by tap action from home to observed postcondition product_detail. Source summary: 淘宝首页推荐页，含搜索栏、618活动入口、商品卡片及底部导航; target summary: 薇姿绿标去屑洗发水商品详情页.",
+      "member_functionality_ids": [
+        "fn_淘宝_home_tap_tap_product_detail_top_center_produc_0ab85d757001"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [
+        "top_center"
+      ],
+      "verified_edges": [
+        "page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品卡片及底部导航_650896911509->product_detail:top_center"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_from_product_detail__product_detail_91b41fdac332",
+      "canonical_name": "rollback_from_product_detail",
+      "canonical_description": "顶部返回按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_薇姿绿标去屑洗发水商品详情页_展示产品图_价_23399b04d4dd"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_cart_from_header__product_detail_c113c5f9888e",
+      "canonical_name": "open_cart_from_header",
+      "canonical_description": "购物车图标（含54件）",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_薇姿绿标去屑洗发水商品详情页_展示产品图_价_65a57f1a685e"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_home_home__product_detail___top_right_66da68a8ea85",
+      "canonical_name": "tap_home",
+      "canonical_description": "tap_home by tap action from product_detail to observed postcondition home. Source summary: 薇姿绿标去屑洗发水商品详情页，展示产品图、价格信息、补贴优惠、销量及服务保障; target summary: 首页展示百亿补贴活动与商品推荐.",
+      "member_functionality_ids": [
+        "fn_淘宝_product_detail_tap_tap_home_top_right_home_e3516d11613a"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [
+        "top_right"
+      ],
+      "verified_edges": [
+        "page_淘宝_product_detail_薇姿绿标去屑洗发水商品详情页_展示产品图_价格信息_补贴优惠_1fdd3a50ec44->home:top_right"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_search_result_search_result__home___middle_l_250e8371f4ed",
+      "canonical_name": "tap_search_result",
+      "canonical_description": "tap_search_result by tap action from home to observed postcondition search_result. Source summary: 淘宝首页，展示‘百亿补贴’活动专区，含搜索框、商品卡片、分类标签及底部导航栏; target summary: 小米柔风空调搜索结果列表.",
+      "member_functionality_ids": [
+        "fn_淘宝_home_tap_tap_search_result_middle_left_search_bd650df7c060"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [
+        "middle_left"
+      ],
+      "verified_edges": [
+        "page_淘宝_home_淘宝首页_展示_百亿补贴_活动专区_含搜索框_商品卡片_分类标签及底部导航栏_c3f0cf60c466->search_result:middle_left"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_submit_search__search_result_fe3f0103c556",
+      "canonical_name": "submit_search",
+      "canonical_description": "搜索框",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_search_result_搜索关键词_小米柔风空调_后的商品列表页_展示_e3bc255ca3fb",
+        "fn_淘宝_page_淘宝_search_result_搜索关键词_小米柔风空调_后的商品列表页_含筛_b73c324b4e3d"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_result"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail__search_result_b4fe9ac1033e",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "商品卡片（小米米家空调新风Pro1.5匹）",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_search_result_搜索关键词_小米柔风空调_后的商品列表页_展示_b9504b65f19c",
+        "fn_淘宝_page_淘宝_search_result_搜索关键词_小米柔风空调_后的商品列表页_展示_a8776afe7c51",
+        "fn_淘宝_page_淘宝_search_result_搜索关键词_小米柔风空调_后的商品列表页_展示_4c80ba78a1a9",
+        "fn_淘宝_page_淘宝_search_result_搜索关键词_小米柔风空调_后的商品列表页_展示_0741f042a867",
+        "fn_淘宝_page_淘宝_search_result_搜索关键词_小米柔风空调_后的商品列表页_含筛_fad0b8514b2a",
+        "fn_淘宝_page_淘宝_search_result_搜索关键词_小米柔风空调_后的商品列表页_含筛_36170c3992b1",
+        "fn_淘宝_page_淘宝_search_result_搜索关键词_小米柔风空调_后的商品列表页_含筛_2c1c99d1bd47"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_result"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.1429,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_filter_panel_filter_panel__search_result_0f09c888804c",
+      "canonical_name": "open_filter_panel",
+      "canonical_description": "open_filter_panel by tap action from search_result to observed postcondition filter_panel. Source summary: 搜索关键词'小米柔风空调'后的商品列表页，含筛选排序选项与多个空调商品卡片; target summary: 排序与筛选条件展开面板.",
+      "member_functionality_ids": [
+        "fn_淘宝_search_result_tap_open_filter_panel_top_left_0bff558ac13c"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_result"
+      ],
+      "regions": [
+        "top_left"
+      ],
+      "verified_edges": [
+        "page_淘宝_search_result_搜索关键词_小米柔风空调_后的商品列表页_含筛选排序选项与多个_910b5730ca72->filter_panel:top_left"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    }
+  ]
+}

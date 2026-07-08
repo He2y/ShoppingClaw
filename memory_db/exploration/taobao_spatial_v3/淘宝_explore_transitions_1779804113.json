@@ -1,0 +1,78 @@
+{
+  "app": "淘宝",
+  "task": "当前在淘宝商品规格选择弹窗中，机型和颜色已经选择完成。请点击底部加入购物车按钮完成二次确认；如果出现加入成功但仍停留在商品页，请点击购物车入口进入购物车。不要点击提交订单、支付或确认地址。",
+  "total_transitions": 2,
+  "coverage": {
+    "covered_page_types": [
+      "product_detail",
+      "spec_selection"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "search_result",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "product_detail"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [
+    {
+      "from": "spec_selection:商品规格选择",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          953
+        ]
+      },
+      "to": "product_detail:商品详情页"
+    },
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          731,
+          959
+        ]
+      },
+      "to": "spec_selection:规格选择弹窗"
+    }
+  ],
+  "rejected_transitions": []
+}

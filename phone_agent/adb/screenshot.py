@@ -82,7 +82,11 @@ def get_screenshot(device_id: str | None = None, timeout: int = 10) -> Screensho
 
     except Exception as e:
         print(f"Screenshot error: {e}")
-        return _create_fallback_screenshot(is_sensitive=False)
+        # A broken capture means the agent is blind — flag it like a secure
+        # screen so the anomaly watchdog counts it (real-device runs showed
+        # SMS-verification popups breaking capture while the agent kept
+        # acting on stale context).
+        return _create_fallback_screenshot(is_sensitive=True)
 
 
 def _get_adb_prefix(device_id: str | None) -> list:

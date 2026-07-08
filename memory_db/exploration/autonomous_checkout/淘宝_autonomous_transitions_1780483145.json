@@ -1,0 +1,280 @@
+{
+  "app": "淘宝",
+  "total_transitions": 11,
+  "transitions": [
+    {
+      "from": "cart:购物车页面，展示52件商品，含小米空调、西裤、衬衫等，底部有结算按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          897,
+          966
+        ]
+      },
+      "to": "my_account:用户个人中心与订单管理页"
+    },
+    {
+      "from": "my_account:用户个人中心页面，含会员信息、资产模块及订单状态入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          464,
+          172
+        ]
+      },
+      "to": "home:订单页无订单，展示推荐商品"
+    },
+    {
+      "from": "unknown:订单列表页（购物标签下），当前无订单，展示推荐商品卡片",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "my_account:用户个人中心与订单管理页"
+    },
+    {
+      "from": "my_account:用户个人中心页面，展示会员权益、资产余额（红包/优惠券/淘金币/天猫积分/充值金）及订单状态入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          452,
+          206
+        ]
+      },
+      "to": "home:618活动首页，含金币任务与商品推荐"
+    },
+    {
+      "from": "home:618活动首页，含TCL空调推荐、直播入口、商品卡片及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          297,
+          966
+        ]
+      },
+      "to": "unknown:短视频内容页面，非购物流程页"
+    },
+    {
+      "from": "unknown:订单列表页（购物标签下），当前无订单，展示推荐商品卡片及多类服务入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          877,
+          898
+        ]
+      },
+      "to": "product_detail:商品详情页含评论与价格信息"
+    },
+    {
+      "from": "product_detail:小米净饮机商品详情页，展示补贴后价格¥2174.13、颜色分类、优选服务、分期付款及加入购物车按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          828,
+          447
+        ]
+      },
+      "to": "dialog:服务保障选项弹窗"
+    },
+    {
+      "from": "dialog:服务保障选项弹窗，提供多种延保/维修服务套餐及‘确定’按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          934,
+          227
+        ]
+      },
+      "to": "product_detail:商品详情页，含价格、规格、服务与分期"
+    },
+    {
+      "from": "product_detail:小米净饮机商品详情页，含价格、促销信息、参数、评论及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          565
+        ]
+      },
+      "to": "store:小米官方旗舰店直播页"
+    },
+    {
+      "from": "store:小米官方旗舰店直播页面，含新品发布会直播流、商品推荐模块及店铺认证信息",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          698,
+          967
+        ]
+      },
+      "to": "home:小米618直播活动首页"
+    },
+    {
+      "from": "home:618活动首页，含直播主画面、商品推荐模块及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          132,
+          967
+        ]
+      },
+      "to": "store:小米官方旗舰店直播页"
+    }
+  ],
+  "rejected_transitions": [
+    {
+      "from": "my_account:用户个人中心页面，展示会员信息、资产概览、订单状态及活动入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          897,
+          966
+        ]
+      },
+      "to": "my_account:用户个人中心与订单管理页",
+      "reason": "self-loop"
+    },
+    {
+      "from": "my_account:用户个人中心页面，展示会员权益、资产信息、订单状态及活动入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          130,
+          484
+        ]
+      },
+      "to": "my_account:订单管理页，显示待付款订单",
+      "reason": "self-loop"
+    },
+    {
+      "from": "my_account:用户个人中心页面，展示会员权益、资产信息、订单状态及活动入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          58,
+          75
+        ]
+      },
+      "to": "my_account:用户个人中心主页",
+      "reason": "self-loop"
+    },
+    {
+      "from": "my_account:用户个人中心页面，展示会员权益、资产信息、订单状态及活动入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "my_account:用户个人中心与订单管理页",
+      "reason": "self-loop"
+    },
+    {
+      "from": "home:618活动首页，含金币任务、促销模块、商品推荐及搜索入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          98,
+          968
+        ]
+      },
+      "to": "home:首页推荐商品与直播入口",
+      "reason": "self-loop"
+    },
+    {
+      "from": "home:618活动首页，含商品推荐、直播入口、促销模块及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          153,
+          966
+        ]
+      },
+      "to": "home:首页推荐与618活动入口",
+      "reason": "self-loop"
+    },
+    {
+      "from": "home:618活动首页，含商品推荐、直播入口、促销模块及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "home:首页推荐商品与直播入口",
+      "reason": "self-loop"
+    },
+    {
+      "from": "product_detail:商品详情页，展示小米净饮机制冰功能视频、价格¥2174.13、店铺信息及34条评论",
+      "action": {
+        "_metadata": "do",
+        "action": "Swipe",
+        "start": [
+          499,
+          523
+        ],
+        "end": [
+          499,
+          261
+        ]
+      },
+      "to": "product_detail:小米净饮机商品详情页",
+      "reason": "self-loop"
+    },
+    {
+      "from": "product_detail:小米净饮机商品详情页，含价格¥2174.13、促销信息、店铺保障及功能参数模块",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          531,
+          963
+        ]
+      },
+      "to": "product_detail:商品详情页，含价格、规格与服务选项",
+      "reason": "self-loop"
+    },
+    {
+      "from": "product_detail:小米净饮机商品详情页，展示补贴后价格¥2174.13、颜色分类、优选服务、分期付款及加入购物车按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          160
+        ]
+      },
+      "to": "product_detail:商品详情页，含价格、规格、服务与分期",
+      "reason": "self-loop"
+    },
+    {
+      "from": "product_detail:小米净饮机商品详情页，展示补贴后价格¥2174.13、颜色分类、优选服务与分期付款选项，底部有‘加入购物车’按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "product_detail:商品详情页含评价、直播与买家秀",
+      "reason": "self-loop"
+    },
+    {
+      "from": "product_detail:小米净饮机商品详情页，含价格、促销信息、参数、评价及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "product_detail:商品详情页含评价、直播与买家秀",
+      "reason": "self-loop"
+    }
+  ]
+}

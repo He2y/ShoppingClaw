@@ -1,0 +1,175 @@
+{
+  "app": "淘宝",
+  "total_transitions": 14,
+  "transitions": [
+    {
+      "from": "home:淘宝首页推荐页，含搜索栏、618活动入口、商品卡片、直播模块及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          914,
+          668
+        ]
+      },
+      "to": "search_input:搜索框含历史记录与猜你想搜"
+    },
+    {
+      "from": "search_input:搜索输入页，已输入‘小米小空调’，显示历史搜索与猜你想搜推荐词，底部为淘宝热榜商品卡片",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          389,
+          72
+        ]
+      },
+      "to": "search_input:搜索框输入“小米小空调”并显示建议词"
+    },
+    {
+      "from": "search_input:搜索输入页，已输入‘小米小空调’，显示相关搜索建议列表，底部为键盘与语音输入入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          540
+        ]
+      },
+      "to": "product_detail:小米空调商品详情页"
+    },
+    {
+      "from": "product_detail:小米空调商品详情页，含主图视频、规格缩略图、价格信息、购买选项及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          67,
+          959
+        ]
+      },
+      "to": "search_result:空调商品搜索结果列表页"
+    },
+    {
+      "from": "search_result:搜索关键词'75寸电视机'后的商品结果页，实际展示的是小米空调商品（可能为相关推荐或搜索纠错）",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          253,
+          649
+        ]
+      },
+      "to": "product_detail:小米空调商品详情页"
+    },
+    {
+      "from": "product_detail:小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项",
+      "action": {
+        "_metadata": "do",
+        "action": "Swipe",
+        "start": [
+          499,
+          790
+        ],
+        "end": [
+          499,
+          438
+        ]
+      },
+      "to": "search_result:空调商品列表页，含价格与店铺信息"
+    },
+    {
+      "from": "spec_selection:商品规格选择页，展示多个小米空调型号及其价格、店铺信息，用户可单选后点击确认选择",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          555,
+          647
+        ]
+      },
+      "to": "product_detail:小米空调商品详情页"
+    },
+    {
+      "from": "product_detail:小米空调Pro 1.5匹商品详情页，展示产品图、核心卖点、价格、规格参数及购买按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          296,
+          956
+        ]
+      },
+      "to": "unknown:无法识别的空白页面"
+    },
+    {
+      "from": "unknown:当前为无法识别的空白页面，可能因跳转异常、加载失败或页面未渲染完成导致",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "product_detail:小米空调商品详情页"
+    },
+    {
+      "from": "product_detail:小米空调米家Pro1.5匹商品详情页，含主图轮播、价格信息、促销标签、服务承诺及底部操作栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          737
+        ]
+      },
+      "to": "search_result:空调商品搜索结果列表页"
+    },
+    {
+      "from": "search_result:小米空调搜索结果页，展示多个商品卡片、店铺信息、促销标签及筛选入口",
+      "action": {
+        "_metadata": "do",
+        "action": "Swipe",
+        "start": [
+          779,
+          71
+        ],
+        "end": [
+          194,
+          71
+        ]
+      },
+      "to": "product_detail:小米空调商品详情页"
+    },
+    {
+      "from": "product_detail:小米空调Pro 1.5匹商品详情页，含主图视频、价格信息、促销标签、服务承诺及底部操作栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          188,
+          357
+        ]
+      },
+      "to": "unknown:无法识别的空白页面"
+    },
+    {
+      "from": "unknown:当前为无法识别的空白页面，可能因跳转异常、加载失败或页面未渲染导致",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "product_detail:小米空调商品详情页"
+    },
+    {
+      "from": "product_detail:小米空调Pro 1.5匹商品详情页，含主图轮播、价格信息、促销标签、服务承诺及操作按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          939
+        ]
+      },
+      "to": "search_result:空调商品搜索结果列表页"
+    }
+  ],
+  "rejected_transitions": []
+}

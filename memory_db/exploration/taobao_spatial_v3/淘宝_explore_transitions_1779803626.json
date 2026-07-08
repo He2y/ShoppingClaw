@@ -1,0 +1,77 @@
+{
+  "app": "淘宝",
+  "task": "当前如果在手机壳搜索结果页，直接点击一个普通商品卡片进入商品详情页。进入商品页后，点击底部加购/购买类 CTA 以触发规格选择弹窗；按钮文案可能不同，不要按文案硬判断风险，只验证落点是否为规格选择。进入规格弹窗后，选择必填规格，然后优先点击二次确认的加入购物车/加购类按钮以进入购物车；如果只能进入确认订单页，进入后立刻返回并停止。不要提交订单，不要支付，不要确认地址。",
+  "total_transitions": 1,
+  "coverage": {
+    "covered_page_types": [
+      "payment",
+      "product_detail",
+      "search_result"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "spec_selection",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "search_result",
+        "product_detail"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [
+    {
+      "from": "search_result:商品搜索结果",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          253,
+          473
+        ]
+      },
+      "to": "product_detail:商品详情页"
+    }
+  ],
+  "rejected_transitions": [
+    {
+      "from": "product_detail:商品详情页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          740,
+          959
+        ]
+      },
+      "to": "payment:支付页",
+      "reason": "high-risk page boundary"
+    }
+  ]
+}

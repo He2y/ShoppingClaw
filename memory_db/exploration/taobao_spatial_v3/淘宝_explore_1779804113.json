@@ -1,0 +1,75 @@
+{
+  "app": "淘宝",
+  "task": "当前在淘宝商品规格选择弹窗中，机型和颜色已经选择完成。请点击底部加入购物车按钮完成二次确认；如果出现加入成功但仍停留在商品页，请点击购物车入口进入购物车。不要点击提交订单、支付或确认地址。",
+  "explored_at": "2026-05-26T22:01:53.235676",
+  "total_pages": 3,
+  "coverage": {
+    "covered_page_types": [
+      "product_detail",
+      "spec_selection"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_input",
+      "search_result",
+      "cart",
+      "checkout"
+    ],
+    "covered_transitions": [
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "product_detail"
+      ]
+    ],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "pages": [
+    {
+      "page_type": "spec_selection",
+      "summary": "商品规格选择",
+      "elements": {},
+      "screenshot_hash": "60f5683bd54092ed28a746dd153ebec3",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "product_detail",
+      "summary": "商品详情页",
+      "elements": {},
+      "screenshot_hash": "4a02bbcf83442804e3c0b3ee364db402",
+      "app": "淘宝"
+    },
+    {
+      "page_type": "spec_selection",
+      "summary": "规格选择弹窗",
+      "elements": {},
+      "screenshot_hash": "d518d4b97b27ad0bf470a00b2c4aa0cf",
+      "app": "淘宝"
+    }
+  ]
+}

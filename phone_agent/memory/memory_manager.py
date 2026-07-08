@@ -6,6 +6,7 @@ context enrichment, and integration with the agent loop.
 """
 
 import json
+import os
 import re
 from datetime import datetime
 from typing import Any
@@ -13,35 +14,31 @@ from typing import Any
 from .memory_store import MemoryStore, Memory, MemoryType
 from .core import UnifiedSessionState, Product, ProductStatus
 from .retrieval_gateway import RetrievalGateway, RetrievalResult
+from .spatial_graph_memory import PageBelief, RuntimeDAG, SpatialGraphMemory
+
+# Page transitions where the graph action is a *spatial suggestion* that
+# the VLM must verify before execution. These involve selecting a specific
+# item (product, spec) where the graph only knows where ONE item was in a
+# past session — not which item matches the current user's request.
+#
+# Kept as a legacy fallback constant; the authoritative source is now the
+# schema YAML.  See schema_registry.vlm_verify_transitions_for().
+_LEGACY_VLM_VERIFY_TRANSITIONS: frozenset[tuple[str, str]] = frozenset({
+    ("search_result", "product_detail"),
+    ("product_detail", "spec_selection"),
+    # Purchase-commit boundary: graph must never replay historical
+    # coordinates here — VLM (and SpecGuard) decide.
+    ("spec_selection", "cart"),
+    ("spec_selection", "checkout"),
+    ("cart", "checkout"),
+})
+# Backward-compat alias so any import of _VLM_VERIFY_TRANSITIONS still works.
+_VLM_VERIFY_TRANSITIONS = _LEGACY_VLM_VERIFY_TRANSITIONS
 
 
-# Patterns for extracting user preferences (non-shopping: contacts, apps)
-PREFERENCE_PATTERNS = {
-    "contact": [
-        # 改进：更精确的联系人提取，限制长度，排除动词
-        r"(?:给|发送?给?|联系|打电话给?|发消息给?)\s*[「『""]?([\u4e00-\u9fa5a-zA-Z]{2,8})[」』""]?(?:发|说|打|$)",
-        r"(?:联系人|好友|朋友)\s*[「『""]?([\u4e00-\u9fa5a-zA-Z]{2,8})[」』""]?",
-        r"(?:to|contact|call|message)\s+([a-zA-Z\u4e00-\u9fa5]{2,15})(?:\s|$)",
-    ],
-    "app": [
-        r"(打开|启动|使用|进入)[\s]*([\u4e00-\u9fa5a-zA-Z]+)",
-        r"(open|launch|use)[\s]+([a-zA-Z\u4e00-\u9fa5]+)",
-    ],
-    "time_preference": [
-        r"(每天|每周|每月|通常|一般)[\s]*([\u4e00-\u9fa5a-zA-Z]+)",
-        r"(usually|always|often)[\s]+([a-zA-Z\u4e00-\u9fa5]+)",
-    ],
-}
-
-# Common apps to recognize
-KNOWN_APPS = {
-    "微信", "wechat", "支付宝", "alipay", "淘宝", "taobao", "抖音", "tiktok",
-    "美团", "meituan", "饿了么", "eleme", "京东", "jd", "拼多多", "pinduoduo",
-    "高德地图", "amap", "百度地图", "baidu maps", "微博", "weibo", "qq",
-    "钉钉", "dingtalk", "飞书", "feishu", "网易云音乐", "netease music",
-    "spotify", "bilibili", "b站", "小红书", "xiaohongshu", "safari", "chrome",
-    "设置", "settings", "相机", "camera", "相册", "photos", "备忘录", "notes",
-}
+# Preference/slot extraction is now centralized in phone_agent.core.task_spec.
+# PREFERENCE_PATTERNS and KNOWN_APPS moved to TaskSpecExtractor.
+from phone_agent.core.task_spec import KNOWN_APPS, PREFERENCE_PATTERNS, TaskSpecExtractor
 
 
 class MemoryManager:
@@ -82,7 +79,14 @@ class MemoryManager:
 
         # Initialize GraphStore (Spatial Memory)
         from .graph_store import GraphStore
-        self.graph_store = GraphStore()
+        from phone_agent.spatial.runtime_controller import runtime_graph_database
+
+        self.graph_store = GraphStore(enable_task_index=False)
+        runtime_database = os.getenv("AMSG_RUNTIME_GRAPH_DATABASE") or runtime_graph_database()
+        self.runtime_graph_store = GraphStore(database=runtime_database, enable_task_index=False)
+        self.spatial_graph_memory = SpatialGraphMemory(self.runtime_graph_store)
+        self._graph_runtime_controller = None
+        self._verbose = True
 
         # Initialize UnifiedSessionState — single source of truth
         # (replaces StateManager + SessionMemory + KnowledgeBase)
@@ -97,6 +101,24 @@ class MemoryManager:
         # Current task context
         self.current_task: str = ""
         self.task_start_time: str = ""
+        self._task_start_state_id: str | None = None
+        self._current_state_id: str | None = None
+        self._current_page_state = None
+        self._pending_transition_source = None
+        self._pending_transition_action: dict | None = None
+        self._pending_expected_postcondition: str | None = None
+        self._last_repair_decision = None
+        self._runtime_dag: RuntimeDAG | None = None
+        self._runtime_dag_task: str = ""
+        self._coverage_gaps: list[str] = []
+        self._vlm_plan: dict[str, Any] = {}
+        self._runtime_metrics: dict[str, int] = {
+            "page_classifier_calls": 0,
+            "page_classifier_skips": 0,
+            "runtime_dag_hits": 0,
+            "runtime_dag_misses": 0,
+            "coverage_gaps": 0,
+        }
 
         # Track extracted info in current session to avoid duplicates
         self._session_contacts: set[str] = set()
@@ -114,6 +136,30 @@ class MemoryManager:
         self.session_history.clear()
         self._task_start_state_id = start_state_id
         self._current_state_id = start_state_id
+        self._current_page_state = None
+        self._pending_transition_source = None
+        self._pending_transition_action = None
+        self._pending_expected_postcondition = None
+        self._last_repair_decision = None
+        self._runtime_dag = None
+        self._runtime_dag_task = task
+        # Defensive: drop any staged graph left by a previous task (a failed
+        # task never flushes, so without this its dirty edges would be swept
+        # into THIS task's flush). end_task also clears after a successful flush.
+        if self.spatial_graph_memory is not None:
+            try:
+                self.spatial_graph_memory.clear_staging()
+            except Exception:
+                pass
+        self._vlm_plan = {}
+        self._coverage_gaps = []
+        self._runtime_metrics = {
+            "page_classifier_calls": 0,
+            "page_classifier_skips": 0,
+            "runtime_dag_hits": 0,
+            "runtime_dag_misses": 0,
+            "coverage_gaps": 0,
+        }
 
         # Reset session tracking
         self._session_contacts.clear()
@@ -130,7 +176,103 @@ class MemoryManager:
 
         if self.enable_auto_extract:
             self._extract_from_task(task)
-    
+
+        # Emit status for observability
+        if self._verbose:
+            pref_count = len(self.store.get_by_type(MemoryType.USER_PREFERENCE, limit=50))
+            graph_ok = getattr(self.graph_store, "driver", None) is not None
+            runtime_ok = getattr(self.runtime_graph_store, "driver", None) is not None
+            similar_count = 0
+            if self.graph_store and graph_ok:
+                try:
+                    similar = self.graph_store.find_similar_tasks(task, limit=3)
+                    similar_count = len(similar) if similar else 0
+                except Exception:
+                    pass
+            parts = [
+                f"偏好: {pref_count}条",
+                f"图谱: {'Neo4j 已连接' if runtime_ok else '降级模式(无Neo4j)'}",
+                f"相似任务: {similar_count}条",
+            ]
+            print(f"[i] [memory] 记忆系统就绪 | {' | '.join(parts)}")
+
+    def _ensure_graph_runtime_controller(self):
+        """Return the active AMSG v4 runtime controller.
+
+        Tests may replace graph_store/spatial_graph_memory after construction,
+        so the controller is rebuilt when its dependencies change.
+        """
+        from phone_agent.spatial.runtime_controller import GraphRuntimeController
+
+        runtime_store = (
+            getattr(self.spatial_graph_memory, "graph_store", None)
+            or getattr(self, "runtime_graph_store", None)
+            or self.graph_store
+        )
+        controller = getattr(self, "_graph_runtime_controller", None)
+        if (
+            controller is None
+            or controller.graph_store is not runtime_store
+            or controller.spatial_graph_memory is not self.spatial_graph_memory
+        ):
+            self._graph_runtime_controller = GraphRuntimeController(
+                manager=self,
+                graph_store=runtime_store,
+                spatial_graph_memory=self.spatial_graph_memory,
+                verbose=getattr(self, "_verbose", True),
+                legacy_fallback=False,
+            )
+        return self._graph_runtime_controller
+
+    def set_vlm_plan(self, plan: dict[str, Any]) -> None:
+        """Store VLM-generated task plan for use during route planning.
+
+        The plan enriches goal_spec in locate_and_get_context() so the graph
+        BFS can target the correct page type and use accurate slot values.
+        """
+        self._vlm_plan = plan
+
+    @staticmethod
+    def _requires_vlm_verification(source_page_type: str, target_page_type: str) -> bool:
+        """Return True when this transition involves a semantic choice (e.g.
+        picking a specific product from a list) that the graph cannot make.
+
+        The authoritative set comes from the schema YAML; the legacy constant
+        is used as a fallback to ensure shopping behaviour never silently changes.
+        """
+        try:
+            from phone_agent.spatial.schema_registry import vlm_verify_transitions_for
+            pairs = vlm_verify_transitions_for("shopping")
+        except Exception:
+            pairs = _LEGACY_VLM_VERIFY_TRANSITIONS
+        return (source_page_type, target_page_type) in pairs
+
+    def _inject_vlm_verification_hint(
+        self,
+        next_action: dict[str, Any],
+        source_page_type: str,
+        target_page_type: str,
+        context_data: dict[str, Any],
+    ) -> None:
+        """Mark the action as requiring VLM verification.
+
+        Injects a structural hint (page type + action type only) — never
+        leaks product-specific data like names, prices, or coordinates from
+        historical graph actions.
+        """
+        next_action["_requires_vlm_verification"] = True
+        action_type = next_action.get("type", "")
+        hint = (
+            f"[图谱路径参考] 当前页面: {source_page_type}，下一步目标页面: {target_page_type}\n"
+            f"图谱建议动作类型: {action_type}\n"
+            f"⚠️ 此步骤涉及商品/规格选择——图谱仅提供页面导航方向，"
+            f"你必须根据当前截图内容和用户任务自行判断点击哪个元素。"
+            f"绝不要复用图谱中的历史商品信息！"
+        )
+        context_data["graph_hint"] = (
+            f"{hint}\n{context_data.get('graph_hint', '')}"
+        ).strip()
+
     def end_task(self, success: bool, result: str = "", end_state_id: str | None = None):
         """Called when a task completes."""
         if self.current_task:
@@ -169,10 +311,66 @@ class MemoryManager:
                 end_state=end_state_id or self._current_state_id,
             )
 
+        # Flush staged graph observations to Neo4j (canonicalize + promote)
+        # Only for successful tasks — failed tasks may contain bad transitions
+        if success and self.spatial_graph_memory:
+            try:
+                report = self.spatial_graph_memory.flush_staged_graph()
+                if self._verbose and report.transitions_promoted > 0:
+                    print(
+                        f"[i] [graph] 图谱更新: {report.canonical_pages} 页面, "
+                        f"{report.transitions_promoted} 转换 "
+                        f"(过滤 {report.transitions_filtered})"
+                    )
+            except Exception as e:
+                if self._verbose:
+                    print(f"[!] [graph] 图谱提交失败: {e}")
+
+        # VLM-powered trajectory review → auto-import new transitions
+        traj_entry = getattr(self, "_last_trajectory_entry", None)
+        traj_path = getattr(self, "_last_trajectory_path", None)
+        if success and traj_entry and self.runtime_graph_store:
+            try:
+                from phone_agent.spatial.trajectory_reviewer import TrajectoryReviewer
+                import json as _json
+
+                reviewer = TrajectoryReviewer(
+                    graph_store=self.runtime_graph_store,
+                    verbose=self._verbose,
+                )
+                apps = list(self._session_apps)
+                app = apps[0] if apps else ""
+                review = reviewer.review_and_import(traj_entry, app=app)
+
+                # Write review result back into the trajectory file
+                if traj_path:
+                    traj_entry["review"] = {
+                        "transitions_extracted": review.transitions_extracted,
+                        "already_in_graph": review.already_in_graph,
+                        "new_candidates": review.new_candidates,
+                        "vlm_approved": review.vlm_approved,
+                        "imported": review.imported,
+                        "details": review.details,
+                    }
+                    try:
+                        with open(traj_path, "w", encoding="utf-8") as f:
+                            _json.dump(traj_entry, f, ensure_ascii=False, indent=2)
+                    except Exception:
+                        pass
+
+                if self._verbose and review.imported > 0:
+                    print(
+                        f"[i] [graph-evolve] 自进化: {review.imported} 条新转换导入 "
+                        f"(VLM审核通过 {review.vlm_approved}/{review.new_candidates})"
+                    )
+            except Exception as e:
+                if self._verbose:
+                    print(f"[!] [graph-evolve] 轨迹审核失败: {e}")
+
         self.current_task = ""
         self.task_start_time = ""
 
-    def update_state_and_transition(
+    def _legacy_update_state_and_transition(
         self,
         screenshot_hash: str,
         semantic_layout: str,
@@ -209,27 +407,98 @@ class MemoryManager:
 
         return current_state
 
+    def update_state_and_transition(
+        self,
+        screenshot_hash: str,
+        semantic_layout: str,
+        action: dict,
+        task: str,
+        expected_postcondition: str | None = None,
+    ) -> str:
+        """Cache source page/action and record the edge on next localization."""
+        page_state = self.spatial_graph_memory.build_page_state(
+            ui_hash=screenshot_hash,
+            semantic_layout=semantic_layout,
+            task=task,
+        )
+        self._pending_transition_source = page_state
+        self._pending_transition_action = action
+        self._pending_expected_postcondition = (
+            expected_postcondition
+            or action.get("_expected_postcondition")
+            or action.get("postcondition")
+        )
+        self._current_page_state = page_state
+        self._current_state_id = page_state.state_id
+
+        if not self.state.current_state_id:
+            self.state.start_task_state(page_state.state_id)
+        elif self.state.current_state_id != page_state.state_id:
+            self.state.update_state(page_state.state_id)
+
+        return page_state.state_id
+
     def get_current_state_id(self) -> str | None:
         """获取当��状态ID"""
-        return self.state.get_current_state()
+        return self.state.current_state_id
+
+    def should_use_page_classifier(self, step: int = 0, current_app: str = "") -> bool:
+        """Return False when a usable RuntimeDAG can drive the next step cheaply."""
+        return self._ensure_graph_runtime_controller().should_use_page_classifier(step, current_app)
+
+    def record_page_classifier_decision(self, used: bool) -> None:
+        self._ensure_graph_runtime_controller().record_page_classifier_decision(used)
+
+    def get_runtime_metrics(self) -> dict[str, int]:
+        metrics = dict(self._runtime_metrics)
+        metrics["active_runtime_dag"] = 1 if self._runtime_dag and self._runtime_dag.is_usable else 0
+        return metrics
+
+    def runtime_screen_hint(self, current_app: str = "") -> dict[str, Any]:
+        """Provide a cheap page hint from the active RuntimeDAG."""
+        return self._ensure_graph_runtime_controller().runtime_screen_hint(current_app)
+
+    def mark_planned_action_executed(self, action: dict[str, Any], success: bool = True) -> None:
+        """Keep RuntimeDAG pending until the next screen verifies postcondition."""
+        self._ensure_graph_runtime_controller().mark_planned_action_executed(action, success=success)
+
+    def _runtime_dag_from_route(self, belief: PageBelief, goal_spec: Any, route_plan: Any) -> RuntimeDAG:
+        app = belief.candidates[0].state.app if belief.candidates else ""
+        seed = f"{self.current_task}|{belief.current_state_id}|{len(route_plan.steps)}"
+        import hashlib
+        dag = RuntimeDAG(
+            plan_id=hashlib.md5(seed.encode("utf-8")).hexdigest()[:12],
+            app=app,
+            goal_spec=goal_spec,
+        )
+        for candidate in belief.candidates:
+            dag.nodes[candidate.state.state_id] = candidate.state
+        for step in route_plan.steps:
+            edge = step.edge
+            source = self.spatial_graph_memory._local_states.get(edge.source_id)
+            target = self.spatial_graph_memory._local_states.get(edge.target_id)
+            if source:
+                dag.nodes[source.state_id] = source
+            if target:
+                dag.nodes[target.state_id] = target
+            dag.edges.setdefault(edge.source_id, []).append(edge)
+            dag.route.append(edge)
+        return dag
 
     def _save_pending_trajectory(self, task: str, success: bool, result: str,
                                  steps: list, apps: list, start_state: str | None,
                                  end_state: str | None):
-        """Save completed trajectory to pending file for manual review."""
+        """Save completed trajectory as a named file for review.
+
+        Each trajectory gets its own file in ``trajectories/`` with a
+        human-readable name: ``{timestamp}_{status}_{task_slug}.json``
+        """
         import json
+        import re
         from pathlib import Path
 
-        pending_file = Path(self.store.storage_dir) / "pending_trajectories.json"
-        pending_file.parent.mkdir(parents=True, exist_ok=True)
-
-        existing = []
-        if pending_file.exists():
-            try:
-                with open(pending_file, "r", encoding="utf-8") as f:
-                    existing = json.load(f)
-            except Exception:
-                existing = []
+        traj_dir = Path(self.store.storage_dir) / "trajectories"
+        traj_dir.mkdir(parents=True, exist_ok=True)
 
         entry = {
             "task": task,
@@ -243,6 +512,8 @@ class MemoryManager:
                     "action_params": {k: v for k, v in s.get("action", {}).items()
                                      if k not in ("action", "_metadata")},
                     "thinking": s.get("thinking", "")[:200],
+                    "page_type": s.get("page_type", ""),
+                    "app": s.get("screenshot_app", ""),
                 }
                 for s in steps
             ],
@@ -250,14 +521,20 @@ class MemoryManager:
             "end_state_id": end_state,
             "saved_at": datetime.now().isoformat(),
         }
-        existing.insert(0, entry)  # newest first
-        existing = existing[:20]   # keep last 20
 
+        # Build filename: 20260605_103058_success_买iPhone17银色512G.json
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        status = "ok" if success else "fail"
+        slug = re.sub(r"[^\w一-鿿]", "", task)[:30]
+        filename = f"{ts}_{status}_{slug}.json"
+        filepath = traj_dir / filename
+
+        self._last_trajectory_path = str(filepath)
+        self._last_trajectory_entry = entry
         try:
-            with open(pending_file, "w", encoding="utf-8") as f:
-                json.dump(existing, f, ensure_ascii=False, indent=2)
-            if success:
-                print(f"📝 轨迹已保存至 pending_trajectories.json（共 {len(steps)} 步）")
+            with open(filepath, "w", encoding="utf-8") as f:
+                json.dump(entry, f, ensure_ascii=False, indent=2)
+            print(f"📝 轨迹已保存: trajectories/{filename}（{len(steps)} 步）")
         except Exception as e:
             print(f"Warning: failed to save pending trajectory: {e}")
 
@@ -434,7 +711,8 @@ class MemoryManager:
         
         return "general"
     
-    def add_step(self, thinking: str, action: dict, screenshot_app: str = ""):
+    def add_step(self, thinking: str, action: dict, screenshot_app: str = "",
+                 page_type: str = ""):
         """
         Record a step in the current task and auto-learn from it.
 
@@ -449,6 +727,8 @@ class MemoryManager:
             "thinking": thinking,
             "action": action,
             "app": screenshot_app,
+            "screenshot_app": screenshot_app,
+            "page_type": page_type,
         }
         self.session_history.append(step)
 
@@ -820,52 +1100,14 @@ class MemoryManager:
         return ""
 
     def compress_session_history(self) -> str | None:
+        """Deprecated no-op — replaced by the milestone supervisor.
+
+        The old implementation asked the small model to compress its own
+        recent steps and wrote "[压缩] ..." into overall_progress, which was
+        injected back into the main dialogue: the executor once treated the
+        compression instruction as the task itself and declared completion.
+        overall_progress is now written by SessionMemoryFile.brief_line().
         """
-        Compress every 5 steps into one concise summary using a lightweight VLM call.
-
-        Uses UnifiedSessionState steps (thinking_short) instead of old StepSummary.
-        Returns the compressed summary string, or None if compression was skipped.
-        """
-        if not self.state.should_compress():
-            return None
-
-        recent = self.state.steps[-5:]
-        summaries_text = "\n".join(
-            f"Step {s.step}: {s.thinking_short or s.action_type}" for s in recent
-        )
-
-        try:
-            from openai import OpenAI
-            import os
-
-            model_name = os.getenv("PHONE_AGENT_MODEL", "autoglm-phone-9b")
-            base_url = os.getenv("PHONE_AGENT_BASE_URL", "http://localhost:8000/v1")
-            api_key = os.getenv("PHONE_AGENT_API_KEY", "EMPTY")
-            client = OpenAI(base_url=base_url, api_key=api_key)
-
-            prompt = (
-                "将以下手机购物操作的 5 个步骤压缩为一句简洁的进展描述"
-                "（保留关键信息：App、商品名、价格、动作结果）：\n"
-                + summaries_text
-                + "\n\n压缩为一句："
-            )
-
-            response = client.chat.completions.create(
-                messages=[{"role": "user", "content": prompt}],
-                model=model_name,
-                temperature=0.1,
-                max_tokens=80,
-            )
-            compressed = (response.choices[0].message.content or "").strip()
-
-            if compressed and len(compressed) >= 5:
-                # Store compressed summary as overall progress
-                self.state.overall_progress = f"[压缩] {compressed}"
-                return compressed
-
-        except Exception:
-            pass
-
         return None
 
     def _auto_add_contact(self, name: str, context: str):
@@ -1041,6 +1283,165 @@ class MemoryManager:
 
         return "\n".join(parts) if parts else ""
 
+    # ------------------------------------------------------------------
+    # AMSG v4 Functionality Layer: query canonical roles, data items,
+    # and verified functionality from the self-discovered graph
+    # ------------------------------------------------------------------
+
+    def _query_v4_functionality_context(
+        self,
+        page_type: str,
+        current_app: str = "",
+        belief: Any | None = None,
+    ) -> dict[str, Any]:
+        """Query v4 FunctionalityItem/Cluster layer for current page context.
+
+        Returns a dict with:
+        - available_roles: canonical_role strings known for this page_type
+        - data_items: key data observed on similar pages (prices, titles, etc.)
+        - verified_clusters: FunctionalityCluster names verified on this page_type
+        - semantic_hint: natural language hint for VLM context injection
+        """
+        result: dict[str, Any] = {
+            "available_roles": [],
+            "data_items": [],
+            "verified_clusters": [],
+            "semantic_hint": "",
+        }
+        if not self.graph_store or not self.graph_store.driver:
+            return result
+
+        try:
+            app = current_app or ""
+            from phone_agent.spatial.app_registry import get_default_app_registry
+            app_aliases = list(get_default_app_registry().storage_aliases(app))
+            with self.graph_store.driver.session(database=self.graph_store.database) as s:
+                # 1) Canonical roles available on this page_type
+                roles_query = """
+                    MATCH (i:FunctionalityItem)
+                    WHERE i.type = 'functionality'
+                      AND i.is_promotable = true
+                      AND i.page_type = $page_type
+                      AND (size($app_aliases) = 0 OR i.app IN $app_aliases OR i.app = '')
+                    RETURN DISTINCT i.canonical_role AS role, count(*) AS cnt
+                    ORDER BY cnt DESC
+                """
+                roles = [
+                    dict(r) for r in s.run(roles_query, page_type=page_type, app_aliases=app_aliases)
+                ]
+                result["available_roles"] = roles
+
+                # 2) Data items observed on this page_type
+                data_query = """
+                    MATCH (i:FunctionalityItem)
+                    WHERE i.type = 'data'
+                      AND i.page_type = $page_type
+                      AND i.canonical_role IS NOT NULL
+                      AND i.canonical_role <> ''
+                      AND (size($app_aliases) = 0 OR i.app IN $app_aliases OR i.app = '')
+                    RETURN DISTINCT i.canonical_role AS role, i.description AS sample, i.confidence AS conf
+                    ORDER BY conf DESC
+                    LIMIT 12
+                """
+                data_items = [
+                    dict(r) for r in s.run(data_query, page_type=page_type, app_aliases=app_aliases)
+                ]
+                result["data_items"] = data_items
+
+                # 3) Verified functionality clusters for this page_type
+                cluster_query = """
+                    MATCH (c:FunctionalityCluster)
+                    WHERE c.success_count > 0
+                      AND $page_type IN c.page_types
+                    RETURN c.canonical_name AS name, c.canonical_description AS description,
+                           c.success_count AS verified, size(c.member_functionality_ids) AS members,
+                           c.risk_level AS risk
+                    ORDER BY verified DESC
+                """
+                clusters = [
+                    dict(r) for r in s.run(cluster_query, page_type=page_type)
+                ]
+                result["verified_clusters"] = clusters
+
+                # 4) IMPLEMENTS_FUNCTION links from Actions to FunctionalityItems
+                impl_query = """
+                    MATCH (a:Action)-[:IMPLEMENTS_FUNCTION]->(i:FunctionalityItem)
+                    WHERE i.page_type = $page_type
+                      AND (size($app_aliases) = 0 OR i.app IN $app_aliases OR i.app = '')
+                    RETURN a.type AS action_type, a.semantic_target AS target,
+                           i.canonical_role AS role, a.region AS region
+                    LIMIT 10
+                """
+                impls = [
+                    dict(r) for r in s.run(impl_query, page_type=page_type, app_aliases=app_aliases)
+                ]
+                result["implemented_actions"] = impls
+
+                # 5) Build natural language semantic hint
+                hint_parts: list[str] = []
+                if roles:
+                    role_names = [r["role"] for r in roles[:8]]
+                    hint_parts.append(
+                        f"[Available actions on {page_type}]: {', '.join(role_names)}"
+                    )
+                if clusters:
+                    cluster_names = [c["name"] for c in clusters[:5]]
+                    hint_parts.append(
+                        f"[Verified navigation paths]: {', '.join(cluster_names)}"
+                    )
+                if data_items:
+                    data_roles = [d["role"] for d in data_items[:6] if d.get("role")]
+                    hint_parts.append(
+                        f"[Observable data fields]: {', '.join(data_roles)}"
+                    )
+                result["semantic_hint"] = " | ".join(hint_parts) if hint_parts else ""
+
+        except Exception as e:
+            if getattr(self, '_verbose', True):
+                print(f"[V4 Functionality] Query failed: {e}")
+
+        return result
+
+    def _enrich_next_action_with_functionality(
+        self,
+        next_action: dict,
+        v4_context: dict,
+    ) -> dict:
+        """Enrich a graph-planned next_action with v4 functionality metadata.
+
+        Looks up IMPLEMENTS_FUNCTION edges to find the canonical_role
+        that matches the planned action's semantic_target, and attaches
+        it to the action for better VLM grounding.
+        """
+        enriched = dict(next_action)
+        target = str(next_action.get("target") or next_action.get("semantic_target") or "")
+        action_type = str(next_action.get("type") or "")
+
+        impls = v4_context.get("implemented_actions") or []
+        for impl in impls:
+            impl_target = str(impl.get("target") or "")
+            impl_type = str(impl.get("action_type") or "")
+            if (
+                (target and target in impl_target)
+                or (impl_target and impl_target in target)
+                or (action_type and action_type.lower() == impl_type.lower())
+            ):
+                enriched["canonical_role"] = impl.get("role", "")
+                enriched["_v4_functionality_region"] = impl.get("region", "")
+                break
+
+        # Also check if the target matches any available canonical_role
+        if not enriched.get("canonical_role"):
+            roles = v4_context.get("available_roles") or []
+            for role_info in roles:
+                role = role_info.get("role", "")
+                if role and (role in target or target in role):
+                    enriched["canonical_role"] = role
+                    break
+
+        return enriched
+
+
     def record_product_to_kb(
         self, name: str, price: float | None = None,
         specs: dict | None = None, page_type: str = "",
@@ -1208,7 +1609,7 @@ class MemoryManager:
         
         return "\n".join(context_parts)
     
-    def locate_and_get_context(self, ui_hash: str, semantic_layout: str, task: str) -> dict:
+    def _legacy_locate_and_get_context(self, ui_hash: str, semantic_layout: str, task: str) -> dict:
         """
         基于 GraphRAG 的双层匹配策略：
 
@@ -1285,7 +1686,35 @@ class MemoryManager:
                     )
                     print(f"🔄 FAISS Semantic Hint: 参考历史页面特征")
 
+        # Session memory: persist the original task intent so the VLM never
+        # "forgets" what the user actually asked for, even when graph actions
+        # carry historical data from previous sessions.
+        if self.current_task:
+            context_data["semantic_context"] = (
+                f"[会话记忆] 用户原始任务: {self.current_task}\n"
+                f"{context_data.get('semantic_context', '')}"
+            ).strip()
+
         return context_data
+
+    def locate_and_get_context(
+        self,
+        ui_hash: str,
+        semantic_layout: str,
+        task: str,
+        screen_dict: dict[str, Any] | None = None,
+    ) -> dict:
+        """Locate current page, plan graph route, and build VLM context.
+
+        Delegates entirely to GraphRuntimeController which owns the v4
+        graph contract. All legacy code paths have been removed.
+        """
+        return self._ensure_graph_runtime_controller().locate_and_get_context(
+            ui_hash=ui_hash,
+            semantic_layout=semantic_layout,
+            task=task,
+            screen_dict=screen_dict,
+        )
 
     def _condense_trajectory_context(self, similar_tasks: list[dict], current_task: str = "") -> str:
         """

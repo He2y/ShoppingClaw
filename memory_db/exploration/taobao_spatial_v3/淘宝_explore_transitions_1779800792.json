@@ -1,0 +1,89 @@
+{
+  "app": "淘宝",
+  "task": "覆盖淘宝购物核心空间骨架：home -> search_input -> search_result -> product_detail -> spec_selection -> cart。只执行安全探索动作，不提交订单、不支付、不确认地址。如果进入登录、支付、地址或订单确认页，立刻返回。",
+  "total_transitions": 0,
+  "coverage": {
+    "covered_page_types": [
+      "cart",
+      "filter_panel",
+      "search_input"
+    ],
+    "missing_page_types": [
+      "home",
+      "search_result",
+      "product_detail",
+      "spec_selection",
+      "checkout"
+    ],
+    "covered_transitions": [],
+    "missing_transitions": [
+      [
+        "home",
+        "search_input"
+      ],
+      [
+        "search_input",
+        "search_result"
+      ],
+      [
+        "search_result",
+        "product_detail"
+      ],
+      [
+        "product_detail",
+        "spec_selection"
+      ],
+      [
+        "spec_selection",
+        "cart"
+      ],
+      [
+        "cart",
+        "checkout"
+      ]
+    ],
+    "complete": false
+  },
+  "transitions": [],
+  "rejected_transitions": [
+    {
+      "from": "search_input:搜索输入页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          775
+        ]
+      },
+      "to": "cart:购物车列表",
+      "reason": "unexpected shopping flow transition"
+    },
+    {
+      "from": "search_input:搜索输入页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          429,
+          114
+        ]
+      },
+      "to": "search_input:搜索输入页",
+      "reason": "self-loop or unchanged screen"
+    },
+    {
+      "from": "search_input:搜索输入页",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          893,
+          71
+        ]
+      },
+      "to": "filter_panel:商品筛选面板",
+      "reason": "unexpected shopping flow transition"
+    }
+  ]
+}

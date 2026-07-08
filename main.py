@@ -521,6 +521,12 @@ Examples:
     )
 
     parser.add_argument(
+        "--check-system",
+        action="store_true",
+        help="Run system and model API checks and exit",
+    )
+
+    parser.add_argument(
         "--commit-trajectory",
         metavar="TASK_TEXT",
         type=str,
@@ -791,7 +797,21 @@ def main():
         print("   使用 python scripts/review_and_commit.py 查看和提交待审核轨迹。")
         return
 
+    if args.check_system:
+        system_ok = check_system_requirements(
+            device_type,
+            wda_url=args.wda_url
+            if device_type == DeviceType.IOS
+            else "http://localhost:8100",
+            device_id=args.device_id,
+        )
+        model_ok = False
+        if system_ok:
+            model_ok = check_model_api(args.base_url, args.model, args.apikey)
+        sys.exit(0 if system_ok and model_ok else 1)
+
     # Handle --list-apps (no system check needed)
+    if args.list_apps:
         if device_type == DeviceType.HDC:
             print("Supported HarmonyOS apps:")
             apps = list_harmonyos_apps()
@@ -934,6 +954,9 @@ def main():
 
             except KeyboardInterrupt:
                 print("\n\nInterrupted. Goodbye!")
+                break
+            except EOFError:
+                print("\nNo interactive input available. Provide a task or use --help.")
                 break
             except Exception as e:
                 print(f"\nError: {e}\n")

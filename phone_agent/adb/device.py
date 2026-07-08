@@ -245,6 +245,42 @@ def launch_app(
     return True
 
 
+def launch_package(
+    package: str, device_id: str | None = None, delay: float | None = None
+) -> bool:
+    """Launch an app directly by Android package name.
+
+    Use this when the app display name is not registered in APP_PACKAGES.
+
+    Args:
+        package: The Android package name (e.g. com.jingdong.app.mall).
+        device_id: Optional ADB device ID.
+        delay: Delay in seconds after launching. If None, uses configured default.
+
+    Returns:
+        True unconditionally (no name-registry lookup).
+    """
+    if delay is None:
+        delay = TIMING_CONFIG.device.default_launch_delay
+
+    adb_prefix = _get_adb_prefix(device_id)
+    subprocess.run(
+        adb_prefix
+        + [
+            "shell",
+            "monkey",
+            "-p",
+            package,
+            "-c",
+            "android.intent.category.LAUNCHER",
+            "1",
+        ],
+        capture_output=True,
+    )
+    time.sleep(delay)
+    return True
+
+
 def _get_adb_prefix(device_id: str | None) -> list:
     """Get ADB command prefix with optional device specifier."""
     if device_id:

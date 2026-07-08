@@ -1,0 +1,290 @@
+{
+  "app": "淘宝",
+  "total_transitions": 24,
+  "transitions": [
+    {
+      "from": "home:淘宝首页，展示‘百亿补贴’活动专区，含搜索框、商品卡片、分类标签及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          914,
+          668
+        ]
+      },
+      "to": "search_input:搜索输入页，已输入‘小米小空调’，显示历史搜索与猜你想搜推荐词，底部为淘宝热榜商品卡片"
+    },
+    {
+      "from": "search_input:搜索输入页，已输入‘小米小空调’，显示历史搜索与猜你想搜推荐词，底部为淘宝热榜商品卡片",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          540
+        ]
+      },
+      "to": "product_detail:小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项"
+    },
+    {
+      "from": "product_detail:小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          67,
+          959
+        ]
+      },
+      "to": "search_result:搜索关键词'75寸电视机'后的商品结果页，实际展示的是小米空调商品（可能为相关推荐或搜索纠错）"
+    },
+    {
+      "from": "search_result:搜索关键词'75寸电视机'后的商品结果页，实际展示的是小米空调商品（可能为相关推荐或搜索纠错）",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          253,
+          649
+        ]
+      },
+      "to": "product_detail:小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项"
+    },
+    {
+      "from": "product_detail:小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项",
+      "action": {
+        "_metadata": "do",
+        "action": "Swipe",
+        "start": [
+          499,
+          790
+        ],
+        "end": [
+          499,
+          438
+        ]
+      },
+      "to": "search_result:搜索关键词'75寸电视机'后的商品结果页，实际展示的是小米空调商品（可能为相关推荐或搜索纠错）"
+    },
+    {
+      "from": "spec_selection:商品规格选择页，展示多个小米空调型号及其价格、店铺信息，用户可单选后点击确认选择",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          555,
+          647
+        ]
+      },
+      "to": "product_detail:小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项"
+    },
+    {
+      "from": "search_result:搜索关键词'75寸电视机'后的商品结果页，实际展示的是小米空调商品（可能为相关推荐或搜索纠错）",
+      "action": {
+        "_metadata": "do",
+        "action": "Swipe",
+        "start": [
+          779,
+          71
+        ],
+        "end": [
+          194,
+          71
+        ]
+      },
+      "to": "product_detail:小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项"
+    },
+    {
+      "from": "home:淘宝首页，展示‘百亿补贴’活动专区，含搜索框、商品卡片、分类标签及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          698,
+          966
+        ]
+      },
+      "to": "cart:购物车页面，显示53件商品、消费券信息及底部导航栏"
+    },
+    {
+      "from": "cart:购物车页面，显示53件商品、消费券信息及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          897,
+          967
+        ]
+      },
+      "to": "my_account:用户个人中心页面，展示会员信息、资产概览、订单入口及常用功能模块"
+    },
+    {
+      "from": "my_account:用户个人中心页面，展示会员信息、资产概览、订单入口及常用功能模块",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          130,
+          588
+        ]
+      },
+      "to": "home:淘宝首页，展示‘百亿补贴’活动专区，含搜索框、商品卡片、分类标签及底部导航栏"
+    },
+    {
+      "from": "home:淘宝首页，展示‘百亿补贴’活动专区，含搜索框、商品卡片、分类标签及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "my_account:用户个人中心页面，展示会员信息、资产概览、订单入口及常用功能模块"
+    },
+    {
+      "from": "product_detail:小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "store:周十五旗舰店首页，展示618开门红促销活动、多款蜂蜜商品卡片及品牌信息"
+    },
+    {
+      "from": "store:周十五旗舰店首页，展示618开门红促销活动、多款蜂蜜商品卡片及品牌信息",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "product_detail:小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项"
+    },
+    {
+      "from": "product_detail:小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          306,
+          586
+        ]
+      },
+      "to": "store:周十五旗舰店首页，展示618开门红促销活动、多款蜂蜜商品卡片及品牌信息"
+    },
+    {
+      "from": "store:周十五旗舰店首页，展示618开门红促销活动、多款蜂蜜商品卡片及品牌信息",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          98,
+          647
+        ]
+      },
+      "to": "product_detail:小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项"
+    },
+    {
+      "from": "product_detail:小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项",
+      "action": {
+        "_metadata": "do",
+        "action": "Back"
+      },
+      "to": "home:淘宝首页，展示‘百亿补贴’活动专区，含搜索框、商品卡片、分类标签及底部导航栏"
+    },
+    {
+      "from": "home:淘宝首页，展示‘百亿补贴’活动专区，含搜索框、商品卡片、分类标签及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          499,
+          707
+        ]
+      },
+      "to": "dialog:会员挑战计划弹窗，展示200元礼包活动及立即报名按钮"
+    },
+    {
+      "from": "dialog:会员挑战计划弹窗，展示200元礼包活动及立即报名按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          288,
+          608
+        ]
+      },
+      "to": "home:淘宝首页，展示‘百亿补贴’活动专区，含搜索框、商品卡片、分类标签及底部导航栏"
+    },
+    {
+      "from": "dialog:会员挑战计划弹窗，展示200元礼包活动及立即报名按钮",
+      "action": {
+        "_metadata": "do",
+        "action": "Swipe",
+        "start": [
+          877,
+          540
+        ],
+        "end": [
+          877,
+          269
+        ]
+      },
+      "to": "home:淘宝首页，展示‘百亿补贴’活动专区，含搜索框、商品卡片、分类标签及底部导航栏"
+    },
+    {
+      "from": "home:淘宝首页，展示‘百亿补贴’活动专区，含搜索框、商品卡片、分类标签及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          383,
+          241
+        ]
+      },
+      "to": "product_detail:小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项"
+    },
+    {
+      "from": "product_detail:小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          936,
+          54
+        ]
+      },
+      "to": "home:淘宝首页，展示‘百亿补贴’活动专区，含搜索框、商品卡片、分类标签及底部导航栏"
+    },
+    {
+      "from": "home:淘宝首页，展示‘百亿补贴’活动专区，含搜索框、商品卡片、分类标签及底部导航栏",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          120,
+          516
+        ]
+      },
+      "to": "search_result:搜索关键词'75寸电视机'后的商品结果页，实际展示的是小米空调商品（可能为相关推荐或搜索纠错）"
+    },
+    {
+      "from": "search_result:搜索关键词'75寸电视机'后的商品结果页，实际展示的是小米空调商品（可能为相关推荐或搜索纠错）",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          81,
+          129
+        ]
+      },
+      "to": "filter_panel:搜索结果页的排序与筛选条件展开面板，包含综合/销量/全部标签及价格排序选项"
+    },
+    {
+      "from": "filter_panel:搜索结果页的排序与筛选条件展开面板，包含综合/销量/全部标签及价格排序选项",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          135,
+          285
+        ]
+      },
+      "to": "search_result:搜索关键词'75寸电视机'后的商品结果页，实际展示的是小米空调商品（可能为相关推荐或搜索纠错）"
+    }
+  ]
+}

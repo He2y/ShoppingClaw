@@ -1,0 +1,91 @@
+{
+  "app": "淘宝",
+  "task": "real-device adb verified filter recovery: search_result -> filter_panel -> search_result",
+  "success": true,
+  "total_steps": 2,
+  "steps": [
+    {
+      "step": 1,
+      "page_type": "search_result",
+      "page_summary": "Product search results",
+      "page_elements": {
+        "filter_button": {
+          "text": "Filter",
+          "role": "button",
+          "bbox": [
+            873,
+            710,
+            1075,
+            815
+          ]
+        },
+        "sort_tabs": "comprehensive sales all tmall shop flash_delivery",
+        "product_card": "product cards with title price shop payment_count",
+        "query": "headphones"
+      },
+      "screenshot_hash": "search-result-adb-filter-recovery",
+      "action": {
+        "_metadata": "do",
+        "action": "Tap",
+        "element": [
+          889,
+          329
+        ],
+        "semantic_target": "open_filter_panel"
+      },
+      "thinking": "Real-device ADB tap on the visible filter button opened the filter panel.",
+      "timestamp": "2026-05-27T16:19:00+08:00"
+    },
+    {
+      "step": 2,
+      "page_type": "filter_panel",
+      "page_summary": "Filter panel",
+      "page_elements": {
+        "close_button": {
+          "text": "Close",
+          "role": "button",
+          "bbox": [
+            980,
+            435,
+            1038,
+            493
+          ]
+        },
+        "back_action": {
+          "text": "System Back",
+          "role": "navigation"
+        },
+        "confirm_button": {
+          "text": "Confirm",
+          "role": "button",
+          "bbox": [
+            550,
+            2150,
+            1050,
+            2260
+          ]
+        },
+        "clear_button": {
+          "text": "Clear selected filters",
+          "role": "button",
+          "bbox": [
+            20,
+            2150,
+            530,
+            2260
+          ]
+        },
+        "data_filters": "logistics discount shop_rating price_range shipping_region brand wearing_style connection_type earphone_type scene interface_type",
+        "address_data": "Shanghai address text visible in location section"
+      },
+      "screenshot_hash": "filter-panel-adb-filter-recovery",
+      "action": {
+        "_metadata": "do",
+        "action": "Back",
+        "semantic_target": "rollback_to_search_result"
+      },
+      "thinking": "Real-device ADB Back returned from the filter panel to search results without checkout, login, address, or payment actions.",
+      "timestamp": "2026-05-27T16:20:00+08:00"
+    }
+  ]
+}

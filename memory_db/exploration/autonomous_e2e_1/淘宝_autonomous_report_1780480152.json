@@ -1,0 +1,742 @@
+{
+  "app": "淘宝",
+  "explored_at": "2026-06-03T17:49:12.729258",
+  "policy": {
+    "max_total_steps": 40,
+    "max_job_steps": 6,
+    "max_dry_rounds": 5,
+    "job_queue_limit": 20,
+    "settle_delay": 2.0,
+    "use_strong_vlm_extractor": false,
+    "convergence_window": 3,
+    "active_exploration": true,
+    "auto_import_graph": false
+  },
+  "convergence": {
+    "total_rounds": 14,
+    "consecutive_dry_rounds": 5,
+    "dry_round_limit": 5,
+    "converged": true,
+    "history": [
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 1,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 1,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      },
+      {
+        "new_clusters": 0,
+        "new_page_types": 0,
+        "new_transitions": 1
+      }
+    ]
+  },
+  "coverage_metrics": {
+    "discovered_functionalities": 53,
+    "discovered_functionality_clusters": 21,
+    "verified_functionality_clusters": 9,
+    "stable_functionality_clusters": 4,
+    "verified_functionality_ratio": 0.4286,
+    "novelty_discovery_rate": 1.05,
+    "saturation_per_50_screens": [
+      20,
+      2
+    ],
+    "recovery_functionality_coverage": 0.25,
+    "risk_boundary_coverage": 1.0,
+    "duplicate_screen_compression_ratio": 0.1,
+    "functionality_semantics_quality": "limited",
+    "quality_gate": {
+      "passed": true,
+      "reasons": [],
+      "metrics": {
+        "discovered_functionalities": 53,
+        "discovered_functionality_clusters": 21,
+        "verified_functionality_clusters": 9,
+        "stable_functionality_clusters": 4,
+        "verified_functionality_ratio": 0.4286,
+        "novelty_discovery_rate": 1.05,
+        "saturation_per_50_screens": [
+          20,
+          2
+        ],
+        "recovery_functionality_coverage": 0.25,
+        "risk_boundary_coverage": 1.0,
+        "duplicate_screen_compression_ratio": 0.1,
+        "functionality_semantics_quality": "limited"
+      }
+    }
+  },
+  "graph_summary": "[home] 淘宝首页推荐页，含搜索栏、618活动入口、商品卡片、直播模块 ← 当前\n  元素: 搜索框, 88VIP图标, 天猫超市图标, 领淘金币图标, 红包签到图标, 菜鸟驿站图标, 小米新风Pro1.5匹商品卡片, 618超级尾款日直播模块\n  跳转:  → search_input\n   (已执行2个动作)\n[product_detail] 小米空调商品详情页\n  元素: 未检测到元素\n  跳转:  → search_result, unknown\n[search_input] 搜索框含历史记录与猜你想搜\n  元素: 未检测到元素\n  跳转:  → product_detail, search_input\n[search_result] 空调商品搜索结果列表页\n  元素: 未检测到元素\n  跳转:  → product_detail\n[spec_selection] 商品规格选择页，展示多个小米空调型号及其价格、店铺信息，用户\n  元素: 浏览, 购物车, 收藏夹, 全部, 空调, 洗发水, 耳机, 筛选\n  跳转:  → product_detail\n   (已执行2个动作)\n[unknown] 无法识别的空白页面\n  元素: 未检测到元素\n  跳转:  → product_detail\n\n统计: 6种页面, 14条跳转, 元素覆盖30/96",
+  "job_results": [
+    {
+      "job_description": "首次探索，图谱为空。需优先覆盖核心功能路径：搜索→结果页→商品详情；同时探索顶部导航标签（如闪购、外卖）和底部Tab（我的淘宝、购物车）。当前页面可见搜索框为最直接通向新页面类型的入口，应优先触发搜索",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "search_input"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为search_input，虽已输入关键词但尚未触发搜索；图谱中仅覆盖home→search_input路径，未进入search_result。需优先执行搜索以探索结果页；同时‘历史搜索’和‘",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为搜索输入页，尚未触发搜索跳转；历史记录中多个建议项未探索，其中‘小米小1匹空调’带标签‘书房 小卧室首选’，可能导向特定商品分类或详情页，具备探索价值；优先点击带场景标签的建议项以发现新页面类型",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "product_detail"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为product_detail页，已识别关键交互元素；需探索未覆盖的跳转路径：1）点击缩略图可能进入图集/视频页；2）点击店铺入口可进入store页；3）客服可能弹出dialog。优先探索缩略图（",
+      "steps_taken": 2,
+      "new_page_types_discovered": [
+        "search_result"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前页面为搜索结果页，但搜索词是'75寸电视机'，实际展示为空调商品，说明存在推荐/纠错机制。页面中多个商品卡片尚未点击探索，每个商品卡片可通向product_detail页；底部导航中'新品'和'客",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为product_detail页，图谱中该页面元素未记录（显示'未检测到元素'），需补全关键可交互元素；已知跳转路径仅有→search_result，但页面内存在多个潜在新跳转点（如‘看对比’可能",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为规格选择页（spec_selection），属于商品详情前的必经环节。图谱中已有product_detail但未记录该页，需补全跳转路径。页面顶部有分类标签（如‘空调’已选中）和筛选入口，底部有",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为product_detail页，已存在从search_result→product_detail跳转，但该页面内多个可交互元素尚未探索（如‘看对比’‘多人评价’‘收藏’等），这些可能通向新页面类",
+      "steps_taken": 3,
+      "new_page_types_discovered": [
+        "unknown"
+      ],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中已存在6种页面类型，但当前页面为空白（unknown），说明上一步操作可能触发了无效跳转或页面未加载。需返回最近可操作页面继续探索。根据导航图谱，spec_selection页有多个未充分探索的",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为product_detail页，已识别关键交互元素；图谱中该页面跳转关系尚不完整（仅记录→search_result, unknown），需补全可探索路径。底部‘店铺’‘客服’‘收藏’为未充分探",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为搜索结果页，已识别3个商品卡片，每个卡片可跳转至product_detail；筛选按钮可进入filter_panel；底部导航含‘首页’‘宝贝’‘晒单’‘客服’，其中‘晒单’‘客服’尚未探索。优",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为product_detail页，已识别多个关键交互元素。其中‘全部规格缩略图’可能通向spec_selection页（已存在但需验证跳转路径），‘店铺入口’可进入store页（尚未探索），‘客服",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "图谱中存在一个'unknown'节点，且当前截屏为空白，说明上一操作（可能来自spec_selection→product_detail）未成功加载目标页。需回退至可操作页面重新探索，优先选择已知稳定",
+      "steps_taken": 2,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    },
+    {
+      "job_description": "当前为product_detail页，已识别关键交互元素；需优先探索尚未充分覆盖的跳转路径：1）点击‘全部’缩略图可能进入图集/视频页；2）点击‘店铺’可进入store页；3）‘客服’可能打开dial",
+      "steps_taken": 3,
+      "new_page_types_discovered": [],
+      "new_transitions_discovered": 1,
+      "new_functionality_clusters": 0,
+      "outcome": "success"
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": "fn_cluster_open_search_search_input__home___middle_right_7cd70a7e03e7",
+      "canonical_name": "open_search",
+      "canonical_description": "open_search by tap action from home to observed postcondition search_input. Source summary: 淘宝首页推荐页，含搜索栏、618活动入口、商品卡片、直播模块及底部导航栏; target summary: 搜索框含历史记录与猜你想搜.",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品卡片_直播模块及底_29a3f1081c94",
+        "fn_淘宝_home_tap_open_search_middle_right_search_inpu_be2c093aec6a"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [
+        "middle_right"
+      ],
+      "verified_edges": [
+        "page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品卡片_直播模块及底部导航栏_a21d19399467->search_input:middle_right"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail__home_4a43c22e4181",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "小米新风Pro1.5匹商品卡片",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_home_淘宝首页推荐页_含搜索栏_618活动入口_商品卡片_直播模块及底_e42af3576cb8"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "home"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_submit_search__search_input_73d79510974b",
+      "canonical_name": "submit_search",
+      "canonical_description": "历史搜索标签（如‘小米柔风空调’）",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_search_input_搜索输入页_已输入_小米小空调_显示历史搜索与猜_9e61ae428750",
+        "fn_淘宝_page_淘宝_search_input_搜索输入页_已输入_小米小空调_显示历史搜索与猜_7156f5f0a1b3",
+        "fn_淘宝_page_淘宝_search_input_搜索输入页_已输入_小米小空调_显示历史搜索与猜_7de290826da9",
+        "fn_淘宝_page_淘宝_search_input_搜索输入页_已输入_小米小空调_显示历史搜索与猜_8990f23c51a4",
+        "fn_淘宝_page_淘宝_search_input_搜索输入页_已输入_小米小空调_显示相关搜索建议_38ad0b10f4f6",
+        "fn_淘宝_page_淘宝_search_input_搜索输入页_已输入_小米小空调_显示相关搜索建议_9b3a478c95dc"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_input"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.1667,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail__search_input_f601761fa7c3",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "淘宝热榜商品卡片（儿童专用耳机等）",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_search_input_搜索输入页_已输入_小米小空调_显示历史搜索与猜_d19afeb8c0f5"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_input"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_from_search_input__search_input_39e47332386f",
+      "canonical_name": "rollback_from_search_input",
+      "canonical_description": "返回箭头",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_search_input_搜索输入页_已输入_小米小空调_显示历史搜索与猜_33e5cc3a36ed"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_input"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_search_input_search_input__search_input___to_d7d1f6125dd0",
+      "canonical_name": "tap_search_input",
+      "canonical_description": "tap_search_input by tap action from search_input to observed postcondition search_input. Source summary: 搜索输入页，已输入‘小米小空调’，显示历史搜索与猜你想搜推荐词，底部为淘宝热榜商品卡片; target summary: 搜索框输入“小米小空调”并显示建议词.",
+      "member_functionality_ids": [
+        "fn_淘宝_search_input_tap_tap_search_input_top_center_7615f8dc5075"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_input"
+      ],
+      "regions": [
+        "top_center"
+      ],
+      "verified_edges": [
+        "page_淘宝_search_input_搜索输入页_已输入_小米小空调_显示历史搜索与猜你想搜推荐词_底_1e61f2bfd234->search_input:top_center"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_product_detail_product_detail__search_input_0b0786f83eeb",
+      "canonical_name": "tap_product_detail",
+      "canonical_description": "tap_product_detail by tap action from search_input to observed postcondition product_detail. Source summary: 搜索输入页，已输入‘小米小空调’，显示相关搜索建议列表，底部为键盘与语音输入入口; target summary: 小米空调商品详情页.",
+      "member_functionality_ids": [
+        "fn_淘宝_search_input_tap_tap_product_detail_center_pr_1d181c0cf3d3"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_input"
+      ],
+      "regions": [
+        "center"
+      ],
+      "verified_edges": [
+        "page_淘宝_search_input_搜索输入页_已输入_小米小空调_显示相关搜索建议列表_底部为键盘_83e2cd41e178->product_detail:center"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_from_product_detail__product_detail_91b41fdac332",
+      "canonical_name": "rollback_from_product_detail",
+      "canonical_description": "返回按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_小米空调商品详情页_含主图视频_规格缩略图_b6892af8c6b5",
+        "fn_淘宝_page_淘宝_product_detail_小米空调米家pro1.5匹商品详情页_含主图_996f73ba3ccb"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_cart_from_header__product_detail_c113c5f9888e",
+      "canonical_name": "open_cart_from_header",
+      "canonical_description": "购物车图标（含54未读）",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_小米空调商品详情页_含主图视频_规格缩略图_4eb0e7a3101b",
+        "fn_淘宝_page_淘宝_product_detail_小米空调商品详情页_含主图视频_规格缩略图_be5c29aff6f5",
+        "fn_淘宝_page_淘宝_product_detail_小米空调商品详情页_展示型号kfr-26gw_2eb336147654",
+        "fn_淘宝_page_淘宝_product_detail_小米空调pro_1.5匹商品详情页_展示产品_8a048a272bb0",
+        "fn_淘宝_page_淘宝_product_detail_小米空调米家pro1.5匹商品详情页_含主图_a8916047be21",
+        "fn_淘宝_page_淘宝_product_detail_小米空调米家pro1.5匹商品详情页_含主图_994a1fb0ce6c",
+        "fn_淘宝_page_淘宝_product_detail_小米空调pro_1.5匹商品详情页_含主图视_ca6c9f0e72fc",
+        "fn_淘宝_page_淘宝_product_detail_小米空调pro_1.5匹商品详情页_含主图视_bbcab22a6d00",
+        "fn_淘宝_page_淘宝_product_detail_小米空调pro_1.5匹商品详情页_含主图轮_4d958549c3c8",
+        "fn_淘宝_page_淘宝_product_detail_小米空调pro_1.5匹商品详情页_含主图轮_d62c0f438f3f"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.1,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_open_spec_selector__product_detail_230d21a95d68",
+      "canonical_name": "open_spec_selector",
+      "canonical_description": "领券购买按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_小米空调商品详情页_含主图视频_规格缩略图_6f14422c7f2d",
+        "fn_淘宝_page_淘宝_product_detail_小米空调商品详情页_展示型号kfr-26gw_a54f714e2651",
+        "fn_淘宝_page_淘宝_product_detail_小米空调pro_1.5匹商品详情页_展示产品_2b7d73c4c244",
+        "fn_淘宝_page_淘宝_product_detail_小米空调pro_1.5匹商品详情页_展示产品_fe342e08bd99",
+        "fn_淘宝_page_淘宝_product_detail_小米空调米家pro1.5匹商品详情页_含主图_1c17ebee6a23",
+        "fn_淘宝_page_淘宝_product_detail_小米空调pro_1.5匹商品详情页_含主图视_040cc7d2ad0c",
+        "fn_淘宝_page_淘宝_product_detail_小米空调pro_1.5匹商品详情页_含主图轮_46b374c8a5a3"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.1429,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_search_result_search_result__product_detail_af0fd6856509",
+      "canonical_name": "tap_search_result",
+      "canonical_description": "tap_search_result by tap action from product_detail to observed postcondition search_result. Source summary: 小米空调米家Pro1.5匹商品详情页，含主图轮播、价格信息、促销标签、服务承诺及底部操作栏; target summary: 空调商品搜索结果列表页.",
+      "member_functionality_ids": [
+        "fn_淘宝_product_detail_tap_tap_search_result_bottom_l_22178204e84d",
+        "fn_淘宝_product_detail_tap_tap_search_result_center_s_41150bf9c38d"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [
+        "bottom_left",
+        "center"
+      ],
+      "verified_edges": [
+        "page_淘宝_product_detail_小米空调商品详情页_含主图视频_规格缩略图_价格信息_购买选_9ad6a19abab8->search_result:bottom_left",
+        "page_淘宝_product_detail_小米空调米家pro1.5匹商品详情页_含主图轮播_价格信息_2768179107a3->search_result:center"
+      ],
+      "success_count": 2,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_submit_search__search_result_fe3f0103c556",
+      "canonical_name": "submit_search",
+      "canonical_description": "搜索框",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_search_result_搜索关键词_75寸电视机_后的商品结果页_实际_6d9652e6694a",
+        "fn_淘宝_page_淘宝_search_result_小米空调搜索结果页_展示多个商品卡片_店铺信息_a1ec0ffb6b39"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_result"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_product_detail_product_detail__search_resul_bf308e8f510b",
+      "canonical_name": "open_product_detail",
+      "canonical_description": "open_product_detail by tap action from search_result to observed postcondition product_detail. Source summary: 搜索关键词'75寸电视机'后的商品结果页，实际展示的是小米空调商品（可能为相关推荐或搜索纠错）; target summary: 小米空调商品详情页.",
+      "member_functionality_ids": [
+        "fn_淘宝_search_result_tap_open_product_detail_middle_984286fbfd8d",
+        "fn_淘宝_page_淘宝_search_result_小米空调搜索结果页_展示多个商品卡片_店铺信息_d330eed1ebd9",
+        "fn_淘宝_page_淘宝_search_result_小米空调搜索结果页_展示多个商品卡片_店铺信息_98b4ad4e9bb8",
+        "fn_淘宝_page_淘宝_search_result_小米空调搜索结果页_展示多个商品卡片_店铺信息_4703c9351eb5",
+        "fn_淘宝_search_result_swipe_open_product_detail_unkno_21ca658cea21"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_result"
+      ],
+      "regions": [
+        "middle_left"
+      ],
+      "verified_edges": [
+        "page_淘宝_search_result_小米空调搜索结果页_展示多个商品卡片_店铺信息_促销标签及筛选_44c475e95b85->product_detail:unknown",
+        "page_淘宝_search_result_搜索关键词_75寸电视机_后的商品结果页_实际展示的是小米空调_abf5e59ac162->product_detail:middle_left"
+      ],
+      "success_count": 2,
+      "fail_count": 0,
+      "novelty_score": 0.2,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_choose_spec__product_detail_e50674af6ebc",
+      "canonical_name": "choose_spec",
+      "canonical_description": "规格型号卡片（KFR-26G W/V1A1）",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_小米空调商品详情页_展示型号kfr-26gw_1ea90690d5f6",
+        "fn_淘宝_page_淘宝_product_detail_小米空调pro_1.5匹商品详情页_含主图视_f2d883d4ae89"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_swipe_search_result_search_result__product_detai_d3a18e77830e",
+      "canonical_name": "swipe_search_result",
+      "canonical_description": "swipe_search_result by swipe action from product_detail to observed postcondition search_result. Source summary: 小米空调商品详情页，展示型号KFR-26GW/V1A1、价格¥1698.44起、核心卖点及购买选项; target summary: 空调商品列表页，含价格与店铺信息.",
+      "member_functionality_ids": [
+        "fn_淘宝_product_detail_swipe_swipe_search_result_unkn_cd84bb617568"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [
+        "page_淘宝_product_detail_小米空调商品详情页_展示型号kfr-26gw_v1a1_价格_9b14f38a5218->search_result:unknown"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_apply_or_close_filter__spec_selection_0b5b459101d7",
+      "canonical_name": "apply_or_close_filter",
+      "canonical_description": "筛选",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_spec_selection_商品规格选择页_展示多个小米空调型号及其价格_9996137c518a"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "spec_selection"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_confirm_add_to_cart_success_product_detail__spec_abe081e755bc",
+      "canonical_name": "confirm_add_to_cart_success",
+      "canonical_description": "confirm_add_to_cart_success by tap action from spec_selection to observed postcondition product_detail. Source summary: 商品规格选择页，展示多个小米空调型号及其价格、店铺信息，用户可单选后点击确认选择; target summary: 小米空调商品详情页.",
+      "member_functionality_ids": [
+        "fn_淘宝_spec_selection_tap_confirm_add_to_cart_succes_fa792a9d92c3"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "spec_selection"
+      ],
+      "regions": [
+        "center"
+      ],
+      "verified_edges": [
+        "page_淘宝_spec_selection_商品规格选择页_展示多个小米空调型号及其价格_店铺信息_用户_40e3a752b11d->product_detail:center"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_tap_unknown_unknown__product_detail___bottom_lef_08ba2f358aee",
+      "canonical_name": "tap_unknown",
+      "canonical_description": "tap_unknown by tap action from product_detail to observed postcondition unknown. Source summary: 小米空调Pro 1.5匹商品详情页，含主图视频、价格信息、促销标签、服务承诺及底部操作栏; target summary: 无法识别的空白页面.",
+      "member_functionality_ids": [
+        "fn_淘宝_product_detail_tap_tap_unknown_bottom_left_un_17b92db4d9e9",
+        "fn_淘宝_product_detail_tap_tap_unknown_middle_left_un_7c16e3218222"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [
+        "bottom_left",
+        "middle_left"
+      ],
+      "verified_edges": [
+        "page_淘宝_product_detail_小米空调pro_1.5匹商品详情页_含主图视频_价格信息_促_e4edcf592e3e->unknown:middle_left",
+        "page_淘宝_product_detail_小米空调pro_1.5匹商品详情页_展示产品图_核心卖点_价_dbbd419ee6e0->unknown:bottom_left"
+      ],
+      "success_count": 2,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "medium"
+    },
+    {
+      "cluster_id": "fn_cluster_rollback_to_product_detail_product_detail__unkno_e2d201a780ae",
+      "canonical_name": "rollback_to_product_detail",
+      "canonical_description": "rollback_to_product_detail by back action from unknown to observed postcondition product_detail. Source summary: 当前为无法识别的空白页面，可能因跳转异常、加载失败或页面未渲染完成导致; target summary: 小米空调商品详情页.",
+      "member_functionality_ids": [
+        "fn_淘宝_unknown_back_rollback_to_product_detail_unkno_31a33c916abc"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "unknown"
+      ],
+      "regions": [],
+      "verified_edges": [
+        "page_淘宝_unknown_当前为无法识别的空白页面_可能因跳转异常_加载失败或页面未渲染完成导致_c5e8071334c8->product_detail:unknown"
+      ],
+      "success_count": 1,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_open_filter_panel__search_result_aa9ec1e1d7ed",
+      "canonical_name": "open_filter_panel",
+      "canonical_description": "筛选按钮",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_search_result_小米空调搜索结果页_展示多个商品卡片_店铺信息_a3e2647f1497"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "search_result"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 1.0,
+      "risk_level": "normal"
+    },
+    {
+      "cluster_id": "fn_cluster_submit_search__product_detail_0a6b512ab132",
+      "canonical_name": "submit_search",
+      "canonical_description": "搜索框",
+      "member_functionality_ids": [
+        "fn_淘宝_page_淘宝_product_detail_小米空调pro_1.5匹商品详情页_含主图视_3282e30a7796",
+        "fn_淘宝_page_淘宝_product_detail_小米空调pro_1.5匹商品详情页_含主图轮_0a2632a3f951"
+      ],
+      "apps": [
+        "淘宝"
+      ],
+      "page_types": [
+        "product_detail"
+      ],
+      "regions": [],
+      "verified_edges": [],
+      "success_count": 0,
+      "fail_count": 0,
+      "novelty_score": 0.5,
+      "risk_level": "normal"
+    }
+  ]
+}
